@@ -1,0 +1,53 @@
+{
+  "reviewer": "kimi-k2.7-code",
+  "requested_label": "kimi-k2.7-code",
+  "actual_model_route": "hermes --provider ollama-cloud -m kimi-k2.7-code -t file -z <prompt pointing to review-packet.txt>",
+  "reviewed_commit": "bcd74c5c7d909402a9f129c713cd9afd9cff6dec",
+  "passed": true,
+  "security_concerns": [],
+  "logic_errors": [],
+  "compatibility_concerns": [],
+  "documentation_gaps": [
+    "docs/planning/artifact-manifest.json still carries a stale no_commit_reason claiming the workspace is not a git repository, which is now incorrect at commit bcd74c5.",
+    "Two artifact manifests coexist (docs/planning/artifact-manifest.json = 7-item parent bundle; docs/final/artifact-manifest.json = 15-item split-path bundle). Their relationship is explained in docs/planning/documentation-index.md but not cross-referenced inside the manifests themselves."
+  ],
+  "suggestions": [
+    "Update or prune docs/planning/artifact-manifest.json so its git/commit assumptions match the now-committed state, and clarify the relationship between the two manifests.",
+    "Wire validate_final_bundle.py and update_manifest.py into a CI or pre-commit hook so hashes, required-file coverage, feature terms, and local markdown links stay continuously enforced.",
+    "In docs/research/live-ui-inventory.md and live-ui-inventory-expanded.md, explicitly tag the disclosed one-time continue-watching side effect as a completed historical inspection so future readers do not treat live CDP inspection as ongoing/sanctioned activity."
+  ],
+  "evidence_checked": [
+    "AGENTS.md operating boundaries and updated reading order",
+    "README.md final-bundle reading order, source provenance, and boundary reminder",
+    "docs/mission/hermes-war-room-mission-statement.md required deliverables and hard boundaries",
+    "docs/mission/lingopie-war-room-brief.md lane decomposition and non-goals",
+    "docs/research/preliminary-grounding-research.md product decomposition and MVP cut",
+    "docs/research/live-ui-inventory.md and live-ui-inventory-expanded.md sanitization, CDP disclosure, and future-inspection gating",
+    "docs/research/public-product-cartography.md public-doc evidence table",
+    "docs/research/oss-substrate-assessment.md OSS candidate table and revalidation checklist",
+    "docs/final/war-room-final-synthesis.md executive summary, recommendations, unresolved questions, next steps",
+    "docs/final/lingotorte-implementation-plan.md roadmap, phases P0-P8, dependencies, repo structure, acceptance criteria",
+    "docs/spec/feature-implementation-playbook.md feature-by-feature matrix and cross-cutting steps",
+    "docs/spec/lingopie-behavior-reference.md evidence labels and observed-vs-inferred notes",
+    "docs/architecture/local-first-architecture.md app shell, component diagram, data flow, privacy model, failure modes",
+    "docs/architecture/data-model-and-storage.md typed entities, SQLite schema, invariants, migration strategy",
+    "docs/architecture/language-adapter-design.md adapter contracts, Polish-first guidance, offline/online tradeoffs",
+    "docs/product/srs-and-practice-design.md FSRS state machine, practice modes, acceptance tests",
+    "docs/review/safety-privacy-boundary-review.md allowed/disallowed actions, data classes, online-provider policy, required safety tests",
+    "docs/plan/mvp-spike-plan.md concrete spikes, fixtures, acceptance gates, no-network pattern",
+    "docs/planning/evidence-index.md normalized labels, parent artifact inventory, feature-to-evidence trace matrix",
+    "docs/planning/documentation-index.md mission deliverable crosswalk and challenge-review repair map",
+    "docs/planning/artifact-manifest.json and docs/final/artifact-manifest.json scopes and hashes",
+    "generate_final_bundle.py, update_manifest.py, validate_final_bundle.py local-only I/O behavior",
+    "Credential/secret scan: only non-secret values (CDP endpoint 127.0.0.1:9225, browser UA) appear; no API keys/tokens/cookies"
+  ],
+  "summary": "This is a coherent, safety-conscious planning/documentation bundle for a local-first, privacy-preserving Lingopie-like learning app. The IP/privacy/DRM boundaries are explicit and consistently propagated, evidence is labeled and provenance-disciplined, and the final/spec/architecture/product/review/plan deliverables agree with each other via a documented crosswalk. Implementability is strong: milestones P0-P8 with fixtures, acceptance criteria, dependency/license-provenance gates, and preserved open human decisions. Manifest hashes cross-check, and helper scripts perform only local file I/O. No blocking security, logic, or compatibility issues were found.",
+  "_normalization": {
+    "attempt": 2,
+    "parse_mode": "direct",
+    "raw_artifact": "reviews/2026-06-20-independent-model-reviews/attempt2-hermes-file-read/raw/raw-kimi-k2.7-code-attempt2.json",
+    "process_returncode": 0
+  },
+  "_prompt_artifact": "reviews/2026-06-20-independent-model-reviews/attempt2-hermes-file-read/prompts/prompt-kimi-k2.7-code.txt",
+  "_prompt_sha256": "c81315db6401287f56eb56bde402a1cb7c669546f3073bb12cc363920eadf35e"
+}

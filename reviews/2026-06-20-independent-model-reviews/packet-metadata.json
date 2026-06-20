@@ -1,0 +1,39 @@
+{
+  "packet": "reviews/2026-06-20-independent-model-reviews/review-packet.txt",
+  "packet_sha256": "8f73725d39a6283f7ac6860a133f1309fc404a743c4cbb607fd51ac6083b9e30",
+  "packet_bytes": 530052,
+  "generated_at_utc": "2026-06-20T20:40:49.007089+00:00",
+  "reviewers": [
+    {
+      "id": "kimi-k2.7-code",
+      "requested_label": "kimi-k2.7-code",
+      "route": "hermes",
+      "provider": "ollama-cloud",
+      "model": "kimi-k2.7-code",
+      "timeout_s": 900
+    },
+    {
+      "id": "m3",
+      "requested_label": "M3",
+      "route": "hermes",
+      "provider": "minimax-oauth",
+      "model": "MiniMax-M3",
+      "timeout_s": 900
+    },
+    {
+      "id": "gpt-5.5-default",
+      "requested_label": "gpt-5.5 (default)",
+      "route": "hermes",
+      "provider": "openai-codex",
+      "model": "gpt-5.5",
+      "timeout_s": 900
+    },
+    {
+      "id": "opus-4.8-claude",
+      "requested_label": "Opus 4.8 via home-grown Claude integration",
+      "route": "claude",
+      "model": "claude-opus-4-8",
+      "timeout_s": 900
+    }
+  ]
+}

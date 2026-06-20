@@ -1,0 +1,16 @@
+{
+  "reviewer": "kimi-k2.7-code",
+  "requested_label": "kimi-k2.7-code",
+  "actual_model_route": "hermes invocation failed before raw artifact",
+  "reviewed_commit": "bcd74c5c7d909402a9f129c713cd9afd9cff6dec",
+  "passed": false,
+  "security_concerns": [],
+  "logic_errors": [],
+  "compatibility_concerns": [
+    "Runner exception: OSError: [Errno 7] Argument list too long: 'hermes'"
+  ],
+  "documentation_gaps": [],
+  "suggestions": [],
+  "evidence_checked": [],
+  "summary": "Failed closed due to runner exception."
+}

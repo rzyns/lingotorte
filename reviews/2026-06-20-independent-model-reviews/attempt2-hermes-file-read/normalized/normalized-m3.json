@@ -1,0 +1,63 @@
+{
+  "reviewer": "m3",
+  "requested_label": "M3",
+  "actual_model_route": "hermes --provider minimax-oauth -m MiniMax-M3 -t file -z <prompt pointing to review-packet.txt>",
+  "reviewed_commit": "bcd74c5c7d909402a9f129c713cd9afd9cff6dec",
+  "passed": true,
+  "security_concerns": [],
+  "logic_errors": [],
+  "compatibility_concerns": [],
+  "documentation_gaps": [
+    "docs/spec/lingopie-behavior-reference.md feature-behavior matrix (lines ~259-281) still uses free-text labels ('public docs', 'OSS source/docs', 'inference/recommendation') rather than the normalized bracketed labels (PUBLIC-DOC, OSS-DOC-SOURCE, DESIGN-RECOMMENDATION) defined in docs/planning/evidence-index.md; the doc defines its own label set on lines 7-10 so the inconsistency is contained, but cross-doc normalization would help implementation agents.",
+    "Public-doc evidence rows (E-LP-PUB-001..016 in docs/spec/lingopie-behavior-reference.md and docs/research/public-product-cartography.md) cite URLs without retrieval dates; evidence-index.md already downgrades these to revalidate-before-use, but no durable provenance appendix exists yet.",
+    "OSS substrate license/version claims (asbplayer MIT, ts-fsrs MIT, subs2srs/Y'ALL MP/LLPlayer GPLv3, WhisperX/stable-ts to be revalidated, Anki NOASSERTION) are reproduced from parent artifacts without retrieval date or current license-file hash; oss-substrate-assessment.md and evidence-index.md explicitly require a per-candidate provenance artifact before adoption, but it has not been created.",
+    "docs/planning/evidence-cartography.md still labels AGENTS.md/mission-derived boundaries (E-LOCAL-001..006) as 'inference/recommendation'; the repair lives in the newer docs/planning/evidence-index.md and documentation-index.md crosswalk, but the retained parent artifact is internally inconsistent with the new label taxonomy."
+  ],
+  "suggestions": [
+    "Add a small provenance appendix (URL + retrieval date + commit/version + license-file hash) for each E-LP-PUB-* and E-OSS-* row before any implementation card is opened; evidence-index.md already prescribes the artifact shape.",
+    "Decide explicitly whether the four local screenshots (/home/openclaw/lingopie-cdp-*.png) stay referenced as local non-distributable only (current default) or are sanitized and inlined; add a one-line screenshot-policy header in the behavior reference for clarity.",
+    "Add a 'why this differs from E-LP-LIVE-*' line for each feature-behavior matrix row in lingopie-behavior-reference.md that already collides with public-doc behavior, so the design-recommendation vs observed mechanics distinction is visible per row.",
+    "Consider splitting evidence-cartography.md and adding a thin pointer note that project-constraint rows are retagged PROJECT-CONSTRAINT in evidence-index.md, to reduce the chance that an autonomous implementation agent reads the older table as authoritative.",
+    "For the upcoming P0 spike, instantiate the fixture directory and a no-network harness as a sibling planning artifact (even if empty) so the mvp-spike-plan.md 'exact safe inputs' references resolve to real files, not just shapes."
+  ],
+  "evidence_checked": [
+    "review-packet.txt full file manifest and per-file contents",
+    "AGENTS.md (operating boundaries, reading order)",
+    "README.md (recommended reading order, screenshot references, boundary reminder)",
+    "docs/mission/hermes-war-room-mission-statement.md (hard boundaries, required final deliverables)",
+    "docs/mission/lingopie-war-room-brief.md (lane decomposition, non-goals)",
+    "docs/research/preliminary-grounding-research.md referenced via crosswalk",
+    "docs/research/live-ui-inventory.md (sanitized observation, account-mutation caveat at lines 183-187)",
+    "docs/research/oss-substrate-assessment.md (license/version/reuse notes per candidate)",
+    "docs/research/public-product-cartography.md",
+    "docs/research/live-ui-inventory-expanded.md",
+    "docs/final/war-room-final-synthesis.md",
+    "docs/final/lingotorte-implementation-plan.md (phases P0-P8, repo structure, build/test strategy, no-network pattern, implementation card template)",
+    "docs/final/artifact-manifest.json (sha256/bytes/lines manifest)",
+    "docs/spec/lingopie-behavior-reference.md (evidence table, observed vs inferred, design-copy boundaries)",
+    "docs/spec/feature-implementation-playbook.md (feature-by-feature matrix, cross-cutting implementation steps)",
+    "docs/architecture/local-first-architecture.md (component diagram, data flow, service boundaries, privacy model, failure modes)",
+    "docs/architecture/data-model-and-storage.md (typed entities, SQLite schema, identity layers, append-only audit strategy)",
+    "docs/architecture/language-adapter-design.md (typed adapter contracts; section 1 reviewed for boundary principles)",
+    "docs/product/srs-and-practice-design.md (FSRS state machine, card types, practice-mode equivalents, acceptance checklist)",
+    "docs/review/safety-privacy-boundary-review.md (PROJECT-CONSTRAINT table, allowed/disallowed, online provider policy, Anki/export boundary, backup/sync boundary, live inspection gate, design-copy boundary, required implementation safety tests)",
+    "docs/planning/independent-challenge-review.md (seven must-fix items MF-1..MF-7, hard-boundary checklist)",
+    "docs/planning/evidence-index.md (normalized label table, parent artifact inventory, feature-to-evidence trace matrix, provenance limitations)",
+    "docs/planning/safety-privacy-legal-boundaries.md (planning-side authoritative gate, content matches docs/review/)",
+    "docs/planning/documentation-index.md (crosswalk between docs/planning/* and mission-requested split paths; challenge-review repair map)",
+    "docs/planning/testing-and-acceptance-plan.md (test strategy, fixture plan, acceptance gates, no-network pattern, regression ledger)",
+    "generate_final_bundle.py (pure local doc emitter, no network/credential access)",
+    "update_manifest.py (local sha256/line/byte updater for manifest)",
+    "validate_final_bundle.py (local validator: required files, feature-term coverage, evidence-label presence, link sanity, manifest hash check)",
+    "Cross-repo credential/token pattern scan (false positives only: 'tokens' as linguistic tokens, 'credentials' as banned concept, etc.; no actual credentials present)"
+  ],
+  "summary": "The Lingotorte planning bundle at commit bcd74c5c is a coherent, evidence-backed, local-first planning artifact that should not be blocked by this reviewer. Safety/privacy/IP boundaries are explicit and consistent across AGENTS.md, README.md, the mission statement, the mission brief, the safety review, and the planning-side safety doc: no proprietary copying, no DRM/circumvention, read-only/sanitized live UI inspection only, own/local media default, online providers disabled by default with explicit opt-in, Anki export-only by default, screenshots local non-distributable. Evidence-label discipline is repaired by docs/planning/evidence-index.md (PROJECT-CONSTRAINT / MISSION-REQUIREMENT / SANITIZED-LIVE-UI / PUBLIC-DOC / OSS-DOC-SOURCE / DESIGN-RECOMMENDATION / OPEN-DECISION) and the safety review, feature playbook, implementation plan, and architecture docs all use these normalized labels; the only contained drift is in retained parent artifacts (evidence-cartography.md, lingopie-behavior-reference.md matrix) and the documentation-index.md crosswalk explicitly explains the split. The final bundle, implementation plan, feature playbook, architecture, data model, language/SRS plan, MVP spike plan, and reading order agree with each other and with the mission brief. Implementability is well-supported: implementation card template, fixture shapes, no-network/no-account-mutation test pattern, dependency provenance checklist, and open human-decision gates (Polish-first, asbplayer substrate, Anki role, online strictness, Mastered semantics, screenshot policy, backup media policy) are all in place. Generated scripts (generate_final_bundle.py, update_manifest.py, validate_final_bundle.py) are local-only and contain no credentials, no network calls, and no exfiltration risk. No security, logic, or compatibility blockers found; documentation gaps are limited to retrievable improvements (durable provenance appendix for public-doc and OSS substrate evidence, label-table migration of the lingopie-behavior-reference matrix, screenshot-policy resolution) that the bundle itself flags as pre-implementation work.",
+  "_normalization": {
+    "attempt": 2,
+    "parse_mode": "substring",
+    "raw_artifact": "reviews/2026-06-20-independent-model-reviews/attempt2-hermes-file-read/raw/raw-m3-attempt2.json",
+    "process_returncode": 0
+  },
+  "_prompt_artifact": "reviews/2026-06-20-independent-model-reviews/attempt2-hermes-file-read/prompts/prompt-m3.txt",
+  "_prompt_sha256": "55eb8df2830ca01359db4a940b828ef9daa02710c7d471eef75886b2280c726c"
+}
