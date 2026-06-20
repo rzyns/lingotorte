@@ -1,0 +1,10 @@
+{
+  "name": "@lingotorte/storage",
+  "version": "0.0.0-p1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@lingotorte/domain": "file:../domain"
+  }
+}

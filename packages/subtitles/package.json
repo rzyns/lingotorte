@@ -1,0 +1,11 @@
+{
+  "name": "@lingotorte/subtitles",
+  "version": "0.0.0-p1",
+  "private": true,
+  "type": "module",
+  "main": "./src/import.ts",
+  "dependencies": {
+    "@lingotorte/domain": "file:../domain",
+    "@lingotorte/storage": "file:../storage"
+  }
+}
