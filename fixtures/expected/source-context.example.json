@@ -1,5 +1,6 @@
 {
   "mediaId": "media.synthetic-polish-dialogue",
+  "mediaPath": "fixtures/media/synthetic-polish-dialogue.webm",
   "mediaFingerprint": "sha256:431f161484db9d14ef835a5eff76349b423321a39f1a923b97fc2793eaecb422",
   "subtitleTrackId": "track.synthetic-polish-dialogue.pl",
   "cueId": "cue.pl.0001",

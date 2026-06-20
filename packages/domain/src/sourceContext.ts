@@ -27,6 +27,7 @@ export function validateSavedOccurrenceSourceContext(input: unknown): SavedOccur
   const charSpan = validateRange(record.charSpan, 'charSpan', 'start', 'end');
   return {
     mediaId: requireString(record, 'mediaId'),
+    mediaPath: requireString(record, 'mediaPath'),
     mediaFingerprint: requireSha256(record, 'mediaFingerprint'),
     subtitleTrackId: requireString(record, 'subtitleTrackId'),
     cueId: requireString(record, 'cueId'),

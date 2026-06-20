@@ -22,6 +22,7 @@ export type CharacterSpan = Readonly<{
 
 export type SavedOccurrenceSourceContext = Readonly<{
   mediaId: string;
+  mediaPath: string;
   mediaFingerprint: Sha256Digest;
   subtitleTrackId: string;
   cueId: string;
