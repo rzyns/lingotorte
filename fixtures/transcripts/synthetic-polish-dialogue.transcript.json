@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "lingotorte.fixture-transcript.v1",
+  "mediaId": "media.synthetic-polish-dialogue",
+  "targetTrackId": "track.synthetic-polish-dialogue.pl",
+  "nativeTrackId": "track.synthetic-polish-dialogue.en",
+  "cues": [
+    {
+      "cueId": "cue.pl.0001",
+      "startMs": 0,
+      "endMs": 1000,
+      "targetText": "Cześć, to jest lokalny test.",
+      "nativeText": "Hello, this is a local test."
+    },
+    {
+      "cueId": "cue.pl.0002",
+      "startMs": 1000,
+      "endMs": 2000,
+      "targetText": "Uczymy się z własnych napisów.",
+      "nativeText": "We study from our own subtitles."
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "lingotorte.fixture-catalog.v1",
+  "generatedUtc": "2026-06-20T22:15:44.981655Z",
+  "provenance": "synthetic fixtures authored/generated locally for Lingotorte P0; no Lingopie or proprietary material",
+  "prohibitedSourceMarkers": [],
+  "media": {
+    "id": "media.synthetic-polish-dialogue",
+    "path": "fixtures/media/synthetic-polish-dialogue.webm",
+    "sourceKind": "synthetic",
+    "container": "webm",
+    "durationMs": 2000,
+    "sha256": "sha256:431f161484db9d14ef835a5eff76349b423321a39f1a923b97fc2793eaecb422",
+    "generation": "ffmpeg lavfi black video + silent audio, local-only synthetic fixture"
+  },
+  "subtitleTracks": [
+    {
+      "id": "track.synthetic-polish-dialogue.pl",
+      "role": "target",
+      "language": "pl",
+      "format": "srt",
+      "path": "fixtures/subtitles/synthetic-polish-dialogue.target.srt",
+      "sha256": "sha256:e731322e70988608a9c08928894f4e5d84b2380ac202c5c42bb73ddcee1c5fa9"
+    },
+    {
+      "id": "track.synthetic-polish-dialogue.en",
+      "role": "native",
+      "language": "en",
+      "format": "srt",
+      "path": "fixtures/subtitles/synthetic-polish-dialogue.native.srt",
+      "sha256": "sha256:27c1b9b47ad296c039a8f31a9bc655bcebf2b8fbdb83aa87969a32b672df81a2"
+    }
+  ],
+  "negativeFixtures": [
+    {
+      "id": "subtitle.malformed",
+      "purpose": "later parser failure test",
+      "path": "fixtures/subtitles/malformed.srt",
+      "sha256": "sha256:3522ef7a581be220e0b33454ed41030a1bd9314cd11f9c4a46cb2d6e9f318f18"
+    },
+    {
+      "id": "subtitle.overlap.target",
+      "purpose": "later overlap/alignment test",
+      "path": "fixtures/subtitles/overlap.target.srt",
+      "sha256": "sha256:6791afb496c9d4f62203bceca3211276b3282468c5acf01d4458963213e32857"
+    }
+  ],
+  "transcript": {
+    "schemaVersion": "lingotorte.fixture-transcript.v1",
+    "path": "fixtures/transcripts/synthetic-polish-dialogue.transcript.json",
+    "sha256": "sha256:80d5a4525c87777c27f0162093628018e7868aa548a44de7cc2780056a6603b4"
+  }
+}

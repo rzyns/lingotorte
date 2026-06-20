@@ -1,0 +1,18 @@
+{
+  "mediaId": "media.synthetic-polish-dialogue",
+  "mediaFingerprint": "sha256:431f161484db9d14ef835a5eff76349b423321a39f1a923b97fc2793eaecb422",
+  "subtitleTrackId": "track.synthetic-polish-dialogue.pl",
+  "cueId": "cue.pl.0001",
+  "timeRangeMs": {
+    "start": 0,
+    "end": 1000
+  },
+  "tokenSpan": {
+    "startToken": 0,
+    "endToken": 1
+  },
+  "charSpan": {
+    "start": 0,
+    "end": 5
+  }
+}

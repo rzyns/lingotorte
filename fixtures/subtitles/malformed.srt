@@ -1,0 +1,2 @@
+this is intentionally not a valid subtitle file
+no timestamps are present

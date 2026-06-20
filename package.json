@@ -1,0 +1,28 @@
+{
+  "name": "lingotorte",
+  "version": "0.0.0-p0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first language-learning video app skeleton for owned/local media and subtitles.",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:no-network": "vitest run tests/no-network",
+    "scan:privacy": "node scripts/check-privacy-boundaries.mjs"
+  },
+  "keywords": [
+    "local-first",
+    "language-learning",
+    "subtitles",
+    "privacy"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.16",
+    "vitest": "4.1.9"
+  }
+}
