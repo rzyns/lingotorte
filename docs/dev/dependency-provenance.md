@@ -55,3 +55,33 @@ alternatives_considered: Inline minimal type stubs (high maintenance), @types/ha
 review_status: accepted
 review_task_id: t_3760692d
 ```
+
+## ts-fsrs
+
+```yaml
+dependency_name: ts-fsrs
+package_or_repo: npm package ts-fsrs
+intended_slice: P5
+why_needed: Implements the FSRS v6 spaced repetition scheduling algorithm locally so review cards can be scheduled deterministically without network access.
+source_url: https://registry.npmjs.org/ts-fsrs/-/ts-fsrs-5.4.0.tgz
+retrieval_date_utc: 2026-06-21
+exact_version_or_commit: 5.4.0
+lockfile_entry_or_hash: |
+  package-lock.json resolved: https://registry.npmjs.org/ts-fsrs/-/ts-fsrs-5.4.0.tgz
+  integrity: sha512-Gjr6vcUSdqOvrV6M9t/idbBlRAFsvpjUuVWrVwzV8fTMJzOc0FDCt9UfqGMBmYNUx8pnRRM8JaOtd/odvKFiOA==
+  local verification: node_modules/ts-fsrs/package.json declares version 5.4.0
+  license file hash: 8b83a73dd2894ff553d6de6113064b3ad9dfad3f839837b61f3b183881131d01
+  package.json hash: 819f94b88e0d96dc1ad13e434cd80da38940ac8aec1008d2a9436858107a1139
+license_name_claimed: MIT
+license_file_path_or_url: node_modules/ts-fsrs/LICENSE
+license_file_sha256: 8b83a73dd2894ff553d6de6113064b3ad9dfad3f839837b61f3b183881131d01
+local_offline_behavior: Pure local computation; deterministic given fixed parameters, clock, and rating. Verified by tests in tests/no-network/p5ReviewNoNetwork.test.ts.
+network_behavior_when_disabled: No network calls required; ts-fsrs does not fetch data. Verified under the provider-disabled/no-network harness.
+privacy_data_classes_processed:
+  - none
+redistribution_or_export_constraints: MIT permits redistribution with license notice. Package is a runtime dependency of the local review package only.
+security_maintenance_notes: Pinned via package-lock.json. Monitor for FSRS v6 parameter changes; upgrades require re-verification of deterministic recomputation tests.
+alternatives_considered: Custom FSRS port (high maintenance and risk of drift from reference algorithm). ts-fsrs chosen because it is a MIT-licensed, widely used TypeScript reference implementation of FSRS v6 with no runtime dependencies.
+review_status: accepted
+review_task_id: t_e7002e1e
+```

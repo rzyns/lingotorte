@@ -1,6 +1,6 @@
 {
   "name": "lingotorte",
-  "version": "0.0.0-p2",
+  "version": "0.0.0-p5",
   "private": true,
   "type": "module",
   "description": "Local-first language-learning video app for owned/local media and subtitles.",
@@ -9,7 +9,8 @@
     "packages/domain",
     "packages/storage",
     "packages/subtitles",
-    "packages/language"
+    "packages/language",
+    "packages/review"
   ],
   "scripts": {
     "dev": "vite --config vite.config.ts",
@@ -35,5 +36,8 @@
     "typescript": "6.0.3",
     "vite": "8.0.16",
     "vitest": "4.1.9"
+  },
+  "dependencies": {
+    "ts-fsrs": "^5.4.0"
   }
 }

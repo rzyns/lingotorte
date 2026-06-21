@@ -1,0 +1,19 @@
+{
+  "name": "@lingotorte/review",
+  "version": "0.0.0-p5",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "ts-fsrs": "5.4.0",
+    "@lingotorte/domain": "file:../domain"
+  }
+}
