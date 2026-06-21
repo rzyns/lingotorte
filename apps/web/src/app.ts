@@ -7,6 +7,7 @@ import {
   clearSelection,
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
+  importBrowserLocalFiles,
   listReviewBuckets,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
@@ -338,8 +339,17 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const summary = document.createElement('div');
     summary.className = 'status-banner success export-summary';
     summary.setAttribute('role', 'status');
-    summary.textContent = `Export ready: ${model.exportImport.lastExport.filePath} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings`;
+    summary.textContent = `Export ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • destination: downloaded via your browser`;
     exportGroup.appendChild(summary);
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'btn-secondary';
+    downloadBtn.textContent = 'Download export JSON';
+    downloadBtn.setAttribute('aria-label', `Download learner export JSON as ${model.exportImport.lastExport.fileName}`);
+    downloadBtn.addEventListener('click', () => {
+      downloadTextFile(model.exportImport.lastExport!.fileName, model.exportImport.lastExport!.manifestJson);
+    });
+    exportGroup.appendChild(downloadBtn);
   }
 
   section.appendChild(exportGroup);
@@ -394,6 +404,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
       countsList.appendChild(li);
     }
     previewPanel.appendChild(countsList);
+    previewPanel.appendChild(renderRestoreOperationPreview(model.exportImport.preview));
 
     const safe = document.createElement('p');
     safe.className = model.exportImport.preview.safeToRestore ? 'status-banner success' : 'status-banner error';
@@ -496,6 +507,64 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
   section.appendChild(importGroup);
   return section;
+}
+
+function renderRestoreOperationPreview(preview: NonNullable<AppModel['exportImport']['preview']>): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'restore-operation-preview';
+  const heading = document.createElement('h4');
+  heading.textContent = 'Restore operation preview';
+  container.appendChild(heading);
+
+  const operationList = document.createElement('ul');
+  const operationRows: { key: keyof typeof preview.operations; label: string }[] = [
+    { key: 'savedItems', label: 'savedItems' },
+    { key: 'savedOccurrences', label: 'savedOccurrences' },
+    { key: 'reviewCards', label: 'reviewCards' },
+    { key: 'reviewCardStates', label: 'reviewCardStates' },
+    { key: 'reviewEvents', label: 'reviewEvents' },
+    { key: 'practiceAttempts', label: 'practiceAttempts' },
+    { key: 'sourceContexts', label: 'sourceContexts' },
+  ];
+  for (const row of operationRows) {
+    const counts = preview.operations[row.key];
+    const li = document.createElement('li');
+    li.textContent = `${row.label}: ${counts.added} added, ${counts.updated} updated, ${counts.skippedIdentical} skipped identical`;
+    operationList.appendChild(li);
+  }
+  container.appendChild(operationList);
+
+  if (preview.details.savedItems.length > 0) {
+    const detailHeading = document.createElement('h5');
+    detailHeading.textContent = 'Saved item changes';
+    container.appendChild(detailHeading);
+    const detailList = document.createElement('ul');
+    for (const detail of preview.details.savedItems) {
+      const li = document.createElement('li');
+      li.textContent = `${detail.label}: ${detail.action}`;
+      detailList.appendChild(li);
+    }
+    container.appendChild(detailList);
+  }
+
+  return container;
+}
+
+function downloadTextFile(fileName: string, text: string): void {
+  const blob = new Blob([text], { type: 'application/json' });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.rel = 'noopener';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function renderFooter(): HTMLElement {
@@ -988,7 +1057,7 @@ function renderLibraryView(model: AppModel): HTMLElement {
   h2.textContent = 'Library';
   section.appendChild(h2);
   const p = document.createElement('p');
-  p.textContent = 'Load the synthetic local fixture to preview the player and study UI.';
+  p.textContent = 'Load the synthetic local fixture, or choose your own local video and subtitle files. Browser imports stay on this device: media is opened via a local object URL and subtitles are read with File.text().';
   section.appendChild(p);
 
   const form = document.createElement('div');
@@ -1015,6 +1084,76 @@ function renderLibraryView(model: AppModel): HTMLElement {
       });
   });
   form.appendChild(loadBtn);
+
+  const localImportGroup = document.createElement('div');
+  localImportGroup.className = 'local-file-import';
+  const localHeading = document.createElement('h3');
+  localHeading.textContent = 'Import your local files';
+  localImportGroup.appendChild(localHeading);
+
+  const mediaLabel = document.createElement('label');
+  mediaLabel.htmlFor = 'local-media-file';
+  mediaLabel.textContent = 'Local media file';
+  const mediaInput = document.createElement('input');
+  mediaInput.id = 'local-media-file';
+  mediaInput.name = 'local-media-file';
+  mediaInput.type = 'file';
+  mediaInput.accept = 'video/*,audio/*,.mp4,.m4v,.webm,.mkv,.mov,.mp3,.m4a,.wav';
+  localImportGroup.append(mediaLabel, mediaInput);
+
+  const targetLabel = document.createElement('label');
+  targetLabel.htmlFor = 'local-target-subtitle-file';
+  targetLabel.textContent = 'Target subtitle file (.srt)';
+  const targetInput = document.createElement('input');
+  targetInput.id = 'local-target-subtitle-file';
+  targetInput.name = 'local-target-subtitle-file';
+  targetInput.type = 'file';
+  targetInput.accept = '.srt,text/plain,application/x-subrip';
+  localImportGroup.append(targetLabel, targetInput);
+
+  const nativeLabel = document.createElement('label');
+  nativeLabel.htmlFor = 'local-native-subtitle-file';
+  nativeLabel.textContent = 'Native subtitle file (.srt, optional)';
+  const nativeInput = document.createElement('input');
+  nativeInput.id = 'local-native-subtitle-file';
+  nativeInput.name = 'local-native-subtitle-file';
+  nativeInput.type = 'file';
+  nativeInput.accept = '.srt,text/plain,application/x-subrip';
+  localImportGroup.append(nativeLabel, nativeInput);
+
+  const localImportBtn = document.createElement('button');
+  localImportBtn.className = 'btn-primary';
+  localImportBtn.textContent = 'Import local media';
+  localImportBtn.setAttribute('aria-label', 'Import selected local media and subtitle files');
+  localImportBtn.addEventListener('click', () => {
+    const mediaFile = mediaInput.files?.[0];
+    const targetSubtitleFile = targetInput.files?.[0];
+    const nativeSubtitleFile = nativeInput.files?.[0] ?? null;
+    if (!mediaFile || !targetSubtitleFile) {
+      model.importError = 'Choose a local media file and a target .srt subtitle file before importing.';
+      rerenderApp(model);
+      return;
+    }
+    void importBrowserLocalFiles(model, { mediaFile, targetSubtitleFile, nativeSubtitleFile })
+      .then(() => {
+        setView(model, 'player');
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  localImportGroup.appendChild(localImportBtn);
+  form.appendChild(localImportGroup);
+
+  if (model.currentMedia) {
+    const current = document.createElement('p');
+    current.className = 'meta';
+    current.textContent = `Current media: ${model.currentMedia.title} • ${model.currentMedia.privacyLabel}`;
+    form.appendChild(current);
+  }
 
   if (model.importError) {
     const banner = document.createElement('div');

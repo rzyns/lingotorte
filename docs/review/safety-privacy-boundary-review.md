@@ -20,7 +20,7 @@ This document repairs the independent challenge review's safety/privacy/legal bl
 
 | Action | Default status | Notes |
 |---|---:|---|
-| Read public docs/blog/help pages | Allowed | Cite URLs/quotes with retrieval date for decisions. |
+| Read public docs/blog/help pages | Allowed | Cite URLs/quotes with retrieval date for decisions. These are planning evidence references, not runtime app network dependencies. |
 | Read local workspace docs | Allowed | Preserve relative cross-links and evidence labels. |
 | Inspect visible Lingopie UI mechanics | Gated | Requires Janusz approval for scope; use a test account for mutation-prone flows. |
 | Use Lingopie screenshots as private evidence references | Gated | Local non-distributable only unless Janusz approves sanitization/copy policy. |
@@ -29,6 +29,8 @@ This document repairs the independent challenge review's safety/privacy/legal bl
 | Save words, submit reviews, record pronunciation, or change account settings in Lingopie | Disallowed unless explicitly authorized | Prefer throwaway/test account if ever needed. |
 | Download/capture/decrypt/proxy DRM or protected streams | Disallowed | Out of scope. |
 | Use local media/subtitle fixtures | Allowed | Fixtures must be owned, synthetic, or explicitly licensed. |
+| Use loopback/local dev-server reads | Allowed | Local browser development may read app assets over `127.0.0.1`/`localhost`, `data:`, and `blob:` URLs. |
+| Write to public-internet services | Gated | No public-internet writes, provider calls, public sharing, or account mutations without explicit opt-in/approval. |
 | Use online translation/LLM/ASR/dictionary providers | Disabled by default; opt-in only | Requires data-class disclosure and no-network tests for disabled state. |
 | Export to Anki package | Allowed as local export plan | Warn that AnkiWeb sync can upload text/media if the user imports/syncs. |
 | Mutate Anki via AnkiConnect | Gated | Treat as external/local app mutation; require explicit user decision. |

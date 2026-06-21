@@ -60,11 +60,15 @@ export class RestoreService {
   constructor(private readonly store: LocalStore) {}
 
   preview(manifest: LearnerExportManifest): RestorePreview {
-    const localHasData =
-      Object.keys(this.store.snapshot().savedItems).length > 0 ||
-      Object.keys(this.store.snapshot().reviewCards).length > 0 ||
-      this.store.snapshot().practiceAttempts.length > 0;
-    return buildRestorePreview(manifest, localHasData);
+    const snapshot = this.store.snapshot();
+    return buildRestorePreview(manifest, {
+      savedItems: snapshot.savedItems,
+      savedOccurrences: snapshot.savedOccurrences,
+      reviewCards: snapshot.reviewCards,
+      reviewCardStates: snapshot.reviewCardStates,
+      reviewEvents: snapshot.reviewEvents,
+      practiceAttempts: snapshot.practiceAttempts,
+    });
   }
 
   restore(manifest: LearnerExportManifest, confirmation: RestoreConfirmation): LocalStoreSnapshot {

@@ -1,6 +1,6 @@
 # Lingotorte local runbook
 
-Status: V1 local-only developer/user runbook. This document describes how to run and inspect the current local baseline without enabling providers, cloud sync, AnkiConnect, live Lingopie inspection, public sharing, or any external account mutation.
+Status: V1 local-only developer/user runbook. This document describes how to run and inspect the current local baseline without enabling providers, cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, or any external account mutation.
 
 ## Scope and safety posture
 
@@ -11,7 +11,7 @@ Lingotorte currently runs as a local Vite/TypeScript web app over synthetic fixt
 - native subtitles: `fixtures/subtitles/synthetic-polish-dialogue.native.srt`
 - fixture provenance: [`../../fixtures/README.md`](../../fixtures/README.md)
 
-The fixture set is synthetic/local and contains no Lingopie media, subtitles, screenshots, catalog data, account data, private API payloads, branding, tokens, or private examples. Product boundaries remain governed by [`../review/safety-privacy-boundary-review.md`](../review/safety-privacy-boundary-review.md).
+The fixture set is synthetic/local and contains no Lingopie media, subtitles, screenshots, catalog data, account data, private API payloads, branding, tokens, or private examples. Product boundaries remain governed by [`../review/safety-privacy-boundary-review.md`](../review/safety-privacy-boundary-review.md). Public documentation links in planning files are evidence references only; the runtime app must not depend on public Lingopie services or provider calls.
 
 ## Prerequisites
 
@@ -85,7 +85,7 @@ Use WSL Edge DevTools when available. Regular browser tooling is an acceptable f
 14. Open **Settings** and verify provider/sync/Anki/ASR states remain disabled.
 15. Inspect console and network requests after navigation and interactions.
 
-Acceptable network traffic during dev smoke is limited to loopback/local dev-server traffic, `data:`/`blob:` URLs, and Vite internals. Any request to an external host is a V1 blocker.
+Acceptable network traffic during dev smoke is limited to loopback/local dev-server reads, `data:`/`blob:` URLs, and Vite internals. Public-internet writes, provider calls, external account mutations, or runtime requests to an external host are V1 blockers unless Janusz has explicitly approved that exact opt-in path.
 
 ## Known V1 limitations
 

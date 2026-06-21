@@ -17,8 +17,12 @@ import type {
   PracticeAttempt,
   PrivacyWarning,
   PrivacyWarningKind,
+  RestoreCollectionOperationCounts,
   RestoreConfirmation,
+  RestoreOperationAction,
   RestorePreview,
+  RestorePreviewLocalState,
+  RestorePreviewRecordDetail,
   ReviewCard,
   ReviewCardState,
   ReviewEvent,
@@ -503,7 +507,81 @@ function validatePrivacyWarning(value: unknown): PrivacyWarning {
   };
 }
 
-export function buildRestorePreview(manifest: LearnerExportManifest, localHasData: boolean): RestorePreview {
+const EMPTY_OPERATION_COUNTS: RestoreCollectionOperationCounts = { added: 0, updated: 0, skippedIdentical: 0 };
+
+type RestoreComparableRecord = Readonly<{ id: string }>;
+type RestoreOperationWithRecord<T extends RestoreComparableRecord> = Readonly<{ record: T; action: RestoreOperationAction }>;
+
+type RestoreCollectionComparison<T extends RestoreComparableRecord> = Readonly<{
+  counts: RestoreCollectionOperationCounts;
+  operations: readonly RestoreOperationWithRecord<T>[];
+}>;
+
+function hasLocalRestoreState(value: boolean | RestorePreviewLocalState): value is RestorePreviewLocalState {
+  return typeof value !== 'boolean';
+}
+
+function compareRestoreCollection<T extends RestoreComparableRecord>(
+  importedRecords: readonly T[],
+  localRecords: Readonly<Record<string, T>>,
+): RestoreCollectionComparison<T> {
+  const counts = { ...EMPTY_OPERATION_COUNTS };
+  const operations: RestoreOperationWithRecord<T>[] = [];
+  for (const record of importedRecords) {
+    const local = localRecords[record.id];
+    const action: RestoreOperationAction =
+      local === undefined ? 'added' : canonicalJson(local) === canonicalJson(record) ? 'skipped-identical' : 'updated';
+    if (action === 'skipped-identical') {
+      counts.skippedIdentical += 1;
+    } else {
+      counts[action] += 1;
+    }
+    operations.push({ record, action });
+  }
+  return { counts, operations };
+}
+
+function compareRestoreArrayCollection<T extends RestoreComparableRecord>(
+  importedRecords: readonly T[],
+  localRecords: readonly T[],
+): RestoreCollectionComparison<T> {
+  const localById: Record<string, T> = {};
+  for (const record of localRecords) {
+    localById[record.id] = record;
+  }
+  return compareRestoreCollection(importedRecords, localById);
+}
+
+function compareReviewCardStateCollection(
+  importedRecords: readonly ReviewCardState[],
+  localRecords: Readonly<Record<string, ReviewCardState>>,
+): RestoreCollectionComparison<ReviewCardState & RestoreComparableRecord> {
+  const localByCardId: Record<string, ReviewCardState & RestoreComparableRecord> = {};
+  for (const state of Object.values(localRecords)) {
+    localByCardId[state.cardId] = { ...state, id: state.cardId };
+  }
+  return compareRestoreCollection(
+    importedRecords.map((state) => ({ ...state, id: state.cardId })),
+    localByCardId,
+  );
+}
+
+function detailForSavedItem(operation: RestoreOperationWithRecord<SavedItem>): RestorePreviewRecordDetail {
+  return { id: operation.record.id, action: operation.action, label: operation.record.displayText };
+}
+
+function detailForRecord(operation: RestoreOperationWithRecord<RestoreComparableRecord>, label: string): RestorePreviewRecordDetail {
+  return { id: operation.record.id, action: operation.action, label };
+}
+
+function allAddedCollection<T extends RestoreComparableRecord>(records: readonly T[]): RestoreCollectionComparison<T> {
+  return {
+    counts: { added: records.length, updated: 0, skippedIdentical: 0 },
+    operations: records.map((record) => ({ record, action: 'added' as const })),
+  };
+}
+
+export function buildRestorePreview(manifest: LearnerExportManifest, localStateOrHasData: boolean | RestorePreviewLocalState): RestorePreview {
   const counts = {
     savedItems: manifest.content.savedItems.length,
     savedOccurrences: manifest.content.savedOccurrences.length,
@@ -513,10 +591,57 @@ export function buildRestorePreview(manifest: LearnerExportManifest, localHasDat
     practiceAttempts: manifest.content.practiceAttempts.length,
     sourceContexts: manifest.content.sourceContexts.length,
   };
+  const localHasData = hasLocalRestoreState(localStateOrHasData)
+    ? Object.keys(localStateOrHasData.savedItems).length > 0 ||
+      Object.keys(localStateOrHasData.reviewCards).length > 0 ||
+      localStateOrHasData.practiceAttempts.length > 0
+    : localStateOrHasData;
+  const savedItems = hasLocalRestoreState(localStateOrHasData)
+    ? compareRestoreCollection(manifest.content.savedItems, localStateOrHasData.savedItems)
+    : allAddedCollection(manifest.content.savedItems);
+  const savedOccurrences = hasLocalRestoreState(localStateOrHasData)
+    ? compareRestoreCollection(manifest.content.savedOccurrences, localStateOrHasData.savedOccurrences)
+    : allAddedCollection(manifest.content.savedOccurrences);
+  const reviewCards = hasLocalRestoreState(localStateOrHasData)
+    ? compareRestoreCollection(manifest.content.reviewCards, localStateOrHasData.reviewCards)
+    : allAddedCollection(manifest.content.reviewCards);
+  const reviewCardStates = hasLocalRestoreState(localStateOrHasData)
+    ? compareReviewCardStateCollection(manifest.content.reviewCardStates, localStateOrHasData.reviewCardStates)
+    : allAddedCollection(manifest.content.reviewCardStates.map((state) => ({ ...state, id: state.cardId })));
+  const reviewEvents = hasLocalRestoreState(localStateOrHasData)
+    ? compareRestoreArrayCollection(manifest.content.reviewEvents, localStateOrHasData.reviewEvents)
+    : allAddedCollection(manifest.content.reviewEvents);
+  const practiceAttempts = hasLocalRestoreState(localStateOrHasData)
+    ? compareRestoreArrayCollection(manifest.content.practiceAttempts, localStateOrHasData.practiceAttempts)
+    : allAddedCollection(manifest.content.practiceAttempts);
+  const sourceContexts = { counts: { added: manifest.content.sourceContexts.length, updated: 0, skippedIdentical: 0 } };
   const overwriteConfirmationRequired = localHasData;
   const safeToRestore = !overwriteConfirmationRequired;
   const warnings = manifest.privacyWarnings.filter((w) => w.kind !== 'export-file-is-unencrypted');
-  return { manifestSchemaVersion: manifest.schemaVersion, counts, warnings, safeToRestore, overwriteConfirmationRequired };
+  return {
+    manifestSchemaVersion: manifest.schemaVersion,
+    counts,
+    operations: {
+      savedItems: savedItems.counts,
+      savedOccurrences: savedOccurrences.counts,
+      reviewCards: reviewCards.counts,
+      reviewCardStates: reviewCardStates.counts,
+      reviewEvents: reviewEvents.counts,
+      practiceAttempts: practiceAttempts.counts,
+      sourceContexts: sourceContexts.counts,
+    },
+    details: {
+      savedItems: savedItems.operations.map(detailForSavedItem),
+      savedOccurrences: savedOccurrences.operations.map((operation) => detailForRecord(operation, operation.record.cueId)),
+      reviewCards: reviewCards.operations.map((operation) => detailForRecord(operation, operation.record.cardType)),
+      reviewCardStates: reviewCardStates.operations.map((operation) => detailForRecord(operation, operation.record.cardId)),
+      reviewEvents: reviewEvents.operations.map((operation) => detailForRecord(operation, operation.record.reviewedAt)),
+      practiceAttempts: practiceAttempts.operations.map((operation) => detailForRecord(operation, operation.record.mode)),
+    },
+    warnings,
+    safeToRestore,
+    overwriteConfirmationRequired,
+  };
 }
 
 export function requireRestoreConfirmation(value: unknown): RestoreConfirmation {

@@ -82,9 +82,9 @@
     {
       "path": "docs/review/safety-privacy-boundary-review.md",
       "relative_path": "docs/review/safety-privacy-boundary-review.md",
-      "bytes": 10987,
-      "lines": 147,
-      "sha256": "5681b70bed441b9ce5c891bfe92850fd0e8f7453d29909c0532a9b73f51fefd6"
+      "bytes": 11382,
+      "lines": 148,
+      "sha256": "e9a851a88c42fc208071b1f19b1ff6024feb123f22565aa5aea3a42eebdcb57e"
     },
     {
       "path": "docs/plan/mvp-spike-plan.md",
@@ -96,9 +96,9 @@
     {
       "path": "README.md",
       "relative_path": "README.md",
-      "bytes": 4342,
-      "lines": 73,
-      "sha256": "d8eee6eaa5f92700145f3c5841edf05512d5def065e89c3dc4e22f6a4d9fec17"
+      "bytes": 4619,
+      "lines": 72,
+      "sha256": "c96ae310be6110839e4f8bdbde95bab8499ddc21e9e649cc86f90700ed5f4453"
     },
     {
       "path": "AGENTS.md",

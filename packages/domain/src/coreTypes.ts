@@ -261,9 +261,53 @@ export type RestorePreview = Readonly<{
     practiceAttempts: number;
     sourceContexts: number;
   }>;
+  operations: RestorePreviewOperations;
+  details: RestorePreviewDetails;
   warnings: readonly PrivacyWarning[];
   safeToRestore: boolean;
   overwriteConfirmationRequired: boolean;
+}>;
+
+export type RestoreOperationAction = 'added' | 'updated' | 'skipped-identical';
+
+export type RestoreCollectionOperationCounts = Readonly<{
+  added: number;
+  updated: number;
+  skippedIdentical: number;
+}>;
+
+export type RestorePreviewOperations = Readonly<{
+  savedItems: RestoreCollectionOperationCounts;
+  savedOccurrences: RestoreCollectionOperationCounts;
+  reviewCards: RestoreCollectionOperationCounts;
+  reviewCardStates: RestoreCollectionOperationCounts;
+  reviewEvents: RestoreCollectionOperationCounts;
+  practiceAttempts: RestoreCollectionOperationCounts;
+  sourceContexts: RestoreCollectionOperationCounts;
+}>;
+
+export type RestorePreviewRecordDetail = Readonly<{
+  id: UUID;
+  action: RestoreOperationAction;
+  label: string;
+}>;
+
+export type RestorePreviewDetails = Readonly<{
+  savedItems: readonly RestorePreviewRecordDetail[];
+  savedOccurrences: readonly RestorePreviewRecordDetail[];
+  reviewCards: readonly RestorePreviewRecordDetail[];
+  reviewCardStates: readonly RestorePreviewRecordDetail[];
+  reviewEvents: readonly RestorePreviewRecordDetail[];
+  practiceAttempts: readonly RestorePreviewRecordDetail[];
+}>;
+
+export type RestorePreviewLocalState = Readonly<{
+  savedItems: Readonly<Record<UUID, SavedItem>>;
+  savedOccurrences: Readonly<Record<UUID, SavedOccurrence>>;
+  reviewCards: Readonly<Record<UUID, ReviewCard>>;
+  reviewCardStates: Readonly<Record<UUID, ReviewCardState>>;
+  reviewEvents: readonly ReviewEvent[];
+  practiceAttempts: readonly PracticeAttempt[];
 }>;
 
 export type RestoreConfirmation = Readonly<{

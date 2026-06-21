@@ -300,6 +300,64 @@ describe('P6 export/restore manifest', () => {
     );
   });
 
+  it('previews added, updated, and skipped-identical restore operations before mutating state', async () => {
+    const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
+    const cue = cues[0]!;
+    const sourceContext = sourceContextForCue(asset, track, cue, 0, 1, 0, 5);
+    const saved = savedService.saveSelection({
+      kind: 'lexeme',
+      language: 'pl',
+      displayText: 'cześć',
+      mediaId: asset.id,
+      cueId: cue.id,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      sourceContext,
+    });
+    reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+
+    const target = await setupFixtureStore();
+    const targetSavedService = target.savedService;
+    const existingCue = target.cues[1]!;
+    const existingContext = sourceContextForCue(target.asset, target.track, existingCue, 1, 2, 7, 9);
+    const existing = targetSavedService.saveSelection({
+      kind: 'phrase',
+      language: 'pl',
+      displayText: 'local only',
+      mediaId: target.asset.id,
+      cueId: existingCue.id,
+      startMs: existingCue.startMs,
+      endMs: existingCue.endMs,
+      sourceContext: existingContext,
+    });
+    target.store.putSavedItem(manifest.content.savedItems[0]!);
+    const updatedImportedItem = { ...manifest.content.savedItems[0]!, displayText: 'cześć updated in export' };
+    const updatedManifest = {
+      ...manifest,
+      content: {
+        ...manifest.content,
+        savedItems: [updatedImportedItem, existing.item],
+        savedOccurrences: [manifest.content.savedOccurrences[0]!, existing.occurrence],
+      },
+    };
+
+    const restoreService = new RestoreService(target.store);
+    const beforeSnapshot = target.store.snapshot();
+    const preview = restoreService.preview(updatedManifest);
+    const afterPreviewSnapshot = target.store.snapshot();
+
+    expect(afterPreviewSnapshot).toEqual(beforeSnapshot);
+    expect(preview.operations.savedItems).toEqual({ added: 0, updated: 1, skippedIdentical: 1 });
+    expect(preview.operations.savedOccurrences).toEqual({ added: 1, updated: 0, skippedIdentical: 1 });
+    expect(preview.details.savedItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: updatedImportedItem.id, action: 'updated', label: 'cześć updated in export' }),
+        expect.objectContaining({ id: existing.item.id, action: 'skipped-identical', label: 'local only' }),
+      ]),
+    );
+  });
+
   it('refuses restore when local data exists without merge/update confirmation', async () => {
     const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
     const cue = cues[0]!;

@@ -1,5 +1,5 @@
 import { JSDOM } from 'jsdom';
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   createAppModel,
   importFixtureMediaAndSubtitles,
@@ -10,6 +10,7 @@ import {
   submitPracticeAttempt,
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
+  previewRestoreManifest,
 } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
@@ -189,7 +190,7 @@ describe('P6 frontend export / import local learner state', () => {
     dom.window.close();
   });
 
-  it('generates a local export and shows record counts plus privacy warnings', async () => {
+  it('generates a browser download export without showing a fake local path', async () => {
     const { value: { model } } = await createPracticeModel();
     renderExportImport(model);
 
@@ -202,6 +203,53 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toContain('Export ready:');
     expect(app.textContent).toContain('records');
     expect(app.textContent).toContain('privacy');
+    expect(app.textContent).toContain('downloaded via your browser');
+    expect(app.textContent).toMatch(/lingotorte-learner-state-\d{8}-\d{6}\.json/);
+    expect(app.textContent).not.toContain('/tmp/lingotorte');
+    const downloadBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Download export JSON');
+    expect(downloadBtn).toBeTruthy();
+  });
+
+  it('downloads the generated manifest JSON through a revoked object URL', async () => {
+    const { value: { model } } = await createPracticeModel();
+    renderExportImport(model);
+    const createdObjectUrls: string[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob.type).toBe('application/json');
+      const objectUrl = `blob:lingotorte-export-${createdObjectUrls.length}`;
+      createdObjectUrls.push(objectUrl);
+      return objectUrl;
+    });
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const clickedAnchors: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(dom.window.HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clickedAnchors.push(this);
+    });
+
+    try {
+      const exportBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
+      exportBtn!.click();
+      renderExportImport(model);
+
+      const downloadBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Download export JSON');
+      expect(downloadBtn).toBeTruthy();
+      downloadBtn!.click();
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      const blob = createObjectURL.mock.calls[0]![0] as Blob;
+      const manifestJson = await blob.text();
+      const manifest = JSON.parse(manifestJson) as { schemaVersion: string; integrity: { recordCount: number } };
+      expect(manifest.schemaVersion).toBe('lingotorte.learner-export.v1');
+      expect(manifest.integrity.recordCount).toBeGreaterThan(0);
+      const clickedAnchor = clickedAnchors[0];
+      expect(clickedAnchor?.download).toMatch(/lingotorte-learner-state-\d{8}-\d{6}\.json/);
+      expect(clickedAnchor?.href).toBe(createdObjectUrls[0]);
+      expect(revokeObjectURL).toHaveBeenCalledWith(createdObjectUrls[0]);
+    } finally {
+      clickSpy.mockRestore();
+    }
   });
 
   it('previews a valid manifest and shows counts and warnings', async () => {
@@ -225,6 +273,23 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toContain('Restore preview');
     expect(app.textContent).toContain('Restore now');
     expect(app.textContent).toContain('savedItems:');
+  });
+
+  it('shows added, updated, and skipped-identical restore operations before mutating state', async () => {
+    const { value: { model } } = await createPracticeModel();
+    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const importedItem = manifest.content.savedItems[0]!;
+    model.store.putSavedItem({ ...importedItem, displayText: 'local stale sentence' });
+
+    renderExportImport(model);
+    previewRestoreManifest(model, JSON.stringify(manifest));
+    renderExportImport(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Restore operation preview');
+    expect(app.textContent).toContain('savedItems: 0 added, 1 updated, 0 skipped identical');
+    expect(app.textContent).toContain(importedItem.displayText);
+    expect(app.textContent).toContain('updated');
   });
 
   it('refuses restore without acknowledging privacy warnings', async () => {

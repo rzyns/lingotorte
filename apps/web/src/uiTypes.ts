@@ -70,7 +70,7 @@ export type AppModel = {
     lastError: string | null;
     acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
     confirmOverwrite: boolean;
-    lastExport: { filePath: string; recordCount: number; warningCount: number } | null;
+    lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number } | null;
   };
 };
 

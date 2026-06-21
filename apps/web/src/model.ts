@@ -5,7 +5,7 @@ import { ExportService, RestoreService } from '../../../packages/storage/src/exp
 import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
-import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating, Sha256Digest } from '@lingotorte/domain';
+import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating, Sha256Digest, SourceKind } from '@lingotorte/domain';
 import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
 import browserFixtureMediaUrl from '../../../fixtures/media/synthetic-polish-dialogue.webm?url';
@@ -208,13 +208,14 @@ async function parseBrowserSrtText(input: {
   path: string;
   text: string;
   isActive?: boolean;
+  sourceKind?: SourceKind;
 }): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
   const track = makeSubtitleTrack({
     mediaId: input.mediaId,
     language: input.language,
     role: input.role,
     format: 'srt',
-    sourceKind: 'synthetic',
+    sourceKind: input.sourceKind ?? 'synthetic',
     sourcePath: input.path,
     contentSha256: await sha256BrowserText(input.text),
     isActive: input.isActive ?? true,
@@ -334,6 +335,98 @@ async function importBrowserSyntheticFixture(
   model.player.durationMs = durationMs;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+}
+
+export type BrowserLocalFileImportInput = Readonly<{
+  mediaFile: File;
+  targetSubtitleFile: File;
+  nativeSubtitleFile?: File | null;
+  targetLanguage?: string;
+  nativeLanguage?: string;
+}>;
+
+function titleFromFileName(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, '') || fileName || 'Imported local media';
+}
+
+function containerFromFile(file: File): string {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension) return extension;
+  return file.type.split('/').pop()?.toLowerCase() || 'unknown';
+}
+
+function revokeCurrentMediaObjectUrl(model: AppModel): void {
+  const currentPath = model.currentMedia?.originalPath;
+  if (currentPath?.startsWith('blob:')) {
+    URL.revokeObjectURL(currentPath);
+  }
+}
+
+export async function importBrowserLocalFiles(model: AppModel, input: BrowserLocalFileImportInput): Promise<void> {
+  if (typeof URL.createObjectURL !== 'function') {
+    throw new TypeError('Browser local media import requires URL.createObjectURL support.');
+  }
+  const mediaBytes = await input.mediaFile.arrayBuffer();
+  const objectUrl = URL.createObjectURL(input.mediaFile);
+  try {
+    const targetText = await input.targetSubtitleFile.text();
+    const nativeText = input.nativeSubtitleFile ? await input.nativeSubtitleFile.text() : null;
+    const asset = makeMediaAsset({
+      title: titleFromFileName(input.mediaFile.name),
+      originalPath: objectUrl,
+      contentSha256: await sha256Bytes(mediaBytes),
+      durationMs: 1000,
+      container: containerFromFile(input.mediaFile),
+      sizeBytes: input.mediaFile.size,
+      privacyLabel: 'owned',
+    });
+    const targetParsed = await parseBrowserSrtText({
+      mediaId: asset.id,
+      language: input.targetLanguage ?? 'pl',
+      role: 'target',
+      path: input.targetSubtitleFile.name,
+      text: targetText,
+      sourceKind: 'owned',
+    });
+    const nativeParsed = nativeText && input.nativeSubtitleFile
+      ? await parseBrowserSrtText({
+          mediaId: asset.id,
+          language: input.nativeLanguage ?? 'en',
+          role: 'native',
+          path: input.nativeSubtitleFile.name,
+          text: nativeText,
+          sourceKind: 'owned',
+        })
+      : null;
+    const lastTargetCue = targetParsed.cues[targetParsed.cues.length - 1];
+    const durationMs = Math.max(1000, lastTargetCue?.endMs ?? 0);
+    const assetWithDuration = { ...asset, durationMs };
+
+    revokeCurrentMediaObjectUrl(model);
+    model.store.putMediaAsset(assetWithDuration);
+    model.store.putSubtitleTrack(targetParsed.track);
+    if (nativeParsed) model.store.putSubtitleTrack(nativeParsed.track);
+    for (const cue of targetParsed.cues) {
+      model.store.putCue(cue);
+    }
+    if (nativeParsed) {
+      for (const cue of nativeParsed.cues) {
+        model.store.putCue(cue);
+      }
+    }
+
+    model.currentMedia = assetWithDuration;
+    model.targetTrackId = targetParsed.track.id;
+    model.nativeTrackId = nativeParsed?.track.id ?? null;
+    model.cues = model.store.listCuesForTrack(targetParsed.track.id);
+    model.player.durationMs = durationMs;
+    model.player.currentTimeMs = 0;
+    model.player.activeCueId = model.cues[0]?.id ?? null;
+    model.importError = null;
+  } catch (err) {
+    URL.revokeObjectURL(objectUrl);
+    throw err;
+  }
 }
 
 export async function importTargetOnlyFixture(model: AppModel, mediaPath: string, targetSrtPath: string): Promise<void> {
@@ -640,15 +733,28 @@ export function clearPracticeLastResult(model: AppModel): void {
   model.practice.lastAttemptResult = null;
 }
 
-export function exportLearnerState(model: AppModel): { manifest: import('@lingotorte/domain').LearnerExportManifest; filePath: string } {
-  const result = model.exportService.exportToFile('/tmp/lingotorte');
+function makeBrowserExportFileName(exportedAt: string): string {
+  const date = new Date(exportedAt);
+  if (Number.isNaN(date.valueOf())) {
+    const safeTimestamp = exportedAt.replace(/[^0-9A-Za-z]+/g, '-').replace(/^-|-$/g, '');
+    return `lingotorte-learner-state-${safeTimestamp}.json`;
+  }
+  const timestamp = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(date.getUTCDate()).padStart(2, '0')}-${String(date.getUTCHours()).padStart(2, '0')}${String(date.getUTCMinutes()).padStart(2, '0')}${String(date.getUTCSeconds()).padStart(2, '0')}`;
+  return `lingotorte-learner-state-${timestamp}.json`;
+}
+
+export function exportLearnerState(model: AppModel): { manifest: import('@lingotorte/domain').LearnerExportManifest; fileName: string; manifestJson: string } {
+  const manifest = model.exportService.buildManifest();
+  const fileName = makeBrowserExportFileName(manifest.exportedAt);
+  const manifestJson = JSON.stringify(manifest, null, 2);
   model.exportImport.lastExport = {
-    filePath: result.filePath,
-    recordCount: result.manifest.integrity.recordCount,
-    warningCount: result.manifest.privacyWarnings.length,
+    fileName,
+    manifestJson,
+    recordCount: manifest.integrity.recordCount,
+    warningCount: manifest.privacyWarnings.length,
   };
   model.exportImport.lastError = null;
-  return result;
+  return { manifest, fileName, manifestJson };
 }
 
 export function previewRestoreManifest(model: AppModel, manifestJson: string): import('@lingotorte/domain').RestorePreview {

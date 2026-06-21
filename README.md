@@ -21,7 +21,7 @@ python3 validate_final_bundle.py
 npm run dev -- --host 127.0.0.1
 ```
 
-Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** to exercise the local player/transcript/saved/review/practice/export flows. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
+Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** to exercise the local player/transcript/saved/review/practice/export flows. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server reads for app assets are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
 
 If `npm ci --offline` cannot use the local cache, stop before any networked install unless Janusz explicitly authorizes that package-manager action.
 
@@ -69,4 +69,4 @@ Screenshots captured during the live UI inspection remain as local evidence file
 
 ## Boundary reminder
 
-Use Lingopie as a **reference UX/product**, not as a source of proprietary implementation or content. Do not extract private account data, tokens, raw subtitle/media assets, or proprietary API payloads. Future work should target local/owned media and explicit subtitle/transcript inputs.
+Use Lingopie as a **reference UX/product**, not as a source of proprietary implementation or content. Public documentation URLs in this repo are planning evidence, not runtime dependencies. Do not extract private account data, tokens, raw subtitle/media assets, or proprietary API payloads. Future work should target local/owned media and explicit subtitle/transcript inputs.

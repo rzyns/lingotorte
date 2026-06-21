@@ -9,7 +9,7 @@ Status: V1 local-only acceptance note for the reviewed P6 implementation baselin
 - V1 stabilization branch: `lingotorte/v1-local-stabilization`
 - Intended worktree: `<local-worktrees>/lingotorte-v1-local-stabilization`
 
-This baseline is still local/private. It is not a push, PR, release, deployment, provider enablement, AnkiConnect/cloud-sync enablement, live Lingopie inspection, public sharing, or destructive-cleanup approval.
+This baseline is still local/private. It is not a push, PR, release, deployment, provider enablement, AnkiConnect/cloud-sync enablement, live Lingopie inspection, public sharing, public-internet write approval, or destructive-cleanup approval. Loopback/local dev-server reads for app assets are allowed during local smoke; public documentation URLs used in planning are evidence references, not runtime dependencies.
 
 ## What works locally
 
@@ -74,7 +74,7 @@ That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run te
 - Restore merges/upserts manifest records into existing local state; a future full replace/conflict-resolution flow remains a separate product decision.
 - The local Vite dev server is for acceptance smoke, not a deployed service.
 - Screenshots and browser evidence should use only synthetic/local data.
-- External providers, online translation/LLM/ASR/pronunciation, AnkiConnect, cloud sync, public release/sharing, live Lingopie inspection, remote setup, push/PR, and deploy/restart remain explicitly unauthorized.
+- External providers, online translation/LLM/ASR/pronunciation, AnkiConnect, cloud sync, public-internet writes, public release/sharing, live Lingopie inspection, remote setup, push/PR, and deploy/restart remain explicitly unauthorized.
 
 ## Merge-readiness posture
 

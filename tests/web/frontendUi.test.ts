@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, saveSentenceFromCue } from '../../apps/web/src/model';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, saveSentenceFromCue } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -12,6 +12,7 @@ async function setupDom() {
   globalThis.window = dom.window as unknown as Window & typeof globalThis;
   globalThis.HTMLElement = dom.window.HTMLElement;
   globalThis.HTMLVideoElement = dom.window.HTMLVideoElement;
+  globalThis.File = dom.window.File;
   globalThis.Element = dom.window.Element;
   globalThis.Node = dom.window.Node;
   globalThis.MutationObserver = dom.window.MutationObserver;
@@ -66,6 +67,103 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(rows?.length).toBe(2);
     const text = app?.textContent ?? '';
     expect(text).toContain('Cześć, to jest lokalny test.');
+  });
+
+  it('imports browser-selected local media and subtitle files into the player without upload', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const createObjectURL = vi.fn(() => 'blob:local-video-0');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+
+    rerenderApp(model);
+    const mediaInput = document.querySelector('input[name="local-media-file"]') as HTMLInputElement | null;
+    const targetInput = document.querySelector('input[name="local-target-subtitle-file"]') as HTMLInputElement | null;
+    const nativeInput = document.querySelector('input[name="local-native-subtitle-file"]') as HTMLInputElement | null;
+    expect(mediaInput).toBeTruthy();
+    expect(targetInput).toBeTruthy();
+    expect(nativeInput).toBeTruthy();
+
+    const mediaFile = new dom.window.File([new Uint8Array([0, 1, 2, 3])], 'owned-clip.webm', { type: 'video/webm' });
+    const targetSrt = new dom.window.File([
+      '1\n00:00:00,000 --> 00:00:01,000\nTo jest własny plik.\n\n2\n00:00:01,000 --> 00:00:02,000\nDruga lokalna linia.\n',
+    ], 'owned-clip.pl.srt', { type: 'application/x-subrip' });
+    const nativeSrt = new dom.window.File([
+      '1\n00:00:00,000 --> 00:00:01,000\nThis is my own file.\n\n2\n00:00:01,000 --> 00:00:02,000\nSecond local line.\n',
+    ], 'owned-clip.en.srt', { type: 'application/x-subrip' });
+    Object.defineProperty(mediaInput!, 'files', { configurable: true, value: [mediaFile] });
+    Object.defineProperty(targetInput!, 'files', { configurable: true, value: [targetSrt] });
+    Object.defineProperty(nativeInput!, 'files', { configurable: true, value: [nativeSrt] });
+
+    const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
+    expect(importButton).toBeTruthy();
+    importButton!.click();
+    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const app = document.getElementById('app')!;
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(createObjectURL).toHaveBeenCalledWith(mediaFile);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(model.currentMedia?.title).toBe('owned-clip');
+    expect(model.currentMedia?.privacyLabel).toBe('owned');
+    expect(model.currentMedia?.originalPath).toBe('blob:local-video-0');
+    expect(video?.src).toBe('blob:local-video-0');
+    expect(model.cues).toHaveLength(2);
+    expect(app.textContent).toContain('To jest własny plik.');
+    expect(app.textContent).toContain('This is my own file.');
+  });
+
+  it('shows local subtitle parse errors and revokes the failed object URL', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const createObjectURL = vi.fn(() => 'blob:bad-local-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+
+    rerenderApp(model);
+    const mediaInput = document.querySelector('input[name="local-media-file"]') as HTMLInputElement;
+    const targetInput = document.querySelector('input[name="local-target-subtitle-file"]') as HTMLInputElement;
+    Object.defineProperty(mediaInput, 'files', { configurable: true, value: [new dom.window.File([new Uint8Array([1])], 'bad.webm', { type: 'video/webm' })] });
+    Object.defineProperty(targetInput, 'files', { configurable: true, value: [new dom.window.File(['not an srt file'], 'bad.srt', { type: 'application/x-subrip' })] });
+
+    const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
+    importButton!.click();
+    for (let i = 0; i < 10 && !model.importError; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(model.currentMedia).toBeNull();
+    expect(model.importError).toMatch(/SRT block|Invalid SRT|missing numeric cue id/);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:bad-local-video');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(model.importError!);
+  });
+
+  it('revokes the previous local object URL when replacing browser-selected media', async () => {
+    const model = createAppModel();
+    const createObjectURL = vi.fn()
+      .mockReturnValueOnce('blob:first-local-video')
+      .mockReturnValueOnce('blob:second-local-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const targetSrtText = '1\n00:00:00,000 --> 00:00:01,000\nPierwsza linia.\n';
+
+    await importBrowserLocalFiles(model, {
+      mediaFile: new dom.window.File([new Uint8Array([1])], 'first.webm', { type: 'video/webm' }),
+      targetSubtitleFile: new dom.window.File([targetSrtText], 'first.pl.srt', { type: 'application/x-subrip' }),
+    });
+    await importBrowserLocalFiles(model, {
+      mediaFile: new dom.window.File([new Uint8Array([2])], 'second.webm', { type: 'video/webm' }),
+      targetSubtitleFile: new dom.window.File([targetSrtText], 'second.pl.srt', { type: 'application/x-subrip' }),
+    });
+
+    expect(model.currentMedia?.originalPath).toBe('blob:second-local-video');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:first-local-video');
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:second-local-video');
   });
 
   it('saves a sentence from a cue and shows it in the saved view', async () => {
