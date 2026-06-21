@@ -3,17 +3,28 @@ import type { Cue, SavedItem, ReviewCard } from '@lingotorte/domain';
 import { formatTimeMs } from './uiTypes';
 import {
   activeCueAtTime,
+  applyLoopTolerance,
   clearSelection,
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
+  MAX_PLAYBACK_RATE,
+  MIN_PLAYBACK_RATE,
+  nativeTextForCue,
+  nextCue,
+  PLAYBACK_RATE_STEP,
+  previousCue,
   recordReviewEvent,
   saveSelection,
   saveSentenceFromCue,
+  seekToCue,
+  setPlaybackRate,
   setPendingMeaning,
   setPendingNotes,
   setSelection,
   setTranscriptQuery,
   setView,
+  toggleLoopCue,
+  togglePlay,
   tokenizeCueText,
 } from './model';
 
@@ -139,23 +150,41 @@ function renderVideoStage(model: AppModel): HTMLElement {
   const video = document.createElement('video');
   video.setAttribute('controls', '');
   video.setAttribute('preload', 'metadata');
+  video.setAttribute('role', 'img');
+  video.setAttribute('aria-label', model.currentMedia?.title ?? 'Video player');
   if (model.currentMedia) {
     video.src = model.currentMedia.originalPath;
+    video.playbackRate = model.player.playbackRate;
   }
   video.addEventListener('timeupdate', () => {
-    model.player.currentTimeMs = Math.round(video.currentTime * 1000);
-    const cue = activeCueAtTime(model.cues, model.player.currentTimeMs);
+    const timeMs = Math.round(video.currentTime * 1000);
+    model.player.currentTimeMs = timeMs;
+    const cue = activeCueAtTime(model.cues, timeMs);
     if (cue && cue.id !== model.player.activeCueId) {
       model.player.activeCueId = cue.id;
       scrollCueIntoView(cue.id);
     }
     updateOverlay(stage, model, cue);
-    if (model.player.loopCue && cue && (video.currentTime * 1000 > cue.endMs || video.currentTime * 1000 < cue.startMs)) {
-      video.currentTime = cue.startMs / 1000;
+    const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue);
+    if (loopJump !== null) {
+      video.currentTime = loopJump / 1000;
     }
   });
   video.addEventListener('loadedmetadata', () => {
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
+    video.playbackRate = model.player.playbackRate;
+    if (model.player.isPlaying) {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => undefined);
+      }
+    }
+  });
+  video.addEventListener('play', () => {
+    model.player.isPlaying = true;
+  });
+  video.addEventListener('pause', () => {
+    model.player.isPlaying = false;
   });
   stage.appendChild(video);
 
@@ -165,6 +194,10 @@ function renderVideoStage(model: AppModel): HTMLElement {
   overlay.setAttribute('aria-atomic', 'true');
   stage.appendChild(overlay);
   (stage as any).__overlay = overlay;
+
+  // Initial overlay update after render tick.
+  const initialCue = activeCueAtTime(model.cues, model.player.currentTimeMs);
+  updateOverlay(stage, model, initialCue);
 
   if (!model.currentMedia) {
     const placeholder = document.createElement('div');
@@ -189,7 +222,9 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   target.textContent = cue.text;
   overlay.appendChild(target);
 
-  const nativeText = nativeTextForCue(model, cue);
+  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+  const nativeText = nativeTextForCue(cue, nativeTrack, nativeCues);
   if (nativeText) {
     const native = document.createElement('div');
     native.className = 'subtitle-native';
@@ -198,31 +233,85 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   }
 }
 
-function nativeTextForCue(model: AppModel, cue: Cue): string | undefined {
-  if (!model.nativeTrackId) return undefined;
-  const nativeCues = model.store.listCuesForTrack(model.nativeTrackId);
-  return nativeCues.find((nc: Cue) => nc.startMs <= cue.startMs + 200 && nc.endMs >= cue.endMs - 200)?.text;
-}
-
 function renderPlayerControls(model: AppModel): HTMLElement {
   const controls = document.createElement('div');
   controls.className = 'player-controls';
+
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
 
   const playBtn = document.createElement('button');
   playBtn.textContent = model.player.isPlaying ? 'Pause' : 'Play';
   playBtn.setAttribute('aria-label', model.player.isPlaying ? 'Pause video' : 'Play video');
   playBtn.addEventListener('click', () => {
-    model.player.isPlaying = !model.player.isPlaying;
+    togglePlay(model);
+    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (video) {
+      if (model.player.isPlaying) {
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => undefined);
+        }
+      } else {
+        video.pause();
+      }
+    }
     rerenderApp(model);
   });
   controls.appendChild(playBtn);
+
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = 'Prev cue';
+  prevBtn.setAttribute('aria-label', 'Go to previous cue');
+  const currentCueForNav = activeCueAtTime(model.cues, model.player.currentTimeMs);
+  const hasPrev = currentCueForNav ? previousCue(model.cues, currentCueForNav.id) !== null : model.cues.length > 0;
+  prevBtn.disabled = !hasPrev;
+  prevBtn.addEventListener('click', () => {
+    const cue = currentCueForNav ? previousCue(model.cues, currentCueForNav.id) ?? model.cues[0] : model.cues[0];
+    if (cue) {
+      seekToCue(model, cue);
+      if (video) {
+        video.currentTime = cue.startMs / 1000;
+        if (model.player.isPlaying) {
+          const playPromise = video.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => undefined);
+          }
+        }
+      }
+      rerenderApp(model);
+    }
+  });
+  controls.appendChild(prevBtn);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = 'Next cue';
+  nextBtn.setAttribute('aria-label', 'Go to next cue');
+  const hasNext = currentCueForNav ? nextCue(model.cues, currentCueForNav.id) !== null : model.cues.length > 1;
+  nextBtn.disabled = !hasNext;
+  nextBtn.addEventListener('click', () => {
+    const cue = currentCueForNav ? nextCue(model.cues, currentCueForNav.id) ?? model.cues[model.cues.length - 1] : model.cues[0];
+    if (cue) {
+      seekToCue(model, cue);
+      if (video) {
+        video.currentTime = cue.startMs / 1000;
+        if (model.player.isPlaying) {
+          const playPromise = video.play();
+          if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => undefined);
+          }
+        }
+      }
+      rerenderApp(model);
+    }
+  });
+  controls.appendChild(nextBtn);
 
   const loopBtn = document.createElement('button');
   loopBtn.textContent = model.player.loopCue ? 'Loop on' : 'Loop off';
   loopBtn.setAttribute('aria-label', model.player.loopCue ? 'Turn cue loop off' : 'Turn cue loop on');
   loopBtn.setAttribute('aria-pressed', String(model.player.loopCue));
   loopBtn.addEventListener('click', () => {
-    model.player.loopCue = !model.player.loopCue;
+    toggleLoopCue(model);
     rerenderApp(model);
   });
   controls.appendChild(loopBtn);
@@ -231,13 +320,18 @@ function renderPlayerControls(model: AppModel): HTMLElement {
   speedLabel.textContent = 'Speed';
   const speedInput = document.createElement('input');
   speedInput.type = 'range';
-  speedInput.min = '0.5';
-  speedInput.max = '1.5';
-  speedInput.step = '0.1';
+  speedInput.min = String(MIN_PLAYBACK_RATE);
+  speedInput.max = String(MAX_PLAYBACK_RATE);
+  speedInput.step = String(PLAYBACK_RATE_STEP);
   speedInput.value = String(model.player.playbackRate);
   speedInput.setAttribute('aria-label', 'Playback speed');
   speedInput.addEventListener('input', (e) => {
-    model.player.playbackRate = Number((e.target as HTMLInputElement).value);
+    const rate = Number((e.target as HTMLInputElement).value);
+    setPlaybackRate(model, rate);
+    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (video) {
+      video.playbackRate = model.player.playbackRate;
+    }
   });
   speedLabel.appendChild(speedInput);
   controls.appendChild(speedLabel);
@@ -304,13 +398,21 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     target.textContent = cue.text;
     row.appendChild(target);
 
-    const nativeText = nativeTextForCue(model, cue);
+    const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+    const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+    const nativeText = nativeTextForCue(cue, nativeTrack, nativeCues);
     if (nativeText) {
       const native = document.createElement('div');
       native.className = 'cue-native';
       native.textContent = nativeText;
       row.appendChild(native);
     }
+
+    const context = document.createElement('div');
+    context.className = 'cue-context';
+    context.setAttribute('aria-hidden', 'true');
+    context.textContent = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${model.currentMedia?.originalPath ?? 'no media'}`;
+    row.appendChild(context);
 
     const actions = document.createElement('div');
     actions.className = 'cue-actions';
@@ -339,12 +441,14 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     row.appendChild(actions);
 
     const seek = () => {
-      model.player.currentTimeMs = cue.startMs;
-      model.player.activeCueId = cue.id;
+      seekToCue(model, cue);
       const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
       if (video) {
         video.currentTime = cue.startMs / 1000;
-        void video.play().catch(() => undefined);
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(() => undefined);
+        }
       }
       rerenderApp(model);
     };

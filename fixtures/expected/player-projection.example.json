@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "lingotorte.player-projection.v1",
+  "mediaId": "media.synthetic-polish-dialogue",
+  "targetTrackId": "track.synthetic-polish-dialogue.pl",
+  "nativeTrackId": "track.synthetic-polish-dialogue.en",
+  "toleranceMs": 100,
+  "speedRates": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+  "cues": [
+    {
+      "cueId": "cue.pl.0001",
+      "startMs": 0,
+      "endMs": 1000,
+      "targetText": "Cześć, to jest lokalny test.",
+      "nativeText": "Hello, this is a local test."
+    },
+    {
+      "cueId": "cue.pl.0002",
+      "startMs": 1000,
+      "endMs": 2000,
+      "targetText": "Uczymy się z własnych napisów.",
+      "nativeText": "We study from our own subtitles."
+    }
+  ]
+}

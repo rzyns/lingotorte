@@ -9,7 +9,9 @@ These fixtures are synthetic and were created for the P0 local-first skeleton. T
 - `subtitles/synthetic-polish-dialogue.native.srt` — synthetic English native-language cues authored for this repo.
 - `subtitles/malformed.srt` — intentionally invalid synthetic subtitle input for later failure tests.
 - `subtitles/overlap.target.srt` — intentionally overlapping synthetic cues for later alignment/import tests.
+- `subtitles/synthetic-polish-dialogue.target-only.srt` — synthetic target-only subtitle fixture for testing missing-native graceful degradation.
 - `transcripts/synthetic-polish-dialogue.transcript.json` — deterministic transcript metadata derived from the synthetic cues.
+- `expected/player-projection.example.json` — documented playback projection expectation for P2 dual-subtitle/transcript behavior.
 - `manifest.json` — local fixture catalog with SHA-256 hashes and provenance labels.
 
 ## Boundary
