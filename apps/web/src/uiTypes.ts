@@ -31,6 +31,7 @@ export type Selection = {
 export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
   savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
+  reviewService: import('@lingotorte/review').ReviewService;
   providerPolicy: ReturnType<typeof import('@lingotorte/domain').defaultProviderPolicy>;
   adapters: ReturnType<typeof import('@lingotorte/language').resolveLocalAdapters>;
   player: PlayerState;
@@ -45,6 +46,25 @@ export type AppModel = {
   view: ViewName;
   savedViewTab?: 'vocab' | 'sentences';
   transcriptQuery: string;
+  review: {
+    currentCardId: string | null;
+    activeCardId: string | null;
+    revealed: boolean;
+    bucketAsOf: Date;
+  };
+};
+
+export type ReviewBucketName = 'newCards' | 'learning' | 'review' | 'relearning' | 'mastered';
+
+export type ReviewBucketConfig = Readonly<{
+  // A card is displayed in the mastered bucket when its scheduled interval in
+  // days is at least this threshold. This is a UI projection only; the FSRS
+  // card core state is unchanged and recomputable from review events.
+  masteredIntervalDays: number;
+}>;
+
+export const defaultReviewBucketConfig: ReviewBucketConfig = {
+  masteredIntervalDays: 21,
 };
 
 export type TranscriptCueViewModel = Readonly<{
@@ -61,6 +81,21 @@ export type SavedItemViewModel = Readonly<{
   item: SavedItem;
   occurrences: SavedOccurrence[];
   onReview: () => void;
+}>;
+
+export type ReviewCardViewModel = Readonly<{
+  cardId: string;
+  savedItem: SavedItem;
+  occurrence: SavedOccurrence;
+  stateLabel: 'new' | 'learning' | 'review' | 'relearning';
+  dueAt: Date;
+  promptTemplate: string;
+  displayText: string;
+  meaningHint?: string;
+  sourceCue: Cue | null;
+  sourceNativeText: string | undefined;
+  onRate: (rating: 'again' | 'hard' | 'good' | 'easy') => void;
+  onReplay: () => void;
 }>;
 
 export function formatTimeMs(ms: number): string {

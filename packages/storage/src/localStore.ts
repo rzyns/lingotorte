@@ -126,6 +126,14 @@ export class LocalStore {
     return this.state.savedItems[id];
   }
 
+  getSavedOccurrence(id: UUID): SavedOccurrence | undefined {
+    return this.state.savedOccurrences[id];
+  }
+
+  listSavedOccurrences(): SavedOccurrence[] {
+    return Object.values(this.state.savedOccurrences);
+  }
+
   putSavedOccurrence(occurrence: SavedOccurrence): LocalStoreSnapshot {
     this.state.savedOccurrences[occurrence.id] = occurrence;
     return this.clone();

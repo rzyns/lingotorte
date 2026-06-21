@@ -1,5 +1,5 @@
 import type { AppModel, ViewName } from './uiTypes';
-import type { Cue, SavedItem, ReviewCard } from '@lingotorte/domain';
+import type { Cue, SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from './uiTypes';
 import {
   activeCueAtTime,
@@ -7,25 +7,29 @@ import {
   clearSelection,
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
+  listReviewBuckets,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
   nativeTextForCue,
   nextCue,
+  pickNextDueCard,
   PLAYBACK_RATE_STEP,
   previousCue,
-  recordReviewEvent,
   saveSelection,
   saveSentenceFromCue,
+  saveSelectedPhraseFromCue,
   seekToCue,
   setPlaybackRate,
   setPendingMeaning,
   setPendingNotes,
+  setReviewBucketAsOf,
   setTranscriptQuery,
   setView,
+  submitReviewRating,
   toggleLoopCue,
   togglePlay,
+  toggleReviewReveal,
   tokenizeCueText,
-  saveSelectedPhraseFromCue,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -763,6 +767,8 @@ function renderSavedView(model: AppModel): HTMLElement {
       if (occurrence) {
         createReviewCardForSavedItem(model, item, occurrence, 'recognition');
         setView(model, 'review');
+        setReviewBucketAsOf(model, new Date());
+        model.review.activeCardId = null;
         rerenderApp(model);
       }
     });
@@ -781,59 +787,185 @@ function renderReviewView(model: AppModel): HTMLElement {
   h2.textContent = 'Review';
   section.appendChild(h2);
 
-  const cards = Object.values(model.store.snapshot().reviewCards) as ReviewCard[];
-  if (cards.length === 0) {
+  const buckets = listReviewBuckets(model, model.review.bucketAsOf);
+  const counts = {
+    newCards: buckets.newCards.length,
+    learning: buckets.learning.length,
+    review: buckets.review.length,
+    relearning: buckets.relearning.length,
+    mastered: buckets.mastered.length,
+  };
+
+  section.appendChild(renderBucketTabs(model, counts));
+
+  const activeCardId = model.review.activeCardId;
+  let active = activeCardId
+    ? [...buckets.newCards, ...buckets.learning, ...buckets.review, ...buckets.relearning, ...buckets.mastered].find(
+        (cs) => cs.card.id === activeCardId,
+      )
+    : null;
+
+  if (!active) {
+    active = pickNextDueCard(model, model.review.bucketAsOf);
+    if (active) {
+      model.review.activeCardId = active.card.id;
+    }
+  }
+
+  if (!active) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No review cards yet. Create one from a saved item.';
+    empty.textContent = counts.mastered > 0
+      ? 'No cards due right now. Mastered cards are hidden until their next review.'
+      : 'No cards ready for review.';
     section.appendChild(empty);
     return section;
   }
 
-  const current = cards[0];
-  if (!current) {
-    const empty = document.createElement('p');
-    empty.className = 'empty-state';
-    empty.textContent = 'No cards ready for review.';
-    section.appendChild(empty);
-    return section;
-  }
+  const { card, savedItem, occurrence, state } = active;
+  const currentCue = model.store.getCue(occurrence.cueId);
+  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+  const nativeText = currentCue ? nativeTextForCue(currentCue, nativeTrack, nativeCues) : undefined;
 
-  const item = model.store.getSavedItem(current.savedItemId);
   const prompt = document.createElement('div');
   prompt.className = 'review-prompt';
   prompt.setAttribute('role', 'alert');
   prompt.setAttribute('aria-live', 'polite');
-  prompt.textContent = current.promptTemplate;
+  prompt.textContent = card.promptTemplate;
   section.appendChild(prompt);
 
-  if (item?.meaning) {
-    const hint = document.createElement('p');
-    hint.style.textAlign = 'center';
-    hint.textContent = `Meaning hint: ${item.meaning}`;
-    section.appendChild(hint);
+  if (model.review.revealed) {
+    const reveal = document.createElement('div');
+    reveal.className = 'review-reveal';
+
+    const targetLine = document.createElement('p');
+    targetLine.className = 'review-target';
+    targetLine.textContent = savedItem.displayText;
+    reveal.appendChild(targetLine);
+
+    if (savedItem.meaning) {
+      const meaning = document.createElement('p');
+      meaning.className = 'review-meaning';
+      meaning.textContent = `Meaning: ${savedItem.meaning}`;
+      reveal.appendChild(meaning);
+    }
+
+    if (currentCue) {
+      const context = document.createElement('div');
+      context.className = 'review-context';
+      const time = document.createElement('p');
+      time.className = 'meta';
+      time.textContent = `Source: ${formatTimeMs(currentCue.startMs)} – ${formatTimeMs(currentCue.endMs)}`;
+      context.appendChild(time);
+      const targetContext = document.createElement('p');
+      targetContext.className = 'review-target-context';
+      targetContext.textContent = currentCue.text;
+      context.appendChild(targetContext);
+      if (nativeText) {
+        const nativeContext = document.createElement('p');
+        nativeContext.className = 'review-native-context';
+        nativeContext.textContent = nativeText;
+        context.appendChild(nativeContext);
+      }
+      const sourceNote = document.createElement('p');
+      sourceNote.className = 'meta';
+      sourceNote.textContent = `Media: ${occurrence.sourceContext.mediaPath}`;
+      context.appendChild(sourceNote);
+      reveal.appendChild(context);
+    }
+    section.appendChild(reveal);
   }
 
-  const buttons = document.createElement('div');
-  buttons.className = 'review-buttons';
-  for (const rating of ['again', 'hard', 'good', 'easy'] as const) {
-    const btn = document.createElement('button');
-    btn.className = rating;
-    btn.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
-    btn.addEventListener('click', () => {
-      recordReviewEvent(model, current, rating);
-      rerenderApp(model);
-    });
-    buttons.appendChild(btn);
+  const controls = document.createElement('div');
+  controls.className = 'review-controls';
+
+  const revealBtn = document.createElement('button');
+  revealBtn.className = 'btn-secondary';
+  revealBtn.textContent = model.review.revealed ? 'Hide answer' : 'Show answer / context';
+  revealBtn.addEventListener('click', () => {
+    toggleReviewReveal(model);
+    rerenderApp(model);
+  });
+  controls.appendChild(revealBtn);
+
+  const replayBtn = document.createElement('button');
+  replayBtn.className = 'btn-secondary';
+  replayBtn.textContent = 'Replay source cue';
+  replayBtn.setAttribute('aria-label', 'Jump back to the source cue in the player');
+  replayBtn.disabled = !currentCue;
+  replayBtn.addEventListener('click', () => {
+    if (!currentCue) return;
+    setView(model, 'player');
+    model.player.currentTimeMs = currentCue.startMs;
+    model.player.activeCueId = currentCue.id;
+    model.player.isPlaying = false;
+    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (video) {
+      video.currentTime = currentCue.startMs / 1000;
+    }
+    rerenderApp(model);
+  });
+  controls.appendChild(replayBtn);
+  section.appendChild(controls);
+
+  if (model.review.revealed) {
+    const buttons = document.createElement('div');
+    buttons.className = 'review-buttons';
+    buttons.setAttribute('role', 'group');
+    buttons.setAttribute('aria-label', 'Rate your recall');
+    for (const rating of ['again', 'hard', 'good', 'easy'] as const) {
+      const btn = document.createElement('button');
+      btn.className = rating;
+      btn.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
+      btn.setAttribute('aria-label', `Rate ${rating}`);
+      btn.addEventListener('click', () => {
+        submitReviewRating(model, card.id, rating, model.review.bucketAsOf);
+        model.review.activeCardId = null;
+        rerenderApp(model);
+      });
+      buttons.appendChild(btn);
+    }
+    section.appendChild(buttons);
   }
-  section.appendChild(buttons);
 
   const stats = document.createElement('p');
   stats.className = 'meta';
-  stats.textContent = `${cards.length} card${cards.length === 1 ? '' : 's'} in local deck`;
+  const totalCards = Object.keys(model.store.snapshot().reviewCards).length;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck • state: ${state.state} • due: ${formatTimeMs(new Date(state.dueAt).valueOf())}`;
   section.appendChild(stats);
 
   return section;
+}
+
+function renderBucketTabs(
+  _model: AppModel,
+  counts: Record<'newCards' | 'learning' | 'review' | 'relearning' | 'mastered', number>,
+): HTMLElement {
+  const tabs = document.createElement('div');
+  tabs.className = 'review-buckets';
+  tabs.setAttribute('role', 'region');
+  tabs.setAttribute('aria-label', 'Review bucket counts');
+  const buckets: { id: keyof typeof counts; label: string }[] = [
+    { id: 'newCards', label: 'New' },
+    { id: 'learning', label: 'Learning' },
+    { id: 'review', label: 'Review' },
+    { id: 'relearning', label: 'Relearning' },
+    { id: 'mastered', label: 'Mastered' },
+  ];
+  for (const bucket of buckets) {
+    const chip = document.createElement('div');
+    chip.className = 'bucket-chip';
+    const label = document.createElement('span');
+    label.className = 'bucket-label';
+    label.textContent = bucket.label;
+    const count = document.createElement('span');
+    count.className = 'bucket-count';
+    count.textContent = String(counts[bucket.id]);
+    chip.append(label, count);
+    tabs.appendChild(chip);
+  }
+  return tabs;
 }
 
 function renderSettingsView(model: AppModel): HTMLElement {

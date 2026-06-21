@@ -1,10 +1,11 @@
 import { LocalStore, SavedOccurrenceService } from '@lingotorte/storage';
-import { defaultProviderPolicy, isoNow, makeReviewCard, makeReviewCardState, makeReviewEvent } from '@lingotorte/domain';
+import { defaultProviderPolicy, isoNow, makeReviewEvent } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { importSubtitle } from '@lingotorte/subtitles';
-import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack } from '@lingotorte/domain';
-import type { AppModel, PlayerState } from './uiTypes';
-import { buildSourceContext } from './uiTypes';
+import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
+import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating } from '@lingotorte/domain';
+import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
+import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
 
 export const CUE_SYNC_TOLERANCE_MS = 100;
 export const MIN_PLAYBACK_RATE = 0.5;
@@ -17,6 +18,7 @@ export function createAppModel(): AppModel {
   return {
     store,
     savedOccurrenceService: new SavedOccurrenceService(store),
+    reviewService: new ReviewService(store, defaultFsrsConfig()),
     providerPolicy: policy,
     adapters: resolveLocalAdapters(policy, 'pl'),
     player: {
@@ -37,6 +39,12 @@ export function createAppModel(): AppModel {
     pendingNotes: '',
     view: 'player',
     transcriptQuery: '',
+    review: {
+      currentCardId: null,
+      activeCardId: null,
+      revealed: false,
+      bucketAsOf: new Date(),
+    },
   };
 }
 
@@ -291,16 +299,64 @@ export function createReviewCardForSavedItem(
   occurrence: SavedOccurrence,
   cardType: 'recognition' | 'production' = 'recognition',
 ): ReviewCard {
-  const card = makeReviewCard({
-    savedItemId: item.id,
-    savedOccurrenceId: occurrence.id,
+  return model.reviewService.createCard({
+    savedItem: item,
+    savedOccurrence: occurrence,
     cardType,
     promptTemplate: cardType === 'recognition' ? `Recognize: ${item.displayText}` : `Produce: ${item.meaning ?? item.displayText}`,
-  });
-  const initialState = makeReviewCardState({ cardId: card.id, fsrsVersion: 'local-placeholder' });
-  model.store.putReviewCard(card);
-  model.store.putReviewCardState(initialState);
-  return card;
+  }).card;
+}
+
+export function listReviewBuckets(model: AppModel, asOf: Date, bucketConfig?: ReviewBucketConfig): {
+  newCards: { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence }[];
+  learning: { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence }[];
+  review: { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence }[];
+  relearning: { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence }[];
+  mastered: { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence }[];
+} {
+  const config = bucketConfig ?? defaultReviewBucketConfig;
+  const base = model.reviewService.listBuckets(asOf);
+  const enrich = (cs: { card: ReviewCard; state: ReviewCardState }[]) =>
+    cs
+      .map((cs) => {
+        const savedItem = model.store.getSavedItem(cs.card.savedItemId);
+        const occurrence = model.store.getSavedOccurrence(cs.card.savedOccurrenceId);
+        if (!savedItem || !occurrence) return null;
+        return { card: cs.card, state: cs.state, savedItem, occurrence };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const isMastered = (state: ReviewCardState) => state.scheduledDays >= config.masteredIntervalDays;
+
+  return {
+    newCards: enrich(base.newCards),
+    learning: enrich(base.learning).filter((cs) => !isMastered(cs.state)),
+    review: enrich(base.review).filter((cs) => !isMastered(cs.state)),
+    relearning: enrich(base.relearning).filter((cs) => !isMastered(cs.state)),
+    mastered: enrich([...base.newCards, ...base.learning, ...base.review, ...base.relearning]).filter((cs) => isMastered(cs.state)),
+  };
+}
+
+export function projectReviewBucketCounts(model: AppModel, asOf: Date): Record<'newCards' | 'learning' | 'review' | 'relearning' | 'mastered', number> {
+  const buckets = listReviewBuckets(model, asOf);
+  return {
+    newCards: buckets.newCards.length,
+    learning: buckets.learning.length,
+    review: buckets.review.length,
+    relearning: buckets.relearning.length,
+    mastered: buckets.mastered.length,
+  };
+}
+
+export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence } | null {
+  const buckets = listReviewBuckets(model, asOf);
+  const candidates = [...buckets.newCards, ...buckets.learning, ...buckets.relearning, ...buckets.review];
+  return candidates[0] ?? null;
+}
+
+export function submitReviewRating(model: AppModel, cardId: string, rating: Rating, reviewedAt: Date): ReviewCardState {
+  const { state } = model.reviewService.submitReview(cardId, rating, reviewedAt);
+  return state;
 }
 
 export type TokenInfo = { tokenIndex: number; charStart: number; charEnd: number; surface: string };
@@ -365,4 +421,17 @@ export function setPendingMeaning(model: AppModel, value: string): void {
 
 export function setPendingNotes(model: AppModel, value: string): void {
   model.pendingNotes = value;
+}
+
+export function activateReviewCard(model: AppModel, cardId: string | null): void {
+  model.review.activeCardId = cardId;
+  model.review.revealed = false;
+}
+
+export function toggleReviewReveal(model: AppModel): void {
+  model.review.revealed = !model.review.revealed;
+}
+
+export function setReviewBucketAsOf(model: AppModel, asOf: Date): void {
+  model.review.bucketAsOf = asOf;
 }
