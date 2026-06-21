@@ -15,6 +15,31 @@ export function requireString(record: Record<string, unknown>, key: string): str
   return value;
 }
 
+export function requireOptionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') {
+    throw new TypeError(`${key} must be a string or undefined`);
+  }
+  return value;
+}
+
+export function requireBoolean(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${key} must be a boolean`);
+  }
+  return value;
+}
+
+export function requireInSet<T extends string>(record: Record<string, unknown>, key: string, values: readonly T[]): T {
+  const value = requireString(record, key);
+  if (!values.includes(value as T)) {
+    throw new TypeError(`${key} must be one of ${values.join(', ')}`);
+  }
+  return value as T;
+}
+
 export function requireNumber(record: Record<string, unknown>, key: string): number {
   const value = record[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {

@@ -4,6 +4,7 @@ import type {
   ImportJobEvent,
   MediaAsset,
   MediaFileObservation,
+  PracticeAttempt,
   ReviewCard,
   ReviewCardState,
   ReviewEvent,
@@ -26,6 +27,7 @@ export type LocalStoreSnapshot = Readonly<{
   reviewCards: Record<UUID, ReviewCard>;
   reviewCardStates: Record<UUID, ReviewCardState>;
   reviewEvents: ReviewEvent[];
+  practiceAttempts: PracticeAttempt[];
   importJobs: Record<UUID, ImportJob>;
   importJobEvents: ImportJobEvent[];
 }>;
@@ -41,6 +43,7 @@ export class LocalStore {
     reviewCards: {},
     reviewCardStates: {},
     reviewEvents: [],
+    practiceAttempts: [],
     importJobs: {},
     importJobEvents: [],
   };
@@ -56,6 +59,7 @@ export class LocalStore {
       reviewCards: { ...this.state.reviewCards },
       reviewCardStates: { ...this.state.reviewCardStates },
       reviewEvents: [...this.state.reviewEvents],
+      practiceAttempts: [...this.state.practiceAttempts],
       importJobs: { ...this.state.importJobs },
       importJobEvents: [...this.state.importJobEvents],
     };
@@ -168,6 +172,19 @@ export class LocalStore {
 
   listReviewEventsForCard(cardId: UUID): ReviewEvent[] {
     return this.state.reviewEvents.filter((e) => e.cardId === cardId);
+  }
+
+  addPracticeAttempt(attempt: PracticeAttempt): LocalStoreSnapshot {
+    this.state.practiceAttempts.push(attempt);
+    return this.clone();
+  }
+
+  listPracticeAttempts(): PracticeAttempt[] {
+    return [...this.state.practiceAttempts];
+  }
+
+  listPracticeAttemptsForCard(cardId: UUID): PracticeAttempt[] {
+    return this.state.practiceAttempts.filter((a) => a.cardId === cardId);
   }
 
   putImportJob(job: ImportJob): LocalStoreSnapshot {

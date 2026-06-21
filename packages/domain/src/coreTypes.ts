@@ -31,6 +31,8 @@ export type ProviderKind = 'dictionary' | 'translation' | 'llm' | 'asr' | 'pronu
 export type SavedItemKind = 'lexeme' | 'phrase' | 'sentence';
 export type CardType = 'recognition' | 'production';
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
+export type PracticeMode = 'typed-input' | 'multiple-choice' | 'audio-recall' | 'speaking';
+export type PracticeResult = 'pass' | 'fail' | 'pass-with-hesitation' | 'skipped' | 'abandoned';
 
 export type TimeRangeMs = Readonly<{
   start: number;
@@ -193,6 +195,81 @@ export type ReviewCardState = Readonly<{
   lastReviewedAt?: ISODateTime;
   fsrsVersion: string;
   updatedAt: ISODateTime;
+}>;
+
+export type PracticeAttempt = Readonly<{
+  id: UUID;
+  cardId: UUID;
+  mode: PracticeMode;
+  result: PracticeResult;
+  givenAnswer?: string;
+  expectedAnswer?: string;
+  responseMs?: number;
+  sourceContext: SavedOccurrenceSourceContext;
+  reviewedAt: ISODateTime;
+  createdAt: ISODateTime;
+  eventLink: Readonly<{ reviewEventId?: UUID }>;
+}>;
+
+export type LearnerExportManifest = Readonly<{
+  schemaVersion: 'lingotorte.learner-export.v1';
+  exportedAt: ISODateTime;
+  deviceId?: string;
+  applicationVersion: string;
+  privacyWarnings: readonly PrivacyWarning[];
+  content: LearnerExportContent;
+  integrity: ExportIntegrity;
+}>;
+
+export type PrivacyWarningKind =
+  | 'learner-state-contains-timestamps'
+  | 'learner-state-contains-media-paths'
+  | 'learner-state-contains-content-hashes'
+  | 'restore-overwrites-local-data'
+  | 'export-file-is-unencrypted';
+
+export type PrivacyWarning = Readonly<{
+  kind: PrivacyWarningKind;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+}>;
+
+export type LearnerExportContent = Readonly<{
+  savedItems: readonly SavedItem[];
+  savedOccurrences: readonly SavedOccurrence[];
+  reviewCards: readonly ReviewCard[];
+  reviewCardStates: readonly ReviewCardState[];
+  reviewEvents: readonly ReviewEvent[];
+  practiceAttempts: readonly PracticeAttempt[];
+  sourceContexts: readonly SavedOccurrenceSourceContext[];
+}>;
+
+export type ExportIntegrity = Readonly<{
+  algorithm: 'sha256-per-record';
+  rootHash: Sha256Digest;
+  recordCount: number;
+}>;
+
+export type RestorePreview = Readonly<{
+  manifestSchemaVersion: string;
+  counts: Readonly<{
+    savedItems: number;
+    savedOccurrences: number;
+    reviewCards: number;
+    reviewCardStates: number;
+    reviewEvents: number;
+    practiceAttempts: number;
+    sourceContexts: number;
+  }>;
+  warnings: readonly PrivacyWarning[];
+  safeToRestore: boolean;
+  overwriteConfirmationRequired: boolean;
+}>;
+
+export type RestoreConfirmation = Readonly<{
+  confirmedAt: ISODateTime;
+  confirmOverwrite: boolean;
+  acknowledgedWarnings: readonly PrivacyWarningKind[];
 }>;
 
 export type ReviewEvent = Readonly<{
@@ -405,7 +482,7 @@ export type LookupOutput = Readonly<{
 export type ImportJob = Readonly<{
   id: UUID;
   status: 'pending' | 'running' | 'completed' | 'failed';
-  sourceKind: 'media' | 'subtitle' | 'transcript';
+  sourceKind: 'media' | 'subtitle' | 'transcript' | 'learner-export';
   startedAt: ISODateTime;
   completedAt?: ISODateTime;
   errorCode?: string;

@@ -20,6 +20,7 @@ import {
 export * from './coreTypes';
 export * from './guards';
 export * from './sourceContext';
+export * from './exportManifest';
 export * from './providerPolicy';
 export * from './privacyScan';
 
@@ -134,6 +135,50 @@ export function makeReviewEvent(
     ...input,
     createdAt: isoNow(),
   };
+}
+
+export function makePracticeAttempt(
+  input: Pick<import('./coreTypes').PracticeAttempt, 'cardId' | 'mode' | 'result' | 'sourceContext' | 'reviewedAt'> &
+    Partial<Pick<import('./coreTypes').PracticeAttempt, 'givenAnswer' | 'expectedAnswer' | 'responseMs' | 'eventLink'>>,
+): import('./coreTypes').PracticeAttempt {
+  return {
+    id: uuid(),
+    ...input,
+    eventLink: input.eventLink ?? {},
+    createdAt: isoNow(),
+  };
+}
+
+export function makeLearnerExportManifest(
+  input: Pick<import('./coreTypes').LearnerExportManifest, 'applicationVersion' | 'deviceId' | 'privacyWarnings' | 'content' | 'integrity'> &
+    Partial<Pick<import('./coreTypes').LearnerExportManifest, 'exportedAt'>>,
+): import('./coreTypes').LearnerExportManifest {
+  return {
+    schemaVersion: 'lingotorte.learner-export.v1',
+    exportedAt: input.exportedAt ?? isoNow(),
+    ...input,
+  };
+}
+
+export function makePrivacyWarning(
+  kind: import('./coreTypes').PrivacyWarningKind,
+  severity: import('./coreTypes').PrivacyWarning['severity'],
+  message: string,
+): import('./coreTypes').PrivacyWarning {
+  return { kind, severity, message };
+}
+
+export function makeExportIntegrity(
+  rootHash: import('./coreTypes').Sha256Digest,
+  recordCount: number,
+): import('./coreTypes').ExportIntegrity {
+  return { algorithm: 'sha256-per-record', rootHash, recordCount };
+}
+
+export function makeRestoreConfirmation(
+  input: Pick<import('./coreTypes').RestoreConfirmation, 'confirmedAt' | 'confirmOverwrite' | 'acknowledgedWarnings'>,
+): import('./coreTypes').RestoreConfirmation {
+  return { ...input };
 }
 
 export function makeMediaFileObservation(
