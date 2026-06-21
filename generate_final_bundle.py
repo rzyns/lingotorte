@@ -639,6 +639,6 @@ manifest = {'generated_by':'generate_final_bundle.py','status':'planning-docs-on
 for rel in paths:
     p=root/rel
     txt=p.read_text(encoding='utf-8')
-    manifest['artifacts'].append({'path':str(p),'relative_path':rel,'bytes':p.stat().st_size,'lines':txt.count('\n')+1,'sha256':sha(p)})
+    manifest['artifacts'].append({'path':rel,'relative_path':rel,'bytes':p.stat().st_size,'lines':txt.count('\n')+1,'sha256':sha(p)})
 write('docs/final/artifact-manifest.json', json.dumps(manifest, indent=2))
 print(json.dumps(manifest, indent=2))

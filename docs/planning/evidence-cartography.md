@@ -2,7 +2,7 @@
 
 **Task:** `t_3a3c8051`  
 **Scope:** planning evidence only; this is not an implementation artifact.  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Safety boundary:** no proprietary Lingopie code/assets/private payloads, no DRM bypass, no private endpoint scraping, no cookies/tokens/localStorage dumps, no account mutation, no external side effects.
 
 ## Boundary statement

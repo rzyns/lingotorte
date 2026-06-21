@@ -122,7 +122,7 @@ Narrow recommendation: final synthesis may use these artifacts as a strong draft
 ### MF-7 — Existing live UI evidence and screenshot references need a privacy/durability decision
 
 **Verdict:** NEEDS HUMAN DECISION / must-carry caveat  
-**Evidence:** `README.md` references screenshots outside this workspace (`/home/openclaw/lingopie-cdp-*.png`, lines 23-28). `live-ui-inventory.md` references the same screenshot paths (lines 14-21) and says private examples were omitted (lines 3-6, 183-188). The current review did not inspect those screenshots.
+**Evidence:** `README.md` references screenshots outside this workspace (`<local-home>/lingopie-cdp-*.png`, lines 23-28). `live-ui-inventory.md` references the same screenshot paths (lines 14-21) and says private examples were omitted (lines 3-6, 183-188). The current review did not inspect those screenshots.
 
 **Why this matters:** Final docs may cite screenshots as evidence, but they are outside the workspace, not part of the durable bundle, and may contain visible proprietary UI/account context even if sanitized notes omit private data.
 

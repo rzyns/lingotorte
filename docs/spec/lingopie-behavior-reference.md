@@ -68,10 +68,10 @@ Status: sanitized behavior reference. Lingopie is a reference product only. This
 
 These local screenshot paths were captured during the preliminary investigation:
 
-- Catalog: `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- Show detail/interstitial: `/home/openclaw/lingopie-cdp-show-detail.png`
-- Player after start: `/home/openclaw/lingopie-cdp-player-after-start.png`
-- Practice route: `/home/openclaw/lingopie-cdp-practice-real.png`
+- Catalog: `<local-home>/lingopie-cdp-catalog-polish.png`
+- Show detail/interstitial: `<local-home>/lingopie-cdp-show-detail.png`
+- Player after start: `<local-home>/lingopie-cdp-player-after-start.png`
+- Practice route: `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Catalog route inventory
 

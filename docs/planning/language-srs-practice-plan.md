@@ -1,6 +1,6 @@
 # Language Analysis, Saved Learning Objects, SRS, and Practice Plan
 
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Task:** plan language analysis, SRS, and practice mechanics; do not implement.  
 **Status:** planning artifact.  
 **Scope:** local/private Lingotorte app for owned media and explicit subtitles/transcripts.  

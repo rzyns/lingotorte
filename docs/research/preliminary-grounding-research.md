@@ -1,7 +1,7 @@
 # Preliminary Grounding Research — Lingopie-like Local App
 
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
-**Source artifact:** `/home/openclaw/lingopie-local-clone-investigation.md`  
+**Workspace:** `<local-workspace>/lingotorte`
+**Source artifact:** `<local-home>/lingopie-local-clone-investigation.md`
 **Captured through:** 2026-06-19T15:42:20-04:00  
 **Scope:** preliminary grounding for a future `hermes-war-room` deep-dive mission.
 

@@ -1,13 +1,13 @@
 # V1 local acceptance baseline
 
-Status: V1 local-only acceptance note for the reviewed P6 implementation baseline. Detailed command output, screenshots, checksums, and final branch commit are recorded in the external acceptance packet under `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/`.
+Status: V1 local-only acceptance note for the reviewed P6 implementation baseline. Detailed command output, screenshots, checksums, and final branch commit are recorded in the external acceptance packet under `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/`.
 
 ## Baseline
 
 - Baseline branch: local `main`
 - Baseline commit: `ac8ca31eb79a77a3eb1cf9cca023dccdb9cf8855`
 - V1 stabilization branch: `lingotorte/v1-local-stabilization`
-- Intended worktree: `/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization`
+- Intended worktree: `<local-worktrees>/lingotorte-v1-local-stabilization`
 
 This baseline is still local/private. It is not a push, PR, release, deployment, provider enablement, AnkiConnect/cloud-sync enablement, live Lingopie inspection, public sharing, or destructive-cleanup approval.
 
@@ -47,12 +47,12 @@ Run the full matrix from the V1 worktree before treating the branch as merge-rea
 
 The latest all-green resumed validation run is recorded outside the repo at:
 
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/resume-final-validation-summary.json`
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/command-results.md`
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/acceptance-packet.md`
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/browser-smoke-report.md`
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/cleanup-triage.md`
-- `/home/openclaw/.hermes/artifacts/lingotorte/v1-local-stabilization/artifact-checksums.sha256`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/resume-final-validation-summary.json`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/command-results.md`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/acceptance-packet.md`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/browser-smoke-report.md`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/cleanup-triage.md`
+- `<local-hermes-artifacts>/lingotorte/v1-local-stabilization/artifact-checksums.sha256`
 
 That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run test:no-network`, `npm run test:web`, `npm run build`, `npm run typecheck`, `npm run scan:privacy`, `git diff --check`, a refined credential-pattern scan, generated-artifact cleanup, `python3 validate_final_bundle.py`, and external artifact checksum verification.
 

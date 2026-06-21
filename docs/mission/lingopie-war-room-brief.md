@@ -1,7 +1,7 @@
 # Lingopie/Lingotorte Deep-Dive Mission Brief
 
 **Prepared for:** `hermes-war-room` fleet orchestration  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Preliminary evidence captured through:** 2026-06-19T15:42:20-04:00  
 **Primary goal:** turn preliminary Lingopie reference-product research into a rigorous local-first product/architecture plan for Lingotorte.
 

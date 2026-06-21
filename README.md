@@ -58,14 +58,14 @@ Recommended final-bundle reading order:
 
 This bundle is based on the prior investigation artifact:
 
-- `/home/openclaw/lingopie-local-clone-investigation.md`
+- `<local-home>/lingopie-local-clone-investigation.md`
 
 Screenshots captured during the live UI inspection remain as local evidence files outside this workspace:
 
-- `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- `/home/openclaw/lingopie-cdp-show-detail.png`
-- `/home/openclaw/lingopie-cdp-player-after-start.png`
-- `/home/openclaw/lingopie-cdp-practice-real.png`
+- `<local-home>/lingopie-cdp-catalog-polish.png`
+- `<local-home>/lingopie-cdp-show-detail.png`
+- `<local-home>/lingopie-cdp-player-after-start.png`
+- `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Boundary reminder
 

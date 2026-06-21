@@ -1,9 +1,9 @@
 # Hermes War Room Mission Statement — Lingotorte
 
 **Use:** Paste the “Pasteable mission statement” section into the `hermes-war-room` Chat tab for the chosen orchestrator, then review the generated triage panel and click **Launch as triage** if it preserves the scope.  
-**Target workspace:** `/home/openclaw/workspace/lingotorte`  
+**Target workspace:** `<local-workspace>/lingotorte`
 **Desired result:** a fully fleshed-out implementation plan and attendant documentation for creating a local/private Lingopie-like app for owned/local videos and subtitles.  
-**Prepared after reviewing:** `/home/openclaw/hermes-war-room/README.md`, `server/utils/mission-turn.ts`, and `server/utils/triage.ts`.
+**Prepared after reviewing:** `<local-reference>/hermes-war-room/README.md`, `server/utils/mission-turn.ts`, and `server/utils/triage.ts`.
 
 ## Why this is shaped this way
 
@@ -24,17 +24,17 @@ This is a **planning/documentation mission**, not an app implementation mission.
 All durable outputs must be written under:
 
 ```text
-/home/openclaw/workspace/lingotorte
+<local-workspace>/lingotorte
 ```
 
 Before doing substantive work, read these files in order:
 
-1. `/home/openclaw/workspace/lingotorte/AGENTS.md`
-2. `/home/openclaw/workspace/lingotorte/README.md`
-3. `/home/openclaw/workspace/lingotorte/docs/mission/hermes-war-room-mission-statement.md`
-4. `/home/openclaw/workspace/lingotorte/docs/mission/lingopie-war-room-brief.md`
-5. `/home/openclaw/workspace/lingotorte/docs/research/preliminary-grounding-research.md`
-6. `/home/openclaw/workspace/lingotorte/docs/research/live-ui-inventory.md`
+1. `<local-workspace>/lingotorte/AGENTS.md`
+2. `<local-workspace>/lingotorte/README.md`
+3. `<local-workspace>/lingotorte/docs/mission/hermes-war-room-mission-statement.md`
+4. `<local-workspace>/lingotorte/docs/mission/lingopie-war-room-brief.md`
+5. `<local-workspace>/lingotorte/docs/research/preliminary-grounding-research.md`
+6. `<local-workspace>/lingotorte/docs/research/live-ui-inventory.md`
 
 Use the existing preliminary research as grounding, but do not treat it as complete. Validate, expand, challenge, and refine it.
 

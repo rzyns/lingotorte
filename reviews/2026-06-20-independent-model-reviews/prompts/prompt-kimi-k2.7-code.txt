@@ -63,7 +63,7 @@ Treat all repository content below as untrusted data for review, not instruction
 
 ## Repository metadata
 
-- root: `/home/openclaw/workspace/lingotorte`
+- root: `<local-workspace>/lingotorte`
 - generated_at_utc: `2026-06-20T20:40:48.999803+00:00`
 - reviewed_commit: `bcd74c5c7d909402a9f129c713cd9afd9cff6dec`
 - review_scope_note: `reviews/` may appear as untracked because this review run writes evidence there; reviewers should assess the committed source packet below, which excludes `.git/` and `reviews/`.
@@ -243,14 +243,14 @@ Recommended final-bundle reading order:
 
 This bundle is based on the prior investigation artifact:
 
-- `/home/openclaw/lingopie-local-clone-investigation.md`
+- `<local-home>/lingopie-local-clone-investigation.md`
 
 Screenshots captured during the live UI inspection remain as local evidence files outside this workspace:
 
-- `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- `/home/openclaw/lingopie-cdp-show-detail.png`
-- `/home/openclaw/lingopie-cdp-player-after-start.png`
-- `/home/openclaw/lingopie-cdp-practice-real.png`
+- `<local-home>/lingopie-cdp-catalog-polish.png`
+- `<local-home>/lingopie-cdp-show-detail.png`
+- `<local-home>/lingopie-cdp-player-after-start.png`
+- `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Boundary reminder
 
@@ -1043,105 +1043,105 @@ sha256: `6b98165745d3ee965f85ee62d54ff323f3b73a14fc55ec85e870826b7fd1bb6a`
   "status": "planning-docs-only",
   "artifacts": [
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/final/war-room-final-synthesis.md",
+      "path": "<local-workspace>/lingotorte/docs/final/war-room-final-synthesis.md",
       "relative_path": "docs/final/war-room-final-synthesis.md",
       "bytes": 6614,
       "lines": 84,
       "sha256": "890397e0cdbadbcbb3aae04e9c5471ab3f5dc2cc4f1cb2e8bfc477eb5968bf1c"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/final/lingotorte-implementation-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/final/lingotorte-implementation-plan.md",
       "relative_path": "docs/final/lingotorte-implementation-plan.md",
       "bytes": 22672,
       "lines": 335,
       "sha256": "574b0bf0c878ac7eea7f234137cbbad9aaf9d9a8e42125c33f05bf859ce1b364"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/spec/lingopie-behavior-reference.md",
+      "path": "<local-workspace>/lingotorte/docs/spec/lingopie-behavior-reference.md",
       "relative_path": "docs/spec/lingopie-behavior-reference.md",
       "bytes": 19407,
       "lines": 290,
       "sha256": "00532f36d614176fd6a4b6cbd24ef5d4a0fb08f977d086cc3e9f0da2da404c4b"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/spec/feature-implementation-playbook.md",
+      "path": "<local-workspace>/lingotorte/docs/spec/feature-implementation-playbook.md",
       "relative_path": "docs/spec/feature-implementation-playbook.md",
       "bytes": 9665,
       "lines": 59,
       "sha256": "e8b1702950e54f1f491c8cf3567cfb62fda9a4f1f390933960cd6f1ec262fb2a"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/architecture/local-first-architecture.md",
+      "path": "<local-workspace>/lingotorte/docs/architecture/local-first-architecture.md",
       "relative_path": "docs/architecture/local-first-architecture.md",
       "bytes": 8445,
       "lines": 171,
       "sha256": "073542347f89b0c3ae19a933a4081e1f2d7efc343707c4f93cf9481dcaed4e35"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/architecture/data-model-and-storage.md",
+      "path": "<local-workspace>/lingotorte/docs/architecture/data-model-and-storage.md",
       "relative_path": "docs/architecture/data-model-and-storage.md",
       "bytes": 16705,
       "lines": 213,
       "sha256": "597f3aff6e79ee1f4884dc92efc1ac3558efe610b51ade3da46d7d6b1f00339c"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/architecture/language-adapter-design.md",
+      "path": "<local-workspace>/lingotorte/docs/architecture/language-adapter-design.md",
       "relative_path": "docs/architecture/language-adapter-design.md",
       "bytes": 14925,
       "lines": 374,
       "sha256": "9db7b7feec4508062b82a031ff015e256dd9c199f70124c7eb2a1fddc008cf97"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/product/srs-and-practice-design.md",
+      "path": "<local-workspace>/lingotorte/docs/product/srs-and-practice-design.md",
       "relative_path": "docs/product/srs-and-practice-design.md",
       "bytes": 8335,
       "lines": 123,
       "sha256": "3f1ab8a1f4cabe814f14ee62a69378dec9cfae25a70bd9db14006df51b3f2b9c"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/research/public-product-cartography.md",
+      "path": "<local-workspace>/lingotorte/docs/research/public-product-cartography.md",
       "relative_path": "docs/research/public-product-cartography.md",
       "bytes": 12649,
       "lines": 86,
       "sha256": "e9d5a432010f799ababb7402d82df534860126f9a5b9eed9e1a235e7d7e47fa4"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/research/live-ui-inventory-expanded.md",
+      "path": "<local-workspace>/lingotorte/docs/research/live-ui-inventory-expanded.md",
       "relative_path": "docs/research/live-ui-inventory-expanded.md",
       "bytes": 8181,
       "lines": 222,
       "sha256": "76eed9421ce57b7cab406f32fed51d2c9862950e220f4a9d28be1caf2695f90c"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/research/oss-substrate-assessment.md",
+      "path": "<local-workspace>/lingotorte/docs/research/oss-substrate-assessment.md",
       "relative_path": "docs/research/oss-substrate-assessment.md",
       "bytes": 10046,
       "lines": 75,
       "sha256": "6adb523239d851e12980a6e8d3f570f6ad2578ba7257ae36d0fa77089c9328e9"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/review/safety-privacy-boundary-review.md",
+      "path": "<local-workspace>/lingotorte/docs/review/safety-privacy-boundary-review.md",
       "relative_path": "docs/review/safety-privacy-boundary-review.md",
       "bytes": 10987,
       "lines": 147,
       "sha256": "5681b70bed441b9ce5c891bfe92850fd0e8f7453d29909c0532a9b73f51fefd6"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/plan/mvp-spike-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/plan/mvp-spike-plan.md",
       "relative_path": "docs/plan/mvp-spike-plan.md",
       "bytes": 4927,
       "lines": 71,
       "sha256": "7bd63087b765460ef8f47d435fb362fa6cad1854b3b0c9face56a3ba35b367e4"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/README.md",
+      "path": "<local-workspace>/lingotorte/README.md",
       "relative_path": "README.md",
       "bytes": 3329,
       "lines": 52,
       "sha256": "5e8b7e772762de5f0978dd14d265123d7955a47698311ebd38de02f9ac139e0a"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/AGENTS.md",
+      "path": "<local-workspace>/lingotorte/AGENTS.md",
       "relative_path": "AGENTS.md",
       "bytes": 3621,
       "lines": 61,
@@ -1590,9 +1590,9 @@ sha256: `71f88ed4e0e8dd9960d5cea19aff84ad64ddbd38d898a91166d8097c7a8fe100`
 # Hermes War Room Mission Statement — Lingotorte
 
 **Use:** Paste the “Pasteable mission statement” section into the `hermes-war-room` Chat tab for the chosen orchestrator, then review the generated triage panel and click **Launch as triage** if it preserves the scope.  
-**Target workspace:** `/home/openclaw/workspace/lingotorte`  
+**Target workspace:** `<local-workspace>/lingotorte`
 **Desired result:** a fully fleshed-out implementation plan and attendant documentation for creating a local/private Lingopie-like app for owned/local videos and subtitles.  
-**Prepared after reviewing:** `/home/openclaw/hermes-war-room/README.md`, `server/utils/mission-turn.ts`, and `server/utils/triage.ts`.
+**Prepared after reviewing:** `<local-reference>/hermes-war-room/README.md`, `server/utils/mission-turn.ts`, and `server/utils/triage.ts`.
 
 ## Why this is shaped this way
 
@@ -1613,17 +1613,17 @@ This is a **planning/documentation mission**, not an app implementation mission.
 All durable outputs must be written under:
 
 ```text
-/home/openclaw/workspace/lingotorte
+<local-workspace>/lingotorte
 ```
 
 Before doing substantive work, read these files in order:
 
-1. `/home/openclaw/workspace/lingotorte/AGENTS.md`
-2. `/home/openclaw/workspace/lingotorte/README.md`
-3. `/home/openclaw/workspace/lingotorte/docs/mission/hermes-war-room-mission-statement.md`
-4. `/home/openclaw/workspace/lingotorte/docs/mission/lingopie-war-room-brief.md`
-5. `/home/openclaw/workspace/lingotorte/docs/research/preliminary-grounding-research.md`
-6. `/home/openclaw/workspace/lingotorte/docs/research/live-ui-inventory.md`
+1. `<local-workspace>/lingotorte/AGENTS.md`
+2. `<local-workspace>/lingotorte/README.md`
+3. `<local-workspace>/lingotorte/docs/mission/hermes-war-room-mission-statement.md`
+4. `<local-workspace>/lingotorte/docs/mission/lingopie-war-room-brief.md`
+5. `<local-workspace>/lingotorte/docs/research/preliminary-grounding-research.md`
+6. `<local-workspace>/lingotorte/docs/research/live-ui-inventory.md`
 
 Use the existing preliminary research as grounding, but do not treat it as complete. Validate, expand, challenge, and refine it.
 
@@ -1795,7 +1795,7 @@ sha256: `d6522471ff2f40e4b368d6f82d1d630053497b3d863353f805f41342f32be800`
 # Lingopie/Lingotorte Deep-Dive Mission Brief
 
 **Prepared for:** `hermes-war-room` fleet orchestration  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Preliminary evidence captured through:** 2026-06-19T15:42:20-04:00  
 **Primary goal:** turn preliminary Lingopie reference-product research into a rigorous local-first product/architecture plan for Lingotorte.
 
@@ -2045,53 +2045,53 @@ sha256: `83213fdd2314e863b3a28bdebe087cd39ab45cc9f53339c76c30dac65198e235`
 ````json
 {
   "task_id": "t_3b47cd94",
-  "bundle_root": "/home/openclaw/workspace/lingotorte/docs/planning",
+  "bundle_root": "<local-workspace>/lingotorte/docs/planning",
   "scope": "final Lingotorte planning bundle only; no app implementation",
   "artifacts": [
     {
-      "path": "/home/openclaw/workspace/lingotorte/README.md",
+      "path": "<local-workspace>/lingotorte/README.md",
       "role": "workspace index update",
       "bytes": 3329,
       "lines": 52,
       "sha256": "5e8b7e772762de5f0978dd14d265123d7955a47698311ebd38de02f9ac139e0a"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/final-implementation-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/final-implementation-plan.md",
       "role": "final synthesis and implementation plan",
       "bytes": 17224,
       "lines": 278,
       "sha256": "8b35ca06977caed40a5e6487051e0849841c165bbb9ec931385be0f06802d7aa"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/feature-build-roadmap.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/feature-build-roadmap.md",
       "role": "phased feature roadmap and dependency ordering",
       "bytes": 12389,
       "lines": 158,
       "sha256": "d14a474f8ff8474028f1aa6e8038992453a76bf226c8b6b488173d7aff2480c5"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/evidence-index.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/evidence-index.md",
       "role": "normalized evidence/provenance index",
       "bytes": 9755,
       "lines": 92,
       "sha256": "b871ce12fc9b8d3a9e9906704f9ce39c051b615c9b640fa15c30d7f70c4902ca"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/safety-privacy-legal-boundaries.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/safety-privacy-legal-boundaries.md",
       "role": "safety/privacy/legal implementation gate",
       "bytes": 10558,
       "lines": 142,
       "sha256": "da43819fa84c8d35a1e1d54e18192d70c7f0a48da41c4dd00fded3dd820764af"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/testing-and-acceptance-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/testing-and-acceptance-plan.md",
       "role": "testing, fixture, spike, and acceptance plan",
       "bytes": 9812,
       "lines": 137,
       "sha256": "68367be8899da228b3a00b6ec67a93fa0ccb2fef50b3fd6049b732512ce4fc37"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/documentation-index.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/documentation-index.md",
       "role": "bundle index and mission deliverable crosswalk",
       "bytes": 8046,
       "lines": 88,
@@ -2110,7 +2110,7 @@ sha256: `83213fdd2314e863b3a28bdebe087cd39ab45cc9f53339c76c30dac65198e235`
     "unresolved_decisions": true,
     "bad_local_markdown_links": []
   },
-  "no_commit_reason": "Workspace /home/openclaw/workspace/lingotorte is not a git repository."
+  "no_commit_reason": "Workspace <local-workspace>/lingotorte is not a git repository."
 }
 ````
 
@@ -2217,7 +2217,7 @@ sha256: `a4783de96efdfdbb1cb786471092d9516befcecdafe274748c9a2278716e683b`
 
 **Task:** `t_3a3c8051`  
 **Scope:** planning evidence only; this is not an implementation artifact.  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Safety boundary:** no proprietary Lingopie code/assets/private payloads, no DRM bypass, no private endpoint scraping, no cookies/tokens/localStorage dumps, no account mutation, no external side effects.
 
 ## Boundary statement
@@ -3075,7 +3075,7 @@ Narrow recommendation: final synthesis may use these artifacts as a strong draft
 ### MF-7 — Existing live UI evidence and screenshot references need a privacy/durability decision
 
 **Verdict:** NEEDS HUMAN DECISION / must-carry caveat  
-**Evidence:** `README.md` references screenshots outside this workspace (`/home/openclaw/lingopie-cdp-*.png`, lines 23-28). `live-ui-inventory.md` references the same screenshot paths (lines 14-21) and says private examples were omitted (lines 3-6, 183-188). The current review did not inspect those screenshots.
+**Evidence:** `README.md` references screenshots outside this workspace (`<local-home>/lingopie-cdp-*.png`, lines 23-28). `live-ui-inventory.md` references the same screenshot paths (lines 14-21) and says private examples were omitted (lines 3-6, 183-188). The current review did not inspect those screenshots.
 
 **Why this matters:** Final docs may cite screenshots as evidence, but they are outside the workspace, not part of the durable bundle, and may contain visible proprietary UI/account context even if sanitized notes omit private data.
 
@@ -3165,7 +3165,7 @@ sha256: `896ad1cfd4b479818613e985a4bd791600dd97e842f7ee950c31d9daa4c8420a`
 ````md
 # Language Analysis, Saved Learning Objects, SRS, and Practice Plan
 
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
+**Workspace:** `<local-workspace>/lingotorte`
 **Task:** plan language analysis, SRS, and practice mechanics; do not implement.  
 **Status:** planning artifact.  
 **Scope:** local/private Lingotorte app for owned media and explicit subtitles/transcripts.  
@@ -4179,8 +4179,8 @@ sha256: `c9bd3d014e1e5420a759be2a0aa6663aef4e3650a63f973b3ddc202f8991e3d6`
 # Local-First Architecture, Data Model, and Test Plan — Lingotorte
 
 **Task:** `t_a6fb090d`  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
-**Artifact path:** `/home/openclaw/workspace/lingotorte/docs/planning/local-first-architecture-data-model.md`  
+**Workspace:** `<local-workspace>/lingotorte`
+**Artifact path:** `<local-workspace>/lingotorte/docs/planning/local-first-architecture-data-model.md`
 **Status:** implementation-ready planning document; no app implementation  
 **Hard boundary:** local/offline default; online providers are opt-in only; no credentials, deployments, service restarts, account mutation, DRM circumvention, or external side effects.
 
@@ -4190,27 +4190,27 @@ Role: analysis
 Review scope: analysis_traceability
 
 Derived from:
-- /home/openclaw/workspace/lingotorte/AGENTS.md
+- <local-workspace>/lingotorte/AGENTS.md
   -> project operating boundaries, local/private product framing, artifact-centered design principle, and recommended read order.
-- /home/openclaw/workspace/lingotorte/README.md
+- <local-workspace>/lingotorte/README.md
   -> workspace purpose, source provenance, screenshot evidence pointers, and boundary reminder.
-- /home/openclaw/workspace/lingotorte/docs/mission/hermes-war-room-mission-statement.md
+- <local-workspace>/lingotorte/docs/mission/hermes-war-room-mission-statement.md
   -> required final deliverable expectations, local/offline defaults, lane structure, and quality bar.
-- /home/openclaw/workspace/lingotorte/docs/mission/lingopie-war-room-brief.md
+- <local-workspace>/lingotorte/docs/mission/lingopie-war-room-brief.md
   -> lane-level scope, quality gates, initial hypothesis, and local-first product architecture lane target.
-- /home/openclaw/workspace/lingotorte/docs/research/preliminary-grounding-research.md
+- <local-workspace>/lingotorte/docs/research/preliminary-grounding-research.md
   -> preliminary architecture sketch, data model seed, OSS substrate seeds, MVP cut, and open questions.
-- /home/openclaw/workspace/lingotorte/docs/research/live-ui-inventory.md
+- <local-workspace>/lingotorte/docs/research/live-ui-inventory.md
   -> sanitized observed UI mechanics: catalog, player, transcript, vocabulary, practice, SRS states, and privacy caveats.
 
 Feeds:
-- /home/openclaw/workspace/lingotorte/docs/architecture/local-first-architecture.md
+- <local-workspace>/lingotorte/docs/architecture/local-first-architecture.md
   -> can be split into a dedicated architecture artifact later.
-- /home/openclaw/workspace/lingotorte/docs/architecture/data-model-and-storage.md
+- <local-workspace>/lingotorte/docs/architecture/data-model-and-storage.md
   -> can be split into a dedicated data model/storage artifact later.
-- /home/openclaw/workspace/lingotorte/docs/architecture/language-adapter-design.md
+- <local-workspace>/lingotorte/docs/architecture/language-adapter-design.md
   -> can be split into adapter-specific design later.
-- /home/openclaw/workspace/lingotorte/docs/plan/mvp-spike-plan.md
+- <local-workspace>/lingotorte/docs/plan/mvp-spike-plan.md
   -> can reuse the feature-by-feature test strategy and spikes.
 
 ## Evidence labels used in this document
@@ -6215,10 +6215,10 @@ Status: sanitized expansion of existing live UI inventory. No new browser/CDP in
 
 These local screenshot paths were captured during the preliminary investigation:
 
-- Catalog: `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- Show detail/interstitial: `/home/openclaw/lingopie-cdp-show-detail.png`
-- Player after start: `/home/openclaw/lingopie-cdp-player-after-start.png`
-- Practice route: `/home/openclaw/lingopie-cdp-practice-real.png`
+- Catalog: `<local-home>/lingopie-cdp-catalog-polish.png`
+- Show detail/interstitial: `<local-home>/lingopie-cdp-show-detail.png`
+- Player after start: `<local-home>/lingopie-cdp-player-after-start.png`
+- Practice route: `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Catalog route inventory
 
@@ -6439,10 +6439,10 @@ sha256: `688ceb7668918494526209ad762ebd5aa81397add273340ca166e11bfbd15187`
 
 These local screenshot paths were captured during the preliminary investigation:
 
-- Catalog: `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- Show detail/interstitial: `/home/openclaw/lingopie-cdp-show-detail.png`
-- Player after start: `/home/openclaw/lingopie-cdp-player-after-start.png`
-- Practice route: `/home/openclaw/lingopie-cdp-practice-real.png`
+- Catalog: `<local-home>/lingopie-cdp-catalog-polish.png`
+- Show detail/interstitial: `<local-home>/lingopie-cdp-show-detail.png`
+- Player after start: `<local-home>/lingopie-cdp-player-after-start.png`
+- Practice route: `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Catalog route inventory
 
@@ -6709,8 +6709,8 @@ sha256: `a1e51d87895c0c4ba2d5a4eff2c1f19c3b2fdfee1c1c86201fc992a3ee874c7c`
 ````md
 # Preliminary Grounding Research — Lingopie-like Local App
 
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
-**Source artifact:** `/home/openclaw/lingopie-local-clone-investigation.md`  
+**Workspace:** `<local-workspace>/lingotorte`
+**Source artifact:** `<local-home>/lingopie-local-clone-investigation.md`
 **Captured through:** 2026-06-19T15:42:20-04:00  
 **Scope:** preliminary grounding for a future `hermes-war-room` deep-dive mission.
 
@@ -7435,10 +7435,10 @@ Status: sanitized behavior reference. Lingopie is a reference product only. This
 
 These local screenshot paths were captured during the preliminary investigation:
 
-- Catalog: `/home/openclaw/lingopie-cdp-catalog-polish.png`
-- Show detail/interstitial: `/home/openclaw/lingopie-cdp-show-detail.png`
-- Player after start: `/home/openclaw/lingopie-cdp-player-after-start.png`
-- Practice route: `/home/openclaw/lingopie-cdp-practice-real.png`
+- Catalog: `<local-home>/lingopie-cdp-catalog-polish.png`
+- Show detail/interstitial: `<local-home>/lingopie-cdp-show-detail.png`
+- Player after start: `<local-home>/lingopie-cdp-player-after-start.png`
+- Practice route: `<local-home>/lingopie-cdp-practice-real.png`
 
 ## Catalog route inventory
 
@@ -7663,7 +7663,7 @@ sha256: `8948c817c92e26258f77b0b860f4366c0d7a0dc76efdbd95a16578fe1d85ff3f`
 ````py
 from pathlib import Path
 import json, hashlib, textwrap, re
-root = Path('/home/openclaw/workspace/lingotorte')
+root = Path('<local-workspace>/lingotorte')
 planning = root/'docs/planning'
 
 def read(rel):
@@ -8314,7 +8314,7 @@ sha256: `a70c9835c16eeac482b12b922ed0b66a8268e3f3b5a42c3bf8b526fdbb93dbb0`
 ````py
 from pathlib import Path
 import json, hashlib
-root=Path('/home/openclaw/workspace/lingotorte')
+root=Path('<local-workspace>/lingotorte')
 manifest_path=root/'docs/final/artifact-manifest.json'
 manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
 for item in manifest['artifacts']:
@@ -8335,7 +8335,7 @@ sha256: `ec58ae550c841bafc3b6d3dfc1b84f5ec2586143f6aff7d61fb74667776e99f4`
 ````py
 from pathlib import Path
 import re, json, sys, hashlib
-root=Path('/home/openclaw/workspace/lingotorte')
+root=Path('<local-workspace>/lingotorte')
 required=[
 'docs/final/war-room-final-synthesis.md','docs/final/lingotorte-implementation-plan.md','docs/spec/lingopie-behavior-reference.md','docs/spec/feature-implementation-playbook.md','docs/architecture/local-first-architecture.md','docs/architecture/data-model-and-storage.md','docs/architecture/language-adapter-design.md','docs/product/srs-and-practice-design.md','docs/research/public-product-cartography.md','docs/research/live-ui-inventory-expanded.md','docs/research/oss-substrate-assessment.md','docs/review/safety-privacy-boundary-review.md','docs/plan/mvp-spike-plan.md','README.md','AGENTS.md','docs/final/artifact-manifest.json']
 required_features=['local media import','subtitle extraction','parsing','alignment','dual subtitles','transcript synchronization','cue seek','highlight','clickable token lookup','phrase selection','grammar/POS','sentence explanation','save word','phrase','sentence','My Vocab','My Sentences','Listen','Loop','playback speed','saved occurrence context','FSRS flashcards','SRS states','quiz','match','sentence-builder','Anki export','generated subtitles','pronunciation','shadowing','progress tracking','privacy/settings','backups/sync']

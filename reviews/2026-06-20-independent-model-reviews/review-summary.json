@@ -61,10 +61,10 @@
       "logic_errors": [],
       "compatibility_concerns": [],
       "documentation_gaps": [
-        "docs/planning/artifact-manifest.json carries a stale claim: \"no_commit_reason\": \"Workspace /home/openclaw/workspace/lingotorte is not a git repository.\" The packet metadata shows the workspace IS now a git repository at commit bcd74c5, so this note is outdated (non-blocking historical artifact).",
+        "docs/planning/artifact-manifest.json carries a stale claim: \"no_commit_reason\": \"Workspace <local-workspace>/lingotorte is not a git repository.\" The packet metadata shows the workspace IS now a git repository at commit bcd74c5, so this note is outdated (non-blocking historical artifact).",
         "Two artifact manifests coexist with different scopes (docs/planning/artifact-manifest.json = 7-item parent bundle, task t_3b47cd94; docs/final/artifact-manifest.json = 15-item split-path bundle). Their relationship is implied by docs/planning/documentation-index.md but not cross-referenced inside either manifest, which could briefly confuse a future agent.",
         "docs/planning/artifact-manifest.json's verification block (e.g. challenge_repairs_MF_1_to_MF_7: true, bad_local_markdown_links: []) is self-asserted as boolean truth without pointing at the validator (validate_final_bundle.py) that substantiates it; labeling these as self-checks would avoid reading like an authoritative 'verified' stamp.",
-        "README.md and evidence-index reference local-only evidence outside the workspace (/home/openclaw/lingopie-*.png screenshots and /home/openclaw/lingopie-local-clone-investigation.md). The non-distributable policy is stated in evidence-index.md, but README's 'Source provenance' section could restate that these paths are intentionally outside the durable bundle."
+        "README.md and evidence-index reference local-only evidence outside the workspace (<local-home>/lingopie-*.png screenshots and <local-home>/lingopie-local-clone-investigation.md). The non-distributable policy is stated in evidence-index.md, but README's 'Source provenance' section could restate that these paths are intentionally outside the durable bundle."
       ],
       "suggestions": [
         "Run validate_final_bundle.py and update_manifest.py in CI (or a pre-commit hook) so the final-bundle hashes, required-file set, feature-term coverage, and local markdown links are continuously enforced rather than verified once at generation time.",

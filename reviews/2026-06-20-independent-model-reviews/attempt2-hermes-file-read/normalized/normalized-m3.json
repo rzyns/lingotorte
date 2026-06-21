@@ -15,7 +15,7 @@
   ],
   "suggestions": [
     "Add a small provenance appendix (URL + retrieval date + commit/version + license-file hash) for each E-LP-PUB-* and E-OSS-* row before any implementation card is opened; evidence-index.md already prescribes the artifact shape.",
-    "Decide explicitly whether the four local screenshots (/home/openclaw/lingopie-cdp-*.png) stay referenced as local non-distributable only (current default) or are sanitized and inlined; add a one-line screenshot-policy header in the behavior reference for clarity.",
+    "Decide explicitly whether the four local screenshots (<local-home>/lingopie-cdp-*.png) stay referenced as local non-distributable only (current default) or are sanitized and inlined; add a one-line screenshot-policy header in the behavior reference for clarity.",
     "Add a 'why this differs from E-LP-LIVE-*' line for each feature-behavior matrix row in lingopie-behavior-reference.md that already collides with public-doc behavior, so the design-recommendation vs observed mechanics distinction is visible per row.",
     "Consider splitting evidence-cartography.md and adding a thin pointer note that project-constraint rows are retagged PROJECT-CONSTRAINT in evidence-index.md, to reduce the chance that an autonomous implementation agent reads the older table as authoritative.",
     "For the upcoming P0 spike, instantiate the fixture directory and a no-network harness as a sibling planning artifact (even if empty) so the mvp-spike-plan.md 'exact safe inputs' references resolve to real files, not just shapes."

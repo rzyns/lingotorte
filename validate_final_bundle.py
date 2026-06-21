@@ -17,8 +17,11 @@ for term in required_features:
 for term in ['PROJECT-CONSTRAINT','MISSION-REQUIREMENT','SANITIZED-LIVE-UI','PUBLIC-DOC','OSS-DOC-SOURCE','DESIGN-RECOMMENDATION','OPEN-DECISION']:
     if term not in (root/'docs/planning/evidence-index.md').read_text(encoding='utf-8') + combo + (root/'docs/spec/lingopie-behavior-reference.md').read_text(encoding='utf-8'):
         errors.append(f'missing evidence label: {term}')
-# simple local md link check ignoring anchors
+# simple local md link check ignoring anchors; skip generated dependency/build directories.
+skip_md_dirs={'node_modules','.git','dist','.vite','coverage'}
 for p in root.rglob('*.md'):
+    if any(part in skip_md_dirs for part in p.relative_to(root).parts):
+        continue
     txt=p.read_text(encoding='utf-8')
     for m in re.finditer(r'\[[^\]]+\]\(([^)]+)\)', txt):
         url=m.group(1).split('#',1)[0]

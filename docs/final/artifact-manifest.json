@@ -3,105 +3,105 @@
   "status": "planning-docs-only",
   "artifacts": [
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/final/war-room-final-synthesis.md",
+      "path": "docs/final/war-room-final-synthesis.md",
       "relative_path": "docs/final/war-room-final-synthesis.md",
       "bytes": 6614,
       "lines": 84,
       "sha256": "890397e0cdbadbcbb3aae04e9c5471ab3f5dc2cc4f1cb2e8bfc477eb5968bf1c"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/final/lingotorte-implementation-plan.md",
+      "path": "docs/final/lingotorte-implementation-plan.md",
       "relative_path": "docs/final/lingotorte-implementation-plan.md",
       "bytes": 22672,
       "lines": 335,
       "sha256": "574b0bf0c878ac7eea7f234137cbbad9aaf9d9a8e42125c33f05bf859ce1b364"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/spec/lingopie-behavior-reference.md",
+      "path": "docs/spec/lingopie-behavior-reference.md",
       "relative_path": "docs/spec/lingopie-behavior-reference.md",
-      "bytes": 19407,
+      "bytes": 19399,
       "lines": 290,
-      "sha256": "00532f36d614176fd6a4b6cbd24ef5d4a0fb08f977d086cc3e9f0da2da404c4b"
+      "sha256": "6168fca25b1543d9d345deb406ba0d666c15f18d719b6e2c29274ef75c7be17e"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/spec/feature-implementation-playbook.md",
+      "path": "docs/spec/feature-implementation-playbook.md",
       "relative_path": "docs/spec/feature-implementation-playbook.md",
       "bytes": 9665,
       "lines": 59,
       "sha256": "e8b1702950e54f1f491c8cf3567cfb62fda9a4f1f390933960cd6f1ec262fb2a"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/architecture/local-first-architecture.md",
+      "path": "docs/architecture/local-first-architecture.md",
       "relative_path": "docs/architecture/local-first-architecture.md",
       "bytes": 8445,
       "lines": 171,
       "sha256": "073542347f89b0c3ae19a933a4081e1f2d7efc343707c4f93cf9481dcaed4e35"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/architecture/data-model-and-storage.md",
+      "path": "docs/architecture/data-model-and-storage.md",
       "relative_path": "docs/architecture/data-model-and-storage.md",
       "bytes": 16705,
       "lines": 213,
       "sha256": "597f3aff6e79ee1f4884dc92efc1ac3558efe610b51ade3da46d7d6b1f00339c"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/architecture/language-adapter-design.md",
+      "path": "docs/architecture/language-adapter-design.md",
       "relative_path": "docs/architecture/language-adapter-design.md",
       "bytes": 14925,
       "lines": 374,
       "sha256": "9db7b7feec4508062b82a031ff015e256dd9c199f70124c7eb2a1fddc008cf97"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/product/srs-and-practice-design.md",
+      "path": "docs/product/srs-and-practice-design.md",
       "relative_path": "docs/product/srs-and-practice-design.md",
       "bytes": 8335,
       "lines": 123,
       "sha256": "3f1ab8a1f4cabe814f14ee62a69378dec9cfae25a70bd9db14006df51b3f2b9c"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/research/public-product-cartography.md",
+      "path": "docs/research/public-product-cartography.md",
       "relative_path": "docs/research/public-product-cartography.md",
       "bytes": 12649,
       "lines": 86,
       "sha256": "e9d5a432010f799ababb7402d82df534860126f9a5b9eed9e1a235e7d7e47fa4"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/research/live-ui-inventory-expanded.md",
+      "path": "docs/research/live-ui-inventory-expanded.md",
       "relative_path": "docs/research/live-ui-inventory-expanded.md",
-      "bytes": 8181,
+      "bytes": 8173,
       "lines": 222,
-      "sha256": "76eed9421ce57b7cab406f32fed51d2c9862950e220f4a9d28be1caf2695f90c"
+      "sha256": "40445c848f53c5e20f45197e69f056f9433e86cbe50fc4ff403a736efcfe8aba"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/research/oss-substrate-assessment.md",
+      "path": "docs/research/oss-substrate-assessment.md",
       "relative_path": "docs/research/oss-substrate-assessment.md",
       "bytes": 10046,
       "lines": 75,
       "sha256": "6adb523239d851e12980a6e8d3f570f6ad2578ba7257ae36d0fa77089c9328e9"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/review/safety-privacy-boundary-review.md",
+      "path": "docs/review/safety-privacy-boundary-review.md",
       "relative_path": "docs/review/safety-privacy-boundary-review.md",
       "bytes": 10987,
       "lines": 147,
       "sha256": "5681b70bed441b9ce5c891bfe92850fd0e8f7453d29909c0532a9b73f51fefd6"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/docs/plan/mvp-spike-plan.md",
+      "path": "docs/plan/mvp-spike-plan.md",
       "relative_path": "docs/plan/mvp-spike-plan.md",
       "bytes": 4927,
       "lines": 71,
       "sha256": "7bd63087b765460ef8f47d435fb362fa6cad1854b3b0c9face56a3ba35b367e4"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/README.md",
+      "path": "README.md",
       "relative_path": "README.md",
-      "bytes": 4352,
+      "bytes": 4342,
       "lines": 73,
-      "sha256": "92c4f21c85a91042870514e0321b0cf350f7eecfac9cd028389391146aafae00"
+      "sha256": "d8eee6eaa5f92700145f3c5841edf05512d5def065e89c3dc4e22f6a4d9fec17"
     },
     {
-      "path": "/home/openclaw/workspace/.worktrees/lingotorte-v1-local-stabilization/AGENTS.md",
+      "path": "AGENTS.md",
       "relative_path": "AGENTS.md",
       "bytes": 3621,
       "lines": 61,

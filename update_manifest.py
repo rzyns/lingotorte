@@ -8,7 +8,10 @@ for item in manifest['artifacts']:
     p=root/rel if rel else Path(item['path'])
     if p.exists():
         txt=p.read_text(encoding='utf-8') if p.suffix in ['.md','.json'] else ''
-        item['path']=str(p)
+        # Keep the committed manifest portable/public-safe.  The validator uses
+        # relative_path for local readback, so path should not capture a
+        # developer-specific absolute checkout path.
+        item['path']=rel
         item['bytes']=p.stat().st_size
         item['lines']=txt.count('\n')+1 if txt else item.get('lines')
         item['sha256']=hashlib.sha256(p.read_bytes()).hexdigest()

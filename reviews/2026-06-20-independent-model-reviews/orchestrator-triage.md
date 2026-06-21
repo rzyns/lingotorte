@@ -50,12 +50,12 @@ No accepted reviewer reported blocking security, privacy, IP, logic, or implemen
 ### Confirmed non-blocking findings
 
 1. **Stale planning-manifest note.**
-   - Verified: `docs/planning/artifact-manifest.json` still contains `no_commit_reason: "Workspace /home/openclaw/workspace/lingotorte is not a git repository."`
+   - Verified: `docs/planning/artifact-manifest.json` still contains `no_commit_reason: "Workspace <local-workspace>/lingotorte is not a git repository."`
    - Current repository state is a git repo at commit `bcd74c5c7d909402a9f129c713cd9afd9cff6dec`.
    - Triage: non-blocking historical metadata drift. Do not patch in this review pass because the accepted reviews cover the committed source state.
 
 2. **Outside-workspace Lingopie evidence paths.**
-   - Verified absolute local references in `README.md`, `docs/spec/lingopie-behavior-reference.md`, and live/research docs to `/home/openclaw/lingopie-*` screenshots/report.
+   - Verified absolute local references in `README.md`, `docs/spec/lingopie-behavior-reference.md`, and live/research docs to `<local-home>/lingopie-*` screenshots/report.
    - Triage: non-blocking because the docs repeatedly mark screenshots as local/non-distributable evidence and prohibit proprietary/private extraction. A future cleanup can make this warning more prominent in README and behavior reference.
 
 3. **Retained-parent evidence-label drift.**

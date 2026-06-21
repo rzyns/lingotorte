@@ -11,14 +11,14 @@
       "logic_errors": [],
       "compatibility_concerns": [],
       "documentation_gaps": [
-        "The committed docs retain a stale/confusing note in docs/planning/artifact-manifest.json claiming no_commit_reason=\"Workspace /home/openclaw/workspace/lingotorte is not a git repository\", while the review packet records committed git metadata for bcd74c5. This is not a blocker for implementation, but it should be cleaned up to avoid misleading future artifact readers.",
+        "The committed docs retain a stale/confusing note in docs/planning/artifact-manifest.json claiming no_commit_reason=\"Workspace <local-workspace>/lingotorte is not a git repository\", while the review packet records committed git metadata for bcd74c5. This is not a blocker for implementation, but it should be cleaned up to avoid misleading future artifact readers.",
         "Public-doc and OSS evidence tables still contain summarized quotes and license notes without durable retrieval timestamps, source snapshots, package versions, or license-file hashes; the final docs mostly mitigate this by labeling candidates as revalidate-before-adoption, but implementation tasks must not treat those claims as verified adoption/legal conclusions.",
         "Screenshot references remain absolute local paths outside the repository. The safety review correctly treats them as sanitized/local non-distributable evidence, but future readers should not assume those images are part of the durable committed bundle."
       ],
       "suggestions": [
         "Update or remove stale no_commit_reason metadata in docs/planning/artifact-manifest.json after the repository is committed.",
         "For P0, create docs/dev/dependency-provenance.md with retrieval date, exact version/commit, license path/hash, and local/offline behavior for each dependency before adoption.",
-        "Keep generated scripts clearly marked as local documentation maintenance tools; if they are retained, consider parameterizing the repository root instead of hard-coding /home/openclaw/workspace/lingotorte.",
+        "Keep generated scripts clearly marked as local documentation maintenance tools; if they are retained, consider parameterizing the repository root instead of hard-coding <local-workspace>/lingotorte.",
         "When implementation begins, convert the feature playbook rows into bounded cards that each name fixtures, no-network checks, expected files, and open human decisions."
       ],
       "evidence_checked": [
@@ -123,7 +123,7 @@
       ],
       "suggestions": [
         "Add a small provenance appendix (URL + retrieval date + commit/version + license-file hash) for each E-LP-PUB-* and E-OSS-* row before any implementation card is opened; evidence-index.md already prescribes the artifact shape.",
-        "Decide explicitly whether the four local screenshots (/home/openclaw/lingopie-cdp-*.png) stay referenced as local non-distributable only (current default) or are sanitized and inlined; add a one-line screenshot-policy header in the behavior reference for clarity.",
+        "Decide explicitly whether the four local screenshots (<local-home>/lingopie-cdp-*.png) stay referenced as local non-distributable only (current default) or are sanitized and inlined; add a one-line screenshot-policy header in the behavior reference for clarity.",
         "Add a 'why this differs from E-LP-LIVE-*' line for each feature-behavior matrix row in lingopie-behavior-reference.md that already collides with public-doc behavior, so the design-recommendation vs observed mechanics distinction is visible per row.",
         "Consider splitting evidence-cartography.md and adding a thin pointer note that project-constraint rows are retagged PROJECT-CONSTRAINT in evidence-index.md, to reduce the chance that an autonomous implementation agent reads the older table as authoritative.",
         "For the upcoming P0 spike, instantiate the fixture directory and a no-network harness as a sibling planning artifact (even if empty) so the mvp-spike-plan.md 'exact safe inputs' references resolve to real files, not just shapes."

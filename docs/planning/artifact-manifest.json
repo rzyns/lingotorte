@@ -1,52 +1,52 @@
 {
   "task_id": "t_3b47cd94",
-  "bundle_root": "/home/openclaw/workspace/lingotorte/docs/planning",
+  "bundle_root": "<local-workspace>/lingotorte/docs/planning",
   "scope": "final Lingotorte planning bundle only; no app implementation",
   "artifacts": [
     {
-      "path": "/home/openclaw/workspace/lingotorte/README.md",
+      "path": "<local-workspace>/lingotorte/README.md",
       "role": "workspace index update",
       "bytes": 3329,
       "lines": 52,
       "sha256": "5e8b7e772762de5f0978dd14d265123d7955a47698311ebd38de02f9ac139e0a"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/final-implementation-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/final-implementation-plan.md",
       "role": "final synthesis and implementation plan",
       "bytes": 17224,
       "lines": 278,
       "sha256": "8b35ca06977caed40a5e6487051e0849841c165bbb9ec931385be0f06802d7aa"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/feature-build-roadmap.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/feature-build-roadmap.md",
       "role": "phased feature roadmap and dependency ordering",
       "bytes": 12389,
       "lines": 158,
       "sha256": "d14a474f8ff8474028f1aa6e8038992453a76bf226c8b6b488173d7aff2480c5"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/evidence-index.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/evidence-index.md",
       "role": "normalized evidence/provenance index",
       "bytes": 9755,
       "lines": 92,
       "sha256": "b871ce12fc9b8d3a9e9906704f9ce39c051b615c9b640fa15c30d7f70c4902ca"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/safety-privacy-legal-boundaries.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/safety-privacy-legal-boundaries.md",
       "role": "safety/privacy/legal implementation gate",
       "bytes": 10558,
       "lines": 142,
       "sha256": "da43819fa84c8d35a1e1d54e18192d70c7f0a48da41c4dd00fded3dd820764af"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/testing-and-acceptance-plan.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/testing-and-acceptance-plan.md",
       "role": "testing, fixture, spike, and acceptance plan",
       "bytes": 9812,
       "lines": 137,
       "sha256": "68367be8899da228b3a00b6ec67a93fa0ccb2fef50b3fd6049b732512ce4fc37"
     },
     {
-      "path": "/home/openclaw/workspace/lingotorte/docs/planning/documentation-index.md",
+      "path": "<local-workspace>/lingotorte/docs/planning/documentation-index.md",
       "role": "bundle index and mission deliverable crosswalk",
       "bytes": 8046,
       "lines": 88,
@@ -65,5 +65,5 @@
     "unresolved_decisions": true,
     "bad_local_markdown_links": []
   },
-  "no_commit_reason": "Workspace /home/openclaw/workspace/lingotorte is not a git repository."
+  "no_commit_reason": "Workspace <local-workspace>/lingotorte is not a git repository."
 }

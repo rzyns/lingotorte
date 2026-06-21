@@ -1,8 +1,8 @@
 # Local-First Architecture, Data Model, and Test Plan — Lingotorte
 
 **Task:** `t_a6fb090d`  
-**Workspace:** `/home/openclaw/workspace/lingotorte`  
-**Artifact path:** `/home/openclaw/workspace/lingotorte/docs/planning/local-first-architecture-data-model.md`  
+**Workspace:** `<local-workspace>/lingotorte`
+**Artifact path:** `<local-workspace>/lingotorte/docs/planning/local-first-architecture-data-model.md`
 **Status:** implementation-ready planning document; no app implementation  
 **Hard boundary:** local/offline default; online providers are opt-in only; no credentials, deployments, service restarts, account mutation, DRM circumvention, or external side effects.
 
@@ -12,27 +12,27 @@ Role: analysis
 Review scope: analysis_traceability
 
 Derived from:
-- /home/openclaw/workspace/lingotorte/AGENTS.md
+- <local-workspace>/lingotorte/AGENTS.md
   -> project operating boundaries, local/private product framing, artifact-centered design principle, and recommended read order.
-- /home/openclaw/workspace/lingotorte/README.md
+- <local-workspace>/lingotorte/README.md
   -> workspace purpose, source provenance, screenshot evidence pointers, and boundary reminder.
-- /home/openclaw/workspace/lingotorte/docs/mission/hermes-war-room-mission-statement.md
+- <local-workspace>/lingotorte/docs/mission/hermes-war-room-mission-statement.md
   -> required final deliverable expectations, local/offline defaults, lane structure, and quality bar.
-- /home/openclaw/workspace/lingotorte/docs/mission/lingopie-war-room-brief.md
+- <local-workspace>/lingotorte/docs/mission/lingopie-war-room-brief.md
   -> lane-level scope, quality gates, initial hypothesis, and local-first product architecture lane target.
-- /home/openclaw/workspace/lingotorte/docs/research/preliminary-grounding-research.md
+- <local-workspace>/lingotorte/docs/research/preliminary-grounding-research.md
   -> preliminary architecture sketch, data model seed, OSS substrate seeds, MVP cut, and open questions.
-- /home/openclaw/workspace/lingotorte/docs/research/live-ui-inventory.md
+- <local-workspace>/lingotorte/docs/research/live-ui-inventory.md
   -> sanitized observed UI mechanics: catalog, player, transcript, vocabulary, practice, SRS states, and privacy caveats.
 
 Feeds:
-- /home/openclaw/workspace/lingotorte/docs/architecture/local-first-architecture.md
+- <local-workspace>/lingotorte/docs/architecture/local-first-architecture.md
   -> can be split into a dedicated architecture artifact later.
-- /home/openclaw/workspace/lingotorte/docs/architecture/data-model-and-storage.md
+- <local-workspace>/lingotorte/docs/architecture/data-model-and-storage.md
   -> can be split into a dedicated data model/storage artifact later.
-- /home/openclaw/workspace/lingotorte/docs/architecture/language-adapter-design.md
+- <local-workspace>/lingotorte/docs/architecture/language-adapter-design.md
   -> can be split into adapter-specific design later.
-- /home/openclaw/workspace/lingotorte/docs/plan/mvp-spike-plan.md
+- <local-workspace>/lingotorte/docs/plan/mvp-spike-plan.md
   -> can reuse the feature-by-feature test strategy and spikes.
 
 ## Evidence labels used in this document
