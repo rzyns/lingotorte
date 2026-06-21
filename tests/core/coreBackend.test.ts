@@ -184,7 +184,7 @@ describe('core local storage and import pipeline', () => {
     const adapters = resolveLocalAdapters(policy, 'pl');
     assertProvidersDisabled(policy);
     const result = await adapters.dictionary!.lookup({
-      target: { kind: 'token', tokenOccurrenceId: 'tok-1' },
+      target: { kind: 'token', tokenOccurrenceId: 'tok-1', cueId: 'cue-1', text: 'Cześć' },
       sourceLanguage: 'pl',
       learnerLanguage: 'en',
       context: { cueText: 'Cześć' },

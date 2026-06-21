@@ -1,67 +1,47 @@
 import {
-  LookupInput,
-  LookupOutput,
-  MorphologyInput,
-  MorphologyOutput,
-  ProviderPolicy,
-  TokenizerInput,
-  TokenizerOutput,
-  TokenOccurrence,
-  UUID,
+  makeAdapterRunRef,
+  type LookupInput,
+  type LookupOutput,
+  type LookupOutputEntry,
+  type MorphologyAdapter,
+  type MorphologyInput,
+  type MorphologyOutput,
+  type TokenizerAdapter,
+  type TokenizerInput,
+  type TokenizerOutput,
+  type TokenizerOutputToken,
+  type UUID,
+  uuid,
 } from '@lingotorte/domain';
-import { isoNow, uuid } from '@lingotorte/domain';
-
-// Local/default-off language adapter interfaces for P3.
-// These adapters return typed local results or explicit unavailable/disabled states.
-// No online provider calls are made unless explicitly enabled by a future opt-in policy.
-
-export type TokenizerAdapter = Readonly<{
-  adapterId: string;
-  adapterVersion: string;
-  privacyMode: 'local';
-  tokenize(input: TokenizerInput): Promise<TokenizerOutput>;
-}>;
-
-export type MorphologyAdapter = Readonly<{
-  adapterId: string;
-  adapterVersion: string;
-  privacyMode: 'local';
-  analyze(input: MorphologyInput): Promise<MorphologyOutput>;
-}>;
+export type { TokenizerAdapter, MorphologyAdapter };
 
 export type DictionaryAdapter = Readonly<{
   adapterId: string;
   adapterVersion: string;
   privacyMode: 'local';
+  sourceName: string;
+  sourceLicense?: string;
   lookup(input: LookupInput): Promise<LookupOutput>;
 }>;
 
 export type LanguageAdapters = Readonly<{
-  tokenizer?: TokenizerAdapter;
-  morphology?: MorphologyAdapter;
-  dictionary?: DictionaryAdapter;
+  tokenizer: TokenizerAdapter;
+  morphology: MorphologyAdapter;
+  dictionary: DictionaryAdapter;
 }>;
 
-function localRunRef(adapterId: string, adapterVersion: string, inputHash: string): {
-  id: UUID;
-  adapterKind: 'tokenizer';
-  adapterId: string;
-  adapterVersion: string;
-  configHash: string;
-  inputHash: string;
-  createdAt: string;
-  privacyMode: 'local';
-} {
-  return {
-    id: uuid(),
-    adapterKind: 'tokenizer',
-    adapterId,
-    adapterVersion,
-    configHash: 'local',
-    inputHash,
-    createdAt: isoNow(),
-    privacyMode: 'local',
-  };
+async function sha256Text(text: string): Promise<string> {
+  // Browser-safe deterministic string hash used for adapter run inputHash provenance.
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+function inputHash(text: string, cueId: string): Promise<string> {
+  return sha256Text(`${text}::${cueId}`);
 }
 
 export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
@@ -79,7 +59,7 @@ export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
       if (!/\s/.test(input.text) && input.text.length > 10) {
         warnings.push('Input text contains no whitespace; tokenization may be inaccurate');
       }
-      const tokens: TokenizerOutput['tokens'] = [];
+      const tokens: TokenizerOutputToken[] = [];
       const regex = /\S+/g;
       let match: RegExpExecArray | null;
       let tokenIndex = 0;
@@ -87,42 +67,42 @@ export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
         const surface = match[0];
         const charStart = match.index;
         const charEnd = charStart + surface.length;
+        const normalizedSurface = surface.toLowerCase().replace(/[.,!?;:]$/, '');
+        const trailingPunctuation = surface.length > normalizedSurface.length ? surface.slice(normalizedSurface.length) : '';
+        const tokenKind: TokenizerOutputToken['tokenKind'] =
+          /^\d+$/.test(surface) ? 'number' : /^[.,!?;:]+$/.test(surface) ? 'punctuation' : 'word';
         tokens.push({
           tokenIndex,
           charStart,
           charEnd,
           surface,
-          normalizedSurface: surface.toLowerCase(),
-          tokenKind: 'word',
+          normalizedSurface,
+          tokenKind,
           joinToPrevious: false,
           joinToNext: false,
         });
         tokenIndex += 1;
+        if (trailingPunctuation) {
+          tokens.push({
+            tokenIndex,
+            charStart: charEnd - trailingPunctuation.length,
+            charEnd,
+            surface: trailingPunctuation,
+            normalizedSurface: trailingPunctuation,
+            tokenKind: 'punctuation',
+            joinToPrevious: true,
+            joinToNext: false,
+          });
+          tokenIndex += 1;
+        }
       }
       if (tokens.length === 0) {
         warnings.push('No tokens produced from input text');
       }
       return {
-        run: localRunRef(adapterId, adapterVersion, await sha256Text(input.text + input.cueId)),
+        run: makeAdapterRunRef('tokenizer', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
         tokens,
         warnings,
-      };
-    },
-  };
-}
-
-export function makeUnavailableDictionaryAdapter(): DictionaryAdapter {
-  const adapterId = 'lingotorte.unavailable-dictionary';
-  const adapterVersion = '0.0.0-p3';
-  return {
-    adapterId,
-    adapterVersion,
-    privacyMode: 'local',
-    async lookup(input: LookupInput): Promise<LookupOutput> {
-      return {
-        run: localRunRef(adapterId, adapterVersion, await sha256Text(JSON.stringify(input))),
-        entries: [],
-        warnings: [`Dictionary unavailable for target ${input.target.kind}`],
       };
     },
   };
@@ -136,16 +116,16 @@ export function makeDisabledMorphologyAdapter(): MorphologyAdapter {
     adapterVersion,
     privacyMode: 'local',
     async analyze(input: MorphologyInput): Promise<MorphologyOutput> {
-      const analyses: MorphologyOutput['analyses'] = input.tokens.map((t: TokenizerOutput['tokens'][number]) => ({
+      const analyses: MorphologyOutput['analyses'] = input.tokens.map((t) => ({
         tokenIndex: t.tokenIndex,
-        lemma: t.surface.toLowerCase(),
+        lemma: t.normalizedSurface,
         upos: 'X',
         morph: [],
         confidence: { kind: 'unavailable', value: 0 },
         alternatives: [],
       }));
       return {
-        run: localRunRef(adapterId, adapterVersion, await sha256Text(input.text + input.cueId)),
+        run: makeAdapterRunRef('pos-morph', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
         analyses,
         warnings: ['Morphology adapter disabled; returning placeholder analyses'],
       };
@@ -153,32 +133,97 @@ export function makeDisabledMorphologyAdapter(): MorphologyAdapter {
   };
 }
 
-export function assertProvidersDisabled(policy: ProviderPolicy): void {
-  if (policy.onlineProvidersEnabled !== false || policy.allowedDataClasses.length !== 0) {
-    throw new TypeError('Online providers must be disabled for local-only adapter pipeline');
-  }
-}
-
-export function resolveLocalAdapters(_policy: ProviderPolicy, language: string): LanguageAdapters {
+export function makeUnavailableDictionaryAdapter(): DictionaryAdapter {
+  const adapterId = 'lingotorte.unavailable-dictionary';
+  const adapterVersion = '0.0.0-p3';
   return {
-    tokenizer: makeWhitespaceTokenizer(language),
-    morphology: makeDisabledMorphologyAdapter(),
-    dictionary: makeUnavailableDictionaryAdapter(),
+    adapterId,
+    adapterVersion,
+    privacyMode: 'local',
+    sourceName: 'none',
+    async lookup(input: LookupInput): Promise<LookupOutput> {
+      const cueId = 'cueId' in input.target ? input.target.cueId : 'no-cue';
+      return {
+        run: makeAdapterRunRef('dictionary', adapterId, adapterVersion, await inputHash(JSON.stringify(input.target), cueId), 'local'),
+        entries: [],
+        warnings: [`Dictionary unavailable for target ${input.target.kind}`],
+      };
+    },
   };
 }
 
-async function sha256Text(text: string): Promise<string> {
-  const { createHash } = await import('node:crypto');
-  const hash = createHash('sha256');
-  hash.update(text, 'utf8');
-  return hash.digest('hex');
+type FixtureEntry = Readonly<{
+  headword: string;
+  partOfSpeech: string;
+  shortGloss: string;
+  senses: LookupOutputEntry['senses'];
+}>;
+
+export type FixtureDictionaryData = Readonly<{
+  language: string;
+  learnerLanguage: string;
+  license: string;
+  entries: Record<string, FixtureEntry>;
+}>;
+
+export function makeFixtureDictionaryAdapter(data: FixtureDictionaryData): DictionaryAdapter {
+  const adapterId = 'lingotorte.fixture-dictionary';
+  const adapterVersion = '0.0.0-p3';
+  const sourceName = `fixture-dictionary-${data.language}-${data.learnerLanguage}`;
+  const sourceLicense = data.license;
+  return {
+    adapterId,
+    adapterVersion,
+    privacyMode: 'local',
+    sourceName,
+    sourceLicense,
+    async lookup(input: LookupInput): Promise<LookupOutput> {
+      let headword: string | undefined;
+      let cueId: string;
+      if (input.target.kind === 'token') {
+        headword = input.analysis?.lemma ?? input.target.text.toLowerCase().replace(/[.,!?;:]$/, '');
+        cueId = input.target.cueId;
+      } else {
+        headword = input.target.text.toLowerCase().replace(/[.,!?;:]$/, '');
+        cueId = input.target.cueId;
+      }
+      const entries: LookupOutputEntry[] = [];
+      const fixture = headword ? data.entries[headword] : undefined;
+      if (fixture) {
+        const entry: LookupOutputEntry = {
+          headword,
+          lemma: fixture.headword,
+          partOfSpeech: fixture.partOfSpeech,
+          shortGloss: fixture.shortGloss,
+          senses: fixture.senses,
+          sourceName,
+          sourceLicense,
+        };
+        entries.push(entry);
+      }
+      return {
+        run: makeAdapterRunRef('dictionary', adapterId, adapterVersion, await inputHash(headword ?? input.target.text, cueId), 'local'),
+        entries,
+        warnings: entries.length === 0 ? [`No fixture entry for "${headword ?? input.target.text}"`] : [],
+      };
+    },
+  };
 }
 
 export function makeTokenOccurrenceFromTokenizer(
   cueId: UUID,
   runId: UUID,
   token: TokenizerOutput['tokens'][number],
-): TokenOccurrence {
+): {
+  id: UUID;
+  cueId: UUID;
+  analysisRunId: UUID;
+  tokenIndex: number;
+  charStart: number;
+  charEnd: number;
+  surface: string;
+  normalized: string;
+} {
   return {
     id: uuid(),
     cueId,
@@ -190,3 +235,72 @@ export function makeTokenOccurrenceFromTokenizer(
     normalized: token.normalizedSurface,
   };
 }
+
+export function assertProvidersDisabled(policy: { onlineProvidersEnabled: boolean; allowedDataClasses: readonly string[] }): void {
+  if (policy.onlineProvidersEnabled !== false || policy.allowedDataClasses.length !== 0) {
+    throw new TypeError('Online providers must be disabled for local-only adapter pipeline');
+  }
+}
+
+export function resolveLocalAdapters(
+  policy: { onlineProvidersEnabled: boolean; allowedDataClasses: readonly string[] },
+  language: string,
+  fixtureDictionary?: FixtureDictionaryData,
+): LanguageAdapters {
+  assertProvidersDisabled(policy);
+  return {
+    tokenizer: makeWhitespaceTokenizer(language),
+    morphology: makeDisabledMorphologyAdapter(),
+    dictionary: fixtureDictionary ? makeFixtureDictionaryAdapter(fixtureDictionary) : makeUnavailableDictionaryAdapter(),
+  };
+}
+
+export const polishFixtureDictionary: FixtureDictionaryData = {
+  language: 'pl',
+  learnerLanguage: 'en',
+  license: 'synthetic-fixture',
+  entries: {
+    cześć: {
+      headword: 'cześć',
+      partOfSpeech: 'NOUN',
+      shortGloss: 'hi; hello',
+      senses: [
+        { gloss: 'hi', confidence: { kind: 'probable', value: 0.9 } },
+        { gloss: 'hello', confidence: { kind: 'probable', value: 0.85 } },
+      ],
+    },
+    lokalny: {
+      headword: 'lokalny',
+      partOfSpeech: 'ADJ',
+      shortGloss: 'local',
+      senses: [{ gloss: 'local', confidence: { kind: 'probable', value: 0.95 } }],
+    },
+    test: {
+      headword: 'test',
+      partOfSpeech: 'NOUN',
+      shortGloss: 'test',
+      senses: [{ gloss: 'test', confidence: { kind: 'certain', value: 1.0 } }],
+    },
+    uczyć: {
+      headword: 'uczyć',
+      partOfSpeech: 'VERB',
+      shortGloss: 'to learn; to teach',
+      senses: [
+        { gloss: 'to learn', confidence: { kind: 'probable', value: 0.8 } },
+        { gloss: 'to teach', confidence: { kind: 'possible', value: 0.6 } },
+      ],
+    },
+    własny: {
+      headword: 'własny',
+      partOfSpeech: 'ADJ',
+      shortGloss: 'own',
+      senses: [{ gloss: 'own', confidence: { kind: 'probable', value: 0.9 } }],
+    },
+    napisy: {
+      headword: 'napisy',
+      partOfSpeech: 'NOUN',
+      shortGloss: 'subtitles; captions',
+      senses: [{ gloss: 'subtitles', confidence: { kind: 'probable', value: 0.9 } }],
+    },
+  },
+};

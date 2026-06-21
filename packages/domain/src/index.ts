@@ -4,3 +4,4 @@ export * from './guards';
 export * from './sourceContext';
 export * from './providerPolicy';
 export * from './privacyScan';
+export { makeAdapterRunRef, makeLanguageAnalysis } from './factories';

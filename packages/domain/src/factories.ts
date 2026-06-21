@@ -1,17 +1,20 @@
-import type {
-  Cue,
-  CueAlignment,
-  MediaAsset,
-  MediaFileObservation,
-  ReviewCard,
-  ReviewCardState,
-  ReviewEvent,
-  SavedItem,
-  SavedOccurrence,
-  SavedOccurrenceSourceContext,
-  SubtitleTrack,
-  TokenOccurrence,
-  UUID,
+import {
+  isoNow,
+  uuid,
+  type AdapterKind,
+  type AdapterRunRef,
+  type Cue,
+  type LanguageAnalysis,
+  type MediaAsset,
+  type MediaFileObservation,
+  type PrivacyMode,
+  type ReviewCard,
+  type ReviewCardState,
+  type ReviewEvent,
+  type SavedItem,
+  type SavedOccurrence,
+  type SubtitleTrack,
+  type TokenOccurrence,
 } from './coreTypes';
 
 export * from './coreTypes';
@@ -19,28 +22,6 @@ export * from './guards';
 export * from './sourceContext';
 export * from './providerPolicy';
 export * from './privacyScan';
-
-export function uuid(): UUID {
-  // Simple UUID v4-ish generator for local deterministic tests.
-  const hex = '0123456789abcdef';
-  let result = '';
-  for (let i = 0; i < 36; i++) {
-    if (i === 8 || i === 13 || i === 18 || i === 23) {
-      result += '-';
-    } else if (i === 14) {
-      result += '4';
-    } else if (i === 19) {
-      result += hex[(Math.random() * 4) | 8];
-    } else {
-      result += hex[(Math.random() * 16) | 0];
-    }
-  }
-  return result;
-}
-
-export function isoNow(): string {
-  return new Date().toISOString();
-}
 
 export function makeMediaAsset(
   input: Pick<MediaAsset, 'title' | 'originalPath' | 'contentSha256' | 'durationMs' | 'container' | 'sizeBytes' | 'privacyLabel'>,
@@ -75,8 +56,8 @@ export function makeCue(input: Pick<Cue, 'trackId' | 'cueIndex' | 'startMs' | 'e
 }
 
 export function makeCueAlignment(
-  input: Pick<CueAlignment, 'mediaId' | 'targetTrackId' | 'nativeTrackId' | 'targetCueId' | 'nativeCueId' | 'method' | 'confidence'>,
-): CueAlignment {
+  input: Pick<import('./coreTypes').CueAlignment, 'mediaId' | 'targetTrackId' | 'nativeTrackId' | 'targetCueId' | 'nativeCueId' | 'method' | 'confidence'>,
+): import('./coreTypes').CueAlignment {
   return {
     id: uuid(),
     ...input,
@@ -109,7 +90,7 @@ export function makeSavedItem(
 export function makeSavedOccurrence(
   input: Pick<SavedOccurrence, 'savedItemId' | 'mediaId' | 'cueId' | 'startMs' | 'endMs' | 'selectionKind' | 'selectionText'> &
     Partial<Pick<SavedOccurrence, 'contextBefore' | 'contextAfter'>> & {
-    sourceContext: SavedOccurrenceSourceContext;
+    sourceContext: import('./coreTypes').SavedOccurrenceSourceContext;
   },
 ): SavedOccurrence {
   return {
@@ -162,5 +143,33 @@ export function makeMediaFileObservation(
     id: uuid(),
     ...input,
     observedAt: isoNow(),
+  };
+}
+
+export function makeAdapterRunRef(
+  adapterKind: AdapterKind,
+  adapterId: string,
+  adapterVersion: string,
+  inputHash: string,
+  privacyMode: PrivacyMode,
+): AdapterRunRef {
+  return {
+    id: uuid(),
+    adapterKind,
+    adapterId,
+    adapterVersion,
+    configHash: 'local',
+    inputHash,
+    createdAt: isoNow(),
+    privacyMode,
+  };
+}
+
+export function makeLanguageAnalysis(
+  input: Pick<LanguageAnalysis, 'tokenOccurrenceId' | 'runId' | 'language' | 'lemma' | 'upos' | 'xpos' | 'morph' | 'confidence' | 'alternatives'>,
+): LanguageAnalysis {
+  return {
+    id: uuid(),
+    ...input,
   };
 }

@@ -1,5 +1,27 @@
 export type UUID = string;
 export type ISODateTime = string;
+
+export function uuid(): UUID {
+  const hex = '0123456789abcdef';
+  let result = '';
+  for (let i = 0; i < 36; i++) {
+    if (i === 8 || i === 13 || i === 18 || i === 23) {
+      result += '-';
+    } else if (i === 14) {
+      result += '4';
+    } else if (i === 19) {
+      result += hex[(Math.random() * 4) | 8];
+    } else {
+      result += hex[(Math.random() * 16) | 0];
+    }
+  }
+  return result;
+}
+
+export function isoNow(): ISODateTime {
+  return new Date().toISOString();
+}
+
 export type Sha256Digest = `sha256:${string}`;
 export type SourceKind = 'synthetic' | 'owned' | 'licensed';
 export type SubtitleRole = 'target' | 'native' | 'other';
@@ -197,6 +219,18 @@ export type Confidence = Readonly<
   | { kind: 'unavailable'; value: 0 }
 >;
 
+export function confidenceUnavailable(): Confidence {
+  return { kind: 'unavailable', value: 0 };
+}
+
+export function confidenceProbable(value: number): Confidence {
+  return { kind: 'probable', value };
+}
+
+export function confidenceCertain(value: number): Confidence {
+  return { kind: 'certain', value };
+}
+
 export type AdapterKind =
   | 'tokenizer'
   | 'lemmatizer'
@@ -207,6 +241,27 @@ export type AdapterKind =
   | 'asr'
   | 'forced-alignment'
   | 'pronunciation-scoring';
+
+export type TokenizerAdapter = Readonly<{
+  adapterId: string;
+  adapterVersion: string;
+  privacyMode: 'local';
+  tokenize(input: TokenizerInput): Promise<TokenizerOutput>;
+}>;
+
+export type MorphologyAdapter = Readonly<{
+  adapterId: string;
+  adapterVersion: string;
+  privacyMode: 'local';
+  analyze(input: MorphologyInput): Promise<MorphologyOutput>;
+}>;
+
+export type DictionaryAdapter = Readonly<{
+  adapterId: string;
+  adapterVersion: string;
+  privacyMode: 'local';
+  lookup(input: LookupInput): Promise<LookupOutput>;
+}>;
 
 export type AdapterRunRef = Readonly<{
   id: UUID;
@@ -240,9 +295,9 @@ export type LanguageAnalysis = Readonly<{
   tokenOccurrenceId: UUID;
   runId: UUID;
   language: string;
-  lemma?: string;
-  upos?: string;
-  xpos?: string;
+  lemma: string | undefined;
+  upos: string | undefined;
+  xpos: string | undefined;
   morph: MorphFeature[];
   confidence: Confidence;
   alternatives: AnalysisAlternative[];
@@ -302,7 +357,7 @@ export type MorphologyOutput = Readonly<{
 }>;
 
 export type LookupTarget =
-  | { kind: 'token'; tokenOccurrenceId: UUID }
+  | { kind: 'token'; tokenOccurrenceId: UUID; cueId: UUID; text: string }
   | { kind: 'phrase'; cueId: UUID; tokenStart: number; tokenEnd: number; text: string }
   | { kind: 'sentence'; cueId: UUID; text: string };
 
@@ -322,8 +377,8 @@ export type LookupInput = Readonly<{
 
 export type LookupOutputEntry = Readonly<{
   headword: string;
-  lemma?: string;
-  partOfSpeech?: string;
+  lemma: string | undefined;
+  partOfSpeech: string | undefined;
   shortGloss: string;
   senses: {
     gloss: string;
@@ -332,7 +387,7 @@ export type LookupOutputEntry = Readonly<{
     confidence: Confidence;
   }[];
   sourceName: string;
-  sourceLicense?: string;
+  sourceLicense: string | undefined;
 }>;
 
 export type LookupOutput = Readonly<{
