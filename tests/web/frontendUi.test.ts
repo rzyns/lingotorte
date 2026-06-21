@@ -49,7 +49,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(buttons?.length).toBe(5);
     const savedBtn = Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Saved') as HTMLElement | null;
     savedBtn?.click();
-    expect(document.getElementById('app')?.textContent).toContain('Saved items');
+    expect(document.getElementById('app')?.textContent).toContain('My Vocab');
   });
 
   it('loads the synthetic fixture and renders transcript cues', async () => {
@@ -82,6 +82,8 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     rerenderApp(model);
     const savedBtn = Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Saved') as HTMLElement | null;
     savedBtn?.click();
+    const sentencesTab = Array.from(document.querySelectorAll('[role="tab"]')).find((b) => b.textContent === 'My Sentences') as HTMLElement | null;
+    sentencesTab?.click();
     const app = document.getElementById('app');
     expect(app?.textContent).toContain('Cześć, to jest lokalny test.');
     expect(app?.textContent).toContain('sentence');

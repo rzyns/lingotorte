@@ -20,12 +20,12 @@ import {
   setPlaybackRate,
   setPendingMeaning,
   setPendingNotes,
-  setSelection,
   setTranscriptQuery,
   setView,
   toggleLoopCue,
   togglePlay,
   tokenizeCueText,
+  saveSelectedPhraseFromCue,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -470,26 +470,28 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
               (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
           );
           if (token) {
-            setSelection(model, {
-              kind: 'lexeme',
-              text: token.surface,
-              cueId: cue.id,
-              tokenStart: token.tokenIndex,
-              tokenEnd: token.tokenIndex + 1,
-              charStart: token.charStart,
-              charEnd: token.charEnd,
-            } as import('./model').SelectionNonNull);
+            const item = saveSelectedPhraseFromCue(model, cue, token.surface, token.charStart, token.charEnd, token.tokenIndex, token.tokenIndex + 1);
+            if (item) {
+              model.selection = null;
+              model.pendingMeaning = '';
+              model.pendingNotes = '';
+            }
           } else {
             const phraseStart = cue.text.toLowerCase().indexOf(lower);
-            setSelection(model, {
-              kind: 'phrase',
-              text: selectionText,
-              cueId: cue.id,
-              tokenStart: 0,
-              tokenEnd: tokens.length,
-              charStart: phraseStart >= 0 ? phraseStart : 0,
-              charEnd: phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length,
-            } as import('./model').SelectionNonNull);
+            const item = saveSelectedPhraseFromCue(
+              model,
+              cue,
+              selectionText,
+              phraseStart >= 0 ? phraseStart : 0,
+              phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length,
+              0,
+              tokens.length,
+            );
+            if (item) {
+              model.selection = null;
+              model.pendingMeaning = '';
+              model.pendingNotes = '';
+            }
           }
           rerenderApp(model);
         });
@@ -635,25 +637,66 @@ function renderLibraryView(model: AppModel): HTMLElement {
 
 function renderSavedView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
-  section.className = 'card';
-  const h2 = document.createElement('h2');
-  h2.textContent = 'Saved items';
-  section.appendChild(h2);
+  section.className = 'card saved-view';
 
-  const items = Object.values(model.store.snapshot().savedItems) as SavedItem[];
+  const tabs = document.createElement('div');
+  tabs.className = 'saved-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Saved item categories');
+  const categories: { id: 'vocab' | 'sentences'; label: string; kinds: readonly ('lexeme' | 'phrase' | 'sentence')[] }[] = [
+    { id: 'vocab', label: 'My Vocab', kinds: ['lexeme', 'phrase'] },
+    { id: 'sentences', label: 'My Sentences', kinds: ['sentence'] },
+  ];
+  const currentTab = model.savedViewTab ?? 'vocab';
+  let firstTabButton: HTMLButtonElement | null = null;
+  for (const category of categories) {
+    const btn = document.createElement('button');
+    btn.className = `saved-tab${currentTab === category.id ? ' active' : ''}`;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', String(currentTab === category.id));
+    btn.setAttribute('aria-controls', `saved-panel-${category.id}`);
+    btn.id = `saved-tab-${category.id}`;
+    btn.textContent = category.label;
+    btn.addEventListener('click', () => {
+      model.savedViewTab = category.id;
+      rerenderApp(model);
+    });
+    tabs.appendChild(btn);
+    if (!firstTabButton) firstTabButton = btn;
+  }
+  section.appendChild(tabs);
+
+  const allItems = Object.values(model.store.snapshot().savedItems) as SavedItem[];
+  const selectedKinds = categories.find((c) => c.id === currentTab)?.kinds ?? ['lexeme', 'phrase'];
+  const items = allItems.filter((i) => selectedKinds.includes(i.kind) && !i.archivedAt);
+
+  const heading = document.createElement('h2');
+  heading.textContent = currentTab === 'vocab' ? 'My Vocab' : 'My Sentences';
+  heading.id = 'saved-heading';
+  section.appendChild(heading);
+
+  const panel = document.createElement('div');
+  panel.className = 'saved-panel';
+  panel.setAttribute('role', 'tabpanel');
+  panel.id = `saved-panel-${currentTab}`;
+  panel.setAttribute('aria-labelledby', `saved-tab-${currentTab}`);
+
   if (items.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'Nothing saved yet. Select words or phrases while watching.';
-    section.appendChild(empty);
+    empty.textContent = currentTab === 'vocab'
+      ? 'No words or phrases saved yet. Select text in a transcript cue to save it.'
+      : 'No sentences saved yet. Click “Save sentence” on a transcript cue.';
+    panel.appendChild(empty);
+    section.appendChild(panel);
     return section;
   }
 
   const list = document.createElement('div');
   list.className = 'saved-list';
   for (const item of items) {
-    const occurrences = model.store.listSavedOccurrencesForItem(item.id);
-    const card = document.createElement('div');
+    const occurrences = model.savedOccurrenceService.listOccurrencesForItem(item.id);
+    const card = document.createElement('article');
     card.className = 'saved-item';
     const title = document.createElement('h3');
     title.textContent = item.displayText;
@@ -664,28 +707,54 @@ function renderSavedView(model: AppModel): HTMLElement {
     card.appendChild(meta);
     if (item.meaning) {
       const meaning = document.createElement('div');
-      meaning.className = 'meta';
+      meaning.className = 'meta meaning';
       meaning.textContent = `Meaning: ${item.meaning}`;
       card.appendChild(meaning);
     }
+
+    const occurrenceGroup = document.createElement('div');
+    occurrenceGroup.className = 'occurrence-group';
     for (const occurrence of occurrences) {
       const link = document.createElement('a');
       link.className = 'occurrence-link';
       link.href = '#';
-      link.textContent = `▶ ${occurrence.sourceContext.mediaPath} @ ${formatTimeMs(occurrence.startMs)}`;
+      const cue = model.store.getCue(occurrence.cueId);
+      const cueText = cue?.text ?? occurrence.selectionText;
+      link.textContent = `▶ ${formatTimeMs(occurrence.startMs)} — ${cueText}`;
+      link.setAttribute('aria-label', `Jump to ${formatTimeMs(occurrence.startMs)} in ${occurrence.sourceContext.mediaPath}`);
       link.addEventListener('click', (e) => {
         e.preventDefault();
         setView(model, 'player');
         model.player.currentTimeMs = occurrence.startMs;
         model.player.activeCueId = occurrence.cueId;
+        model.targetTrackId = occurrence.sourceContext.subtitleTrackId;
+        model.nativeTrackId = model.currentMedia?.id === occurrence.sourceContext.mediaId ? model.nativeTrackId : null;
+        if (model.currentMedia?.id !== occurrence.sourceContext.mediaId) {
+          const asset = model.store.getMediaAsset(occurrence.sourceContext.mediaId);
+          if (asset) {
+            model.currentMedia = asset;
+            model.cues = model.store.listCuesForTrack(occurrence.sourceContext.subtitleTrackId);
+          }
+        }
         const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
         if (video) {
           video.currentTime = occurrence.startMs / 1000;
         }
         rerenderApp(model);
       });
-      card.appendChild(link);
+      occurrenceGroup.appendChild(link);
+
+      const contextLine = document.createElement('div');
+      contextLine.className = 'occurrence-context';
+      contextLine.setAttribute('aria-hidden', 'true');
+      const tokenSpanText = occurrence.sourceContext.tokenSpan.startToken === occurrence.sourceContext.tokenSpan.endToken - 1
+        ? `token ${occurrence.sourceContext.tokenSpan.startToken}`
+        : `tokens ${occurrence.sourceContext.tokenSpan.startToken}–${occurrence.sourceContext.tokenSpan.endToken - 1}`;
+      contextLine.textContent = `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`;
+      occurrenceGroup.appendChild(contextLine);
     }
+    card.appendChild(occurrenceGroup);
+
     const reviewBtn = document.createElement('button');
     reviewBtn.className = 'btn-secondary';
     reviewBtn.textContent = 'Create review card';
@@ -700,7 +769,8 @@ function renderSavedView(model: AppModel): HTMLElement {
     card.appendChild(reviewBtn);
     list.appendChild(card);
   }
-  section.appendChild(list);
+  panel.appendChild(list);
+  section.appendChild(panel);
   return section;
 }
 

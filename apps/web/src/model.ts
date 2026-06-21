@@ -1,5 +1,5 @@
-import { LocalStore } from '@lingotorte/storage';
-import { defaultProviderPolicy, isoNow, makeSavedItem, makeSavedOccurrence, makeReviewCard, makeReviewCardState, makeReviewEvent, validateSavedOccurrenceSourceContext } from '@lingotorte/domain';
+import { LocalStore, SavedOccurrenceService } from '@lingotorte/storage';
+import { defaultProviderPolicy, isoNow, makeReviewCard, makeReviewCardState, makeReviewEvent } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { importSubtitle } from '@lingotorte/subtitles';
 import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack } from '@lingotorte/domain';
@@ -13,8 +13,10 @@ export const PLAYBACK_RATE_STEP = 0.1;
 
 export function createAppModel(): AppModel {
   const policy = defaultProviderPolicy();
+  const store = new LocalStore();
   return {
-    store: new LocalStore(),
+    store,
+    savedOccurrenceService: new SavedOccurrenceService(store),
     providerPolicy: policy,
     adapters: resolveLocalAdapters(policy, 'pl'),
     player: {
@@ -213,29 +215,20 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
     model.selection.charStart,
     model.selection.charEnd,
   );
-  const validated = validateSavedOccurrenceSourceContext(sourceContext);
 
-  const item = makeSavedItem({
+  const result = model.savedOccurrenceService.saveSelection({
     kind: model.selection.kind,
     language: 'pl',
     displayText: model.selection.text,
     ...(model.pendingMeaning ? { meaning: model.pendingMeaning } : {}),
     ...(model.pendingNotes ? { notes: model.pendingNotes } : {}),
-  });
-  const occurrence = makeSavedOccurrence({
-    savedItemId: item.id,
     mediaId: model.currentMedia.id,
     cueId: cue.id,
     startMs: cue.startMs,
     endMs: cue.endMs,
-    selectionKind: model.selection.kind,
-    selectionText: model.selection.text,
-    sourceContext: validated,
+    sourceContext,
   });
-
-  model.store.putSavedItem(item);
-  model.store.putSavedOccurrence(occurrence);
-  return item;
+  return result.item;
 }
 
 export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<SavedItem | null> {
@@ -251,27 +244,45 @@ export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<Sa
     0,
     cue.text.length,
   );
-  const validated = validateSavedOccurrenceSourceContext(sourceContext);
 
-  const item = makeSavedItem({
+  const result = model.savedOccurrenceService.saveSelection({
     kind: 'sentence',
     language: 'pl',
     displayText: cue.text,
-  });
-  const occurrence = makeSavedOccurrence({
-    savedItemId: item.id,
     mediaId: model.currentMedia.id,
     cueId: cue.id,
     startMs: cue.startMs,
     endMs: cue.endMs,
-    selectionKind: 'sentence',
-    selectionText: cue.text,
-    sourceContext: validated,
+    sourceContext,
   });
+  return result.item;
+}
 
-  model.store.putSavedItem(item);
-  model.store.putSavedOccurrence(occurrence);
-  return item;
+export function saveSelectedPhraseFromCue(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenStart: number, tokenEnd: number): SavedItem | null {
+  if (!model.currentMedia || !model.targetTrackId) return null;
+  const sourceContext = buildSourceContext(
+    model.currentMedia.id,
+    model.currentMedia.originalPath,
+    model.currentMedia.contentSha256,
+    model.targetTrackId,
+    cue,
+    tokenStart,
+    tokenEnd,
+    charStart,
+    charEnd,
+  );
+
+  const result = model.savedOccurrenceService.saveSelection({
+    kind: 'phrase',
+    language: 'pl',
+    displayText: text,
+    mediaId: model.currentMedia.id,
+    cueId: cue.id,
+    startMs: cue.startMs,
+    endMs: cue.endMs,
+    sourceContext,
+  });
+  return result.item;
 }
 
 export function createReviewCardForSavedItem(

@@ -30,6 +30,7 @@ export type Selection = {
 
 export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
+  savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
   providerPolicy: ReturnType<typeof import('@lingotorte/domain').defaultProviderPolicy>;
   adapters: ReturnType<typeof import('@lingotorte/language').resolveLocalAdapters>;
   player: PlayerState;
@@ -42,6 +43,7 @@ export type AppModel = {
   pendingMeaning: string;
   pendingNotes: string;
   view: ViewName;
+  savedViewTab?: 'vocab' | 'sentences';
   transcriptQuery: string;
 };
 
