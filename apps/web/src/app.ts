@@ -1,6 +1,6 @@
 import type { AppModel, ViewName } from './uiTypes';
 import type { Cue, SavedItem } from '@lingotorte/domain';
-import { formatTimeMs } from './uiTypes';
+import { formatDueAt, formatTimeMs } from './uiTypes';
 import {
   activeCueAtTime,
   applyLoopTolerance,
@@ -175,7 +175,10 @@ function renderPracticeView(model: AppModel): HTMLElement {
   modeRow.className = 'practice-mode-row';
   const modeLabel = document.createElement('label');
   modeLabel.textContent = 'Mode';
+  modeLabel.htmlFor = 'practice-mode';
   const modeSelect = document.createElement('select');
+  modeSelect.id = 'practice-mode';
+  modeSelect.name = 'practice-mode';
   modeSelect.setAttribute('aria-label', 'Practice mode');
   const modes: { value: import('./uiTypes').PracticeMode; label: string }[] = [
     { value: 'typed-input', label: 'Typed input' },
@@ -208,6 +211,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
     answerLabel.htmlFor = 'practice-answer';
     const answerInput = document.createElement('input');
     answerInput.id = 'practice-answer';
+    answerInput.name = 'practice-answer';
     answerInput.type = 'text';
     answerInput.value = model.practice.pendingAnswer;
     answerInput.placeholder = 'Type the target text…';
@@ -291,7 +295,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   const stats = document.createElement('p');
   stats.className = 'meta';
   const attemptCount = model.store.listPracticeAttemptsForCard(card.id).length;
-  stats.textContent = `${attemptCount} attempt${attemptCount === 1 ? '' : 's'} recorded • state: ${state.state} • due: ${formatTimeMs(new Date(state.dueAt).valueOf())}`;
+  stats.textContent = `${attemptCount} attempt${attemptCount === 1 ? '' : 's'} recorded • state: ${state.state} • due: ${formatDueAt(state.dueAt)}`;
   section.appendChild(stats);
 
   return section;
@@ -352,6 +356,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
   const importTextarea = document.createElement('textarea');
   importTextarea.id = 'import-manifest';
+  importTextarea.name = 'import-manifest';
   importTextarea.placeholder = '{"schemaVersion":"lingotorte.learner-export.v1",...}';
   importTextarea.setAttribute('aria-label', 'Export manifest JSON');
   importGroup.appendChild(importTextarea);
@@ -406,8 +411,13 @@ function renderExportImportView(model: AppModel): HTMLElement {
     for (const warning of model.exportImport.preview.warnings) {
       const li = document.createElement('li');
       const label = document.createElement('label');
+      const warningCheckboxId = `restore-warning-${warning.kind}`;
+      label.htmlFor = warningCheckboxId;
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
+      checkbox.id = warningCheckboxId;
+      checkbox.name = 'restore-warning';
+      checkbox.value = warning.kind;
       checkbox.checked = model.exportImport.acknowledgedWarnings.includes(warning.kind);
       checkbox.addEventListener('change', () => {
         setExportImportAcknowledgedWarning(model, warning.kind, checkbox.checked);
@@ -422,8 +432,11 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
     if (model.exportImport.preview.overwriteConfirmationRequired) {
       const overwriteLabel = document.createElement('label');
+      overwriteLabel.htmlFor = 'restore-confirm-overwrite';
       const overwriteCheckbox = document.createElement('input');
       overwriteCheckbox.type = 'checkbox';
+      overwriteCheckbox.id = 'restore-confirm-overwrite';
+      overwriteCheckbox.name = 'restore-confirm-overwrite';
       overwriteCheckbox.checked = model.exportImport.confirmOverwrite;
       overwriteCheckbox.addEventListener('change', () => {
         setExportImportConfirmOverwrite(model, overwriteCheckbox.checked);
@@ -434,8 +447,11 @@ function renderExportImportView(model: AppModel): HTMLElement {
       previewPanel.appendChild(overwriteLabel);
     } else {
       const confirmLabel = document.createElement('label');
+      confirmLabel.htmlFor = 'restore-confirm';
       const confirmCheckbox = document.createElement('input');
       confirmCheckbox.type = 'checkbox';
+      confirmCheckbox.id = 'restore-confirm';
+      confirmCheckbox.name = 'restore-confirm';
       confirmCheckbox.checked = model.exportImport.confirmOverwrite;
       confirmCheckbox.addEventListener('change', () => {
         setExportImportConfirmOverwrite(model, confirmCheckbox.checked);
@@ -690,7 +706,10 @@ function renderPlayerControls(model: AppModel): HTMLElement {
 
   const speedLabel = document.createElement('label');
   speedLabel.textContent = 'Speed';
+  speedLabel.htmlFor = 'playback-speed';
   const speedInput = document.createElement('input');
+  speedInput.id = 'playback-speed';
+  speedInput.name = 'playback-speed';
   speedInput.type = 'range';
   speedInput.min = String(MIN_PLAYBACK_RATE);
   speedInput.max = String(MAX_PLAYBACK_RATE);
@@ -726,6 +745,8 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
   const search = document.createElement('div');
   search.className = 'transcript-search';
   const input = document.createElement('input');
+  input.id = 'transcript-search';
+  input.name = 'transcript-search';
   input.type = 'text';
   input.placeholder = 'Search transcript…';
   input.setAttribute('aria-label', 'Search transcript');
@@ -1300,7 +1321,7 @@ function renderReviewView(model: AppModel): HTMLElement {
   const stats = document.createElement('p');
   stats.className = 'meta';
   const totalCards = Object.keys(model.store.snapshot().reviewCards).length;
-  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck • state: ${state.state} • due: ${formatTimeMs(new Date(state.dueAt).valueOf())}`;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck • state: ${state.state} • due: ${formatDueAt(state.dueAt)}`;
   section.appendChild(stats);
 
   return section;

@@ -7,7 +7,7 @@ This skeleton is the narrow P0 foundation for Lingotorte: a Vite/TypeScript web 
 ## Local commands
 
 ```bash
-npm install
+npm ci --offline --no-audit --no-fund
 npm run typecheck
 npm test
 npm run test:no-network
@@ -15,7 +15,13 @@ npm run scan:privacy
 npm run build
 ```
 
-`npm run dev` binds Vite to `127.0.0.1` only.
+For interactive local smoke, start Vite explicitly on loopback:
+
+```bash
+npm run dev -- --host 127.0.0.1
+```
+
+If the offline cache is missing, stop before using a network package-manager install unless Janusz separately approves that action. See `local-runbook.md` for the V1 browser smoke script.
 
 ## Fixture boundary
 

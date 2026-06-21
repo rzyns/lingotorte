@@ -52,6 +52,12 @@ function sourceContextForCue(
   });
 }
 
+function dueAsOf(reviewService: ReviewService, cardId: string): Date {
+  const state = reviewService['store'].getReviewCardState(cardId);
+  if (!state) throw new Error(`Expected review state for card ${cardId}`);
+  return new Date(new Date(state.dueAt).valueOf() + 1);
+}
+
 describe('P5 FSRS review core', () => {
   it('creates a new review card in new state with current due timestamp', async () => {
     const { savedService, reviewService, asset, track, cues } = await setupFixtureStore();
@@ -208,7 +214,7 @@ describe('P5 FSRS review core', () => {
       cardType: 'recognition',
     });
 
-    const now = new Date('2026-06-21T12:00:00.000Z');
+    const now = dueAsOf(reviewService, card.id);
     const bucketsBefore = reviewService.listBuckets(now);
     expect(bucketsBefore.newCards).toHaveLength(1);
     expect(bucketsBefore.learning).toHaveLength(0);
@@ -243,7 +249,7 @@ describe('P5 FSRS review core', () => {
       cardType: 'recognition',
     });
 
-    const now = new Date('2026-06-21T12:00:00.000Z');
+    const now = dueAsOf(reviewService, card.id);
     expect(reviewService.listDueCards(now)).toHaveLength(1);
 
     // Directly mutate store snapshot to suspend card; this is a test-only shortcut.

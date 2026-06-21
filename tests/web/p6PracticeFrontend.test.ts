@@ -34,6 +34,12 @@ const mediaPath = 'fixtures/media/synthetic-polish-dialogue.webm';
 const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
 const nativeSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.native.srt';
 
+function dueAsOf(m: ReturnType<typeof createAppModel>, cardId: string): Date {
+  const state = m.store.getReviewCardState(cardId);
+  if (!state) throw new Error(`Expected review state for card ${cardId}`);
+  return new Date(new Date(state.dueAt).valueOf() + 1);
+}
+
 async function createPracticeModel() {
   return await withNoNetwork(async () => {
     const m = createAppModel();
@@ -44,7 +50,7 @@ async function createPracticeModel() {
     const occurrence = m.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
     if (!occurrence) throw new Error('Expected saved occurrence');
     const card = createReviewCardForSavedItem(m, item, occurrence, 'recognition');
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const asOf = dueAsOf(m, card.id);
     setReviewBucketAsOf(m, asOf);
     return { model: m, item, occurrence, firstCue, card };
   });
@@ -82,6 +88,13 @@ describe('P6 frontend local practice attempts', () => {
     expect(app.textContent).toContain(firstCue.text);
     expect(app.textContent).toContain(mediaPath);
     expect(app.textContent).toContain('Replay source cue');
+    expect(app.textContent).toMatch(/due: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/);
+    expect(app.textContent).not.toMatch(/due: \d{4,}:/);
+
+    const controlsWithoutNames = Array.from(document.querySelectorAll('input, textarea, select')).filter(
+      (control) => !(control as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).name,
+    );
+    expect(controlsWithoutNames).toHaveLength(0);
   });
 
   it('submits a correct typed-input practice attempt via the UI and updates state', async () => {

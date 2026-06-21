@@ -22,7 +22,6 @@ export * from './guards';
 export * from './sourceContext';
 export * from './exportManifest';
 export * from './providerPolicy';
-export * from './privacyScan';
 
 export function makeMediaAsset(
   input: Pick<MediaAsset, 'title' | 'originalPath' | 'contentSha256' | 'durationMs' | 'container' | 'sizeBytes' | 'privacyLabel'>,

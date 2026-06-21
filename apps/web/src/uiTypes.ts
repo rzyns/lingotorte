@@ -61,7 +61,7 @@ export type AppModel = {
   practice: {
     mode: PracticeMode;
     pendingAnswer: string;
-    lastAttemptResult: { result: PracticeResult; correct: boolean | null } | null;
+    lastAttemptResult: { result: PracticeResult; correct: boolean } | null;
     typedAttemptsEnabled: boolean;
   };
   exportImport: {
@@ -128,6 +128,14 @@ export function formatTimeMs(ms: number): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(2, '0')}`;
   }
   return `${minutes}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(2, '0')}`;
+}
+
+export function formatDueAt(dueAt: string | Date): string {
+  const date = typeof dueAt === 'string' ? new Date(dueAt) : dueAt;
+  if (Number.isNaN(date.valueOf())) {
+    return typeof dueAt === 'string' ? dueAt : 'invalid due date';
+  }
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
 }
 
 export function buildSourceContext(

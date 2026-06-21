@@ -1,12 +1,16 @@
-import { LocalStore, SavedOccurrenceService } from '@lingotorte/storage';
-import { defaultProviderPolicy, isoNow, makeReviewEvent } from '@lingotorte/domain';
+import { LocalStore } from '../../../packages/storage/src/localStore';
+import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
+import { PracticeService } from '../../../packages/storage/src/practiceService';
+import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
+import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
-import { importSubtitle } from '@lingotorte/subtitles';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
-import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating } from '@lingotorte/domain';
+import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating, Sha256Digest } from '@lingotorte/domain';
 import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
-import { PracticeService, ExportService, RestoreService } from '@lingotorte/storage';
+import browserFixtureMediaUrl from '../../../fixtures/media/synthetic-polish-dialogue.webm?url';
+import browserFixtureTargetSrt from '../../../fixtures/subtitles/synthetic-polish-dialogue.target.srt?raw';
+import browserFixtureNativeSrt from '../../../fixtures/subtitles/synthetic-polish-dialogue.native.srt?raw';
 
 export const CUE_SYNC_TOLERANCE_MS = 100;
 export const MIN_PLAYBACK_RATE = 0.5;
@@ -151,11 +155,197 @@ export function applyLoopTolerance(videoCurrentMs: number, currentCue: Cue | nul
   return null;
 }
 
+function isNodeRuntime(): boolean {
+  const maybeProcess = (globalThis as { process?: { versions?: { node?: string } } }).process;
+  return typeof maybeProcess?.versions?.node === 'string';
+}
+
+function hexFromBytes(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Bytes(bytes: ArrayBuffer | Uint8Array): Promise<Sha256Digest> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new TypeError('Browser fixture import requires Web Crypto SHA-256 support.');
+  }
+  const input: ArrayBuffer = bytes instanceof Uint8Array ? (bytes.slice().buffer as ArrayBuffer) : bytes;
+  const digest = await subtle.digest('SHA-256', input);
+  return `sha256:${hexFromBytes(new Uint8Array(digest))}` as Sha256Digest;
+}
+
+async function sha256BrowserText(text: string): Promise<Sha256Digest> {
+  return sha256Bytes(new TextEncoder().encode(text));
+}
+
+function normalizeBrowserCueText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const srtTimestampPattern = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/;
+
+function parseBrowserSrtTimestamp(value: string): number {
+  const match = srtTimestampPattern.exec(value);
+  if (!match) {
+    throw new TypeError(`Invalid SRT timestamp: ${value}`);
+  }
+  return (
+    Number.parseInt(match[1]!, 10) * 3_600_000 +
+    Number.parseInt(match[2]!, 10) * 60_000 +
+    Number.parseInt(match[3]!, 10) * 1_000 +
+    Number.parseInt(match[4]!, 10)
+  );
+}
+
+async function parseBrowserSrtText(input: {
+  mediaId: string;
+  language: string;
+  role: 'target' | 'native' | 'other';
+  path: string;
+  text: string;
+  isActive?: boolean;
+}): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
+  const track = makeSubtitleTrack({
+    mediaId: input.mediaId,
+    language: input.language,
+    role: input.role,
+    format: 'srt',
+    sourceKind: 'synthetic',
+    sourcePath: input.path,
+    contentSha256: await sha256BrowserText(input.text),
+    isActive: input.isActive ?? true,
+  });
+
+  const blocks = input.text
+    .replace(/\r\n?/g, '\n')
+    .trim()
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+  const cues: Cue[] = [];
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index]!;
+    const lines = block.split('\n').map((line) => line.trim());
+    const firstLine = lines[0] ?? '';
+    if (!/^\d+$/.test(firstLine)) {
+      throw new TypeError(`SRT block ${index} missing numeric cue id`);
+    }
+    const cueIndex = Number.parseInt(firstLine, 10);
+    const timingLine = lines[1] ?? '';
+    const timingMatch = /^(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/.exec(timingLine);
+    if (!timingMatch) {
+      throw new TypeError(`SRT block ${cueIndex} has invalid timing line: ${timingLine}`);
+    }
+    const startMs = parseBrowserSrtTimestamp(timingMatch[1]!);
+    const endMs = parseBrowserSrtTimestamp(timingMatch[2]!);
+    if (endMs <= startMs) {
+      throw new TypeError(`SRT block ${cueIndex} end time must be after start time`);
+    }
+    const text = normalizeBrowserCueText(lines.slice(2).join('\n'));
+    if (text.length === 0) {
+      throw new TypeError(`SRT block ${cueIndex} has empty cue text`);
+    }
+    cues.push(
+      makeCue({
+        trackId: track.id,
+        cueIndex,
+        startMs,
+        endMs,
+        text,
+        normalizedText: text.toLowerCase(),
+        textSha256: await sha256BrowserText(text),
+      }),
+    );
+  }
+
+  for (let i = 1; i < cues.length; i++) {
+    const prev = cues[i - 1]!;
+    const curr = cues[i]!;
+    if (curr.startMs < prev.endMs) {
+      throw new TypeError(
+        `SRT cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
+      );
+    }
+  }
+
+  return { track, cues };
+}
+
+async function importBrowserSyntheticFixture(
+  model: AppModel,
+  mediaPath: string,
+  targetSrtPath: string,
+  nativeSrtPath?: string,
+): Promise<void> {
+  const response = await fetch(browserFixtureMediaUrl);
+  if (!response.ok) {
+    throw new TypeError(`Unable to load browser synthetic media fixture: ${response.status} ${response.statusText}`);
+  }
+  const mediaBytes = await response.arrayBuffer();
+  const container = mediaPath.split('.').pop()?.toLowerCase() ?? 'webm';
+  const durationMs = Math.max(1000, Math.round(mediaBytes.byteLength / 50_000) * 1000);
+  const asset = makeMediaAsset({
+    title: 'Synthetic Polish Dialogue',
+    originalPath: browserFixtureMediaUrl,
+    contentSha256: await sha256Bytes(mediaBytes),
+    durationMs,
+    container,
+    sizeBytes: mediaBytes.byteLength,
+    privacyLabel: 'synthetic',
+  });
+
+  const targetParsed = await parseBrowserSrtText({
+    mediaId: asset.id,
+    language: 'pl',
+    role: 'target',
+    path: targetSrtPath,
+    text: browserFixtureTargetSrt,
+  });
+  const nativeParsed = nativeSrtPath
+    ? await parseBrowserSrtText({
+        mediaId: asset.id,
+        language: 'en',
+        role: 'native',
+        path: nativeSrtPath,
+        text: browserFixtureNativeSrt,
+      })
+    : null;
+
+  model.store.putMediaAsset(asset);
+  model.store.putSubtitleTrack(targetParsed.track);
+  if (nativeParsed) model.store.putSubtitleTrack(nativeParsed.track);
+  for (const cue of targetParsed.cues) {
+    model.store.putCue(cue);
+  }
+  if (nativeParsed) {
+    for (const cue of nativeParsed.cues) {
+      model.store.putCue(cue);
+    }
+  }
+
+  model.currentMedia = asset;
+  model.targetTrackId = targetParsed.track.id;
+  model.nativeTrackId = nativeParsed?.track.id ?? null;
+  model.cues = model.store.listCuesForTrack(targetParsed.track.id);
+  model.player.durationMs = durationMs;
+  model.player.activeCueId = model.cues[0]?.id ?? null;
+  model.importError = null;
+}
+
 export async function importTargetOnlyFixture(model: AppModel, mediaPath: string, targetSrtPath: string): Promise<void> {
-  const { sha256File, probeMediaFile } = await import('@lingotorte/storage');
+  if (!isNodeRuntime()) {
+    await importBrowserSyntheticFixture(model, mediaPath, targetSrtPath);
+    return;
+  }
+
+  const { sha256File, probeMediaFile } = await import(/* @vite-ignore */ '../../../packages/storage/src/mediaHelpers');
+  const { importSubtitle } = await import(/* @vite-ignore */ '../../../packages/subtitles/src/import');
   const fingerprint = await sha256File(mediaPath);
   const probe = await probeMediaFile(mediaPath);
-  const { makeMediaAsset } = await import('@lingotorte/domain');
   const asset = makeMediaAsset({
     title: 'Imported local media',
     originalPath: mediaPath,
@@ -189,10 +379,15 @@ export async function importFixtureMediaAndSubtitles(
   targetSrtPath: string,
   nativeSrtPath: string,
 ): Promise<void> {
-  const { sha256File, probeMediaFile } = await import('@lingotorte/storage');
+  if (!isNodeRuntime()) {
+    await importBrowserSyntheticFixture(model, mediaPath, targetSrtPath, nativeSrtPath);
+    return;
+  }
+
+  const { sha256File, probeMediaFile } = await import(/* @vite-ignore */ '../../../packages/storage/src/mediaHelpers');
+  const { importSubtitle } = await import(/* @vite-ignore */ '../../../packages/subtitles/src/import');
   const fingerprint = await sha256File(mediaPath);
   const probe = await probeMediaFile(mediaPath);
-  const { makeMediaAsset } = await import('@lingotorte/domain');
   const asset = makeMediaAsset({
     title: 'Imported local media',
     originalPath: mediaPath,
@@ -510,24 +705,6 @@ export async function tokenizeCueText(model: AppModel, cue: Cue): Promise<TokenI
   const adapter = model.adapters.tokenizer ?? makeWhitespaceTokenizer('pl');
   const result = await adapter.tokenize({ language: 'pl', cueId: cue.id, text: cue.text, preserveCharOffsets: true });
   return result.tokens.map((t) => ({ tokenIndex: t.tokenIndex, charStart: t.charStart, charEnd: t.charEnd, surface: t.surface }));
-}
-
-export function recordReviewEvent(
-  model: AppModel,
-  card: ReviewCard,
-  rating: 'again' | 'hard' | 'good' | 'easy',
-): void {
-  const state = model.store.getReviewCardState(card.id);
-  const previousStateJson = JSON.stringify(state ?? { state: 'new', dueAt: isoNow() });
-  const nextStateJson = JSON.stringify({ ...(state ?? { state: 'new' }), reps: (state?.reps ?? 0) + 1, lastReviewedAt: isoNow() });
-  const event = makeReviewEvent({
-    cardId: card.id,
-    reviewedAt: isoNow(),
-    rating,
-    previousStateJson,
-    nextStateJson,
-  });
-  model.store.addReviewEvent(event);
 }
 
 export async function lookupToken(model: AppModel, token: string, cueId: string): Promise<LookupOutput> {

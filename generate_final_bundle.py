@@ -1,6 +1,6 @@
 from pathlib import Path
 import json, hashlib, textwrap, re
-root = Path('/home/openclaw/workspace/lingotorte')
+root = Path(__file__).resolve().parent
 planning = root/'docs/planning'
 
 def read(rel):

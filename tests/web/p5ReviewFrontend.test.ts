@@ -50,6 +50,17 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
     rerenderApp(m);
   }
 
+  function dueAsOf(m: ReturnType<typeof createAppModel>, ...cardIds: string[]): Date {
+    const maxDueAt = Math.max(
+      ...cardIds.map((cardId) => {
+        const state = m.store.getReviewCardState(cardId);
+        if (!state) throw new Error(`Expected review state for card ${cardId}`);
+        return new Date(state.dueAt).valueOf();
+      }),
+    );
+    return new Date(maxDueAt + 1);
+  }
+
   async function createDueCard() {
     return await withNoNetwork(async () => {
       const m = createAppModel();
@@ -65,8 +76,8 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   }
 
   it('renders review bucket counts including new and mastered with fixed clock', async () => {
-    const { value: { model } } = await createDueCard();
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const { value: { model, card } } = await createDueCard();
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
     const app = document.getElementById('app');
@@ -79,8 +90,8 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   });
 
   it('presents a due card in the review view and shows the source cue context when revealed', async () => {
-    const { value: { model } } = await createDueCard();
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const { value: { model, card } } = await createDueCard();
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
 
@@ -93,12 +104,14 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
     expect(app.textContent).toContain('Cześć, to jest lokalny test.');
     expect(app.textContent).toContain(mediaPath);
     expect(app.textContent).toContain('Source:');
+    expect(app.textContent).toMatch(/due: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/);
+    expect(app.textContent).not.toMatch(/due: \d{4,}:/);
     expect(app.textContent).toContain('Hello, this is a local test.');
   });
 
   it('wires rating controls to append review events and update projected schedule state', async () => {
     const { value: { model, card } } = await createDueCard();
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
 
@@ -121,13 +134,13 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   });
 
   it('does not mutate saved occurrence sourceContext when reviewing', async () => {
-    const { value: { model, occurrence } } = await createDueCard();
+    const { value: { model, card, occurrence } } = await createDueCard();
     const originalMediaPath = occurrence.sourceContext.mediaPath;
     const originalCueId = occurrence.sourceContext.cueId;
     const originalCharSpan = { ...occurrence.sourceContext.charSpan };
     const originalTokenSpan = { ...occurrence.sourceContext.tokenSpan };
 
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
 
@@ -147,16 +160,16 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   });
 
   it('advances to the next due card after a rating and hides mastered cards by default', async () => {
-    const { value: { model, firstCue } } = await createDueCard();
+    const { value: { model, card, firstCue } } = await createDueCard();
     const secondCue = model.cues[1];
     if (!secondCue) throw new Error('This test needs at least two cues');
     const secondItem = await saveSentenceFromCue(model, secondCue);
     if (!secondItem) throw new Error('Expected second saved item');
     const secondOccurrence = model.savedOccurrenceService.listOccurrencesForItem(secondItem.id)[0];
     if (!secondOccurrence) throw new Error('Expected second occurrence');
-    createReviewCardForSavedItem(model, secondItem, secondOccurrence, 'recognition');
+    const secondCard = createReviewCardForSavedItem(model, secondItem, secondOccurrence, 'recognition');
 
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const asOf = dueAsOf(model, card.id, secondCard.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
 
@@ -175,7 +188,7 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
 
   it('uses backend due queue projection and does not invent hidden FSRS state', async () => {
     const { value: { model, card } } = await createDueCard();
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
 
     const buckets = listReviewBuckets(model, asOf);
@@ -190,8 +203,8 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   });
 
   it('video replay button jumps back to the source cue in the player view', async () => {
-    const { value: { model, firstCue } } = await createDueCard();
-    const asOf = new Date('2026-06-21T12:00:00.000Z');
+    const { value: { model, card, firstCue } } = await createDueCard();
+    const asOf = dueAsOf(model, card.id);
     setReviewBucketAsOf(model, asOf);
     renderReview(model);
 
@@ -211,7 +224,7 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
   it('has zero network activity in the review flow with providers disabled', async () => {
     const { networkAttempts } = await withNoNetwork(async () => {
       const { model, card } = await createDueCard().then((r) => r.value);
-      const asOf = new Date('2026-06-21T12:00:00.000Z');
+      const asOf = dueAsOf(model, card.id);
       setReviewBucketAsOf(model, asOf);
       renderReview(model);
       submitReviewRating(model, card.id, 'easy', asOf);

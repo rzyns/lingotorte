@@ -1,6 +1,6 @@
 from pathlib import Path
 import re, json, sys, hashlib
-root=Path('/home/openclaw/workspace/lingotorte')
+root=Path(__file__).resolve().parent
 required=[
 'docs/final/war-room-final-synthesis.md','docs/final/lingotorte-implementation-plan.md','docs/spec/lingopie-behavior-reference.md','docs/spec/feature-implementation-playbook.md','docs/architecture/local-first-architecture.md','docs/architecture/data-model-and-storage.md','docs/architecture/language-adapter-design.md','docs/product/srs-and-practice-design.md','docs/research/public-product-cartography.md','docs/research/live-ui-inventory-expanded.md','docs/research/oss-substrate-assessment.md','docs/review/safety-privacy-boundary-review.md','docs/plan/mvp-spike-plan.md','README.md','AGENTS.md','docs/final/artifact-manifest.json']
 required_features=['local media import','subtitle extraction','parsing','alignment','dual subtitles','transcript synchronization','cue seek','highlight','clickable token lookup','phrase selection','grammar/POS','sentence explanation','save word','phrase','sentence','My Vocab','My Sentences','Listen','Loop','playback speed','saved occurrence context','FSRS flashcards','SRS states','quiz','match','sentence-builder','Anki export','generated subtitles','pronunciation','shadowing','progress tracking','privacy/settings','backups/sync']
@@ -34,7 +34,8 @@ for p in root.rglob('*.md'):
 # manifest hashes
 manifest=json.loads((root/'docs/final/artifact-manifest.json').read_text())
 for item in manifest['artifacts']:
-    p=Path(item['path'])
+    rel=item.get('relative_path')
+    p=root/rel if rel else Path(item['path'])
     if not p.exists(): errors.append(f'manifest path missing {p}')
     else:
         h=hashlib.sha256(p.read_bytes()).hexdigest()

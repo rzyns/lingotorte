@@ -1,12 +1,14 @@
 from pathlib import Path
 import json, hashlib
-root=Path('/home/openclaw/workspace/lingotorte')
+root=Path(__file__).resolve().parent
 manifest_path=root/'docs/final/artifact-manifest.json'
 manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
 for item in manifest['artifacts']:
-    p=Path(item['path'])
+    rel=item.get('relative_path')
+    p=root/rel if rel else Path(item['path'])
     if p.exists():
         txt=p.read_text(encoding='utf-8') if p.suffix in ['.md','.json'] else ''
+        item['path']=str(p)
         item['bytes']=p.stat().st_size
         item['lines']=txt.count('\n')+1 if txt else item.get('lines')
         item['sha256']=hashlib.sha256(p.read_bytes()).hexdigest()
