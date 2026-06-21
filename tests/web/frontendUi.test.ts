@@ -46,7 +46,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const app = document.getElementById('app');
     const nav = app?.querySelector('nav');
     const buttons = nav?.querySelectorAll('button');
-    expect(buttons?.length).toBe(5);
+    expect(buttons?.length).toBe(7);
     const savedBtn = Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Saved') as HTMLElement | null;
     savedBtn?.click();
     expect(document.getElementById('app')?.textContent).toContain('My Vocab');

@@ -6,7 +6,7 @@ import type {
   SubtitleTrack,
 } from '@lingotorte/domain';
 
-export type ViewName = 'player' | 'library' | 'saved' | 'review' | 'settings';
+export type ViewName = 'player' | 'library' | 'saved' | 'review' | 'practice' | 'export-import' | 'settings';
 
 export type PlayerState = {
   currentTimeMs: number;
@@ -28,10 +28,16 @@ export type Selection = {
   charEnd: number;
 } | null;
 
+export type PracticeMode = import('@lingotorte/domain').PracticeMode;
+export type PracticeResult = import('@lingotorte/domain').PracticeResult;
+
 export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
   savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
   reviewService: import('@lingotorte/review').ReviewService;
+  practiceService: import('@lingotorte/storage').PracticeService;
+  exportService: import('@lingotorte/storage').ExportService;
+  restoreService: import('@lingotorte/storage').RestoreService;
   providerPolicy: ReturnType<typeof import('@lingotorte/domain').defaultProviderPolicy>;
   adapters: ReturnType<typeof import('@lingotorte/language').resolveLocalAdapters>;
   player: PlayerState;
@@ -51,6 +57,20 @@ export type AppModel = {
     activeCardId: string | null;
     revealed: boolean;
     bucketAsOf: Date;
+  };
+  practice: {
+    mode: PracticeMode;
+    pendingAnswer: string;
+    lastAttemptResult: { result: PracticeResult; correct: boolean | null } | null;
+    typedAttemptsEnabled: boolean;
+  };
+  exportImport: {
+    manifestJson: string | null;
+    preview: import('@lingotorte/domain').RestorePreview | null;
+    lastError: string | null;
+    acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
+    confirmOverwrite: boolean;
+    lastExport: { filePath: string; recordCount: number; warningCount: number } | null;
   };
 };
 

@@ -30,6 +30,15 @@ import {
   togglePlay,
   toggleReviewReveal,
   tokenizeCueText,
+  setPracticeMode,
+  setPracticePendingAnswer,
+  submitPracticeAttempt,
+  exportLearnerState,
+  previewRestoreManifest,
+  confirmRestore,
+  setExportImportAcknowledgedWarning,
+  setExportImportConfirmOverwrite,
+  setExportImportError,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -61,6 +70,8 @@ function renderNav(model: AppModel): HTMLElement {
     { id: 'library', label: 'Library' },
     { id: 'saved', label: 'Saved' },
     { id: 'review', label: 'Review' },
+    { id: 'practice', label: 'Practice' },
+    { id: 'export-import', label: 'Export / Import' },
     { id: 'settings', label: 'Settings' },
   ];
   const nav = document.createElement('nav');
@@ -107,11 +118,368 @@ function renderMain(model: AppModel): HTMLElement {
     case 'review':
       main.appendChild(renderReviewView(model));
       break;
+    case 'practice':
+      main.appendChild(renderPracticeView(model));
+      break;
+    case 'export-import':
+      main.appendChild(renderExportImportView(model));
+      break;
     case 'settings':
       main.appendChild(renderSettingsView(model));
       break;
   }
   return main;
+}
+
+function renderPracticeView(model: AppModel): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'card practice-card';
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Practice';
+  section.appendChild(h2);
+
+  const active = pickNextDueCard(model, model.review.bucketAsOf);
+
+  if (model.practice.lastAttemptResult) {
+    const feedback = document.createElement('div');
+    feedback.className = `practice-feedback ${model.practice.lastAttemptResult.correct ? 'success' : 'error'}`;
+    feedback.setAttribute('role', 'status');
+    feedback.textContent = model.practice.lastAttemptResult.correct
+      ? `Result: ${model.practice.lastAttemptResult.result} ✓`
+      : `Result: ${model.practice.lastAttemptResult.result}`;
+    section.appendChild(feedback);
+  }
+
+  if (!active) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No cards due right now. Add more saved items or wait for scheduled reviews.';
+    section.appendChild(empty);
+    return section;
+  }
+
+  const { occurrence, state, card } = active;
+  const currentCue = model.store.getCue(occurrence.cueId);
+  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+  const nativeText = currentCue ? nativeTextForCue(currentCue, nativeTrack, nativeCues) : undefined;
+
+  const prompt = document.createElement('div');
+  prompt.className = 'practice-prompt';
+  prompt.setAttribute('role', 'alert');
+  prompt.setAttribute('aria-live', 'polite');
+  prompt.textContent = card.promptTemplate;
+  section.appendChild(prompt);
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'practice-mode-row';
+  const modeLabel = document.createElement('label');
+  modeLabel.textContent = 'Mode';
+  const modeSelect = document.createElement('select');
+  modeSelect.setAttribute('aria-label', 'Practice mode');
+  const modes: { value: import('./uiTypes').PracticeMode; label: string }[] = [
+    { value: 'typed-input', label: 'Typed input' },
+    { value: 'multiple-choice', label: 'Multiple choice' },
+    { value: 'audio-recall', label: 'Audio recall' },
+    { value: 'speaking', label: 'Speaking' },
+  ];
+  for (const mode of modes) {
+    const option = document.createElement('option');
+    option.value = mode.value;
+    option.textContent = mode.label;
+    option.selected = model.practice.mode === mode.value;
+    modeSelect.appendChild(option);
+  }
+  modeSelect.addEventListener('change', () => {
+    setPracticeMode(model, modeSelect.value as import('./uiTypes').PracticeMode);
+    rerenderApp(model);
+  });
+  modeLabel.appendChild(modeSelect);
+  modeRow.appendChild(modeLabel);
+  section.appendChild(modeRow);
+
+  const typedEnabled = model.practice.mode === 'typed-input' || model.practice.typedAttemptsEnabled;
+
+  if (typedEnabled) {
+    const answerGroup = document.createElement('div');
+    answerGroup.className = 'practice-answer';
+    const answerLabel = document.createElement('label');
+    answerLabel.textContent = 'Your answer';
+    answerLabel.htmlFor = 'practice-answer';
+    const answerInput = document.createElement('input');
+    answerInput.id = 'practice-answer';
+    answerInput.type = 'text';
+    answerInput.value = model.practice.pendingAnswer;
+    answerInput.placeholder = 'Type the target text…';
+    answerInput.autocomplete = 'off';
+    answerInput.setAttribute('aria-label', 'Type your answer');
+    answerInput.addEventListener('input', () => {
+      setPracticePendingAnswer(model, answerInput.value);
+    });
+    answerGroup.appendChild(answerLabel);
+    answerGroup.appendChild(answerInput);
+    section.appendChild(answerGroup);
+  }
+
+  const controls = document.createElement('div');
+  controls.className = 'practice-controls';
+
+  const replayBtn = document.createElement('button');
+  replayBtn.className = 'btn-secondary';
+  replayBtn.textContent = 'Replay source cue';
+  replayBtn.setAttribute('aria-label', 'Jump back to the source cue in the player');
+  replayBtn.disabled = !currentCue;
+  replayBtn.addEventListener('click', () => {
+    if (!currentCue) return;
+    setView(model, 'player');
+    model.player.currentTimeMs = currentCue.startMs;
+    model.player.activeCueId = currentCue.id;
+    model.player.isPlaying = false;
+    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (video) {
+      video.currentTime = currentCue.startMs / 1000;
+    }
+    rerenderApp(model);
+  });
+  controls.appendChild(replayBtn);
+
+  const skipBtn = document.createElement('button');
+  skipBtn.className = 'btn-secondary';
+  skipBtn.textContent = 'Skip';
+  skipBtn.setAttribute('aria-label', 'Skip this practice attempt');
+  skipBtn.addEventListener('click', () => {
+    submitPracticeAttempt(model, '', model.review.bucketAsOf);
+    rerenderApp(model);
+  });
+  controls.appendChild(skipBtn);
+
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'btn-primary';
+  submitBtn.textContent = 'Submit attempt';
+  submitBtn.setAttribute('aria-label', 'Submit practice attempt');
+  submitBtn.addEventListener('click', () => {
+    submitPracticeAttempt(model, model.practice.pendingAnswer, model.review.bucketAsOf);
+    rerenderApp(model);
+  });
+  controls.appendChild(submitBtn);
+  section.appendChild(controls);
+
+  const context = document.createElement('div');
+  context.className = 'review-context';
+  if (currentCue) {
+    const time = document.createElement('p');
+    time.className = 'meta';
+    time.textContent = `Source: ${formatTimeMs(currentCue.startMs)} – ${formatTimeMs(currentCue.endMs)}`;
+    context.appendChild(time);
+    const targetContext = document.createElement('p');
+    targetContext.className = 'review-target-context';
+    targetContext.textContent = currentCue.text;
+    context.appendChild(targetContext);
+    if (nativeText) {
+      const nativeContext = document.createElement('p');
+      nativeContext.className = 'review-native-context';
+      nativeContext.textContent = nativeText;
+      context.appendChild(nativeContext);
+    }
+    const sourceNote = document.createElement('p');
+    sourceNote.className = 'meta';
+    sourceNote.textContent = `Media: ${occurrence.sourceContext.mediaPath}`;
+    context.appendChild(sourceNote);
+  }
+  section.appendChild(context);
+
+  const stats = document.createElement('p');
+  stats.className = 'meta';
+  const attemptCount = model.store.listPracticeAttemptsForCard(card.id).length;
+  stats.textContent = `${attemptCount} attempt${attemptCount === 1 ? '' : 's'} recorded • state: ${state.state} • due: ${formatTimeMs(new Date(state.dueAt).valueOf())}`;
+  section.appendChild(stats);
+
+  return section;
+}
+
+function renderExportImportView(model: AppModel): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'card export-import-card';
+
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Export / Import';
+  section.appendChild(h2);
+
+  const intro = document.createElement('p');
+  intro.textContent = 'All export and import operations are local-only. The export file is unencrypted and contains local media paths.';
+  section.appendChild(intro);
+
+  const exportGroup = document.createElement('div');
+  exportGroup.className = 'export-import-group';
+  const exportHeading = document.createElement('h3');
+  exportHeading.textContent = 'Export learner state';
+  exportGroup.appendChild(exportHeading);
+
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn-primary';
+  exportBtn.textContent = 'Generate local export';
+  exportBtn.setAttribute('aria-label', 'Generate local learner export manifest');
+  exportBtn.addEventListener('click', () => {
+    try {
+      exportLearnerState(model);
+      rerenderApp(model);
+    } catch (err: unknown) {
+      setExportImportError(model, err instanceof Error ? err.message : String(err));
+      rerenderApp(model);
+    }
+  });
+  exportGroup.appendChild(exportBtn);
+
+  if (model.exportImport.lastExport) {
+    const summary = document.createElement('div');
+    summary.className = 'status-banner success export-summary';
+    summary.setAttribute('role', 'status');
+    summary.textContent = `Export ready: ${model.exportImport.lastExport.filePath} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings`;
+    exportGroup.appendChild(summary);
+  }
+
+  section.appendChild(exportGroup);
+  const importGroup = document.createElement('div');
+  importGroup.className = 'export-import-group';
+  const importHeading = document.createElement('h3');
+  importHeading.textContent = 'Import / restore learner state';
+  importGroup.appendChild(importHeading);
+
+  const importLabel = document.createElement('label');
+  importLabel.textContent = 'Paste export manifest JSON';
+  importLabel.htmlFor = 'import-manifest';
+  importGroup.appendChild(importLabel);
+
+  const importTextarea = document.createElement('textarea');
+  importTextarea.id = 'import-manifest';
+  importTextarea.placeholder = '{"schemaVersion":"lingotorte.learner-export.v1",...}';
+  importTextarea.setAttribute('aria-label', 'Export manifest JSON');
+  importGroup.appendChild(importTextarea);
+
+  const previewBtn = document.createElement('button');
+  previewBtn.className = 'btn-secondary';
+  previewBtn.textContent = 'Preview restore';
+  previewBtn.setAttribute('aria-label', 'Preview restore from manifest JSON');
+  previewBtn.addEventListener('click', () => {
+    try {
+      previewRestoreManifest(model, importTextarea.value);
+      setExportImportError(model, null);
+    } catch (err: unknown) {
+      setExportImportError(model, err instanceof Error ? err.message : String(err));
+    }
+    rerenderApp(model);
+  });
+  importGroup.appendChild(previewBtn);
+
+  if (model.exportImport.preview) {
+    const previewPanel = document.createElement('div');
+    previewPanel.className = 'restore-preview';
+    previewPanel.setAttribute('role', 'region');
+    previewPanel.setAttribute('aria-label', 'Restore preview');
+
+    const previewHeading = document.createElement('h3');
+    previewHeading.textContent = 'Restore preview';
+    previewPanel.appendChild(previewHeading);
+
+    const counts = model.exportImport.preview.counts;
+    const countsList = document.createElement('ul');
+    for (const [key, count] of Object.entries(counts)) {
+      const li = document.createElement('li');
+      li.textContent = `${key}: ${count}`;
+      countsList.appendChild(li);
+    }
+    previewPanel.appendChild(countsList);
+
+    const safe = document.createElement('p');
+    safe.className = model.exportImport.preview.safeToRestore ? 'status-banner success' : 'status-banner error';
+    safe.setAttribute('role', 'status');
+    safe.textContent = model.exportImport.preview.safeToRestore
+      ? 'Safe to restore: local learner state is empty.'
+      : 'Local learner state exists. Restore will overwrite current data.';
+    previewPanel.appendChild(safe);
+
+    const warningHeading = document.createElement('h4');
+    warningHeading.textContent = 'Privacy warnings';
+    previewPanel.appendChild(warningHeading);
+
+    const warningList = document.createElement('ul');
+    for (const warning of model.exportImport.preview.warnings) {
+      const li = document.createElement('li');
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = model.exportImport.acknowledgedWarnings.includes(warning.kind);
+      checkbox.addEventListener('change', () => {
+        setExportImportAcknowledgedWarning(model, warning.kind, checkbox.checked);
+        rerenderApp(model);
+      });
+      label.appendChild(checkbox);
+      label.append(` ${warning.severity.toUpperCase()}: ${warning.message}`);
+      li.appendChild(label);
+      warningList.appendChild(li);
+    }
+    previewPanel.appendChild(warningList);
+
+    if (model.exportImport.preview.overwriteConfirmationRequired) {
+      const overwriteLabel = document.createElement('label');
+      const overwriteCheckbox = document.createElement('input');
+      overwriteCheckbox.type = 'checkbox';
+      overwriteCheckbox.checked = model.exportImport.confirmOverwrite;
+      overwriteCheckbox.addEventListener('change', () => {
+        setExportImportConfirmOverwrite(model, overwriteCheckbox.checked);
+        rerenderApp(model);
+      });
+      overwriteLabel.appendChild(overwriteCheckbox);
+      overwriteLabel.append(' I confirm this restore will overwrite my current local learner state.');
+      previewPanel.appendChild(overwriteLabel);
+    } else {
+      const confirmLabel = document.createElement('label');
+      const confirmCheckbox = document.createElement('input');
+      confirmCheckbox.type = 'checkbox';
+      confirmCheckbox.checked = model.exportImport.confirmOverwrite;
+      confirmCheckbox.addEventListener('change', () => {
+        setExportImportConfirmOverwrite(model, confirmCheckbox.checked);
+        rerenderApp(model);
+      });
+      confirmLabel.appendChild(confirmCheckbox);
+      confirmLabel.append(' I confirm this restore.');
+      previewPanel.appendChild(confirmLabel);
+    }
+
+    const allWarningsAcknowledged = model.exportImport.preview.warnings.every((w) =>
+      model.exportImport.acknowledgedWarnings.includes(w.kind),
+    );
+    const canRestore = allWarningsAcknowledged && model.exportImport.confirmOverwrite;
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'btn-primary';
+    restoreBtn.textContent = 'Restore now';
+    restoreBtn.setAttribute('aria-label', 'Restore learner state from manifest');
+    restoreBtn.disabled = !canRestore;
+    restoreBtn.addEventListener('click', () => {
+      try {
+        confirmRestore(model);
+        setExportImportError(model, null);
+      } catch (err: unknown) {
+        setExportImportError(model, err instanceof Error ? err.message : String(err));
+      }
+      rerenderApp(model);
+    });
+    previewPanel.appendChild(restoreBtn);
+
+    importGroup.appendChild(previewPanel);
+  }
+
+  if (model.exportImport.lastError) {
+    const errorBanner = document.createElement('div');
+    errorBanner.className = 'status-banner error';
+    errorBanner.setAttribute('role', 'alert');
+    errorBanner.textContent = model.exportImport.lastError;
+    importGroup.appendChild(errorBanner);
+  }
+
+  section.appendChild(importGroup);
+  return section;
 }
 
 function renderFooter(): HTMLElement {

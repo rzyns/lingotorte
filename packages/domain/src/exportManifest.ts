@@ -9,6 +9,7 @@ import {
   requireOptionalString,
   requireSha256,
   requireString,
+  requireStringInSet,
 } from './guards';
 import type {
   ExportIntegrity,
@@ -37,22 +38,45 @@ const RATINGS: ReviewEvent['rating'][] = ['again', 'hard', 'good', 'easy'];
 const STATES: ReviewCardState['state'][] = ['new', 'learning', 'review', 'relearning'];
 const ITEM_KINDS: SavedItem['kind'][] = ['lexeme', 'phrase', 'sentence'];
 
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  const keys = Object.keys(value as object).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`);
+  return '{' + entries.join(',') + '}';
+}
+
 function rootHashFromRecords(records: readonly object[]): Sha256Digest {
   const hash = createHash('sha256');
   for (const record of records) {
-    hash.update(JSON.stringify(record), 'utf8');
+    hash.update(canonicalJson(record), 'utf8');
   }
   return `sha256:${hash.digest('hex')}`;
 }
 
+function sourceContextById(content: LearnerExportContent): Map<string, SavedOccurrenceSourceContext> {
+  return new Map(content.sourceContexts.map((sc, index) => [`source-context-${index}`, sc]));
+}
+
+function normalizeExportRecord(record: object, contexts: Map<string, SavedOccurrenceSourceContext>): object {
+  const r = record as Record<string, unknown>;
+  const contextId = r.sourceContextId;
+  if (typeof contextId === 'string' && contexts.has(contextId)) {
+    const { sourceContextId: _, ...rest } = r;
+    return { ...rest, sourceContext: contexts.get(contextId) };
+  }
+  return record;
+}
+
 export function computeExportIntegrity(content: LearnerExportContent): ExportIntegrity {
+  const contexts = sourceContextById(content);
   const records: object[] = [
     ...content.savedItems,
-    ...content.savedOccurrences,
+    ...content.savedOccurrences.map((o) => normalizeExportRecord(o, contexts)),
     ...content.reviewCards,
     ...content.reviewCardStates,
     ...content.reviewEvents,
-    ...content.practiceAttempts,
+    ...content.practiceAttempts.map((a) => normalizeExportRecord(a, contexts)),
     ...content.sourceContexts,
   ];
   return { algorithm: 'sha256-per-record', rootHash: rootHashFromRecords(records), recordCount: records.length };
@@ -348,7 +372,7 @@ export function requireRestoreConfirmation(value: unknown): RestoreConfirmation 
     confirmedAt: requireString(record, 'confirmedAt'),
     confirmOverwrite: requireBoolean(record, 'confirmOverwrite'),
     acknowledgedWarnings: requireArray(record, 'acknowledgedWarnings').map((w) =>
-      requireInSet(asRecord(w, 'acknowledgedWarning'), 'kind', [
+      requireStringInSet(w, 'acknowledgedWarning', [
         'learner-state-contains-timestamps',
         'learner-state-contains-media-paths',
         'learner-state-contains-content-hashes',

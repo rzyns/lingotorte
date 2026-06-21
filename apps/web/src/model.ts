@@ -6,6 +6,7 @@ import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type { Cue, SavedItem, SavedOccurrence, ReviewCard, LookupOutput, SubtitleTrack, ReviewCardState, Rating } from '@lingotorte/domain';
 import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
+import { PracticeService, ExportService, RestoreService } from '@lingotorte/storage';
 
 export const CUE_SYNC_TOLERANCE_MS = 100;
 export const MIN_PLAYBACK_RATE = 0.5;
@@ -19,6 +20,9 @@ export function createAppModel(): AppModel {
     store,
     savedOccurrenceService: new SavedOccurrenceService(store),
     reviewService: new ReviewService(store, defaultFsrsConfig()),
+    practiceService: new PracticeService(store),
+    exportService: new ExportService(store, '0.0.0-p6'),
+    restoreService: new RestoreService(store),
     providerPolicy: policy,
     adapters: resolveLocalAdapters(policy, 'pl'),
     player: {
@@ -44,6 +48,20 @@ export function createAppModel(): AppModel {
       activeCardId: null,
       revealed: false,
       bucketAsOf: new Date(),
+    },
+    practice: {
+      mode: 'typed-input',
+      pendingAnswer: '',
+      lastAttemptResult: null,
+      typedAttemptsEnabled: true,
+    },
+    exportImport: {
+      manifestJson: null,
+      preview: null,
+      lastError: null,
+      acknowledgedWarnings: [],
+      confirmOverwrite: false,
+      lastExport: null,
     },
   };
 }
@@ -360,6 +378,133 @@ export function submitReviewRating(model: AppModel, cardId: string, rating: Rati
 }
 
 export type TokenInfo = { tokenIndex: number; charStart: number; charEnd: number; surface: string };
+
+export function projectPracticeAttempt(
+  active: NonNullable<ReturnType<typeof pickNextDueCard>>,
+  answer: string,
+): {
+  result: import('@lingotorte/domain').PracticeResult;
+  correct: boolean;
+  expected: string;
+} {
+  const expected = active.savedItem.displayText;
+  const normalizedAnswer = answer.trim().toLowerCase();
+  const normalizedExpected = expected.trim().toLowerCase();
+  const exact = normalizedAnswer === normalizedExpected;
+  const contains = normalizedAnswer.length > 0 && normalizedExpected.includes(normalizedAnswer);
+
+  let result: import('@lingotorte/domain').PracticeResult;
+  let correct: boolean;
+  if (exact) {
+    result = 'pass';
+    correct = true;
+  } else if (contains && normalizedAnswer.length >= Math.min(3, normalizedExpected.length)) {
+    result = 'pass-with-hesitation';
+    correct = true;
+  } else if (answer.trim().length === 0) {
+    result = 'skipped';
+    correct = false;
+  } else {
+    result = 'fail';
+    correct = false;
+  }
+  return { result, correct, expected };
+}
+
+export function submitPracticeAttempt(model: AppModel, answer: string, reviewedAt: Date): import('@lingotorte/domain').PracticeAttempt {
+  const active = pickNextDueCard(model, model.review.bucketAsOf);
+  if (!active) throw new TypeError('No active card for practice attempt');
+  const { result, expected } = projectPracticeAttempt(active, answer);
+  const responseMs = 0;
+  const { attempt } = model.practiceService.submitAttempt({
+    cardId: active.card.id,
+    mode: model.practice.mode,
+    result,
+    ...(answer.trim().length > 0 ? { givenAnswer: answer.trim() } : {}),
+    expectedAnswer: expected,
+    responseMs,
+    sourceContext: active.occurrence.sourceContext,
+    reviewedAt: reviewedAt.toISOString(),
+    updateFsrs: true,
+  });
+  model.practice.lastAttemptResult = { result, correct: result === 'pass' || result === 'pass-with-hesitation' };
+  model.practice.pendingAnswer = '';
+  model.review.activeCardId = null;
+  return attempt;
+}
+
+export function setPracticeMode(model: AppModel, mode: import('@lingotorte/domain').PracticeMode): void {
+  model.practice.mode = mode;
+}
+
+export function setPracticePendingAnswer(model: AppModel, value: string): void {
+  model.practice.pendingAnswer = value;
+}
+
+export function clearPracticeLastResult(model: AppModel): void {
+  model.practice.lastAttemptResult = null;
+}
+
+export function exportLearnerState(model: AppModel): { manifest: import('@lingotorte/domain').LearnerExportManifest; filePath: string } {
+  const result = model.exportService.exportToFile('/tmp/lingotorte');
+  model.exportImport.lastExport = {
+    filePath: result.filePath,
+    recordCount: result.manifest.integrity.recordCount,
+    warningCount: result.manifest.privacyWarnings.length,
+  };
+  model.exportImport.lastError = null;
+  return result;
+}
+
+export function previewRestoreManifest(model: AppModel, manifestJson: string): import('@lingotorte/domain').RestorePreview {
+  const parsed = JSON.parse(manifestJson) as unknown;
+  const manifest = RestoreService.validateManifest(parsed);
+  const preview = model.restoreService.preview(manifest);
+  model.exportImport.manifestJson = manifestJson;
+  model.exportImport.preview = preview;
+  model.exportImport.lastError = null;
+  model.exportImport.acknowledgedWarnings = [];
+  model.exportImport.confirmOverwrite = false;
+  return preview;
+}
+
+export function confirmRestore(model: AppModel): void {
+  const preview = model.exportImport.preview;
+  if (!preview) throw new TypeError('No restore preview available');
+  const manifestJson = model.exportImport.manifestJson;
+  if (!manifestJson) throw new TypeError('No restore manifest JSON available');
+  const manifest = RestoreService.validateManifest(JSON.parse(manifestJson) as unknown);
+  const confirmation = RestoreService.requireConfirmation({
+    confirmedAt: new Date().toISOString(),
+    confirmOverwrite: model.exportImport.confirmOverwrite,
+    acknowledgedWarnings: model.exportImport.acknowledgedWarnings,
+  });
+  model.restoreService.restore(manifest, confirmation);
+  model.exportImport.manifestJson = null;
+  model.exportImport.preview = null;
+  model.exportImport.lastError = null;
+  model.exportImport.acknowledgedWarnings = [];
+  model.exportImport.confirmOverwrite = false;
+  model.exportImport.lastExport = null;
+}
+
+export function setExportImportAcknowledgedWarning(model: AppModel, kind: import('@lingotorte/domain').PrivacyWarningKind, acknowledged: boolean): void {
+  const current = new Set(model.exportImport.acknowledgedWarnings);
+  if (acknowledged) {
+    current.add(kind);
+  } else {
+    current.delete(kind);
+  }
+  model.exportImport.acknowledgedWarnings = [...current];
+}
+
+export function setExportImportConfirmOverwrite(model: AppModel, value: boolean): void {
+  model.exportImport.confirmOverwrite = value;
+}
+
+export function setExportImportError(model: AppModel, error: string | null): void {
+  model.exportImport.lastError = error;
+}
 
 export async function tokenizeCueText(model: AppModel, cue: Cue): Promise<TokenInfo[]> {
   const adapter = model.adapters.tokenizer ?? makeWhitespaceTokenizer('pl');

@@ -40,6 +40,13 @@ export function requireInSet<T extends string>(record: Record<string, unknown>, 
   return value as T;
 }
 
+export function requireStringInSet<T extends string>(value: unknown, label: string, values: readonly T[]): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    throw new TypeError(`${label} must be one of ${values.join(', ')}`);
+  }
+  return value as T;
+}
+
 export function requireNumber(record: Record<string, unknown>, key: string): number {
   const value = record[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
