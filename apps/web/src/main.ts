@@ -1,4 +1,8 @@
 import './style.css';
-import { renderLingotorteShell } from './shell';
+import { createAppModel } from './model';
+import { rerenderApp } from './app';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = renderLingotorteShell();
+document.addEventListener('DOMContentLoaded', () => {
+  const model = createAppModel();
+  rerenderApp(model);
+});
