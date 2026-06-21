@@ -400,7 +400,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
     safe.setAttribute('role', 'status');
     safe.textContent = model.exportImport.preview.safeToRestore
       ? 'Safe to restore: local learner state is empty.'
-      : 'Local learner state exists. Restore will overwrite current data.';
+      : 'Local learner state exists. Restore will merge/update imported records into current data.';
     previewPanel.appendChild(safe);
 
     const warningHeading = document.createElement('h4');
@@ -443,7 +443,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
       overwriteLabel.appendChild(overwriteCheckbox);
-      overwriteLabel.append(' I confirm this restore will overwrite my current local learner state.');
+      overwriteLabel.append(' I confirm this restore will merge/update imported records into my current local learner state.');
       previewPanel.appendChild(overwriteLabel);
     } else {
       const confirmLabel = document.createElement('label');

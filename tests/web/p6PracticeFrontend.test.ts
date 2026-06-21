@@ -250,10 +250,19 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toMatch(/warning|acknowledged/i);
   });
 
-  it('round-trips learner state after acknowledging warnings and confirming overwrite', async () => {
+  it('round-trips learner state after acknowledging warnings and confirming merge/update', async () => {
     const { value: { model } } = await createPracticeModel();
     const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
     const manifestJson = JSON.stringify(manifest);
+
+    renderExportImport(model);
+    const dirtyTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    dirtyTextarea!.value = manifestJson;
+    const dirtyPreviewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    dirtyPreviewBtn!.click();
+    renderExportImport(model);
+    expect(document.getElementById('app')!.textContent).not.toContain('overwrite');
+    expect(document.getElementById('app')!.textContent).toContain('merge/update');
 
     const clean = createAppModel();
     renderExportImport(clean);
@@ -267,6 +276,7 @@ describe('P6 frontend export / import local learner state', () => {
     // Acknowledge all warnings and confirm restore directly in the model; then rerender once.
     const preview = clean.exportImport.preview;
     expect(preview).toBeTruthy();
+    expect(document.getElementById('app')!.textContent).not.toContain('overwrite');
     for (const warning of preview!.warnings) {
       setExportImportAcknowledgedWarning(clean, warning.kind, true);
     }

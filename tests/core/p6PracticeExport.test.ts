@@ -251,7 +251,56 @@ describe('P6 export/restore manifest', () => {
     expect(restoredCard.savedItemId).toBe(saved.item.id);
   });
 
-  it('refuses restore when local data exists without confirmation', async () => {
+  it('merges restored learner state without clearing unrelated local records', async () => {
+    const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
+    const cue = cues[0]!;
+    const sourceContext = sourceContextForCue(asset, track, cue, 0, 1, 0, 5);
+    const saved = savedService.saveSelection({
+      kind: 'lexeme',
+      language: 'pl',
+      displayText: 'cześć',
+      mediaId: asset.id,
+      cueId: cue.id,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      sourceContext,
+    });
+    reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+
+    const target = await setupFixtureStore();
+    const existingCue = target.cues[1]!;
+    const existingContext = sourceContextForCue(target.asset, target.track, existingCue, 1, 2, 7, 9);
+    const existing = target.savedService.saveSelection({
+      kind: 'sentence',
+      language: 'pl',
+      displayText: 'Pre-existing local sentence',
+      mediaId: target.asset.id,
+      cueId: existingCue.id,
+      startMs: existingCue.startMs,
+      endMs: existingCue.endMs,
+      sourceContext: existingContext,
+    });
+    const restoreService = new RestoreService(target.store);
+    const preview = restoreService.preview(manifest);
+    expect(preview.safeToRestore).toBe(false);
+    expect(preview.overwriteConfirmationRequired).toBe(true);
+
+    restoreService.restore(manifest, {
+      confirmedAt: new Date().toISOString(),
+      confirmOverwrite: true,
+      acknowledgedWarnings: preview.warnings.map((w) => w.kind),
+    });
+
+    const restored = target.store.snapshot();
+    expect(restored.savedItems[existing.item.id]).toEqual(existing.item);
+    expect(restored.savedItems[saved.item.id]).toEqual(saved.item);
+    expect(Object.values(restored.savedItems).map((item) => item.displayText)).toEqual(
+      expect.arrayContaining(['Pre-existing local sentence', 'cześć']),
+    );
+  });
+
+  it('refuses restore when local data exists without merge/update confirmation', async () => {
     const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
     const cue = cues[0]!;
     const sourceContext = sourceContextForCue(asset, track, cue, 0, 1, 0, 5);
@@ -275,7 +324,7 @@ describe('P6 export/restore manifest', () => {
         confirmOverwrite: false,
         acknowledgedWarnings: [],
       }),
-    ).toThrow(/overwrite/);
+    ).toThrow(/merge\/update/);
   });
 
   it('refuses restore when warnings are not acknowledged', async () => {

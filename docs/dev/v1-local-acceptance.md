@@ -22,7 +22,7 @@ The current baseline provides a local Vite/TypeScript app and test-backed domain
 - My Vocab / My Sentences local views with source context;
 - FSRS-backed local review card creation and append-only review events;
 - local practice attempts with deterministic result feedback;
-- local export/restore manifest preview with privacy warnings and no AnkiConnect/cloud mutation;
+- local export/restore manifest preview with privacy warnings; restore merges/upserts manifest records into local learner state and does not clear unrelated records;
 - provider-disabled settings/status and no-network test coverage.
 
 ## Required V1 verification matrix
@@ -71,6 +71,7 @@ That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run te
 
 - The current browser UI imports the synthetic fixture through **Library → Load synthetic fixture**; arbitrary local file picker/import UX is not yet V1-ready.
 - Export creates a manifest object and preview path, not a persisted file.
+- Restore merges/upserts manifest records into existing local state; a future full replace/conflict-resolution flow remains a separate product decision.
 - The local Vite dev server is for acceptance smoke, not a deployed service.
 - Screenshots and browser evidence should use only synthetic/local data.
 - External providers, online translation/LLM/ASR/pronunciation, AnkiConnect, cloud sync, public release/sharing, live Lingopie inspection, remote setup, push/PR, and deploy/restart remain explicitly unauthorized.

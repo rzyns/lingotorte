@@ -69,11 +69,11 @@ export class RestoreService {
 
   restore(manifest: LearnerExportManifest, confirmation: RestoreConfirmation): LocalStoreSnapshot {
     if (!confirmation.confirmOverwrite) {
-      throw new TypeError('Restore refused: overwrite not confirmed');
+      throw new TypeError('Restore refused: merge/update confirmation not supplied');
     }
     const preview = this.preview(manifest);
     if (preview.overwriteConfirmationRequired && !confirmation.confirmOverwrite) {
-      throw new TypeError('Restore refused: local data exists and overwrite was not confirmed');
+      throw new TypeError('Restore refused: local data exists and merge/update was not confirmed');
     }
     const acknowledged = new Set(confirmation.acknowledgedWarnings);
     for (const warning of preview.warnings) {

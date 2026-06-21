@@ -92,5 +92,6 @@ Acceptable network traffic during dev smoke is limited to loopback/local dev-ser
 - The app is a local fixture-backed baseline, not a packaged desktop/mobile product.
 - The plain browser UI does not expose arbitrary local file pickers yet; it imports the synthetic fixture through the Library view.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
+- Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
 - Providers, AnkiConnect, cloud sync, live Lingopie inspection, generated subtitles/ASR, pronunciation/shadowing, and public sharing remain disabled or out of scope unless separately approved.

@@ -262,7 +262,7 @@ export function defaultPrivacyWarnings(exporting: boolean): PrivacyWarning[] {
     warnings.push({
       kind: 'restore-overwrites-local-data',
       severity: 'critical',
-      message: 'Restoring will overwrite current learner state unless merged by a future implementation.',
+      message: 'Restoring will merge/update imported learner-state records into current local state; unrelated local records are not cleared.',
     });
   }
   return warnings;
