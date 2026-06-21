@@ -1,113 +1,57 @@
-# Lingotorte P0 dependency provenance
+# Dependency Provenance
 
-Generated for Kanban task `work/t_2d53622d` on 2026-06-20. This file records the third-party packages adopted for the P0 local-first skeleton. Dependencies are development/build/test tooling only; the browser app skeleton has no production runtime package dependency and online product providers remain disabled.
+This file records third-party dependencies adopted by the Lingotorte project.
+A record must exist before a dependency is imported into production or development
+code. Records follow the project dependency-provenance template.
 
-All package versions are pinned exactly in `package.json` and `package-lock.json`. The initial dependency install contacted the npm registry to retrieve packages; normal build, typecheck, and test commands run locally after installation.
+---
 
-### typescript
+## jsdom
 
 ```yaml
-dependency_name: typescript
-package_or_repo: npm:typescript
-intended_slice: P0
-why_needed: Strict TypeScript compiler for the P0 typed domain model, test sources, and app skeleton.
-source_url: https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz
-upstream_url: https://github.com/microsoft/TypeScript.git
+dependency_name: jsdom
+package_or_repo: npm package jsdom
+intended_slice: P1
+why_needed: Provides a headless browser/DOM environment for Vitest web-level tests so UI components can render without a real browser and without network access.
+source_url: https://registry.npmjs.org/jsdom/-/jsdom-29.1.1.tgz
 retrieval_date_utc: 2026-06-20
-exact_version_or_commit: 6.0.3
-lockfile_entry_or_hash: package-lock.json entry integrity sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==
-license_name_claimed: Apache-2.0
-license_file_path_or_url: node_modules/typescript/LICENSE.txt
-license_file_sha256: a7d00bfd54525bc694b6e32f64c7ebcf5e6b7ae3657be5cc12767bce74654a47
-transitive_dependency_notes: package-lock.json contains 78 node_modules package entries total for this P0 dev toolchain.
-local_offline_behavior: Runs locally after npm install; compiler performs no network calls.
-network_behavior_when_disabled: Not invoked by provider adapters; provider-disabled tests trap fetch/XMLHttpRequest/WebSocket and Node http/https/net/dns primitives.
+exact_version_or_commit: 29.1.1
+lockfile_entry_or_hash: sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q==
+license_name_claimed: MIT
+license_file_path_or_url: node_modules/jsdom/LICENSE.txt
+license_file_sha256: 242d37e7cab25cbafc36cc973ee88f9345fddf066afe4f72b7ac3d9ad4e24cce
+local_offline_behavior: Runs entirely in-process in Node.js; no network calls in default test path.
+network_behavior_when_disabled: Not used outside the test harness. With network primitives patched, zero outbound network attempts are observed.
 privacy_data_classes_processed:
   - none
-redistribution_or_export_constraints: Follow Apache-2.0 license for redistributed toolchain copies; Lingotorte app runtime currently has no production dependency on this package.
-security_maintenance_notes: Version pinned exactly in package.json/package-lock.json; update only through reviewed dependency-provenance change.
-alternatives_considered: Safe P0 default from control packet was Vite + TypeScript + local test runner; no broader framework adopted.
-review_status: unreviewed
-review_task_id: t_dfdf1dca
+redistribution_or_export_constraints: MIT permits redistribution with license notice. Project is UNLICENSED application code; jsdom is part of the dev toolchain only.
+security_maintenance_notes: Pinned via package-lock.json. Update through npm audit or explicit version bump plus re-verification.
+alternatives_considered: happy-dom (lighter but less complete DOM API), playwright test runner (requires browser binaries and network-capable install). jsdom chosen for zero-binary, lockfile-pinned, offline-compatible test environment.
+review_status: accepted
+review_task_id: t_3760692d
 ```
 
-### vite
+## @types/jsdom
 
 ```yaml
-dependency_name: vite
-package_or_repo: npm:vite
-intended_slice: P0
-why_needed: Local web app build/dev server for the browser-first P0 shell; configured for loopback host only.
-source_url: https://registry.npmjs.org/vite/-/vite-8.0.16.tgz
-upstream_url: git+https://github.com/vitejs/vite.git (directory: packages/vite)
+dependency_name: "@types/jsdom"
+package_or_repo: npm package @types/jsdom
+intended_slice: P1
+why_needed: TypeScript type definitions for jsdom so web tests can compile against DOM types without pulling in browser-specific ambient types into production code.
+source_url: https://registry.npmjs.org/@types/jsdom/-/jsdom-28.0.3.tgz
 retrieval_date_utc: 2026-06-20
-exact_version_or_commit: 8.0.16
-lockfile_entry_or_hash: package-lock.json entry integrity sha512-h9bXPmJichP5fLmVQo3PyaGSDE2n3aPuomeAlVRm0JLmt4rY6zmPKd59HYI4LNW8oTK7tlTsuC7l/m7awx9Jcw==
+exact_version_or_commit: 28.0.3
+lockfile_entry_or_hash: sha512-/HQ2uFoetFTXuye8vzIcHw2z6Fwi7Hi/qcgC+RoS9NCyewiqxhVGqlG+ViGB6lkax481R6dmhf1I7lIGlzJStQ==
 license_name_claimed: MIT
-license_file_path_or_url: node_modules/vite/LICENSE.md
-license_file_sha256: 21d9391f0a581d83e5f4faceac10136ef6b90588ef10ef7fb681a228044cc562
-transitive_dependency_notes: package-lock.json contains 78 node_modules package entries total for this P0 dev toolchain.
-local_offline_behavior: Build runs locally after npm install; dev server binds 127.0.0.1 and no remote provider calls are configured.
-network_behavior_when_disabled: Not invoked by provider adapters; provider-disabled tests trap fetch/XMLHttpRequest/WebSocket and Node http/https/net/dns primitives.
-privacy_data_classes_processed:
-  - none
-redistribution_or_export_constraints: Follow MIT license for redistributed toolchain copies; Lingotorte app runtime currently has no production dependency on this package.
-security_maintenance_notes: Version pinned exactly in package.json/package-lock.json; update only through reviewed dependency-provenance change.
-alternatives_considered: Safe P0 default from control packet was Vite + TypeScript + local test runner; no broader framework adopted.
-review_status: unreviewed
-review_task_id: t_dfdf1dca
-```
-
-### vitest
-
-```yaml
-dependency_name: vitest
-package_or_repo: npm:vitest
-intended_slice: P0
-why_needed: Local unit/no-network test runner used by P0 privacy, fixture, schema, and provider-disabled tests.
-source_url: https://registry.npmjs.org/vitest/-/vitest-4.1.9.tgz
-upstream_url: git+https://github.com/vitest-dev/vitest.git (directory: packages/vitest)
-retrieval_date_utc: 2026-06-20
-exact_version_or_commit: 4.1.9
-lockfile_entry_or_hash: package-lock.json entry integrity sha512-nE3/LEyc0z87uHYLZebqCUOaJr2hdtuPp7BQ4BosVFnfltxgAvMG08NyrSGlPpOUWvR27c5flSmYFTNr78L9GQ==
-license_name_claimed: MIT
-license_file_path_or_url: node_modules/vitest/LICENSE.md
-license_file_sha256: 881d660c26831481b697e39724d4a35c9f86e07b67156d4aeb693a0b39910435
-transitive_dependency_notes: package-lock.json contains 78 node_modules package entries total for this P0 dev toolchain.
-local_offline_behavior: Runs tests locally after npm install; provider-disabled tests install network traps and fail on attempted network calls.
-network_behavior_when_disabled: Not invoked by provider adapters; provider-disabled tests trap fetch/XMLHttpRequest/WebSocket and Node http/https/net/dns primitives.
-privacy_data_classes_processed:
-  - none
-redistribution_or_export_constraints: Follow MIT license for redistributed toolchain copies; Lingotorte app runtime currently has no production dependency on this package.
-security_maintenance_notes: Version pinned exactly in package.json/package-lock.json; update only through reviewed dependency-provenance change.
-alternatives_considered: Safe P0 default from control packet was Vite + TypeScript + local test runner; no broader framework adopted.
-review_status: unreviewed
-review_task_id: t_dfdf1dca
-```
-
-### @types/node
-
-```yaml
-dependency_name: @types/node
-package_or_repo: npm:@types/node
-intended_slice: P0
-why_needed: Node type declarations for local fixture loading, static scanning, and no-network test harness code.
-source_url: https://registry.npmjs.org/@types/node/-/node-26.0.0.tgz
-upstream_url: https://github.com/DefinitelyTyped/DefinitelyTyped.git (directory: types/node)
-retrieval_date_utc: 2026-06-20
-exact_version_or_commit: 26.0.0
-lockfile_entry_or_hash: package-lock.json entry integrity sha512-vf2YFi1iY9lHGwNJMs01biZFbKJkrZR1T6/MlzjhJLPdntOHLhTrDSnSVcdtvjihi4VQNlrFRIxLsDBlQpAipA==
-license_name_claimed: MIT
-license_file_path_or_url: node_modules/@types/node/LICENSE
+license_file_path_or_url: node_modules/@types/jsdom/LICENSE
 license_file_sha256: c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383
-transitive_dependency_notes: package-lock.json contains 78 node_modules package entries total for this P0 dev toolchain.
-local_offline_behavior: Compile-time declarations only; no runtime behavior and no network calls.
-network_behavior_when_disabled: Not invoked by provider adapters; provider-disabled tests trap fetch/XMLHttpRequest/WebSocket and Node http/https/net/dns primitives.
+local_offline_behavior: Type definitions only; no runtime behavior and no network calls.
+network_behavior_when_disabled: Not used at runtime. No network behavior.
 privacy_data_classes_processed:
   - none
-redistribution_or_export_constraints: Follow MIT license for redistributed toolchain copies; Lingotorte app runtime currently has no production dependency on this package.
-security_maintenance_notes: Version pinned exactly in package.json/package-lock.json; update only through reviewed dependency-provenance change.
-alternatives_considered: Safe P0 default from control packet was Vite + TypeScript + local test runner; no broader framework adopted.
-review_status: unreviewed
-review_task_id: t_dfdf1dca
+redistribution_or_export_constraints: MIT permits redistribution with license notice. Types are dev-only and not shipped in production build.
+security_maintenance_notes: Pinned via package-lock.json. Update together with jsdom or when TypeScript/DOM types require it.
+alternatives_considered: Inline minimal type stubs (high maintenance), @types/happy-dom (couples to alternative engine). @types/jsdom chosen because it matches the selected jsdom version and is the standard community-maintained types package.
+review_status: accepted
+review_task_id: t_3760692d
 ```
