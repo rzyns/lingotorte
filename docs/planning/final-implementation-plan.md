@@ -2,7 +2,7 @@
 
 Status: final planning synthesis for a future implementation fleet. This document does not implement the app and does not approve scraping, account mutation, online providers, code reuse, deployment, publishing, or legal/license conclusions.
 
-Core decision for Janusz: proceed with a local-first, artifact-centered MVP if the P0 fixture/skeleton/provenance gates are accepted. Keep open decisions explicit: target-language priority, app shell, asbplayer/custom-player substrate, Anki role, online-provider strictness, Mastered threshold, screenshot policy, and backup media policy.
+Core decision for Janusz: proceed with a local-first, artifact-centered MVP if the P0 fixture/skeleton/provenance gates are accepted. Target ElevenLabs Scribe v2 as the first real STT adapter for Janusz's explicitly configured personal deployment, while preserving disabled-provider defaults and a future local WhisperX/faster-whisper-style opt-out lane. Keep remaining open decisions explicit: target-language priority, app shell, asbplayer/custom-player substrate, Anki role, non-STT online-provider strictness, Mastered threshold, screenshot policy, and backup media policy.
 
 ## Bundle map
 
@@ -60,7 +60,8 @@ Do not strengthen public/OSS evidence into legal/license/dependency conclusions 
 - No DRM/circumvention, protected stream capture, or scraping.
 - Future live UI inspection is gated and visible-mechanics-only; no account mutation unless Janusz explicitly approves a test-account/mutation scope.
 - Product workflows use owned/local videos and explicit subtitle/transcript inputs or locally generated transcripts.
-- Local/offline processing is default. Online translation/LLM/ASR/dictionary providers require explicit opt-in and no-network disabled-state tests.
+- Local/offline processing and provider-disabled tests are default. ElevenLabs Scribe v2 is the first approved real STT target only after explicit provider configuration/consent; other online translation/LLM/ASR/dictionary providers require separate opt-in and no-network disabled-state tests.
+- Online media acquisition remains user-controlled: Lingotorte may show exact `yt-dlp` commands with rights warnings, but must not automatically download online video or use cookies/DRM/credential-bypass flags by default.
 - Screenshot evidence remains local/non-distributable and is not used as an implementation asset.
 - Anki is export-only by default; AnkiConnect/sync is a separate opt-in mutation/privacy decision.
 
@@ -94,7 +95,7 @@ Full gate: [Safety, Privacy, and Legal Boundaries](./safety-privacy-legal-bounda
 | FSRS flashcards | Required | OSS/source facts to revalidate; language plan | Verify library/version/license before adoption. |
 | Practice modes | After review core | Live practice inventory, language plan | Flip, meaning quiz, match, sentence builder; all local data. |
 | Anki export | Later MVP/V1 | Preliminary research, language plan | Export-only; warn about AnkiWeb. |
-| Generated subtitles/alignment | V1 spike | Preliminary research and architecture plan | Local experiment required before quality claims. |
+| Generated transcripts/word timings | V1/P7 spike | Preliminary research, architecture plan, Janusz 2026-06-22 engine decision | Target ElevenLabs Scribe v2 first behind provider consent; draft tracks require correction/approval; local WhisperX/faster-whisper remains future opt-out. |
 | Pronunciation/shadowing | Optional V2 | Public feature family/design recommendation | Voice privacy gate; local ASR preferred. |
 | Progress/backup/sync | V1/V2 | Product/architecture plans | Local dashboard; backup metadata-first. |
 
@@ -154,6 +155,7 @@ Minimum entities:
 | `MediaFile` | Local media reference, metadata, fingerprint. | Has subtitle tracks and progress. |
 | `SubtitleTrack` | Target/native/other subtitle source. | Belongs to media; has cues. |
 | `Cue` | Timed text interval. | Belongs to track; may align to native cue. |
+| `TranscriptWordTiming` | Timed word/span from provider-native timing or forced alignment. | Belongs to cue/track/analysis run; may anchor saved occurrences. |
 | `TokenOccurrence` | Token/span in a cue. | Belongs to cue; may have analysis. |
 | `LanguageAnalysis` | Lemma/POS/morph/dictionary/translation payloads. | Versioned by adapter. |
 | `SavedItem` | Learner-saved lexeme/phrase/sentence. | Points to one or more occurrences and source cue/time. |
@@ -166,7 +168,7 @@ Minimum entities:
 
 Core invariants:
 
-1. A saved learning item must retain a source cue/time/media context.
+1. A saved learning item must retain a source cue/time/media context, with word/span timing when available.
 2. Review events are append-only; card state can be derived/audited from events and FSRS version.
 3. Online provider outputs record provider/version/consent and are invalidatable.
 4. Deleting/removing media must not silently destroy learner state; show broken-source state or require explicit cascade.
@@ -183,7 +185,7 @@ Core invariants:
 | Dictionary | Local/offline dictionary or unavailable state | Online dictionary opt-in | Online sends selected text/language pair. |
 | Phrase translation | Disabled/local only by default | Local model or online opt-in | Online sends phrase/cue context. |
 | Sentence explanation | Disabled/local LLM by default | Online LLM opt-in | Online sends sentence/context; high privacy sensitivity. |
-| ASR/transcription | Later local spike | Online ASR opt-in only | Online sends audio/media; high sensitivity. |
+| ASR/transcription | ElevenLabs Scribe v2 targeted opt-in for Janusz | Future local WhisperX/faster-whisper opt-out and MAI benchmark | Online sends audio/media; high sensitivity; disabled provider path must make zero network calls. |
 | Pronunciation scoring | Optional local spike | Online scoring opt-in only | Sends learner voice; highest sensitivity. |
 
 ### Saved objects
@@ -224,8 +226,8 @@ See [Feature Build Roadmap](./feature-build-roadmap.md) for feature-by-feature d
 | P4 | Saved occurrences | Save vocab/phrase/sentence; My Vocab/My Sentences | Source context preserved and duplicate handling tested. |
 | P5 | FSRS review | Cards/events/due queue/video-backed prompts | FSRS verified; review events append-only; schedule deterministic. |
 | P6 | Practice/export | Practice modes; local Anki/export | Local distractors/scoring; export warnings; no external mutation. |
-| P7 | Transcript generation/correction | YouTube/provider caption candidates, local ASR drafts, correction UI, approved transcript gate | Provider/ASR output remains draft until corrected/approved; no-network disabled state covered. |
-| P8 | ASR/alignment/shadowing | Local spikes and quality reports | Measured feasibility; voice/media privacy gates. |
+| P7 | Transcript generation/correction | YouTube/provider caption candidates, ElevenLabs Scribe v2 draft generation, word-level timing model, correction UI, approved transcript gate | Provider/ASR output remains draft until corrected/approved; word timings are first-class; no-network disabled state covered. |
+| P8 | Local opt-out ASR/alignment/shadowing | WhisperX/faster-whisper-style local opt-out lane, MAI-Transcribe benchmark, quality reports | Measured feasibility; voice/media privacy gates; no local model/provider install without explicit gate. |
 | P9 | Progress/backup/sync | Dashboard, backup/restore, optional sync design | Backup roundtrip; media-copy/sync opt-in. |
 
 ## Unresolved decisions and safe defaults
@@ -238,7 +240,8 @@ See [Feature Build Roadmap](./feature-build-roadmap.md) for feature-by-feature d
 | asbplayer substrate | Treat as candidate/reference; do not adopt yet. | Needs source/license/architecture spike. |
 | FSRS library | Candidate `ts-fsrs`-style approach; revalidate. | Version/license/API must be checked before dependency. |
 | Anki role | Local export-only. | AnkiConnect/sync mutates external app/cloud data. |
-| Online providers | Disabled by default. | Privacy tradeoffs vary by data class and provider. |
+| Online providers | Disabled by default in fresh installs/tests; ElevenLabs Scribe v2 resolved as first STT target for Janusz's configured personal deployment. | Other provider classes and live benchmark providers still require explicit opt-in and privacy review. |
+| Local STT opt-out | Future WhisperX/faster-whisper-style lane. | Useful for users who do not want cloud STT, but model/dependency/hardware gates remain. |
 | Mastered threshold | Configurable UI bucket. | Product semantics may differ by learner preference. |
 | Screenshot evidence | Use sanitized text only. | Screenshots are outside workspace and may contain proprietary/private context. |
 | Backup media policy | Metadata-only backup. | Media copies can duplicate large/copyright/private files. |

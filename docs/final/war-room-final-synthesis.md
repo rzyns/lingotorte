@@ -21,12 +21,15 @@ The first useful implementation milestone should be narrow: import one owned loc
 
 1. Use a local web/Vite-style frontend plus local service boundary first; keep Tauri compatible but not required for MVP-0.
 2. Use SQLite for metadata and learner state; keep media as filesystem references by default and generated clips/thumbnails/transcripts in a pruneable local cache.
-3. Preserve source context for every saved item. Saved vocabulary must remain tied to media, cue, token span, time range, and subtitle provenance.
+3. Preserve source context for every saved item. Saved vocabulary must remain tied to media, cue, token span, word/span time range, and subtitle/transcript provenance.
 4. Use FSRS for scheduling after dependency/version/license verification; keep review events append-only and card state recomputable.
 5. Treat language analysis as a replaceable adapter layer: tokenizer, lemma, POS, morphology, dictionary, phrase translation, grammar explanation, ASR/transcription, forced alignment, and pronunciation scoring.
 6. Make Polish the first serious adapter stress test while keeping the interface multilingual.
-7. Treat online providers, AnkiConnect, cloud sync, media-copy backups, screenshot reuse, and live Lingopie inspection as explicit opt-in gates, not defaults.
-8. Treat OSS candidates as planning references until each dependency has a fresh license/version/provenance artifact.
+7. Target ElevenLabs Scribe v2 as the first real STT adapter for Janusz's explicitly configured personal deployment; keep all providers disabled in fresh installs/tests and preserve a future WhisperX/faster-whisper local opt-out lane.
+8. Make word-level transcript timings first-class data, not opaque provider payloads, so clickable words/spans, phrase loops, saved occurrences, and future pronunciation/shadowing remain auditable.
+9. Treat media acquisition as user-controlled: Lingotorte may show exact `yt-dlp` commands with rights warnings, but should not automatically download online video or use cookies/DRM/credential-bypass flags by default.
+10. Treat online providers, AnkiConnect, cloud sync, media-copy backups, screenshot reuse, and live Lingopie inspection as explicit opt-in gates, not defaults.
+11. Treat OSS candidates as planning references until each dependency has a fresh license/version/provenance artifact.
 
 ## Unresolved questions and safe defaults
 
@@ -38,7 +41,8 @@ The first useful implementation milestone should be narrow: import one owned loc
 | asbplayer vs custom player | Candidate/reference only | Needs substrate spike before adoption. |
 | FSRS library | ts-fsrs-style candidate | Must verify current API/license/version. |
 | Anki role | Export-only | AnkiConnect/sync mutates an external app/cloud path. |
-| Online providers | Disabled by default | Text/audio/voice privacy varies by provider. |
+| Online providers | Disabled by default in fresh installs/tests; ElevenLabs Scribe v2 is the resolved first STT target for Janusz's configured personal deployment | Text/audio/voice privacy varies by provider; provider consent and redacted logging remain required. |
+| Local STT opt-out | Future WhisperX/faster-whisper-style lane | Useful for users who do not want cloud STT, but model/dependency/hardware gates remain. |
 | Mastered semantics | Configurable UI bucket, not FSRS state | Learner/product preference decision. |
 | Screenshot evidence | Sanitized text only | Screenshots may contain proprietary/private context. |
 | Backup media policy | Metadata-only backup | Full media copy can duplicate private/copyrighted files. |
@@ -52,6 +56,7 @@ The first useful implementation milestone should be narrow: import one owned loc
 5. Create P2: player + dual subtitle overlay + transcript seek/highlight + loop/speed controls against fixtures.
 6. Create P3: tokenizer/lookup adapter contract and Polish-first fixture spike with providers disabled.
 7. Create P4/P5 only after P1-P3 pass: saved occurrence service, My Vocab/My Sentences, FSRS card creation and review events.
+8. Create P7 after the core loop: ElevenLabs Scribe v2 fake/opt-in adapter, first-class word timing rows, transcript correction/approval gates, and provider-disabled no-network tests.
 
 ## Bundle index
 

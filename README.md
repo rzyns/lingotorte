@@ -52,7 +52,7 @@ Recommended final-bundle reading order:
 9. `docs/product/srs-and-practice-design.md` — FSRS, review state, practice modes, UX flow, tests.
 10. `docs/research/public-product-cartography.md`, `docs/research/live-ui-inventory-expanded.md`, `docs/research/oss-substrate-assessment.md` — research backing.
 11. `docs/plan/mvp-spike-plan.md` — concrete MVP spikes with inputs, outputs, commands, and gates.
-12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-V2 plan for YouTube caption candidate import, local ASR transcript generation, correction/approval, and transcript provenance.
+12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-core plan for YouTube caption candidates, ElevenLabs Scribe v2 transcript drafts, word timings, command-only media acquisition, future local STT opt-out, correction/approval, and transcript provenance.
 13. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
 
 ## Source provenance

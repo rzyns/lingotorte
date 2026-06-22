@@ -147,16 +147,16 @@
 - Given an offset correction, the adjusted timing persists and is used for playback/transcript synchronization.
 - Imported subtitle provenance remains distinguishable from generated transcripts.
 
-### 3. Optional local transcript generation and alignment
+### 3. Optional transcript generation and alignment
 
 #### User story
 
-**[RECOMMENDATION]** As a learner with media lacking usable subtitles, I can optionally generate a local transcript and align it to the media so I can still study with synchronized cues.
+**[RECOMMENDATION]** As a learner with media lacking usable subtitles, I can optionally generate a draft transcript and align it to the media so I can still study with synchronized cues after correction/approval.
 
 #### UI states
 
-- **[RECOMMENDATION] Generation unavailable:** show required local engine dependency not installed/configured; offer setup guidance rather than cloud fallback.
-- **[RECOMMENDATION] Generation settings:** select language hint, model/engine, compute device if available, output role, and privacy mode.
+- **[RECOMMENDATION] Generation unavailable:** show that ElevenLabs Scribe v2 provider configuration/consent is missing, or that the future local opt-out engine is not installed/configured; offer setup guidance without silently falling back to another provider.
+- **[RECOMMENDATION] Generation settings:** select provider/engine, language hint, diarization/word-timing options where available, output role, and privacy mode.
 - **[RECOMMENDATION] Running:** show progress by media duration processed; allow cancellation; keep partial output disabled until accepted.
 - **[RECOMMENDATION] Review generated transcript:** show confidence/warnings, cue timing samples, and action buttons `Accept as generated track`, `Discard`, `Regenerate`, or `Export`.
 - **[RECOMMENDATION] Alignment editor:** when aligning generated transcript or plain text to existing subtitles, show waveform/video time, cue list, and offset/segment tools.
@@ -166,11 +166,11 @@
 - Local media audio.
 - Optional language hint and target/native role.
 - Optional existing transcript/subtitle to align against.
-- Local ASR/forced-alignment engine configuration.
+- ElevenLabs Scribe v2 provider configuration/consent for the first real STT path, or future local ASR/forced-alignment engine configuration.
 
 #### Outputs
 
-- Generated `SubtitleTrack` with provenance `generated`, engine id/version, language, confidence/warning metadata, and cues.
+- Draft generated `SubtitleTrack` with provenance, engine id/version, language, confidence/warning metadata, cues, and first-class word-timing rows where available.
 - Alignment metadata if generated output is aligned to a reference track.
 
 #### Edge cases
@@ -189,11 +189,11 @@
 
 #### Acceptance criteria
 
-- Generation is disabled unless a local engine is configured or the user explicitly opts into an online provider gate.
+- Generation is disabled unless the target provider/engine is configured and explicitly enabled; ElevenLabs Scribe v2 is the first real target for Janusz's personal deployment, while local models remain a future opt-out lane.
 - Accepted generated transcript appears as a selectable subtitle/transcript track and is labeled as generated.
 - Discarded generated transcript is not used in player, lookup, saved occurrences, or progress analytics.
 - Alignment edits change displayed cue timing without modifying the original media file.
-- Privacy copy states whether audio leaves the machine; default behavior keeps it local.
+- Privacy copy states whether audio leaves the machine; fresh installs/tests keep providers disabled and must make zero network calls.
 
 ### 4. Interactive dual subtitles
 
@@ -791,6 +791,7 @@
 2. **[RECOMMENDATION]** If a feature needs an external provider, UI must show provider name, data to be sent, retention risk if known, and a `Cancel` path.
 3. **[RECOMMENDATION]** External provider results must be tagged by provider/version and cache status.
 4. **[RECOMMENDATION]** Provider disablement stops future calls across lookup, explanation, transcription, and sync.
+5. **[PROJECT/RECOMMENDATION]** For Janusz's explicitly configured personal deployment, the first real STT target is ElevenLabs Scribe v2; fresh installs/tests still keep providers disabled and local/offline unavailable states must remain usable.
 
 ## MVP vs later cuts
 
@@ -813,7 +814,7 @@
 ### V1/V2 candidates
 
 - Embedded subtitle extraction and richer subtitle alignment tools.
-- Local ASR transcript generation and forced alignment.
+- ElevenLabs Scribe v2 transcript generation with word-level timestamps, plus future local WhisperX/faster-whisper-style opt-out and forced alignment.
 - POS/grammar color index and sentence explanations.
 - FSRS-backed full practice modes beyond basic flashcards.
 - Clip/audio/thumb asset generation for cards.
@@ -827,7 +828,7 @@
 - **[PROJECT]** Primary target languages are still open in preliminary research. See `../research/preliminary-grounding-research.md#open-questions-for-janusz`.
 - **[PROJECT]** Desired shell remains a default rather than a final decision: local web app with Tauri path considered. See `../mission/hermes-war-room-mission-statement.md#defaults-if-not-otherwise-decided`.
 - **[PROJECT]** Anki integration vs fully owned internal SRS remains open. See `../research/preliminary-grounding-research.md#open-questions-for-janusz`.
-- **[PROJECT]** Strictness of online provider use remains a human decision; this spec assumes local-only defaults and explicit opt-in for anything external.
+- **[PROJECT]** STT provider direction is resolved for Janusz's personal deployment: target ElevenLabs Scribe v2 behind explicit configuration/consent. Other online providers remain explicit opt-in decisions, and local/offline opt-out remains a future lane.
 
 ## Implementation-readiness checklist
 

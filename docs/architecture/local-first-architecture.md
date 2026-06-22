@@ -54,7 +54,8 @@ flowchart LR
 
     subgraph OptionalProviders[Optional opt-in adapters]
       LocalDict[Local dictionaries/tokenizers]
-      LocalASR[Local ASR/forced alignment]
+      OnlineSTT[ElevenLabs Scribe v2 STT target]
+      LocalASR[Future local ASR/forced alignment opt-out]
       LocalLLM[Local LLM/translation]
       OnlineAPI[Online provider APIs]
     end
@@ -77,6 +78,7 @@ flowchart LR
   Exporter --> Backups
   LanguagePipeline --> Policy
   Policy --> LocalDict
+  Policy -. explicit opt-in .-> OnlineSTT
   Policy --> LocalASR
   Policy --> LocalLLM
   Policy -. explicit opt-in only .-> OnlineAPI

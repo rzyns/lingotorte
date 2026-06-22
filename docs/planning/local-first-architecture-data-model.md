@@ -58,9 +58,9 @@ Feeds:
 2. **Learner-owned state** — saved occurrences, notes, review cards, review events, settings. This must be durable, append-friendly, backed up, and never silently overwritten by re-analysis.
 3. **Provider/cache state** — local dictionary caches, optional LLM/translation/ASR results, export manifests. This must carry provider, model, version, privacy, and reproducibility metadata.
 
-**REC-4:** Treat online translation/dictionary/ASR/LLM providers as explicit opt-in adapter implementations, not as ambient dependencies. Local/offline adapters are defaults; online adapters must have per-feature consent, visible data sharing scope, and tests proving that disabled providers do not make network calls.
+**REC-4:** Treat online translation/dictionary/ASR/LLM providers as explicit opt-in adapter implementations, not as ambient dependencies. Fresh installs and tests keep providers disabled; Janusz's personal deployment targets ElevenLabs Scribe v2 as the first real STT adapter after explicit credential/provider consent. Local/offline adapters remain required as unavailable states today and as a future opt-out path, and tests must prove that disabled providers do not make network calls.
 
-**REC-5:** Model saved words/phrases/sentences as **saved occurrences**, not merely vocabulary rows. A saved item may aggregate multiple occurrences, but every card and practice prompt should be able to show the exact media, cue, token span, timestamp, and surrounding context that caused the learner to save it.
+**REC-5:** Model saved words/phrases/sentences as **saved occurrences**, not merely vocabulary rows. A saved item may aggregate multiple occurrences, but every card and practice prompt should be able to show the exact media, cue, token span, word/span timestamp, and surrounding context that caused the learner to save it.
 
 ## Non-goals and safety constraints
 
@@ -112,7 +112,8 @@ flowchart LR
 
     subgraph OptionalProviders[Optional opt-in adapters]
       LocalDict[Local dictionaries/tokenizers]
-      LocalASR[Local ASR/forced alignment]
+      OnlineSTT[ElevenLabs Scribe v2 STT target]
+      LocalASR[Future local ASR/forced alignment opt-out]
       LocalLLM[Local LLM/translation]
       OnlineAPI[Online provider APIs]
     end
@@ -135,6 +136,7 @@ flowchart LR
   Exporter --> Backups
   LanguagePipeline --> Policy
   Policy --> LocalDict
+  Policy -. explicit opt-in .-> OnlineSTT
   Policy --> LocalASR
   Policy --> LocalLLM
   Policy -. explicit opt-in only .-> OnlineAPI
@@ -202,6 +204,7 @@ sequenceDiagram
 | `media_asset` | User-selected file plus content/stat fingerprint. | Path can change; content hash should not. | A local `.mkv` or `.mp4`. |
 | `subtitle_track` | Media + language + role + source/version. | New version on reimport or regenerated transcript. | Polish target track, English native track. |
 | `cue` | Track version + cue index/time/text hash. | Immutable within a track version. | Target cue 215, 00:12:03.100–00:12:06.400. |
+| `transcript_word_timing` | Cue + track version + word/span index/time/provenance. | Recomputed or versioned with the transcript track. | Word 3 in cue 215, 00:12:03.620–00:12:03.910 from ElevenLabs or forced alignment. |
 | `cue_alignment` | Pairing between cues with method/confidence. | Recomputed as alignment improves; versioned. | target cue 215 aligned to native cue 214. |
 | `analysis_run` | Adapter + model/version + input scope. | Immutable result batch. | `spacy-pl@x.y`, `whisper.cpp@model`. |
 | `token_occurrence` | Cue + analysis run + token span/index. | Recomputed when analysis changes. | Token 3 in cue 215, chars 11–16. |
@@ -226,9 +229,11 @@ erDiagram
 
   cue ||--o{ cue_alignment : target_cue
   cue ||--o{ cue_alignment : native_cue
+  cue ||--o{ transcript_word_timing : timed_words
   cue ||--o{ token_occurrence : tokenized_into
   cue ||--o{ saved_occurrence : source_context
 
+  analysis_run ||--o{ transcript_word_timing : produced
   analysis_run ||--o{ token_occurrence : produced
   analysis_run ||--o{ adapter_result : produced
 
@@ -267,6 +272,7 @@ These schemas are intentionally typed. Flexible adapter payloads are allowed onl
 | `subtitle_track` | `id`, `media_id`, `language`, `role`, `format`, `source_kind`, `source_path`, `content_sha256`, `track_version`, `is_active`, `created_at` | Target/native/other subtitle or transcript track. | Unique active track per `(media_id, role, language)` unless explicitly allowed; new `track_version` on content change. |
 | `cue` | `id`, `track_id`, `cue_index`, `start_ms`, `end_ms`, `text`, `normalized_text`, `text_sha256`, `created_at` | Normalized subtitle/transcript cue. | `start_ms < end_ms`; unique `(track_id, cue_index)`; cue text sanitized before display. |
 | `cue_text_span` | `id`, `cue_id`, `span_kind`, `char_start`, `char_end`, `text` | Phrase/sentence/subspan anchors inside cue text. | Span bounds within cue text; used for phrase/sentence saves. |
+| `transcript_word_timing` | `id`, `track_id`, `cue_id`, `analysis_run_id`, `word_index`, `char_start`, `char_end`, `text`, `normalized_text`, `start_ms`, `end_ms`, `confidence`, `speaker_id`, `source_kind`, `engine`, `model_version`, `created_at` | First-class provider-native or forced-aligned word/span timing. | `start_ms < end_ms`; timing belongs to the cue range with tolerance; source kind is typed (`provider-word-timing`, `forced-alignment`, `manual-edit`); do not bury word timings only in `adapter_result.payload_json`. |
 | `cue_alignment` | `id`, `media_id`, `target_track_id`, `native_track_id`, `target_cue_id`, `native_cue_id`, `method`, `confidence`, `alignment_version`, `created_at` | Target/native cue pairing. | Paired cues belong to same media; confidence in `[0,1]`; method is enum, e.g. `timestamp`, `text_similarity`, `manual`. |
 | `transcript_index` | `id`, `media_id`, `track_id`, `cue_id`, `search_text`, `language`, `fts_version` | FTS/search projection for transcript. | Rebuildable from cue text; not learner-owned. |
 
@@ -275,6 +281,7 @@ Recommended indexes:
 ```sql
 CREATE INDEX idx_cue_track_time ON cue(track_id, start_ms, end_ms);
 CREATE INDEX idx_cue_media_time ON subtitle_track(media_id, role, language);
+CREATE INDEX idx_word_timing_cue_time ON transcript_word_timing(cue_id, start_ms, end_ms);
 CREATE INDEX idx_alignment_target ON cue_alignment(target_cue_id, native_cue_id);
 CREATE VIRTUAL TABLE transcript_fts USING fts5(search_text, cue_id UNINDEXED, media_id UNINDEXED, language UNINDEXED);
 ```
@@ -289,7 +296,7 @@ CREATE VIRTUAL TABLE transcript_fts USING fts5(search_text, cue_id UNINDEXED, me
 | `token_morph_feature` | `id`, `token_occurrence_id`, `feature_key`, `feature_value` | Typed morphology key/value features. | Avoid untyped morph blobs in core UI logic. |
 | `lexeme` | `id`, `language`, `normalized`, `lemma`, `upos`, `canonical_display`, `created_at`, `merge_parent_id` | Cross-occurrence lexical identity. | Merge by explicit operation; preserve old IDs by `merge_parent_id`. |
 | `token_lexeme_link` | `id`, `token_occurrence_id`, `lexeme_id`, `link_kind`, `confidence` | Links an occurrence to a lexeme. | Multiple candidates allowed only when confidence is represented. |
-| `adapter_result` | `id`, `analysis_run_id`, `payload_kind`, `scope_kind`, `scope_id`, `schema_version`, `payload_json`, `confidence`, `created_at` | Versioned flexible results: dictionary entry, translation, grammar explanation, ASR segment. | `payload_json` validated by `payload_kind` + `schema_version`; no silent online result if adapter disabled. |
+| `adapter_result` | `id`, `analysis_run_id`, `payload_kind`, `scope_kind`, `scope_id`, `schema_version`, `payload_json`, `confidence`, `created_at` | Versioned flexible results: dictionary entry, translation, grammar explanation, ASR segment/quality report. | `payload_json` validated by `payload_kind` + `schema_version`; no silent online result if adapter disabled; word timings that drive UI/saved anchors should be normalized into `transcript_word_timing`. |
 
 **REC-6:** Use a deterministic **semantic key** only as a deduplication aid, not as the primary key. Primary IDs can be UUID/ULID, while unique constraints prevent duplicates. Example token semantic key:
 
@@ -308,6 +315,7 @@ The `analysis_run_id` belongs in the key because tokenizer/model changes can leg
 | `saved_item` | `id`, `kind`, `language`, `display_text`, `canonical_lexeme_id`, `meaning`, `notes`, `created_at`, `updated_at`, `archived_at` | Learner-owned word/phrase/sentence concept. | `kind in ('lexeme','phrase','sentence')`; archiving does not delete occurrences/events. |
 | `saved_occurrence` | `id`, `saved_item_id`, `media_id`, `cue_id`, `start_ms`, `end_ms`, `selection_kind`, `selection_text`, `context_before`, `context_after`, `created_at` | Exact media/cue/time context that was saved. | Immutable anchor; if source cue is reprocessed, occurrence retains original cue and can be migrated with audit. |
 | `saved_occurrence_token` | `id`, `saved_occurrence_id`, `token_occurrence_id`, `ordinal` | Token span membership for saved word/phrase. | Tokens must belong to the saved occurrence's cue unless selection crosses cues explicitly. |
+| `saved_occurrence_word_timing` | `id`, `saved_occurrence_id`, `word_timing_id`, `ordinal` | Optional exact spoken word/span timing anchor for saved word/phrase. | Word timings must belong to the saved occurrence's cue/track version; if transcript is superseded, keep old timing and offer re-anchor rather than rewriting. |
 | `saved_item_relation` | `id`, `source_item_id`, `target_item_id`, `relation_kind`, `created_at` | Links phrase/sentence/lexeme variants. | Relation kinds typed: `contains`, `variant_of`, `same_lemma`, `user_linked`. |
 | `learner_note` | `id`, `scope_kind`, `scope_id`, `note_text`, `created_at`, `updated_at` | Notes attached to media/cue/token/saved item/card. | Scope must resolve to local object; no remote account dependencies. |
 
@@ -363,9 +371,10 @@ Recommended cue migration helper:
 Tokenization is language/model-dependent. A Polish tokenizer, a Japanese tokenizer, and a whitespace tokenizer will not agree. Therefore:
 
 1. A `token_occurrence` belongs to one `analysis_run`.
-2. Saved occurrences should store original `selection_text` and cue/time anchor in addition to token IDs.
-3. If a tokenization run is invalidated, saved occurrences remain valid by cue span/text and can be relinked to new token IDs through a migration tool.
-4. Lexeme identity is a separate layer. Multiple token occurrences can map to one lexeme, and one token occurrence may have multiple candidate lexemes if analysis is uncertain.
+2. A `transcript_word_timing` also belongs to an `analysis_run` and should be produced by provider-native word timing, forced alignment, or explicit manual timing edits.
+3. Saved occurrences should store original `selection_text` and cue/time anchor in addition to token IDs and optional word-timing IDs.
+4. If a tokenization or word-timing run is invalidated, saved occurrences remain valid by cue span/text/time and can be relinked to new token/word-timing IDs through a migration tool.
+5. Lexeme identity is a separate layer. Multiple token occurrences can map to one lexeme, and one token occurrence may have multiple candidate lexemes if analysis is uncertain.
 
 ## Media, subtitle, and transcript indexing
 
@@ -473,8 +482,8 @@ The concrete state transitions and next due dates should be delegated to FSRS li
 | `dictionary` | Local first | token/lemma | definitions/translations | Low local; medium online | Yes, local/fixture fallback |
 | `phrase_translation` | Local/offline optional | selected phrase/cue | translation | Medium if online | V1 opt-in |
 | `grammar_explainer` | Local LLM optional | cue + parse | explanation | Medium/high if online | V1/V2 opt-in |
-| `asr` | Local optional | media/audio | generated transcript | High if online; media leaves device | V1 local; online gated |
-| `forced_alignment` | Local optional | audio + text | cue timing | High if online | V1/V2 local |
+| `asr` | ElevenLabs Scribe v2 targeted opt-in for Janusz; local opt-out future | media/audio | generated transcript + word timings | High if online; media leaves device | V1/P7 gated |
+| `forced_alignment` | Local optional/future opt-out | audio + text | cue and word timing | High if online | V1/V2 local |
 | `pronunciation_scorer` | Local optional | learner recording | score/feedback | High biometric/audio sensitivity | V2, explicit opt-in |
 
 ### Typed adapter interface sketch
@@ -554,7 +563,7 @@ Policy assertions:
 | Local media import | user-selected file path(s) | `media_asset`, metadata observations | No DRM/protected stream capture. |
 | External subtitle import | `.srt`, `.vtt`, `.ass/.ssa` | `subtitle_track`, `cue` rows | Sanitize markup; preserve original text hash. |
 | Embedded subtitle extraction | MKV/MP4 streams via ffmpeg | normalized subtitle track/cues | User-owned local files only. |
-| Generated subtitle import | ASR transcript/cues | generated `subtitle_track` | Local ASR default; online ASR explicit opt-in. |
+| Generated transcript import | ElevenLabs Scribe v2 draft or future local ASR transcript/cues/word timings | generated `subtitle_track`, `cue`, `transcript_word_timing` | ElevenLabs is the first real target only after explicit opt-in; local WhisperX/faster-whisper is future opt-out; all outputs remain draft until corrected/approved. |
 | Existing vocabulary import | JSON/CSV/Anki if user provides | `saved_item`, optional occurrences if source references exist | Do not invent occurrences without media/cue anchor. |
 
 ### Exports
@@ -605,7 +614,8 @@ If sync is later added:
 |---|---|---|---|
 | Accidental proprietary copying | Importing Lingopie protected media/subtitles | Product copy and import UI say owned/local files only; no remote Lingopie API integration. | Boundary review; no code paths for remote Lingopie import. |
 | Silent provider exfiltration | Online translation sends cue text without opt-in | Provider policy gate; online adapters disabled by default. | Network-deny test with online adapters disabled. |
-| Audio/video privacy leak | Online ASR receives private media | Separate `online-audio/video` privacy class; per-run confirmation. | Policy unit tests for media inputs. |
+| Audio/video privacy leak | ElevenLabs or another online ASR receives private media | Separate `online-audio/video` privacy class; per-run confirmation, redacted logs, provider disabled no-call tests. | Policy unit tests for media inputs; fake-provider and network-deny tests. |
+| Unsafe media acquisition | App silently downloads online video or uses credentials/cookies/DRM-bypass flags | Command-generation only, absolute user-chosen output paths, explicit rights notice, no automatic execution. | Command-plan tests reject repo-relative paths, cookies, credentials, and bypass flags. |
 | Malicious subtitle content | ASS/HTML tags execute or render unsafe content | Parse and sanitize subtitle markup; render text nodes, not raw HTML. | Fixture with script-like tags and ASS override tags. |
 | Path traversal in import/export | Subtitle/cache path writes outside app root | Normalize paths, use app-managed cache root, reject `..` escapes. | Malicious archive/import manifest test. |
 | DB corruption | Crash during import/review | WAL, transactions, backup integrity checks. | Kill/restart import fixture; SQLite integrity check. |
@@ -650,6 +660,8 @@ If sync is later added:
 | INV-8 | Export manifests must match actual files and object counts. | Backup/export trust. |
 | INV-9 | Missing media files degrade UI with relink prompts; they do not delete saved vocabulary/reviews. | Local filesystem reality. |
 | INV-10 | Evidence labels distinguish observed UI mechanics from recommendations. | Maintains mission provenance boundary. |
+| INV-11 | Word-level timings that anchor UI selections or saved occurrences are normalized into typed rows with provider/alignment provenance. | Prevents opaque provider blobs from becoming unauditable learning anchors. |
+| INV-12 | Online media acquisition is user-controlled: the app may display safe commands, but automatic downloads and credential/cookie/DRM-bypass flags are not ambient behavior. | Keeps licensing/ToS/DRM and privacy boundaries explicit. |
 
 ## Failure modes and recovery behavior
 
@@ -694,8 +706,8 @@ The following table is intentionally implementer-facing. It names the feature, s
 | Perfect Your Vocab equivalent | E-LIVE game entrypoint | practice attempts + cards | Meaning/translation quiz records attempt and optional review event. | Incorrect answers; ambiguity; local-only dictionary fallback. |
 | Build the Sentence equivalent | E-LIVE game entrypoint | sentence saved occurrence, token spans | Scramble tokens and verify reconstruction. | Tokenization/punctuation languages; no destructive card update. |
 | Anki export | E-RESEARCH optional export | `export_job`, `export_manifest_item` | Export selected cards with manifest and media files; readback counts match. | Missing media file; duplicate note IDs; manifest hash mismatch. |
-| Generated subtitles / ASR | E-RESEARCH V1 | generated `subtitle_track`, `analysis_run` | Local ASR fixture generates cues and stores adapter provenance. | Online ASR disabled; audio privacy confirmation; poor confidence. |
-| Forced alignment | E-RESEARCH V1/V2 | `cue_alignment`, adapter result | Given text+audio fixture, improve cue timing with confidence. | Alignment failure; old cues preserved. |
+| Generated transcripts / STT | E-RESEARCH V1 plus Janusz 2026-06-22 engine decision | generated `subtitle_track`, `cue`, `transcript_word_timing`, `analysis_run` | Fake/approved ElevenLabs adapter generates draft cues and word timings with provider provenance. | Provider disabled no-call; audio privacy confirmation; poor confidence; raw provider payload/log redaction. |
+| Forced alignment / local opt-out | E-RESEARCH V1/V2 | `cue_alignment`, `transcript_word_timing`, adapter result | Given text+audio fixture, improve cue/word timing with confidence. | Alignment failure; old cues preserved; model downloads gated. |
 | Pronunciation/shadowing | E-RESEARCH optional; E-LIVE pronunciation public feature | learner recording cache, adapter result | Local recording creates optional score without changing review unless chosen. | Recording privacy; explicit opt-in; deletion/pruning. |
 | Progress widgets | E-LIVE catalog widgets | projections over local progress/reviews | Compute minutes watched, due count, streak locally. | Clock/timezone; missing media; no service sync. |
 | Privacy/settings | E-CTX/E-MISSION | `app_setting`, `provider_policy` | Disabled online provider blocks request before network. | Network-deny integration test; settings export redacts secrets. |
@@ -714,7 +726,7 @@ This task does not implement the app, but implementers can use these slices as a
 | MVP-0E | FSRS review loop. | Card review appends event and updates state; replay test passes. |
 | MVP-1A | Adapter registry/policy gate. | Local adapters work; online disabled no-call tests pass. |
 | MVP-1B | Export/backup. | Anki/JSON export and backup manifest readback pass. |
-| V1 | Generated subtitles/alignment, POS coloring, practice games. | Local ASR/alignment fixtures and game acceptance tests pass. |
+| V1 | Generated transcripts/alignment, POS coloring, practice games. | ElevenLabs fake/opt-in adapter tests, word-timing model tests, local opt-out alignment fixtures, and game acceptance tests pass. |
 
 ## Open questions and spike recommendations
 
@@ -723,7 +735,8 @@ This task does not implement the app, but implementers can use these slices as a
 | OPEN-1 | Primary target language(s), especially whether Polish is first. | Partially | Use Polish as serious first adapter fixture because current inventory is Polish, but keep BCP-47 generic. |
 | OPEN-2 | Preferred app shell: browser-only, local service, Tauri. | Not MVP-0 blocking | Start browser + local service; keep Tauri-compatible file APIs abstracted. |
 | OPEN-3 | Anki integration vs owned SRS only. | Not MVP-0 blocking | Own FSRS internally; add export before live AnkiConnect mutation. |
-| OPEN-4 | Are online translation/LLM providers acceptable for Janusz behind opt-in? | Blocks online adapters only | Build policy gate and local fixtures first; online provider UI later requires explicit choice. |
+| OPEN-4 | Are online translation/LLM providers acceptable for Janusz behind opt-in? | Blocks non-STT online adapters only | STT direction is resolved for Janusz: target ElevenLabs Scribe v2 behind explicit opt-in. Other online provider classes still require explicit choice. |
+| OPEN-7 | What local STT stack should serve as the future opt-out path? | Blocks local opt-out only | Spike WhisperX + faster-whisper after dependency/model/hardware review; do not download models silently. |
 | OPEN-5 | How much media should backup copy by default? | Backup design | Default to DB + manifest + references; offer explicit full portable bundle. |
 | OPEN-6 | Whether to integrate/fork `asbplayer` or build a custom player. | Player implementation strategy | Run substrate spike with one owned video/subtitle pair and compare gaps. |
 

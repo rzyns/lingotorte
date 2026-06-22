@@ -65,12 +65,15 @@ The first useful implementation milestone should be narrow: import one owned loc
 
 1. Use a local web/Vite-style frontend plus local service boundary first; keep Tauri compatible but not required for MVP-0.
 2. Use SQLite for metadata and learner state; keep media as filesystem references by default and generated clips/thumbnails/transcripts in a pruneable local cache.
-3. Preserve source context for every saved item. Saved vocabulary must remain tied to media, cue, token span, time range, and subtitle provenance.
+3. Preserve source context for every saved item. Saved vocabulary must remain tied to media, cue, token span, word/span time range, and subtitle/transcript provenance.
 4. Use FSRS for scheduling after dependency/version/license verification; keep review events append-only and card state recomputable.
 5. Treat language analysis as a replaceable adapter layer: tokenizer, lemma, POS, morphology, dictionary, phrase translation, grammar explanation, ASR/transcription, forced alignment, and pronunciation scoring.
 6. Make Polish the first serious adapter stress test while keeping the interface multilingual.
-7. Treat online providers, AnkiConnect, cloud sync, media-copy backups, screenshot reuse, and live Lingopie inspection as explicit opt-in gates, not defaults.
-8. Treat OSS candidates as planning references until each dependency has a fresh license/version/provenance artifact.
+7. Target ElevenLabs Scribe v2 as the first real STT adapter for Janusz's explicitly configured personal deployment; keep all providers disabled in fresh installs/tests and preserve a future WhisperX/faster-whisper local opt-out lane.
+8. Make word-level transcript timings first-class data, not opaque provider payloads, so clickable words/spans, phrase loops, saved occurrences, and future pronunciation/shadowing remain auditable.
+9. Treat media acquisition as user-controlled: Lingotorte may show exact `yt-dlp` commands with rights warnings, but should not automatically download online video or use cookies/DRM/credential-bypass flags by default.
+10. Treat online providers, AnkiConnect, cloud sync, media-copy backups, screenshot reuse, and live Lingopie inspection as explicit opt-in gates, not defaults.
+11. Treat OSS candidates as planning references until each dependency has a fresh license/version/provenance artifact.
 
 ## Unresolved questions and safe defaults
 
@@ -82,7 +85,8 @@ The first useful implementation milestone should be narrow: import one owned loc
 | asbplayer vs custom player | Candidate/reference only | Needs substrate spike before adoption. |
 | FSRS library | ts-fsrs-style candidate | Must verify current API/license/version. |
 | Anki role | Export-only | AnkiConnect/sync mutates an external app/cloud path. |
-| Online providers | Disabled by default | Text/audio/voice privacy varies by provider. |
+| Online providers | Disabled by default in fresh installs/tests; ElevenLabs Scribe v2 is the resolved first STT target for Janusz's configured personal deployment | Text/audio/voice privacy varies by provider; provider consent and redacted logging remain required. |
+| Local STT opt-out | Future WhisperX/faster-whisper-style lane | Useful for users who do not want cloud STT, but model/dependency/hardware gates remain. |
 | Mastered semantics | Configurable UI bucket, not FSRS state | Learner/product preference decision. |
 | Screenshot evidence | Sanitized text only | Screenshots may contain proprietary/private context. |
 | Backup media policy | Metadata-only backup | Full media copy can duplicate private/copyrighted files. |
@@ -96,6 +100,7 @@ The first useful implementation milestone should be narrow: import one owned loc
 5. Create P2: player + dual subtitle overlay + transcript seek/highlight + loop/speed controls against fixtures.
 6. Create P3: tokenizer/lookup adapter contract and Polish-first fixture spike with providers disabled.
 7. Create P4/P5 only after P1-P3 pass: saved occurrence service, My Vocab/My Sentences, FSRS card creation and review events.
+8. Create P7 after the core loop: ElevenLabs Scribe v2 fake/opt-in adapter, first-class word timing rows, transcript correction/approval gates, and provider-disabled no-network tests.
 
 ## Bundle index
 
@@ -151,7 +156,8 @@ Status: implementation-facing plan for future autonomous agents. Planning only; 
 
 ### V2
 
-- Local generated subtitles and forced alignment quality improvements.
+- ElevenLabs Scribe v2 transcript generation, first-class word timings, and transcript correction/approval quality improvements.
+- Future local WhisperX/faster-whisper-style opt-out and forced-alignment path after dependency/model/hardware gates.
 - Optional pronunciation/shadowing with microphone privacy gate.
 - Explicit encrypted/user-controlled sync design.
 - Mobile/PWA review client or desktop packaging if warranted.
@@ -239,7 +245,7 @@ features = [
 ('SRS states','Separate FSRS states from UI buckets Learning/Due/Mastered.','ReviewDashboard','ReviewProjection','review_card_state, review_event','FSRS library','P5','Mastered is configurable display rule, not hidden FSRS state.'),
 ('Quiz/match/sentence-builder modes','Local practice games derived from saved items and cues.','MeaningQuiz, ContextMatch, SentenceBuilder','PracticeSessionService','practice_session, practice_attempt','local distractor generation, clip replay','P6','All prompts/distractors are local and deterministic; scheduling effects are explicit.'),
 ('Anki export','Export saved cards/decks locally with privacy warning; no AnkiConnect mutation by default.','ExportDialog','ExportService','export_job, export_manifest_item','genanki/.apkg or text export candidate','P6','Export manifest lists included text/media; no external app mutation by default.'),
-('Optional generated subtitles','Run local ASR or alignment as a labeled generated track after dependency/privacy gate.','ASRJobView, GeneratedTrackReview','ASRAdapter, ForcedAlignmentAdapter','analysis_run, subtitle_track(source=generated), cue','faster-whisper/whisper.cpp/WhisperX/stable-ts candidates','P7','Owned fixture creates timestamped cues and quality report; online ASR disabled.'),
+('Optional generated transcripts / STT','Target ElevenLabs Scribe v2 as the first real STT adapter after provider/privacy gates; preserve local ASR as a future opt-out; raw provider/ASR drafts cannot create learner study items until corrected/approved.','GeneratedTrackReview, TranscriptLifecyclePanel, WordTimingTranscriptInteractions','YouTubeCaptionProvider, ElevenLabsScribeAdapter, future LocalASRAdapter, TranscriptCorrectionService, ProviderPolicyService','analysis_run, subtitle_track(source=generated/provider), cue, transcript_word_timing, transcript provenance/warning flags, saved_occurrence transcript/word timing context','Fake providers now; ElevenLabs Scribe v2 first; WhisperX/faster-whisper local opt-out later; MAI benchmark after timestamp verification','P7','Fake YouTube/ElevenLabs adapters create draft tracks, quality reports, and word timings; no-network unauthorized import stops before adapter execution; corrected/approved version enables saves.'),
 ('Optional pronunciation/shadowing','Loop cue, record learner locally, compare via local ASR/alignment with explicit microphone handling.','ShadowingView','RecordingService, PronunciationScorerAdapter','practice_attempt, cache_asset temp recording','local ASR/forced alignment candidate','V2/P7 optional','Temp recording lifecycle is tested; online scoring requires explicit opt-in.'),
 ('Progress tracking','Compute local watch/study/due/saved metrics from events.','ProgressDashboard','ProgressProjection','review_event, media_marker, practice_session','SQLite projections','P8','Metrics are recomputable from local state.'),
 ('Privacy/settings','Control provider, export, logging, backup and media-copy policies.','PrivacySettingsView','ProviderPolicyService, SettingsService','app_setting, provider_policy','no-network harness','P0/P8','Providers disabled by default and covered by zero-network test.'),
@@ -258,7 +264,7 @@ Status: implementation-facing playbook. Planning only.
 - Treat `PROJECT-CONSTRAINT` and `MISSION-REQUIREMENT` as binding.
 - Treat `SANITIZED-LIVE-UI` and `PUBLIC-DOC` as behavior references, not permission to copy Lingopie assets, styling, copy, media, subtitles, catalog data, private examples, or APIs.
 - Treat `OSS-DOC-SOURCE` candidates as unadopted until license/version/provenance verification is written.
-- Default to local/offline adapters and no-network tests.
+- Default to provider-disabled/no-network tests; target ElevenLabs Scribe v2 only after explicit provider configuration/consent, with future local opt-out preserved.
 
 ## Feature-by-feature implementation matrix
 
@@ -576,7 +582,9 @@ Status: concrete spike plan for the future implementation repo. Planning only; c
 | Transcript seek/highlight | Imported cue fixtures and current playback clock | Highlighted current cue, click-to-seek, follow-playback toggle | `npm run test:e2e -- transcript-sync` | Current cue follows playback within documented tolerance; keyboard path works | Timing tolerance undocumented or virtualized transcript breaks highlighting |
 | Click-to-token lookup | `fixtures/expected/tokens.polish.sample.json` plus target cue | Token lookup panel with lemma/POS/morph/meaning or unavailable state | `npm test -- token-lookup`; `npm run test:no-network` | Token offsets round-trip; online provider disabled causes zero calls; manual save still works | Requires online provider or loses cue/token source context |
 | Saved occurrence + FSRS card | Saved word/phrase/sentence fixture and review-card fixture | `saved_item`, `saved_occurrence`, `review_card`, append-only `review_event` | `npm test -- saved-item-review-card` | Card points to source media/cue/time/token span; Again/Hard/Good/Easy schedule deterministically | Review event rewrites history or source cue/time is lost |
-| Generated subtitles/alignment | Owned short audio/video fixture without subtitles | Generated `SubtitleTrack` labeled `generated`, timestamped cues, quality report | `uv run pytest tests/asr_alignment` or chosen local command; `npm run test:no-network` | Local engine only; confidence/warnings visible; discarded output does not affect saved state | Online ASR is required or quality/latency is not measured |
+| ElevenLabs Scribe v2 transcript generation | Owned short audio/video fixture without subtitles and fake provider payload | Draft `SubtitleTrack` plus `transcript_word_timing` rows, provider/model provenance, confidence/warnings, redacted logs | fake-adapter unit tests; `npm run test:no-network`; live call only as separately approved manual smoke | Provider-disabled state makes zero network calls; draft output cannot create study items before correction/approval | Provider call occurs without consent, raw audio/log payload leaks, or word timings are only opaque payload JSON |
+| Future local ASR opt-out/alignment | Owned short audio/video fixture without subtitles | Local generated cues plus forced-aligned word timings and quality report | `uv run pytest tests/asr_alignment` or chosen local command after dependency/model gate; `npm run test:no-network` | Local engine path makes no provider call and reports latency/quality/timestamp limits | Model/download/hardware requirements are unreviewed or output bypasses draft approval |
+| Safe `yt-dlp` command helper | User-provided authorized URL and user-chosen output path | Display-only command plan plus rights warning | fake/unit tests; no live download in automated tests | Command rejects cookie/credential/DRM-bypass flags and unsafe paths, and app never executes it | Media download is implicit or command accepts unsafe flags/paths |
 | YouTube caption candidate + correction | User-provided public YouTube URL with available captions; no media download by default | Draft `SubtitleTrack` labeled `youtube-caption`/`youtube-auto-caption`, provenance, quality warnings, correction/approval state | fake-provider unit tests; `npm run test:no-network`; live retrieval only as an approval-gated manual smoke | Captions are imported as drafts, provider/auto-caption inaccuracies are visible, and approved/corrected track is required before default study use | Raw provider captions become trusted learner state automatically, credentials/cookies are used, or media is downloaded without rights/permission gate |
 | Optional pronunciation/shadowing | Synthetic/owned prompt audio and test recording | Recording lifecycle, local ASR/alignment comparison, deletion check | `uv run pytest tests/shadowing_privacy` or chosen local command | Microphone/recording gate explicit; temp audio deleted unless saved; no online scoring | Voice leaves machine by default or temp recordings persist unexpectedly |
 
@@ -604,7 +612,7 @@ Recommended final-bundle reading order:
 9. `docs/product/srs-and-practice-design.md` — FSRS, review state, practice modes, UX flow, tests.
 10. `docs/research/public-product-cartography.md`, `docs/research/live-ui-inventory-expanded.md`, `docs/research/oss-substrate-assessment.md` — research backing.
 11. `docs/plan/mvp-spike-plan.md` — concrete MVP spikes with inputs, outputs, commands, and gates.
-12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-V2 plan for YouTube caption candidate import, local ASR transcript generation, correction/approval, and transcript provenance.
+12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-core plan for YouTube caption candidates, ElevenLabs Scribe v2 transcript drafts, word timings, command-only media acquisition, future local STT opt-out, correction/approval, and transcript provenance.
 13. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
 
 ## Source provenance''', readme)
@@ -625,7 +633,7 @@ Read these in order before planning, deep-diving, or launching implementation wo
 8. `docs/review/safety-privacy-boundary-review.md` — authoritative safety/privacy/legal gate.
 9. `docs/spec/feature-implementation-playbook.md` — feature-by-feature implementation playbook.
 10. `docs/plan/mvp-spike-plan.md` — concrete MVP spike inputs, outputs, commands, and gates.
-11. `docs/plan/v3-transcript-generation-correction-plan.md` — YouTube caption candidate, local ASR, transcript correction, and approved-track plan.
+11. `docs/plan/v3-transcript-generation-correction-plan.md` — YouTube caption candidates, ElevenLabs Scribe v2 drafts, word timings, command-only media acquisition, future local STT opt-out, transcript correction, and approved-track plan.
 
 ## Working hypothesis''', agents)
 write('AGENTS.md', new_agents)

@@ -5,16 +5,16 @@
     {
       "path": "docs/final/war-room-final-synthesis.md",
       "relative_path": "docs/final/war-room-final-synthesis.md",
-      "bytes": 6709,
-      "lines": 85,
-      "sha256": "fb7dc44b1eb8aa655db6d25e015980f78d5730ca05ba84e7942460232ebe3372"
+      "bytes": 7902,
+      "lines": 90,
+      "sha256": "575a76cee145bc2bed6d9135b8cb9a7c6b6f633fee1073be61ed72013c38987a"
     },
     {
       "path": "docs/final/lingotorte-implementation-plan.md",
       "relative_path": "docs/final/lingotorte-implementation-plan.md",
-      "bytes": 24071,
-      "lines": 340,
-      "sha256": "12312bb0f9574a2950cc3987f00a6eb6f7a6c20b9385e1efef5a5d2be40973f3"
+      "bytes": 27082,
+      "lines": 348,
+      "sha256": "c68f4640162bcefe025512e7fd486ab0e14a3892eabb22034f781756d9031cc2"
     },
     {
       "path": "docs/spec/lingopie-behavior-reference.md",
@@ -26,37 +26,37 @@
     {
       "path": "docs/spec/feature-implementation-playbook.md",
       "relative_path": "docs/spec/feature-implementation-playbook.md",
-      "bytes": 10084,
-      "lines": 58,
-      "sha256": "ad374a98b4744395884b03ae7892bf3df2aac29c6cf43c1d3f32db959b8af559"
+      "bytes": 10355,
+      "lines": 59,
+      "sha256": "ba392ac5f6ee900349c35d4f717be57529727afb830ee4a9ea3bac050ab7cca9"
     },
     {
       "path": "docs/architecture/local-first-architecture.md",
       "relative_path": "docs/architecture/local-first-architecture.md",
-      "bytes": 8540,
-      "lines": 171,
-      "sha256": "0a634d5416758a1350f38ba364ba7a58981ed2a4d92f61fb0d419c72ed0849d9"
+      "bytes": 8646,
+      "lines": 173,
+      "sha256": "e2b615dcc138a79c9790887b8213b41bdae2b9dfb97344888bfe54bec1c67c04"
     },
     {
       "path": "docs/architecture/data-model-and-storage.md",
       "relative_path": "docs/architecture/data-model-and-storage.md",
-      "bytes": 16705,
-      "lines": 213,
-      "sha256": "597f3aff6e79ee1f4884dc92efc1ac3558efe610b51ade3da46d7d6b1f00339c"
+      "bytes": 18292,
+      "lines": 220,
+      "sha256": "76b7c2545fc515af7eaed4e25a22c4271a81a5e58e58120ee1290d3d1e761665"
     },
     {
       "path": "docs/architecture/language-adapter-design.md",
       "relative_path": "docs/architecture/language-adapter-design.md",
-      "bytes": 15118,
+      "bytes": 15583,
       "lines": 375,
-      "sha256": "d2c871ebedae6e3b07f901e5649cfc10c4517188b86331afe242857caa721136"
+      "sha256": "a3b500ed9ea69dd3cadb3736e8762aa367580a9138340993e496fde11a814b82"
     },
     {
       "path": "docs/product/srs-and-practice-design.md",
       "relative_path": "docs/product/srs-and-practice-design.md",
-      "bytes": 8833,
-      "lines": 125,
-      "sha256": "6ee19f9bccf59e1831a33e1a54c2a526ef8af516c77e79292c87680993b61b66"
+      "bytes": 9583,
+      "lines": 128,
+      "sha256": "1676df2108d2bba0b6d8a91351e7573fdd86a28c7875f6a0fe07083235a03aa8"
     },
     {
       "path": "docs/research/public-product-cartography.md",
@@ -82,37 +82,37 @@
     {
       "path": "docs/review/safety-privacy-boundary-review.md",
       "relative_path": "docs/review/safety-privacy-boundary-review.md",
-      "bytes": 12339,
-      "lines": 153,
-      "sha256": "ff0105bc380bb73ee06d2d8477bbb07829b8253eaf82438e05e18b389aaa40e1"
+      "bytes": 14946,
+      "lines": 169,
+      "sha256": "321dc7a148a389695f4627aaf74d509cc35d963ebfac6b683052de0f79381948"
     },
     {
       "path": "docs/plan/mvp-spike-plan.md",
       "relative_path": "docs/plan/mvp-spike-plan.md",
-      "bytes": 5801,
-      "lines": 73,
-      "sha256": "a14f2adcd5840881963774181d736ef2c6742c8d8b4879ec9e7fec383acf2fa2"
+      "bytes": 6926,
+      "lines": 75,
+      "sha256": "e63063262718bc847ae6dd848be0f3f826516f59db50df9f635b6438a83fd34d"
     },
     {
       "path": "docs/plan/v3-transcript-generation-correction-plan.md",
       "relative_path": "docs/plan/v3-transcript-generation-correction-plan.md",
-      "bytes": 14187,
-      "lines": 238,
-      "sha256": "fe0d41b6505d65ac6a6122e38368e8508dc4cc46fb5295ffa3b650a2ebfc397c"
+      "bytes": 19177,
+      "lines": 276,
+      "sha256": "185a8f1dcd7daf419c01c5cabf7ae90be7c873fa307c201e5404e06606a6dc1f"
     },
     {
       "path": "README.md",
       "relative_path": "README.md",
-      "bytes": 4884,
+      "bytes": 4959,
       "lines": 74,
-      "sha256": "72aafcd9e17579819008d12a4876dd61d1d0922b100ebcd0c93a5b7c2fd09ea8"
+      "sha256": "62826f81a3f6a8e21f37bc4f4d1bf1b2c337629a3003b06efd5036832d3b566c"
     },
     {
       "path": "AGENTS.md",
       "relative_path": "AGENTS.md",
-      "bytes": 3771,
+      "bytes": 3862,
       "lines": 62,
-      "sha256": "d5e4e48eb516b8dc9e4124363f13d5ee1a39b53c720be4d039d394bf0aa773fe"
+      "sha256": "395627abc18a7c4f8973dcc5ca8cdb3325cf7caaa2ea6e9623730c08a19a3bc9"
     }
   ]
 }

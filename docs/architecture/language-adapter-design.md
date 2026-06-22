@@ -300,8 +300,8 @@ type SentenceExplanation = {
 | `dictionary` | Local first | token/lemma | definitions/translations | Low local; medium online | Yes, local/fixture fallback |
 | `phrase_translation` | Local/offline optional | selected phrase/cue | translation | Medium if online | V1 opt-in |
 | `grammar_explainer` | Local LLM optional | cue + parse | explanation | Medium/high if online | V1/V2 opt-in |
-| `asr` | Local optional | media/audio | generated transcript | High if online; media leaves device | V1 local; online gated |
-| `forced_alignment` | Local optional | audio + text | cue timing | High if online | V1/V2 local |
+| `asr` | ElevenLabs Scribe v2 targeted opt-in for Janusz; local opt-out future | media/audio | generated transcript + word timings | High if online; media leaves device | V1/P7 gated |
+| `forced_alignment` | Local optional/future opt-out | audio + text | cue and word timing | High if online | V1/V2 local |
 | `pronunciation_scorer` | Local optional | learner recording | score/feedback | High biometric/audio sensitivity | V2, explicit opt-in |
 
 
@@ -339,7 +339,7 @@ Implement adapters for:
 
 ## Online provider policy
 
-Default: all online providers are off.
+Default: all online providers are off in fresh installs, tests, and unconfigured environments. Janusz's personal deployment may explicitly enable ElevenLabs Scribe v2 as the first real STT provider; this is not permission for ambient provider calls or other provider classes.
 
 Any online adapter must have:
 
@@ -358,7 +358,7 @@ Provider classes:
 | Dictionary lookup | Local/offline dictionary preferred | Online lookup sends selected text and maybe language pair. |
 | Phrase translation | Local model or disabled | Online translation sends phrase/cue context. |
 | Sentence explanation | Local LLM or disabled | Online LLM sends sentence and possibly surrounding context/notes. |
-| ASR/transcription | Local faster-whisper/whisper.cpp-style pipeline | Online ASR sends audio/media snippets. |
+| ASR/transcription | Disabled until explicitly configured; ElevenLabs Scribe v2 is the first real target for Janusz; future local WhisperX/faster-whisper opt-out | Online ASR sends audio/media snippets; local model installs/downloads need their own gate. |
 | YouTube caption import | Disabled unless user initiates URL import | Public caption reads send the URL/video ID to YouTube or transcript tooling; downloaded media remains separately gated. |
 | Pronunciation scoring | Local ASR/alignment or disabled | Online scoring sends learner voice recordings. |
 | Backup/sync | Manual local backup | Cloud sync may upload DB, cue text, notes, paths, and exported media. |

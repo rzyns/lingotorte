@@ -98,6 +98,9 @@ The concrete state transitions and next due dates should be delegated to FSRS li
 | Media import | Owned local video fixture | User imports media | App stores path/fingerprint/duration; no media copy unless configured. |
 | Subtitle import | Target/native subtitle fixtures | User selects tracks | Cues are parsed with ids/start/end/text/language/role. |
 | YouTube caption candidate | User provides a public/authorized YouTube URL with captions | User imports captions through an explicitly enabled provider action | Draft caption track is labeled with provenance and warnings; it cannot become default study source until corrected/approved. |
+| YouTube command helper | User provides an authorized online video URL | User asks for download help | App displays an exact safe `yt-dlp` command and rights warning, rejects cookies/credentials/DRM-bypass flags or unsafe paths, and does not execute the command. |
+| ElevenLabs Scribe v2 transcript draft | Owned local audio/video and configured provider consent | User explicitly runs generation | Draft transcript has cues, word timings, confidence/provenance, and redacted logs; saved occurrences remain blocked until correction/approval. |
+| Word-level transcript interaction | Approved track with word timings | User clicks/selects words/spans | Player seeks/loops accurately and saved occurrence anchors preserve cue/time/word-span context. |
 | Transcript correction | Draft provider/ASR caption track exists | User edits cue text/timing and approves | A new versioned approved track is created; raw provider/ASR output remains immutable provenance. |
 | Cue alignment | Target/native cues with overlapping times | Alignment runs | Target cues link to best native cue or explicit no-match/ambiguous state. |
 | Player playback | Imported media | User plays/seeks | Video time updates transcript/caption state. |

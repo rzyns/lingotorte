@@ -9,8 +9,9 @@ Related docs: [Final Implementation Plan](./final-implementation-plan.md), [Evid
 1. Build from safe local fixtures before touching user libraries.
 2. Preserve artifact-centered identity: media -> subtitle track -> cue -> token occurrence -> saved item -> review card.
 3. Keep online providers disabled by default and covered by no-network tests.
-4. Treat every third-party library as candidate-only until license/version/source verification.
-5. Commit feature slices frequently in future implementation work; this planning bundle does not create code commits because the workspace is not a git repo.
+4. Target ElevenLabs Scribe v2 as the first real STT provider for Janusz's explicitly configured personal deployment, while preserving disabled-provider defaults and future local opt-out.
+5. Treat every third-party library/provider/model as candidate-only until license/version/source verification.
+6. Commit feature slices frequently in future implementation work; this planning bundle does not create code commits because the workspace is not a git repo.
 
 ## Dependency ordering
 
@@ -22,8 +23,8 @@ P0 safety + fixtures + skeleton
         -> P4 saved occurrences + learner state
           -> P5 FSRS review cards
             -> P6 practice modes + exports
-              -> P7 generated subtitles/alignment + optional shadowing
-                -> P8 backup/sync/progress polish
+              -> P7 ElevenLabs transcript generation + word timings + correction
+                -> P8 local opt-out ASR/shadowing + backup/sync/progress polish
 ```
 
 Hard blockers before implementation:
@@ -121,14 +122,16 @@ Goal: add local equivalents of practice games while preserving SRS/source contex
 | Build the Sentence | P5 + tokens | Reconstruct target cue from tokens/phrases. | Preserves punctuation/spacing rules and reports deterministic scoring. |
 | Anki export | P4/P5 | `.apkg` or intermediate export plan with fields. | Export warns about text/media privacy; does not mutate Anki by default. |
 
-## Milestone P7 — Generated subtitles, alignment, and optional shadowing
+## Milestone P7 — Generated transcripts, word timings, and optional shadowing
 
-Goal: add higher-risk optional local media-processing capabilities after core product works.
+Goal: add non-fake transcript generation after core product works, targeting ElevenLabs Scribe v2 first and preserving local opt-out as a future lane.
 
 | Feature | Depends on | Build scope | Acceptance criteria |
 |---|---|---|---|
-| Local ASR transcript generation | P1/P2 | Local faster-whisper/whisper.cpp-style adapter after dependency verification. | Given owned fixture audio, generated cues have timestamps and confidence; quality caveats reported. |
-| Subtitle alignment tools | P1/P3 | Align generated/imported target/native tracks. | Manual correction workflow exists for ambiguous alignment. |
+| ElevenLabs Scribe v2 transcript generation | P1/P2 | Explicit opt-in online STT adapter with redacted logging, provenance, and word-level timestamp import. | Disabled-provider tests make zero network calls; fake/live-gated provider creates draft cues and word timings that require correction/approval before study use. |
+| Word-level timing model | P1/P3/P4 | First-class transcript word/span timing rows, not opaque adapter blobs. | Clicked/saved word or phrase spans retain start/end time, confidence, provider/alignment provenance, and cue/hash anchor. |
+| Local STT opt-out | P7 word timing model | Future WhisperX + faster-whisper-style adapter after dependency/model/hardware review. | Given owned fixture audio, local draft cues and word timings enter the same lifecycle; no model download/install is silent. |
+| Subtitle alignment tools | P1/P3 | Align generated/imported target/native tracks and forced-alignment output. | Manual correction workflow exists for ambiguous alignment. |
 | Clip/audio extraction | P2/P5 | Lazy local snippets for review/practice. | Snippets are generated from owned local media and removable from cache. |
 | Pronunciation/shadowing | P2 + ASR | Optional local recording + comparison flow. | Microphone permission explicit; temp recordings deleted unless saved; online scoring disabled by default. |
 
@@ -153,5 +156,6 @@ Goal: durable local study product after core loops are validated.
 | asbplayer vs custom player | Spike/reference only, not adoption. | P2 substrate choice. |
 | Anki role | Export-only by default. | P6 export integration depth. |
 | Online providers | Disabled by default. | P3/P7 optional adapters. |
+| Primary real STT provider | Resolved: ElevenLabs Scribe v2 for Janusz's explicitly configured personal deployment; no silent/default network calls. | P7 provider adapter. |
 | Mastered threshold | Configurable UI bucket. | P5/P6 display semantics. |
 | Backup media copies | Metadata-only backup. | P8 backup scope. |
