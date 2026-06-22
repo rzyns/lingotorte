@@ -18,9 +18,10 @@ npm run build
 npm run typecheck
 npm run scan:privacy
 python3 validate_final_bundle.py
-npm run dev:local-service      # terminal 1, loopback SQLite service on 127.0.0.1:5174
-npm run dev -- --host 127.0.0.1 # terminal 2, Vite web UI
+npm run local                    # loopback SQLite service on 127.0.0.1:5174 + Vite UI on 127.0.0.1:5173
 ```
+
+For split terminals, use `npm run dev:local-service` for the loopback SQLite/job service and `npm run dev -- --host 127.0.0.1` for Vite.
 
 Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** or **Library → Import local media** with an owned local media file plus `.srt` subtitles to exercise the local player/transcript/saved/review/practice/export flows. Browser imports use object URLs and `File.text()` locally; they do not upload files. To persist learner/transcript state across browser reload/restart, keep `npm run dev:local-service` running, open **Settings**, connect to `http://127.0.0.1:5174`, and click **Save state now** or enable autosave. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server/service reads and writes are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
 
@@ -35,7 +36,9 @@ If `npm ci --offline` cannot use the local cache, stop before any networked inst
 - `alignWordsWithWhisperX()` plus `scripts/whisperx_align.py` for WhisperX-style forced word alignment.
 - `transcribeWithElevenLabsScribe()` for explicit-opt-in ElevenLabs Scribe v2 cloud STT using fake-HTTP tests by default.
 
-The browser UI can now invoke the loopback local service for real local ASR jobs: start `npm run dev:local-service`, load or keep a current media asset, enter an absolute local media path in **Library → Transcript lifecycle** if the current browser media is a `blob:` URL, then click **Generate local ASR draft**. The service runs ffmpeg → faster-whisper → optional WhisperX alignment through injectable command runners and returns sanitized draft transcript segments/word timings. Heavy ASR/model dependencies still require an explicit local-machine install/approval; automated tests use fakes. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
+The browser UI can invoke the loopback local service for real local ASR jobs: start `npm run local` (or split terminals with `npm run dev:local-service`), load or keep a current media asset, enter an absolute local media path in **Library → Transcript lifecycle** if the current browser media is a `blob:` URL, then click **Generate local ASR draft**. The service runs ffmpeg → faster-whisper → optional WhisperX alignment through injectable command runners and returns sanitized draft transcript segments/word timings. Heavy ASR/model dependencies still require an explicit local-machine install/approval; automated tests use fakes.
+
+The same transcript lifecycle panel also has an explicit **Import public YouTube caption draft** path through the loopback service. It requires the visible public-read checkbox and a service process started with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`; it reads public caption metadata only and does not download media. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
 
 ## Recommended reading order
 

@@ -3,6 +3,7 @@ import { confidenceUnavailable, defaultProviderPolicy } from '../../packages/dom
 import {
   makeDisabledMorphologyAdapter,
   makeFixtureDictionaryAdapter,
+  makeLocalPolishMorphologyAdapter,
   makeUnavailableDictionaryAdapter,
   makeWhitespaceTokenizer,
   polishFixtureDictionary,
@@ -60,6 +61,32 @@ describe('P3 tokenizer/lemma/POS/dictionary adapter contracts', () => {
     expect(result.analyses[0]!.upos).toBe('X');
     expect(result.analyses[0]!.confidence).toEqual(confidenceUnavailable());
     expect(result.warnings[0]).toMatch(/disabled/i);
+  });
+
+  it('local Polish morphology returns lemma, POS, and UD-style features without network dependencies', async () => {
+    const tokenizer = makeWhitespaceTokenizer('pl');
+    const morphology = makeLocalPolishMorphologyAdapter();
+    const text = 'Uczymy się z własnych napisów.';
+    const tokenized = await tokenizer.tokenize({
+      language: 'pl',
+      cueId: sampleCue.id,
+      text,
+      preserveCharOffsets: true,
+    });
+    const result = await morphology.analyze({ language: 'pl', cueId: sampleCue.id, text, tokens: tokenized.tokens });
+
+    expect(result.run.adapterKind).toBe('pos-morph');
+    expect(result.run.privacyMode).toBe('local');
+    const bySurface = new Map(tokenized.tokens.map((token, index) => [token.normalizedSurface, result.analyses[index]!]));
+    expect(bySurface.get('uczymy')).toMatchObject({ lemma: 'uczyć', upos: 'VERB' });
+    expect(bySurface.get('uczymy')?.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Person', value: '1' }),
+      expect.objectContaining({ key: 'Number', value: 'Plur' }),
+    ]));
+    expect(bySurface.get('własnych')).toMatchObject({ lemma: 'własny', upos: 'ADJ' });
+    expect(bySurface.get('napisów')).toMatchObject({ lemma: 'napis', upos: 'NOUN' });
+    expect(bySurface.get('.')?.upos).toBe('PUNCT');
+    expect(result.warnings[0]).toMatch(/local heuristic polish morphology/i);
   });
 
   it('unavailable dictionary returns empty entries with a local-only warning', async () => {
@@ -149,7 +176,7 @@ describe('P3 adapter no-network enforcement', () => {
     expect(value.lookup.entries[0]!.headword).toBe('cześć');
   });
 
-  it('disabled morphology adapter makes zero network calls', async () => {
+  it('local Polish morphology adapter makes zero network calls', async () => {
     const adapters = resolveLocalAdapters(defaultProviderPolicy(), 'pl');
     const { value, networkAttempts } = await withNoNetwork(async () => {
       const tokenized = await adapters.tokenizer.tokenize({
@@ -168,6 +195,6 @@ describe('P3 adapter no-network enforcement', () => {
     });
 
     expect(networkAttempts).toHaveLength(0);
-    expect(value.analyses[0]!.upos).toBe('X');
+    expect(value.analyses[0]).toMatchObject({ lemma: 'lokalny', upos: 'ADJ' });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  confidenceProbable,
   makeAdapterRunRef,
   type LookupInput,
   type LookupOutput,
@@ -60,17 +61,21 @@ export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
         warnings.push('Input text contains no whitespace; tokenization may be inaccurate');
       }
       const tokens: TokenizerOutputToken[] = [];
-      const regex = /\S+/g;
+      const tokenPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?|[^\s\p{L}\p{M}\d]/gu;
       let match: RegExpExecArray | null;
       let tokenIndex = 0;
-      while ((match = regex.exec(input.text)) !== null) {
+      while ((match = tokenPattern.exec(input.text)) !== null) {
         const surface = match[0];
         const charStart = match.index;
         const charEnd = charStart + surface.length;
-        const normalizedSurface = surface.toLowerCase().replace(/[.,!?;:]$/, '');
-        const trailingPunctuation = surface.length > normalizedSurface.length ? surface.slice(normalizedSurface.length) : '';
-        const tokenKind: TokenizerOutputToken['tokenKind'] =
-          /^\d+$/.test(surface) ? 'number' : /^[.,!?;:]+$/.test(surface) ? 'punctuation' : 'word';
+        const tokenKind: TokenizerOutputToken['tokenKind'] = /^\d+(?:[,.]\d+)?$/.test(surface)
+          ? 'number'
+          : /^[\p{L}\p{M}]/u.test(surface)
+            ? 'word'
+            : /^[.,!?;:…]+$/.test(surface)
+              ? 'punctuation'
+              : 'symbol';
+        const normalizedSurface = tokenKind === 'word' ? surface.toLocaleLowerCase(language) : surface;
         tokens.push({
           tokenIndex,
           charStart,
@@ -78,23 +83,10 @@ export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
           surface,
           normalizedSurface,
           tokenKind,
-          joinToPrevious: false,
+          joinToPrevious: tokenKind === 'punctuation',
           joinToNext: false,
         });
         tokenIndex += 1;
-        if (trailingPunctuation) {
-          tokens.push({
-            tokenIndex,
-            charStart: charEnd - trailingPunctuation.length,
-            charEnd,
-            surface: trailingPunctuation,
-            normalizedSurface: trailingPunctuation,
-            tokenKind: 'punctuation',
-            joinToPrevious: true,
-            joinToNext: false,
-          });
-          tokenIndex += 1;
-        }
       }
       if (tokens.length === 0) {
         warnings.push('No tokens produced from input text');
@@ -128,6 +120,105 @@ export function makeDisabledMorphologyAdapter(): MorphologyAdapter {
         run: makeAdapterRunRef('pos-morph', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
         analyses,
         warnings: ['Morphology adapter disabled; returning placeholder analyses'],
+      };
+    },
+  };
+}
+
+type LocalPolishMorphologyEntry = Readonly<{
+  lemma: string;
+  upos: string;
+  morph?: readonly { key: string; value: string; source?: 'universal-dependencies' | 'language-specific' | 'adapter-specific' }[];
+}>;
+
+const localPolishMorphology: Record<string, LocalPolishMorphologyEntry> = {
+  cześć: { lemma: 'cześć', upos: 'NOUN', morph: [{ key: 'Gender', value: 'Fem' }, { key: 'Number', value: 'Sing' }] },
+  to: { lemma: 'to', upos: 'PRON', morph: [{ key: 'PronType', value: 'Dem' }] },
+  jest: { lemma: 'być', upos: 'AUX', morph: [{ key: 'Mood', value: 'Ind' }, { key: 'Tense', value: 'Pres' }, { key: 'Person', value: '3' }, { key: 'Number', value: 'Sing' }] },
+  lokalny: { lemma: 'lokalny', upos: 'ADJ', morph: [{ key: 'Case', value: 'Nom' }, { key: 'Gender', value: 'Masc' }, { key: 'Number', value: 'Sing' }, { key: 'Degree', value: 'Pos' }] },
+  lokalnego: { lemma: 'lokalny', upos: 'ADJ', morph: [{ key: 'Case', value: 'Gen' }, { key: 'Gender', value: 'Masc' }, { key: 'Number', value: 'Sing' }, { key: 'Degree', value: 'Pos' }] },
+  test: { lemma: 'test', upos: 'NOUN', morph: [{ key: 'Gender', value: 'Masc' }, { key: 'Number', value: 'Sing' }] },
+  uczymy: { lemma: 'uczyć', upos: 'VERB', morph: [{ key: 'Aspect', value: 'Imp' }, { key: 'Mood', value: 'Ind' }, { key: 'Tense', value: 'Pres' }, { key: 'Person', value: '1' }, { key: 'Number', value: 'Plur' }] },
+  uczyć: { lemma: 'uczyć', upos: 'VERB', morph: [{ key: 'VerbForm', value: 'Inf' }, { key: 'Aspect', value: 'Imp' }] },
+  się: { lemma: 'się', upos: 'PRON', morph: [{ key: 'PronType', value: 'Prs' }, { key: 'Reflex', value: 'Yes' }] },
+  z: { lemma: 'z', upos: 'ADP', morph: [] },
+  własny: { lemma: 'własny', upos: 'ADJ', morph: [{ key: 'Degree', value: 'Pos' }] },
+  własnych: { lemma: 'własny', upos: 'ADJ', morph: [{ key: 'Case', value: 'Gen' }, { key: 'Number', value: 'Plur' }, { key: 'Degree', value: 'Pos' }] },
+  napis: { lemma: 'napis', upos: 'NOUN', morph: [{ key: 'Gender', value: 'Masc' }, { key: 'Number', value: 'Sing' }] },
+  napisy: { lemma: 'napis', upos: 'NOUN', morph: [{ key: 'Case', value: 'Nom' }, { key: 'Number', value: 'Plur' }] },
+  napisów: { lemma: 'napis', upos: 'NOUN', morph: [{ key: 'Case', value: 'Gen' }, { key: 'Number', value: 'Plur' }] },
+};
+
+function inferLocalPolishEntry(surface: string): LocalPolishMorphologyEntry {
+  const exact = localPolishMorphology[surface];
+  if (exact) return exact;
+  if (surface.endsWith('ych')) {
+    return {
+      lemma: surface.replace(/ych$/, 'y'),
+      upos: 'ADJ',
+      morph: [{ key: 'Case', value: 'Gen' }, { key: 'Number', value: 'Plur' }, { key: 'Guess', value: 'suffix', source: 'adapter-specific' }],
+    };
+  }
+  if (surface.endsWith('ów')) {
+    return {
+      lemma: surface.replace(/ów$/, ''),
+      upos: 'NOUN',
+      morph: [{ key: 'Case', value: 'Gen' }, { key: 'Number', value: 'Plur' }, { key: 'Guess', value: 'suffix', source: 'adapter-specific' }],
+    };
+  }
+  return { lemma: surface, upos: 'X', morph: [] };
+}
+
+export function makeLocalPolishMorphologyAdapter(): MorphologyAdapter {
+  const adapterId = 'lingotorte.local-polish-morphology';
+  const adapterVersion = '0.0.0-p8';
+  return {
+    adapterId,
+    adapterVersion,
+    privacyMode: 'local',
+    async analyze(input: MorphologyInput): Promise<MorphologyOutput> {
+      if (input.language !== 'pl') {
+        throw new TypeError(`${adapterId} does not support language ${input.language}`);
+      }
+      const analyses: MorphologyOutput['analyses'] = input.tokens.map((token) => {
+        if (token.tokenKind === 'punctuation' || token.tokenKind === 'symbol') {
+          return {
+            tokenIndex: token.tokenIndex,
+            lemma: token.normalizedSurface,
+            upos: token.tokenKind === 'punctuation' ? 'PUNCT' : 'SYM',
+            morph: [],
+            confidence: confidenceProbable(0.99),
+            alternatives: [],
+          };
+        }
+        if (token.tokenKind === 'number') {
+          return {
+            tokenIndex: token.tokenIndex,
+            lemma: token.normalizedSurface,
+            upos: 'NUM',
+            morph: [{ key: 'NumType', value: 'Card', source: 'universal-dependencies' as const }],
+            confidence: confidenceProbable(0.95),
+            alternatives: [],
+          };
+        }
+        const entry = inferLocalPolishEntry(token.normalizedSurface);
+        return {
+          tokenIndex: token.tokenIndex,
+          lemma: entry.lemma,
+          upos: entry.upos,
+          morph: (entry.morph ?? []).map((feature) => ({
+            key: feature.key,
+            value: feature.value,
+            source: feature.source ?? 'universal-dependencies' as const,
+          })),
+          confidence: confidenceProbable(entry.upos === 'X' ? 0.35 : 0.82),
+          alternatives: entry.upos === 'X' ? [{ lemma: token.normalizedSurface, upos: 'X', note: 'No local lexicon hit' }] : [],
+        };
+      });
+      return {
+        run: makeAdapterRunRef('pos-morph', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
+        analyses,
+        warnings: ['Local heuristic Polish morphology; verify learner-critical analyses'],
       };
     },
   };
@@ -250,7 +341,7 @@ export function resolveLocalAdapters(
   assertProvidersDisabled(policy);
   return {
     tokenizer: makeWhitespaceTokenizer(language),
-    morphology: makeDisabledMorphologyAdapter(),
+    morphology: language === 'pl' ? makeLocalPolishMorphologyAdapter() : makeDisabledMorphologyAdapter(),
     dictionary: fixtureDictionary ? makeFixtureDictionaryAdapter(fixtureDictionary) : makeUnavailableDictionaryAdapter(),
   };
 }
@@ -295,6 +386,12 @@ export const polishFixtureDictionary: FixtureDictionaryData = {
       partOfSpeech: 'ADJ',
       shortGloss: 'own',
       senses: [{ gloss: 'own', confidence: { kind: 'probable', value: 0.9 } }],
+    },
+    napis: {
+      headword: 'napis',
+      partOfSpeech: 'NOUN',
+      shortGloss: 'caption; inscription',
+      senses: [{ gloss: 'caption', confidence: { kind: 'probable', value: 0.88 } }],
     },
     napisy: {
       headword: 'napisy',

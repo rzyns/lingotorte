@@ -58,6 +58,8 @@ export type AppModel = {
     publicReadAuthorized: boolean;
     localAsrMediaPath: string;
     pendingCueEdits: Record<string, string>;
+    pendingCueTimingEdits: Record<string, { startMs: number; endMs: number }>;
+    pendingWordTimingEdits: Record<string, { text: string; startMs: number; endMs: number }>;
     lastMessage: string | null;
   };
   review: {
@@ -163,6 +165,7 @@ export function buildSourceContext(
   tokenEnd: number,
   charStart: number,
   charEnd: number,
+  timeRangeMs?: SavedOccurrenceSourceContext['timeRangeMs'],
 ): SavedOccurrenceSourceContext {
   return {
     mediaId,
@@ -170,7 +173,7 @@ export function buildSourceContext(
     mediaFingerprint: mediaFingerprint as `sha256:${string}`,
     subtitleTrackId,
     cueId: cue.id,
-    timeRangeMs: { start: cue.startMs, end: cue.endMs },
+    timeRangeMs: timeRangeMs ?? { start: cue.startMs, end: cue.endMs },
     tokenSpan: { startToken: tokenStart, endToken: tokenEnd },
     charSpan: { start: charStart, end: charEnd },
   };

@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "vite --config vite.config.ts",
     "dev:local-service": "node apps/local-service/src/server.ts",
+    "local": "node scripts/start-local.mjs",
     "build": "vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

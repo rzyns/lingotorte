@@ -1,7 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeMediaAsset } from '@lingotorte/domain';
-import { createAppModel } from '../../apps/web/src/model';
+import { approveTranscriptTrack, createAppModel } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -87,13 +87,25 @@ describe('P7 transcript lifecycle frontend', () => {
     libraryButton?.click();
     const correction = document.querySelector('textarea[name="transcript-correction-cue-1"]') as HTMLTextAreaElement | null;
     expect(correction).toBeTruthy();
+    const startTiming = document.querySelector('input[name="transcript-correction-cue-1-start-ms"]') as HTMLInputElement | null;
+    const endTiming = document.querySelector('input[name="transcript-correction-cue-1-end-ms"]') as HTMLInputElement | null;
+    expect(startTiming).toBeTruthy();
+    expect(endTiming).toBeTruthy();
     correction!.value = 'Corrected provider caption.';
     correction!.dispatchEvent(new dom.window.Event('input'));
+    startTiming!.value = '100';
+    startTiming!.dispatchEvent(new dom.window.Event('input'));
+    endTiming!.value = '1900';
+    endTiming!.dispatchEvent(new dom.window.Event('input'));
 
     const correctButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Create corrected transcript version') as HTMLButtonElement | null;
     correctButton?.click();
     await waitFor(() => model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus === 'correcting');
     expect(document.getElementById('app')?.textContent).toContain('Corrected transcript version created');
+    expect(model.cues[0]).toMatchObject({ text: 'Corrected provider caption.', startMs: 100, endMs: 1900 });
+    const sourceComparison = document.querySelector('.source-comparison');
+    expect(sourceComparison?.textContent).toContain('Source comparison');
+    expect(sourceComparison?.textContent).toContain('Provider caption draft.');
 
     const approveButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Approve transcript for study') as HTMLButtonElement | null;
     approveButton?.click();
@@ -209,5 +221,85 @@ describe('P7 transcript lifecycle frontend', () => {
       modelVersion: 'fake-service-1',
     });
     expect(document.getElementById('app')?.textContent).toContain('Local service ASR draft generated');
+
+    const secondWordStart = document.querySelector('input[name="transcript-word-timing-cue-1-word-1-start-ms"]') as HTMLInputElement | null;
+    const secondWordEnd = document.querySelector('input[name="transcript-word-timing-cue-1-word-1-end-ms"]') as HTMLInputElement | null;
+    expect(secondWordStart).toBeTruthy();
+    expect(secondWordEnd).toBeTruthy();
+    secondWordStart!.value = '650';
+    secondWordStart!.dispatchEvent(new dom.window.Event('input'));
+    secondWordEnd!.value = '1260';
+    secondWordEnd!.dispatchEvent(new dom.window.Event('input'));
+    const correctButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Create corrected transcript version') as HTMLButtonElement | null;
+    expect(correctButton).toBeTruthy();
+    correctButton!.click();
+    await waitFor(() => model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus === 'correcting');
+    const correctedTimings = model.store.listTranscriptWordTimingsForTrack(model.targetTrackId!);
+    expect(correctedTimings[1]).toMatchObject({
+      text: 'lokalny',
+      startMs: 650,
+      endMs: 1260,
+      sourceKind: 'manual-edit',
+      engine: 'manual-correction',
+      modelName: 'correction-editor',
+    });
+
+    approveTranscriptTrack(model, model.targetTrackId!);
+    const playerButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Player') as HTMLButtonElement | null;
+    playerButton?.click();
+
+    const timedWordButtons = Array.from(document.querySelectorAll('button.timed-word')) as HTMLButtonElement[];
+    expect(timedWordButtons.map((button) => button.textContent)).toEqual(['Serwis', 'lokalny']);
+    const lokalnyButton = timedWordButtons.find((button) => button.textContent === 'lokalny')!;
+    lokalnyButton.click();
+    expect(model.player.currentTimeMs).toBe(650);
+    expect(model.selection).toMatchObject({ text: 'lokalny', charStart: 7, charEnd: 14 });
+
+    const saveOccurrenceButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null;
+    expect(saveOccurrenceButton).toBeTruthy();
+    saveOccurrenceButton!.click();
+    await waitFor(() => Object.values(model.store.snapshot().savedOccurrences).length === 1);
+    const occurrence = Object.values(model.store.snapshot().savedOccurrences)[0]!;
+    expect(occurrence.selectionText).toBe('lokalny');
+    expect(occurrence.startMs).toBe(650);
+    expect(occurrence.endMs).toBe(1260);
+    expect(occurrence.sourceContext.timeRangeMs).toEqual({ start: 650, end: 1260 });
+  });
+
+  it('splits and merges transcript cues into immutable corrected versions', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    rerenderApp(model);
+
+    const urlInput = document.querySelector('input[name="youtube-caption-url"]') as HTMLInputElement;
+    const authCheckbox = document.querySelector('input[name="youtube-public-read-auth"]') as HTMLInputElement;
+    urlInput.value = 'https://www.youtube.com/watch?v=abcdefghijk';
+    urlInput.dispatchEvent(new dom.window.Event('input'));
+    authCheckbox.checked = true;
+    authCheckbox.dispatchEvent(new dom.window.Event('change'));
+    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement;
+    importWithAuth.click();
+    await waitFor(() => model.cues.length === 2);
+    const parentTrackId = model.targetTrackId!;
+
+    const splitButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split cue 1') as HTMLButtonElement | null;
+    expect(splitButton).toBeTruthy();
+    splitButton!.click();
+    await waitFor(() => model.cues.length === 3);
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('correcting');
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.provenance.parentTrackId).toBe(parentTrackId);
+    expect(model.cues.map((cue) => cue.cueIndex)).toEqual([1, 2, 3]);
+    expect(model.cues[0]!.endMs).toBeLessThanOrEqual(model.cues[1]!.startMs);
+    expect(model.cues[0]!.text.length).toBeGreaterThan(0);
+    expect(model.cues[1]!.text.length).toBeGreaterThan(0);
+
+    const splitTrackId = model.targetTrackId!;
+    const mergeButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Merge cue 1 with next') as HTMLButtonElement | null;
+    expect(mergeButton).toBeTruthy();
+    mergeButton!.click();
+    await waitFor(() => model.targetTrackId !== splitTrackId && model.cues.length === 2);
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('correcting');
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.provenance.parentTrackId).toBe(splitTrackId);
+    expect(model.cues[0]!.text).toContain('Provider caption draft.');
   });
 });

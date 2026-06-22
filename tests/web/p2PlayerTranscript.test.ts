@@ -125,6 +125,34 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(model.player.activeCueId).toBe(model.cues[1]?.id ?? null);
   });
 
+  it('global keyboard shortcuts navigate, replay, and adjust playback without stealing text input', async () => {
+    const { value: model } = await withNoNetwork(async () => {
+      const m = createAppModel();
+      await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
+      m.player.activeCueId = m.cues[0]?.id ?? null;
+      rerenderApp(m);
+      return m;
+    });
+    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('R replay cue');
+
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ']', bubbles: true }));
+    expect(model.player.activeCueId).toBe(model.cues[1]?.id ?? null);
+    expect(model.player.currentTimeMs).toBe(model.cues[1]?.startMs);
+
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: '[', bubbles: true }));
+    expect(model.player.activeCueId).toBe(model.cues[0]?.id ?? null);
+
+    model.player.currentTimeMs = 1234;
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+    expect(model.player.currentTimeMs).toBe(model.cues[0]?.startMs);
+
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: '.', bubbles: true }));
+    expect(model.player.playbackRate).toBe(1.1);
+    const searchInput = document.querySelector('#transcript-search') as HTMLInputElement;
+    searchInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ',', bubbles: true }));
+    expect(model.player.playbackRate).toBe(1.1);
+  });
+
   it('prev/next navigation helpers move between cues', async () => {
     const model = createAppModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);

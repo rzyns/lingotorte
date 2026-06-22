@@ -20,6 +20,7 @@ import {
   saveSentenceFromCue,
   saveSelectedPhraseFromCue,
   seekToCue,
+  seekToTime,
   setPlaybackRate,
   setPendingMeaning,
   setPendingNotes,
@@ -46,19 +47,100 @@ import {
   setLocalServiceBaseUrl,
   approveTranscriptTrack,
   createCorrectedTranscriptVersion,
+  splitTranscriptCueInCorrectedVersion,
+  mergeTranscriptCueWithNextInCorrectedVersion,
   generateLocalAsrDraft,
   importYouTubeCaptionCandidate,
   makeLocalServiceAsrProvider,
+  makeLocalServiceYouTubeCaptionProvider,
   makeFakeYouTubeCaptionProvider,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
+  installGlobalKeyboardShortcuts(model);
   const root = document.createElement('div');
   root.className = 'lingotorte-app';
   root.appendChild(renderHeader(model));
   root.appendChild(renderMain(model));
   root.appendChild(renderFooter());
   return root;
+}
+
+let keyboardShortcutsDocument: Document | null = null;
+let keyboardShortcutsModel: AppModel | null = null;
+let keyboardShortcutsHandler: ((event: KeyboardEvent) => void) | null = null;
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
+}
+
+function currentKeyboardCue(model: AppModel): Cue | null {
+  if (model.player.activeCueId) {
+    return model.cues.find((cue) => cue.id === model.player.activeCueId) ?? null;
+  }
+  return activeCueAtTime(model.cues, model.player.currentTimeMs) ?? model.cues[0] ?? null;
+}
+
+function seekRenderedVideoToCue(cue: Cue): void {
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+  if (video) {
+    video.currentTime = cue.startMs / 1000;
+  }
+}
+
+function installGlobalKeyboardShortcuts(model: AppModel): void {
+  keyboardShortcutsModel = model;
+  if (typeof document === 'undefined') return;
+  if (keyboardShortcutsDocument === document && keyboardShortcutsHandler) return;
+  if (keyboardShortcutsDocument && keyboardShortcutsHandler) {
+    keyboardShortcutsDocument.removeEventListener('keydown', keyboardShortcutsHandler);
+  }
+  keyboardShortcutsDocument = document;
+  keyboardShortcutsHandler = (event: KeyboardEvent) => {
+    const currentModel = keyboardShortcutsModel;
+    if (!currentModel || isEditableShortcutTarget(event.target)) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const cue = currentKeyboardCue(currentModel);
+    let handled = false;
+    if (event.key === 'r' || event.key === 'R') {
+      if (cue) {
+        seekToCue(currentModel, cue);
+        seekRenderedVideoToCue(cue);
+        handled = true;
+      }
+    } else if (event.key === '[') {
+      if (cue) {
+        const targetCue = previousCue(currentModel.cues, cue.id) ?? cue;
+        seekToCue(currentModel, targetCue);
+        seekRenderedVideoToCue(targetCue);
+        handled = true;
+      }
+    } else if (event.key === ']') {
+      if (cue) {
+        const targetCue = nextCue(currentModel.cues, cue.id) ?? cue;
+        seekToCue(currentModel, targetCue);
+        seekRenderedVideoToCue(targetCue);
+        handled = true;
+      }
+    } else if (event.key === ',') {
+      setPlaybackRate(currentModel, currentModel.player.playbackRate - PLAYBACK_RATE_STEP);
+      const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+      if (video) video.playbackRate = currentModel.player.playbackRate;
+      handled = true;
+    } else if (event.key === '.') {
+      setPlaybackRate(currentModel, currentModel.player.playbackRate + PLAYBACK_RATE_STEP);
+      const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+      if (video) video.playbackRate = currentModel.player.playbackRate;
+      handled = true;
+    }
+    if (handled) {
+      event.preventDefault();
+      rerenderApp(currentModel);
+    }
+  };
+  document.addEventListener('keydown', keyboardShortcutsHandler);
 }
 
 function renderHeader(model: AppModel): HTMLElement {
@@ -812,7 +894,73 @@ function renderPlayerControls(model: AppModel): HTMLElement {
   time.setAttribute('aria-live', 'off');
   controls.appendChild(time);
 
+  const shortcuts = document.createElement('p');
+  shortcuts.className = 'keyboard-shortcuts meta';
+  shortcuts.textContent = 'Shortcuts: [ previous cue, ] next cue, R replay cue, , slower, . faster';
+  controls.appendChild(shortcuts);
+
   return controls;
+}
+
+function seekRenderedVideoToMs(timeMs: number): void {
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+  if (video) {
+    video.currentTime = timeMs / 1000;
+  }
+}
+
+function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
+  const target = document.createElement('div');
+  target.className = 'cue-target';
+  const wordTimings = model.store
+    .listTranscriptWordTimingsForCue(cue.id)
+    .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
+    .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
+  if (wordTimings.length === 0) {
+    target.textContent = cue.text;
+    return target;
+  }
+
+  let cursor = 0;
+  for (const word of wordTimings) {
+    const start = Math.max(cursor, Math.min(word.charStart, cue.text.length));
+    const end = Math.max(start, Math.min(word.charEnd, cue.text.length));
+    if (start > cursor) {
+      target.appendChild(document.createTextNode(cue.text.slice(cursor, start)));
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'timed-word';
+    button.dataset.wordTimingId = word.id;
+    button.dataset.cueId = cue.id;
+    button.dataset.startMs = String(word.startMs);
+    button.dataset.endMs = String(word.endMs);
+    button.textContent = cue.text.slice(start, end) || word.text;
+    button.title = `Replay ${formatTimeMs(word.startMs)}–${formatTimeMs(word.endMs)}`;
+    button.setAttribute('aria-label', `Replay word ${word.text} at ${formatTimeMs(word.startMs)}`);
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      seekToTime(model, word.startMs);
+      model.player.activeCueId = cue.id;
+      model.selection = {
+        kind: 'lexeme',
+        text: word.text,
+        cueId: cue.id,
+        tokenStart: word.wordIndex,
+        tokenEnd: word.wordIndex + 1,
+        charStart: word.charStart,
+        charEnd: word.charEnd,
+      };
+      seekRenderedVideoToMs(word.startMs);
+      rerenderApp(model);
+    });
+    target.appendChild(button);
+    cursor = end;
+  }
+  if (cursor < cue.text.length) {
+    target.appendChild(document.createTextNode(cue.text.slice(cursor)));
+  }
+  return target;
 }
 
 function renderTranscriptPanel(model: AppModel): HTMLElement {
@@ -877,9 +1025,7 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     time.textContent = `${formatTimeMs(cue.startMs)} – ${formatTimeMs(cue.endMs)}`;
     row.appendChild(time);
 
-    const target = document.createElement('div');
-    target.className = 'cue-target';
-    target.textContent = cue.text;
+    const target = renderCueTargetText(model, cue);
     row.appendChild(target);
 
     const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
@@ -1082,6 +1228,37 @@ function renderSelectionPanel(model: AppModel): HTMLElement {
   return panel;
 }
 
+function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrackId: typeof cue.trackId): HTMLElement | null {
+  const currentTrack = model.store.getSubtitleTrack(currentTrackId);
+  if (!currentTrack) return null;
+  const sourceTracks = model.store
+    .listSubtitleTracksForMedia(currentTrack.mediaId)
+    .filter((track) => track.id !== currentTrackId && track.role === currentTrack.role);
+  if (sourceTracks.length === 0) return null;
+
+  const comparison = document.createElement('div');
+  comparison.className = 'source-comparison';
+  comparison.setAttribute('aria-label', `Cue ${cue.cueIndex} source comparison`);
+  const heading = document.createElement('div');
+  heading.className = 'meta';
+  heading.textContent = 'Source comparison';
+  comparison.appendChild(heading);
+
+  for (const track of sourceTracks) {
+    const sourceCues = model.store.listCuesForTrack(track.id);
+    const sourceCue = sourceCues.find((candidate) => candidate.cueIndex === cue.cueIndex)
+      ?? sourceCues.find((candidate) => candidate.startMs < cue.endMs && candidate.endMs > cue.startMs)
+      ?? null;
+    const row = document.createElement('p');
+    row.className = 'meta source-comparison-row';
+    const sourceLabel = track.provenance.parentTrackId === currentTrackId ? 'child' : 'source';
+    row.textContent = `${sourceLabel} ${track.transcriptSourceKind}/${track.transcriptStatus}: ${sourceCue?.text ?? 'No aligned cue'}`;
+    comparison.appendChild(row);
+  }
+
+  return comparison;
+}
+
 function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'transcript-lifecycle-panel';
@@ -1158,6 +1335,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     }, provider)
       .then(() => {
         model.transcriptLifecycle.pendingCueEdits = {};
+        model.transcriptLifecycle.pendingCueTimingEdits = {};
+        model.transcriptLifecycle.pendingWordTimingEdits = {};
         model.transcriptLifecycle.lastMessage = 'Draft transcript imported';
         model.importError = null;
         rerenderApp(model);
@@ -1168,6 +1347,33 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       });
   });
   actions.appendChild(importBtn);
+
+  const publicImportBtn = document.createElement('button');
+  publicImportBtn.className = 'btn-secondary';
+  publicImportBtn.textContent = 'Import public YouTube caption draft';
+  publicImportBtn.addEventListener('click', () => {
+    const provider = makeLocalServiceYouTubeCaptionProvider(model.localService.baseUrl, {
+      allowPublicRead: model.transcriptLifecycle.publicReadAuthorized,
+    });
+    void importYouTubeCaptionCandidate(model, {
+      url: model.transcriptLifecycle.youtubeUrl,
+      language: model.transcriptLifecycle.youtubeLanguage,
+      allowPublicRead: model.transcriptLifecycle.publicReadAuthorized,
+    }, provider)
+      .then(() => {
+        model.transcriptLifecycle.pendingCueEdits = {};
+        model.transcriptLifecycle.pendingCueTimingEdits = {};
+        model.transcriptLifecycle.pendingWordTimingEdits = {};
+        model.transcriptLifecycle.lastMessage = 'Public YouTube caption draft imported through the loopback service';
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  actions.appendChild(publicImportBtn);
 
   const asrBtn = document.createElement('button');
   asrBtn.className = 'btn-secondary';
@@ -1182,6 +1388,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     void generateLocalAsrDraft(model, provider, model.transcriptLifecycle.youtubeLanguage)
       .then(() => {
         model.transcriptLifecycle.pendingCueEdits = {};
+        model.transcriptLifecycle.pendingCueTimingEdits = {};
+        model.transcriptLifecycle.pendingWordTimingEdits = {};
         model.transcriptLifecycle.lastMessage = 'Local service ASR draft generated';
         model.importError = null;
         rerenderApp(model);
@@ -1225,7 +1433,145 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         model.transcriptLifecycle.pendingCueEdits[cue.id] = textarea.value;
       });
       label.appendChild(textarea);
-      correctionGroup.appendChild(label);
+      const sourceComparison = renderCueSourceComparison(model, cue, targetTrack.id);
+
+      const timingEdit = model.transcriptLifecycle.pendingCueTimingEdits[cue.id] ?? { startMs: cue.startMs, endMs: cue.endMs };
+      const timingRow = document.createElement('div');
+      timingRow.className = 'timing-edit-row';
+      const startLabel = document.createElement('label');
+      startLabel.htmlFor = `transcript-correction-cue-${cue.cueIndex}-start-ms`;
+      startLabel.textContent = 'Start ms';
+      const startInput = document.createElement('input');
+      startInput.id = `transcript-correction-cue-${cue.cueIndex}-start-ms`;
+      startInput.name = `transcript-correction-cue-${cue.cueIndex}-start-ms`;
+      startInput.type = 'number';
+      startInput.min = '0';
+      startInput.step = '10';
+      startInput.value = String(timingEdit.startMs);
+      const endLabel = document.createElement('label');
+      endLabel.htmlFor = `transcript-correction-cue-${cue.cueIndex}-end-ms`;
+      endLabel.textContent = 'End ms';
+      const endInput = document.createElement('input');
+      endInput.id = `transcript-correction-cue-${cue.cueIndex}-end-ms`;
+      endInput.name = `transcript-correction-cue-${cue.cueIndex}-end-ms`;
+      endInput.type = 'number';
+      endInput.min = '0';
+      endInput.step = '10';
+      endInput.value = String(timingEdit.endMs);
+      const updateTimingEdit = () => {
+        model.transcriptLifecycle.pendingCueTimingEdits[cue.id] = {
+          startMs: Number(startInput.value),
+          endMs: Number(endInput.value),
+        };
+      };
+      startInput.addEventListener('input', updateTimingEdit);
+      endInput.addEventListener('input', updateTimingEdit);
+      startLabel.appendChild(startInput);
+      endLabel.appendChild(endInput);
+      timingRow.append(startLabel, endLabel);
+
+      const wordTimings = model.store.listTranscriptWordTimingsForCue(cue.id);
+      const wordTimingPanel = document.createElement('div');
+      wordTimingPanel.className = 'word-timing-edit-list';
+      if (wordTimings.length > 0) {
+        const wordHeading = document.createElement('div');
+        wordHeading.className = 'meta';
+        wordHeading.textContent = 'Word timings';
+        wordTimingPanel.appendChild(wordHeading);
+      }
+      for (const word of wordTimings) {
+        const wordEdit = model.transcriptLifecycle.pendingWordTimingEdits[word.id] ?? {
+          text: word.text,
+          startMs: word.startMs,
+          endMs: word.endMs,
+        };
+        const wordRow = document.createElement('div');
+        wordRow.className = 'word-timing-edit-row';
+        const wordLabel = document.createElement('label');
+        wordLabel.htmlFor = `transcript-word-timing-cue-${cue.cueIndex}-word-${word.wordIndex}-text`;
+        wordLabel.textContent = `Word ${word.wordIndex + 1}`;
+        const wordText = document.createElement('input');
+        wordText.id = `transcript-word-timing-cue-${cue.cueIndex}-word-${word.wordIndex}-text`;
+        wordText.name = `transcript-word-timing-cue-${cue.cueIndex}-word-${word.wordIndex}-text`;
+        wordText.type = 'text';
+        wordText.value = wordEdit.text;
+        const wordStart = document.createElement('input');
+        wordStart.name = `transcript-word-timing-cue-${cue.cueIndex}-word-${word.wordIndex}-start-ms`;
+        wordStart.type = 'number';
+        wordStart.min = '0';
+        wordStart.step = '10';
+        wordStart.value = String(wordEdit.startMs);
+        const wordEnd = document.createElement('input');
+        wordEnd.name = `transcript-word-timing-cue-${cue.cueIndex}-word-${word.wordIndex}-end-ms`;
+        wordEnd.type = 'number';
+        wordEnd.min = '0';
+        wordEnd.step = '10';
+        wordEnd.value = String(wordEdit.endMs);
+        const updateWordTimingEdit = () => {
+          model.transcriptLifecycle.pendingWordTimingEdits[word.id] = {
+            text: wordText.value,
+            startMs: Number(wordStart.value),
+            endMs: Number(wordEnd.value),
+          };
+        };
+        wordText.addEventListener('input', updateWordTimingEdit);
+        wordStart.addEventListener('input', updateWordTimingEdit);
+        wordEnd.addEventListener('input', updateWordTimingEdit);
+        wordLabel.appendChild(wordText);
+        wordRow.append(wordLabel, wordStart, wordEnd);
+        wordTimingPanel.appendChild(wordRow);
+      }
+      const structureRow = document.createElement('div');
+      structureRow.className = 'cue-structure-edit-row';
+      const splitCueButton = document.createElement('button');
+      splitCueButton.type = 'button';
+      splitCueButton.textContent = `Split cue ${cue.cueIndex}`;
+      splitCueButton.addEventListener('click', () => {
+        splitCueButton.disabled = true;
+        model.transcriptLifecycle.lastMessage = `Splitting cue ${cue.cueIndex}…`;
+        rerenderApp(model);
+        splitTranscriptCueInCorrectedVersion(model, model.targetTrackId!, cue.id)
+          .then(() => {
+            model.transcriptLifecycle.pendingCueEdits = {};
+            model.transcriptLifecycle.pendingCueTimingEdits = {};
+            model.transcriptLifecycle.pendingWordTimingEdits = {};
+            model.transcriptLifecycle.lastMessage = `Split cue ${cue.cueIndex} into a corrected version`;
+            model.importError = null;
+            rerenderApp(model);
+          })
+          .catch((err: unknown) => {
+            model.importError = err instanceof Error ? err.message : String(err);
+            rerenderApp(model);
+          });
+      });
+      const mergeCueButton = document.createElement('button');
+      mergeCueButton.type = 'button';
+      mergeCueButton.textContent = `Merge cue ${cue.cueIndex} with next`;
+      mergeCueButton.disabled = !model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
+      mergeCueButton.addEventListener('click', () => {
+        mergeCueButton.disabled = true;
+        model.transcriptLifecycle.lastMessage = `Merging cue ${cue.cueIndex} with next…`;
+        rerenderApp(model);
+        mergeTranscriptCueWithNextInCorrectedVersion(model, model.targetTrackId!, cue.id)
+          .then(() => {
+            model.transcriptLifecycle.pendingCueEdits = {};
+            model.transcriptLifecycle.pendingCueTimingEdits = {};
+            model.transcriptLifecycle.pendingWordTimingEdits = {};
+            model.transcriptLifecycle.lastMessage = `Merged cue ${cue.cueIndex} with next into a corrected version`;
+            model.importError = null;
+            rerenderApp(model);
+          })
+          .catch((err: unknown) => {
+            model.importError = err instanceof Error ? err.message : String(err);
+            rerenderApp(model);
+          });
+      });
+      structureRow.append(splitCueButton, mergeCueButton);
+      if (sourceComparison) {
+        correctionGroup.append(label, sourceComparison, timingRow, wordTimingPanel, structureRow);
+      } else {
+        correctionGroup.append(label, timingRow, wordTimingPanel, structureRow);
+      }
     }
     panel.appendChild(correctionGroup);
 
@@ -1234,11 +1580,39 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     correctBtn.textContent = 'Create corrected transcript version';
     correctBtn.addEventListener('click', () => {
       const edits = model.cues
-        .map((cue) => ({ cueId: cue.id, text: model.transcriptLifecycle.pendingCueEdits[cue.id] ?? cue.text }))
+        .map((cue) => {
+          const timing = model.transcriptLifecycle.pendingCueTimingEdits[cue.id] ?? { startMs: cue.startMs, endMs: cue.endMs };
+          const wordTimings = model.store.listTranscriptWordTimingsForCue(cue.id).map((word) => {
+            const wordEdit = model.transcriptLifecycle.pendingWordTimingEdits[word.id] ?? {
+              text: word.text,
+              startMs: word.startMs,
+              endMs: word.endMs,
+            };
+            return {
+              wordIndex: word.wordIndex,
+              text: wordEdit.text,
+              charStart: word.charStart,
+              charEnd: word.charEnd,
+              startMs: wordEdit.startMs,
+              endMs: wordEdit.endMs,
+              ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
+              ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
+            };
+          });
+          return {
+            cueId: cue.id,
+            text: model.transcriptLifecycle.pendingCueEdits[cue.id] ?? cue.text,
+            startMs: timing.startMs,
+            endMs: timing.endMs,
+            ...(wordTimings.length > 0 ? { wordTimings } : {}),
+          };
+        })
         .filter((edit) => edit.text.trim().length > 0);
       void createCorrectedTranscriptVersion(model, targetTrack.id, edits)
         .then(() => {
           model.transcriptLifecycle.pendingCueEdits = {};
+          model.transcriptLifecycle.pendingCueTimingEdits = {};
+          model.transcriptLifecycle.pendingWordTimingEdits = {};
           model.transcriptLifecycle.lastMessage = 'Corrected transcript version created';
           model.importError = null;
           rerenderApp(model);

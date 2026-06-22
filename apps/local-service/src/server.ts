@@ -51,6 +51,7 @@ export type LocalServiceRuntime = Readonly<{
   defaultModelName?: string;
   defaultDevice?: string;
   defaultComputeType?: string;
+  fetchImpl?: typeof fetch;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -256,6 +257,12 @@ type LocalTranscriptionPayload = Readonly<{
   computeType: string;
 }>;
 
+type YouTubeCaptionPayload = Readonly<{
+  url: string;
+  language: string;
+  allowPublicRead: boolean;
+}>;
+
 function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime): LocalTranscriptionPayload {
   const body = asObject(value, 'local transcription payload');
   return {
@@ -270,15 +277,34 @@ function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime)
   };
 }
 
-function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
-  if (kind !== 'local-transcription') return undefined;
-  const record = asObject(payload, 'local transcription payload');
+function youTubeCaptionPayload(value: unknown): YouTubeCaptionPayload {
+  const body = asObject(value, 'YouTube caption payload');
   return {
-    language: typeof record.language === 'string' ? record.language : 'pl',
-    modelName: typeof record.modelName === 'string' ? record.modelName : 'tiny',
-    alignWords: record.alignWords !== false,
-    mediaPath: '[local-media-path]',
+    url: requiredStringField(body, 'url'),
+    language: optionalStringField(body, 'language', 'pl'),
+    allowPublicRead: optionalBooleanField(body, 'allowPublicRead', false),
   };
+}
+
+function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
+  if (kind === 'local-transcription') {
+    const record = asObject(payload, 'local transcription payload');
+    return {
+      language: typeof record.language === 'string' ? record.language : 'pl',
+      modelName: typeof record.modelName === 'string' ? record.modelName : 'tiny',
+      alignWords: record.alignWords !== false,
+      mediaPath: '[local-media-path]',
+    };
+  }
+  if (kind === 'youtube-caption') {
+    const record = asObject(payload, 'YouTube caption payload');
+    return {
+      language: typeof record.language === 'string' ? record.language : 'pl',
+      publicReadAuthorized: record.allowPublicRead === true,
+      source: '[public-youtube-url]',
+    };
+  }
+  return undefined;
 }
 
 function mediaPathFromPayload(payload: unknown): string | undefined {
@@ -323,6 +349,66 @@ async function runLocalTranscription(payloadValue: unknown, config: LocalService
   }, runner);
 }
 
+function videoIdFromYouTubeUrl(url: string): string {
+  const trimmed = url.trim();
+  const direct = /^[A-Za-z0-9_-]{11}$/.exec(trimmed);
+  if (direct) return trimmed;
+  const parsed = new URL(trimmed);
+  if (parsed.hostname === 'youtu.be') {
+    const id = parsed.pathname.replace(/^\//, '').slice(0, 11);
+    if (/^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+  }
+  const queryId = parsed.searchParams.get('v');
+  if (queryId && /^[A-Za-z0-9_-]{11}$/.test(queryId)) return queryId;
+  throw new TypeError('YouTube caption import requires a public YouTube URL or 11-character video id.');
+}
+
+function textFromTimedTextSegment(segment: unknown): string {
+  const record = asObject(segment, 'YouTube timedtext segment');
+  const raw = record.utf8;
+  return typeof raw === 'string' ? raw : '';
+}
+
+async function runYouTubeCaptionRead(payloadValue: unknown, config: LocalServiceConfig, runtime: LocalServiceRuntime): Promise<unknown> {
+  if (!config.allowOnlineProviders) {
+    throw new TypeError('YouTube caption public reads are disabled; set LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true for this local service.');
+  }
+  const payload = youTubeCaptionPayload(payloadValue);
+  if (!payload.allowPublicRead) {
+    throw new TypeError('YouTube caption read requires explicit public-read authorization.');
+  }
+  const videoId = videoIdFromYouTubeUrl(payload.url);
+  const timedTextUrl = new URL('https://www.youtube.com/api/timedtext');
+  timedTextUrl.searchParams.set('v', videoId);
+  timedTextUrl.searchParams.set('lang', payload.language);
+  timedTextUrl.searchParams.set('fmt', 'json3');
+  const fetchImpl = runtime.fetchImpl ?? fetch;
+  const response = await fetchImpl(timedTextUrl);
+  if (!response.ok) {
+    throw new TypeError(`YouTube caption public read failed with HTTP ${response.status}.`);
+  }
+  const json = await response.json() as Record<string, unknown>;
+  const events = Array.isArray(json.events) ? json.events : [];
+  const segments = events.flatMap((eventValue) => {
+    const event = asObject(eventValue, 'YouTube timedtext event');
+    const startMs = typeof event.tStartMs === 'number' ? event.tStartMs : 0;
+    const durationMs = typeof event.dDurationMs === 'number' ? event.dDurationMs : 0;
+    const text = Array.isArray(event.segs)
+      ? event.segs.map(textFromTimedTextSegment).join('').replace(/\s+/g, ' ').trim()
+      : '';
+    return text && durationMs > 0 ? [{ startMs, endMs: startMs + durationMs, text }] : [];
+  });
+  if (segments.length === 0) {
+    throw new TypeError('YouTube timedtext returned no caption segments for the requested language.');
+  }
+  return {
+    videoId,
+    language: payload.language,
+    isAutoGenerated: true,
+    segments,
+  };
+}
+
 export async function startLingotorteLocalService(config: LocalServiceConfig, runtime: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
   assertLoopbackConfig(config);
   await mkdir(dirname(config.databasePath), { recursive: true });
@@ -361,6 +447,31 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
             ...(mediaPath !== undefined ? [mediaPath] : []),
             ...(mediaDir !== undefined ? [mediaDir] : []),
           ]),
+        }));
+      }
+    })();
+  };
+
+  const finishYouTubeCaptionJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Reading public YouTube captions.' }));
+      try {
+        const caption = await runYouTubeCaptionRead(queued.payload, config, runtime);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed',
+          message: 'Public YouTube caption read completed.',
+          result: { caption },
+        }));
+      } catch (error) {
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'failed',
+          message: error instanceof Error ? error.message : String(error),
         }));
       }
     })();
@@ -423,6 +534,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         };
         jobs.set(job.id, job);
         if (kind === 'local-transcription') finishLocalTranscriptionJob(job.id);
+        if (kind === 'youtube-caption') finishYouTubeCaptionJob(job.id);
         sendJson(response, 201, { ok: true, job: publicJob(job) });
         return;
       }

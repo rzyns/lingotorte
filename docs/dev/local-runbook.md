@@ -51,10 +51,17 @@ For V1 acceptance also run a conservative tracked-file secret scan and a committ
 
 ## Local services
 
-For durable SQLite-backed learner/transcript state, start the loopback local service in a separate terminal before or after starting Vite:
+For the normal live-local development path, start the loopback SQLite/job service and Vite UI together:
+
+```bash
+npm run local
+```
+
+This starts the local service on `127.0.0.1:5174` and Vite on `127.0.0.1:5173`. For split terminals, start the loopback local service before or after Vite:
 
 ```bash
 npm run dev:local-service
+npm run dev -- --host 127.0.0.1
 ```
 
 Default service behavior:
@@ -76,6 +83,8 @@ curl -sS http://127.0.0.1:5174/api/status
 In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click **Connect local service**, then click **Save state now** or enable autosave. Connecting to a fresh empty service does not clobber unsaved browser state; save explicitly once you want the current browser state to become the durable SQLite snapshot.
 
 The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control creates and polls one of these jobs, then imports the returned transcript as a draft track. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process.
+
+For public YouTube captions, the service accepts `kind: "youtube-caption"` jobs only when both gates are true: the browser/user payload includes `allowPublicRead: true` and the service was started with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`. This path reads public caption metadata through YouTube timedtext, returns draft caption segments, redacts the source URL from job summaries, and never downloads media.
 
 ## Local dev server
 
@@ -119,19 +128,20 @@ Acceptable network traffic during dev smoke is limited to loopback/local dev-ser
 
 ## V3 transcript lifecycle smoke
 
-The P7 transcript lane is implemented as a local/fakeable lifecycle slice. It does **not** fetch live YouTube captions, download media, install ASR models, or call network providers during default smoke.
+The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Default smoke uses fake/local providers and makes no external reads; the live public YouTube caption path is separate and requires both a visible browser public-read authorization and `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` on the loopback service.
 
 1. Open **Library** and locate **Transcript lifecycle**.
 2. Click **Import fake YouTube caption draft** without checking the authorization box; verify the action is blocked before adapter execution and no transcript appears.
 3. Enter or keep a public YouTube URL/video id, check **I authorize a public caption metadata read**, and click **Import fake YouTube caption draft**.
 4. Verify the current transcript is labeled `draft` with `youtube-auto-caption` provenance/warnings.
 5. Open **Player** and verify **Save sentence** is disabled with the approval-gate message.
-6. Return to **Library**, edit at least one cue in the correction textareas, and click **Create corrected transcript version**.
+6. Return to **Library**, edit cue text/timing or word timing fields, optionally use **Split cue N** / **Merge cue N with next**, and click **Create corrected transcript version**.
 7. Verify the current transcript is `correcting`, then click **Approve transcript for study**.
 8. Return to **Player** and verify **Save sentence** is enabled and saves the corrected cue text.
-9. Optional local-only ASR service path: start `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute local media path in **Local service ASR media path** when the current browser media is a `blob:`/fixture URL, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them.
+9. Optional local ASR path: start `npm run local` or `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute local media path in **Local service ASR media path** when the current browser media is a `blob:`/fixture URL, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them.
+10. Optional live public-caption path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, check the public-read authorization box, and click **Import public YouTube caption draft**. Verify the resulting track is a draft YouTube caption track. This path reads public caption metadata only; it does not download media.
 
-Live YouTube caption retrieval and actual media acquisition remain separate, explicitly gated future work. `planYtDlpMediaAcquisition()` only produces a safe command plan; it does not execute `yt-dlp`.
+Actual media acquisition remains command-generation only. `planYtDlpMediaAcquisition()` produces a safe command plan; Lingotorte does not execute `yt-dlp`.
 
 ## V4 local/cloud transcription adapters
 
@@ -163,4 +173,4 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
-- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The current browser UI transcript lifecycle controls use fake/public-read-gated YouTube caption adapters by default and can invoke the loopback local service for real local ASR jobs only with an absolute local media path and separately installed local ASR dependencies. ElevenLabs remains an explicit-opt-in Node-side adapter boundary, not a default UI path.
+- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The browser UI transcript lifecycle controls use fake/default-safe providers, a gated public YouTube caption job through the loopback service, and real local ASR jobs with an absolute local media path plus separately installed local ASR dependencies. ElevenLabs remains an explicit-opt-in Node-side adapter boundary, not a default UI path.

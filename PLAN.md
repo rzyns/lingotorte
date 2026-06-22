@@ -16,24 +16,25 @@ Recent relevant commits:
 
 | Artifact | Role |
 |---|---|
-| `README.md` | Current quick start, reading order, local transcription package summary, global boundaries. |
-| `docs/dev/local-runbook.md` | Current local runbook and smoke checklist. Has minor drift: it still says arbitrary local file pickers are not exposed even though the Library UI now has local media/subtitle file inputs. |
-| `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline and older limitations. Also has drift around local file import readiness. |
+| `README.md` | Current quick start, local transcription package summary, public-caption/local-service boundaries, and reading order. |
+| `docs/dev/local-runbook.md` | Current local runbook, one-command local start, local-service/ASR/public-caption smoke checklist, and remaining limitations. |
+| `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline with current local file import, local-service persistence, and gated caption-read notes. |
 | `docs/plan/v3-transcript-generation-correction-plan.md` | Governing transcript-generation/correction plan: YouTube captions, ElevenLabs Scribe v2, local ASR, word timings, `yt-dlp` command-only boundary. |
 | `docs/architecture/data-model-and-storage.md` | Data model/storage direction, including SQLite/migration/audit/export expectations. |
 | `docs/review/safety-privacy-boundary-review.md` | Binding safety/privacy/legal boundary. |
-| `packages/storage/src/localStore.ts` | Current in-memory store; durable persistence is not implemented yet. |
+| `packages/storage/src/localStore.ts` and `packages/storage/src/sqliteLocalPersistence.ts` | Typed in-memory store plus SQLite snapshot persistence adapter used by the loopback service. |
+| `apps/local-service/src/server.ts` | Loopback service for health/config, SQLite state save/load, scratch cleanup, local ASR jobs, ElevenLabs job seam, and gated public YouTube caption jobs. |
 | `packages/local-transcription/src/index.ts` | Node-side ffmpeg/faster-whisper/WhisperX/ElevenLabs adapter seams. |
 | `scripts/faster_whisper_transcribe.py` | Dependency-lazy faster-whisper CLI entrypoint. |
 | `scripts/whisperx_align.py` | Dependency-lazy WhisperX-style forced-alignment CLI entrypoint. |
-| `apps/web/src/app.ts` and `apps/web/src/model.ts` | Current browser UI/model surface, including local file import, fake transcript lifecycle controls, and draft/approval semantics. |
+| `apps/web/src/app.ts` and `apps/web/src/model.ts` | Browser UI/model surface: local file import, local service connect/save/autosave, transcript lifecycle jobs, correction/approval UI, source comparison, timed words, keyboard shortcuts, and local Polish adapter integration. |
 
 ## Current-state snapshot
 
 ### Already locally runnable
 
-- `npm run dev -- --host 127.0.0.1` serves the app on loopback.
-- The dev server was verified reachable at `http://127.0.0.1:5173/`.
+- `npm run local` starts the loopback local service and Vite UI together; split-terminal `npm run dev:local-service` + `npm run dev -- --host 127.0.0.1` remains available for debugging.
+- The dev server was previously verified reachable at `http://127.0.0.1:5173/`; the local service defaults to `http://127.0.0.1:5174/` and refuses non-loopback binds.
 - Browser Library UI exposes:
   - synthetic fixture load;
   - local media file input;
@@ -42,35 +43,41 @@ Recent relevant commits:
 - Existing tested local flows include:
   - local video/player shell;
   - dual subtitle projection;
-  - transcript cue list, seeking, cue highlight, cue loop, playback speed;
-  - transcript token preview;
+  - transcript cue list, seeking, active cue highlight, cue loop, playback speed, and keyboard shortcuts (`[`, `]`, `R`, `,`, `.`);
+  - transcript token preview and timed-word click-to-seek when word timings exist;
   - source-backed save word/phrase/sentence flows;
+  - timing-backed saved occurrence anchors for timed words;
   - My Vocab / My Sentences;
   - FSRS-backed review cards/events;
   - practice attempts;
   - local export/import manifest flow;
+  - SQLite-backed state snapshot save/load through the loopback service;
+  - local-service health/config/status and scratch cleanup;
   - transcript draft/correction/approval lifecycle;
-  - first-class transcript word timing entities.
+  - editable cue text/timing, word-timing correction, cue split/merge, source comparison, immutable corrected transcript versions;
+  - local ASR draft jobs through the loopback service;
+  - gated public YouTube caption metadata jobs through the loopback service;
+  - first-class transcript word timing entities;
+  - local/offline Polish tokenization, lemma/POS/morphology heuristics for the initial daily loop.
 
-### Implemented but not yet fully integrated into live UI/service flow
+### Implemented behind explicit gates or local dependencies
 
-- Real ffmpeg audio extraction seam.
-- Local faster-whisper transcription seam.
-- WhisperX-style forced word-alignment seam.
-- ElevenLabs Scribe v2 explicit-opt-in cloud STT seam.
+- Real ffmpeg audio extraction seam and local-service job invocation.
+- Local faster-whisper transcription seam and dependency-lazy Python entrypoint.
+- WhisperX-style forced word-alignment seam and dependency-lazy Python entrypoint.
+- ElevenLabs Scribe v2 explicit-opt-in cloud STT seam; not a default UI path.
+- Public YouTube timedtext caption read path; requires UI public-read authorization and service env `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`.
 - `yt-dlp` command generation only; no auto-execution.
 
-### Primary blockers to daily local usability
+### Remaining blockers to fully polished daily local usability
 
-1. Learner/media/transcript state is still held by an in-memory `LocalStore`; reload loses work unless export/import is used manually.
-2. There is no durable local service boundary yet for SQLite, filesystem, ffmpeg, Python STT/alignment, job progress, cancellation, and cache cleanup.
-3. Real transcription adapters are Node/Python seams, not wired into browser UI as live jobs.
-4. Transcript correction UI is minimal; it lacks timing edit, split/merge, word-timing inspection/correction, source comparison, and keyboard-first editing.
-5. Stored word timings are not yet used deeply in transcript interactions, phrase loops, or saved-occurrence anchors.
-6. Polish/language adapters are still shallow; whitespace tokenization and fixture dictionary behavior are not enough for serious daily study.
-7. YouTube caption import remains fake/local-provider backed; live public caption reads are not implemented.
-8. Packaging remains a dev-server workflow rather than a one-command local app/service setup.
-9. Export/import works as a manifest flow but is not yet a robust backup/restore story.
+1. SQLite persistence is snapshot-oriented behind the loopback service; it is usable for local save/load/autosave, but not yet a granular migration/audit/conflict-resolution storage layer.
+2. Browser `blob:` media handles are session-scoped; after restart, media metadata can persist but playback/local ASR may require reselecting the owned media file or pasting an absolute local path.
+3. Real local ASR depends on separately installed ffmpeg/Python model dependencies and recorded model/cache setup; automated tests use injected fake runners.
+4. ElevenLabs remains implemented as an explicit adapter seam/job kind, but still needs a configured-secret live smoke if Janusz wants that provider validated.
+5. Word-timing UX supports timed-word click-to-seek and saved occurrence anchors, but phrase/range looping from arbitrary word spans remains a future refinement.
+6. Polish language support is useful but heuristic/local; serious daily study will still need richer dictionary/morphology sources and optional online adapters behind opt-in gates.
+7. Export/import works as a manifest flow but is not yet a full backup/restore story with user-chosen write path, conflict UX, or optional media-copy backups.
 
 ## Authorizations for the `/goal` implementation run
 
@@ -332,10 +339,14 @@ Objective:
 Take Lingotorte from its current test-backed local prototype to a live, locally usable app for Janusz's own media. Implement all remaining work in PLAN.md unless a task is blocked only by an explicit human/external decision. Keep iterating until the app can be started locally, can import owned local media/subtitles, persists learner/transcript state across restart/reload, can generate/correct/approve transcripts through real local transcription paths, and has a clear optional ElevenLabs Scribe v2 path behind explicit opt-in.
 
 Current known state:
-- The app already runs with `npm run dev -- --host 127.0.0.1` and responds on loopback.
-- The Library UI already has local media + target .srt + optional native .srt file inputs, although some docs still say this is not ready.
-- The store is still in-memory (`packages/storage/src/localStore.ts`), so durable persistence is a major blocker.
-- Real transcription seams exist in `packages/local-transcription/src/index.ts` and scripts/ but are not yet integrated into a loopback service/browser workflow.
+- `npm run local` starts the loopback local service and Vite UI together; split-terminal service/UI commands remain available for debugging.
+- The Library UI has local media + target .srt + optional native .srt file inputs.
+- The loopback service provides health/config/status, SQLite snapshot save/load, scratch cleanup, local transcription jobs, an ElevenLabs job seam, and gated public YouTube caption jobs.
+- The browser can connect/save/autosave local state through the service; browser `blob:` media handles are still session-scoped and may need reselecting after restart.
+- Transcript lifecycle UI includes draft import, local ASR job import, public-caption job import, cue text/timing edits, word-timing edits, split/merge, source comparison, immutable corrected versions, and approval gates.
+- Local/offline Polish tokenization + heuristic lemma/POS/morphology is implemented for `pl`; richer morphology/dictionary quality remains future polish.
+- Real local ASR uses ffmpeg/faster-whisper/optional WhisperX through local dependencies; tests use fake runners, so a live model/dependency smoke may still be needed for the specific machine.
+- ElevenLabs remains explicit-opt-in and should only be live-smoked with configured secrets and consent.
 - `yt-dlp` must remain command-generation only; do not auto-execute it.
 - Microsoft MAI-Transcribe-1.5 is explicitly out of scope for this implementation run.
 
