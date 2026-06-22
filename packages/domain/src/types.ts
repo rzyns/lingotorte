@@ -6,6 +6,7 @@ export type TranscriptSourceKind =
   | 'user-subtitle-file'
   | 'youtube-caption'
   | 'youtube-auto-caption'
+  | 'online-asr'
   | 'local-asr'
   | 'forced-alignment'
   | 'manual-edit'

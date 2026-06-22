@@ -2,7 +2,7 @@ import { LocalStore } from '../../../packages/storage/src/localStore';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
-import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
+import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type {
@@ -456,6 +456,18 @@ export type TranscriptSegmentDraft = Readonly<{
   endMs: number;
   text: string;
   confidence?: number;
+  words?: readonly TranscriptWordTimingDraft[];
+}>;
+
+type TranscriptWordTimingDraft = Readonly<{
+  wordIndex: number;
+  text: string;
+  charStart: number;
+  charEnd: number;
+  startMs: number;
+  endMs: number;
+  confidence?: number;
+  speakerId?: string;
 }>;
 
 export type YouTubeCaptionProviderResult = Readonly<{
@@ -487,6 +499,20 @@ export type LocalAsrProvider = Readonly<{
   transcribe(input: { media: MediaAsset; language: string }): Promise<LocalAsrProviderResult>;
 }>;
 
+export type ElevenLabsScribeProviderResult = Readonly<{
+  language: string;
+  modelName: 'scribe_v2' | string;
+  modelVersion?: string;
+  segments: readonly TranscriptSegmentDraft[];
+}>;
+
+export type ElevenLabsScribeProvider = Readonly<{
+  providerId: string;
+  privacyMode: 'explicit-online';
+  readonly calls: number;
+  transcribe(input: { media: MediaAsset; language: string }): Promise<ElevenLabsScribeProviderResult>;
+}>;
+
 export type TranscriptImportResult = Readonly<{ track: SubtitleTrack; cues: Cue[] }>;
 
 export function makeFakeYouTubeCaptionProvider(seed: YouTubeCaptionProviderResult): YouTubeCaptionProvider {
@@ -509,6 +535,21 @@ export function makeFakeLocalAsrProvider(seed: LocalAsrProviderResult): LocalAsr
   return {
     providerId: 'lingotorte.fake-local-asr-provider',
     privacyMode: 'local',
+    get calls() {
+      return callCount;
+    },
+    async transcribe() {
+      callCount += 1;
+      return seed;
+    },
+  };
+}
+
+export function makeFakeElevenLabsScribeProvider(seed: ElevenLabsScribeProviderResult): ElevenLabsScribeProvider {
+  let callCount = 0;
+  return {
+    providerId: 'lingotorte.fake-elevenlabs-scribe-provider',
+    privacyMode: 'explicit-online',
     get calls() {
       return callCount;
     },
@@ -691,6 +732,69 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
   });
+}
+
+export async function generateElevenLabsScribeDraft(
+  model: AppModel,
+  provider: ElevenLabsScribeProvider,
+  input: { language: string; allowOnlineProvider: boolean },
+): Promise<TranscriptImportResult> {
+  if (!input.allowOnlineProvider) {
+    throw new TypeError('ElevenLabs Scribe draft generation disabled: explicit provider consent is required.');
+  }
+  if (!model.currentMedia) {
+    throw new TypeError('ElevenLabs Scribe draft generation requires a current local/owned media asset.');
+  }
+  const result = await provider.transcribe({ media: model.currentMedia, language: input.language });
+  const warningFlags: TranscriptWarningFlag[] = ['asrDraft', 'qualityUnreviewed'];
+  const imported = await putTranscriptSegments(model, {
+    media: model.currentMedia,
+    language: result.language,
+    role: 'target',
+    sourcePath: `online-asr:elevenlabs:${model.currentMedia.id}:${provider.providerId}`,
+    sourceKind: model.currentMedia.privacyLabel,
+    transcriptStatus: 'draft',
+    transcriptSourceKind: 'online-asr',
+    provenance: {
+      generatedAt: new Date().toISOString(),
+      language: result.language,
+      engine: 'elevenlabs',
+      modelName: result.modelName,
+      ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+      warningFlags,
+    },
+    qualityReport: qualityReportForSegments(result.segments, warningFlags),
+    segments: result.segments,
+  });
+
+  for (let segmentIndex = 0; segmentIndex < result.segments.length; segmentIndex++) {
+    const segment = result.segments[segmentIndex]!;
+    const cue = imported.cues[segmentIndex]!;
+    for (const word of segment.words ?? []) {
+      const text = normalizeBrowserCueText(word.text);
+      if (!text) throw new TypeError(`ElevenLabs Scribe word timing ${word.wordIndex} has empty text`);
+      if (word.endMs <= word.startMs) throw new TypeError(`ElevenLabs Scribe word timing ${word.wordIndex} end time must be after start time`);
+      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+        trackId: imported.track.id,
+        cueId: cue.id,
+        wordIndex: word.wordIndex,
+        charStart: word.charStart,
+        charEnd: word.charEnd,
+        text,
+        normalizedText: text.toLowerCase(),
+        startMs: word.startMs,
+        endMs: word.endMs,
+        sourceKind: 'provider-word-timing',
+        engine: 'elevenlabs',
+        modelName: result.modelName,
+        ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
+        ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
+        ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+      }));
+    }
+  }
+
+  return imported;
 }
 
 export async function createCorrectedTranscriptVersion(

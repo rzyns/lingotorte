@@ -31,6 +31,7 @@ export type TranscriptSourceKind =
   | 'user-subtitle-file'
   | 'youtube-caption'
   | 'youtube-auto-caption'
+  | 'online-asr'
   | 'local-asr'
   | 'forced-alignment'
   | 'manual-edit'
@@ -50,6 +51,7 @@ export type CardType = 'recognition' | 'production';
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
 export type PracticeMode = 'typed-input' | 'multiple-choice' | 'audio-recall' | 'speaking';
 export type PracticeResult = 'pass' | 'fail' | 'pass-with-hesitation' | 'skipped' | 'abandoned';
+export type TranscriptWordTimingSourceKind = 'provider-word-timing' | 'forced-alignment' | 'manual-edit';
 
 export type TimeRangeMs = Readonly<{
   start: number;
@@ -174,6 +176,27 @@ export type TokenOccurrence = Readonly<{
   lemma?: string;
   upos?: string;
   confidence?: number;
+}>;
+
+export type TranscriptWordTiming = Readonly<{
+  id: UUID;
+  trackId: UUID;
+  cueId: UUID;
+  analysisRunId?: UUID;
+  wordIndex: number;
+  charStart: number;
+  charEnd: number;
+  text: string;
+  normalizedText: string;
+  startMs: number;
+  endMs: number;
+  confidence?: number;
+  speakerId?: string;
+  sourceKind: TranscriptWordTimingSourceKind;
+  engine: string;
+  modelName: string;
+  modelVersion?: string;
+  createdAt: ISODateTime;
 }>;
 
 export type SavedOccurrenceSourceContext = Readonly<{

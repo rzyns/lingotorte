@@ -15,6 +15,7 @@ import {
   type SavedOccurrence,
   type SubtitleTrack,
   type TokenOccurrence,
+  type TranscriptWordTiming,
 } from './coreTypes';
 
 export * from './coreTypes';
@@ -80,6 +81,17 @@ export function makeTokenOccurrence(
   return {
     id: uuid(),
     ...input,
+  };
+}
+
+export function makeTranscriptWordTiming(
+  input: Pick<TranscriptWordTiming, 'trackId' | 'cueId' | 'wordIndex' | 'charStart' | 'charEnd' | 'text' | 'normalizedText' | 'startMs' | 'endMs' | 'sourceKind' | 'engine' | 'modelName'> &
+    Partial<Pick<TranscriptWordTiming, 'analysisRunId' | 'confidence' | 'speakerId' | 'modelVersion'>>,
+): TranscriptWordTiming {
+  return {
+    id: uuid(),
+    ...input,
+    createdAt: isoNow(),
   };
 }
 

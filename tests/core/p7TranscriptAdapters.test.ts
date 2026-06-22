@@ -3,9 +3,11 @@ import {
   approveTranscriptTrack,
   createAppModel,
   createCorrectedTranscriptVersion,
+  generateElevenLabsScribeDraft,
   generateLocalAsrDraft,
   importFixtureMediaAndSubtitles,
   importYouTubeCaptionCandidate,
+  makeFakeElevenLabsScribeProvider,
   makeFakeLocalAsrProvider,
   makeFakeYouTubeCaptionProvider,
   planYtDlpMediaAcquisition,
@@ -13,6 +15,90 @@ import {
 } from '../../apps/web/src/model';
 
 describe('P7 transcript provider adapters and correction lifecycle', () => {
+  it('refuses ElevenLabs Scribe drafts before explicit provider consent and adapter execution', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    const provider = makeFakeElevenLabsScribeProvider({
+      language: 'pl',
+      modelName: 'scribe_v2',
+      modelVersion: 'test-fixture',
+      segments: [{
+        startMs: 0,
+        endMs: 1500,
+        text: 'Szkic ElevenLabs.',
+      }],
+    });
+
+    await expect(generateElevenLabsScribeDraft(model, provider, {
+      language: 'pl',
+      allowOnlineProvider: false,
+    })).rejects.toThrow(/ElevenLabs|provider consent|disabled/i);
+    expect(provider.calls).toBe(0);
+  });
+
+  it('creates ElevenLabs Scribe draft tracks with first-class word timings and provider provenance', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    const provider = makeFakeElevenLabsScribeProvider({
+      language: 'pl',
+      modelName: 'scribe_v2',
+      modelVersion: 'test-fixture',
+      segments: [{
+        startMs: 0,
+        endMs: 1500,
+        text: 'Cześć świecie.',
+        confidence: 0.93,
+        words: [
+          { wordIndex: 0, text: 'Cześć', charStart: 0, charEnd: 5, startMs: 0, endMs: 620, confidence: 0.96, speakerId: 'speaker_0' },
+          { wordIndex: 1, text: 'świecie', charStart: 6, charEnd: 13, startMs: 700, endMs: 1400, confidence: 0.91, speakerId: 'speaker_0' },
+        ],
+      }],
+    });
+
+    const result = await generateElevenLabsScribeDraft(model, provider, {
+      language: 'pl',
+      allowOnlineProvider: true,
+    });
+    const timings = model.store.listTranscriptWordTimingsForTrack(result.track.id);
+
+    expect(provider.calls).toBe(1);
+    expect(result.track.transcriptStatus).toBe('draft');
+    expect(result.track.transcriptSourceKind).toBe('online-asr');
+    expect(result.track.provenance.engine).toBe('elevenlabs');
+    expect(result.track.provenance.modelName).toBe('scribe_v2');
+    expect(result.track.provenance.modelVersion).toBe('test-fixture');
+    expect(result.track.provenance.warningFlags).toEqual(expect.arrayContaining(['asrDraft', 'qualityUnreviewed']));
+    expect(timings).toHaveLength(2);
+    expect(timings[0]).toMatchObject({
+      cueId: result.cues[0]!.id,
+      trackId: result.track.id,
+      wordIndex: 0,
+      text: 'Cześć',
+      normalizedText: 'cześć',
+      charStart: 0,
+      charEnd: 5,
+      startMs: 0,
+      endMs: 620,
+      confidence: 0.96,
+      speakerId: 'speaker_0',
+      sourceKind: 'provider-word-timing',
+      engine: 'elevenlabs',
+      modelName: 'scribe_v2',
+      modelVersion: 'test-fixture',
+    });
+    expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(0);
+  });
+
   it('imports YouTube captions as draft candidates only after explicit public-read authorization', async () => {
     const model = createAppModel();
     const provider = makeFakeYouTubeCaptionProvider({

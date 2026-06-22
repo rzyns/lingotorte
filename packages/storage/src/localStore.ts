@@ -11,6 +11,7 @@ import type {
   SavedItem,
   SavedOccurrence,
   SubtitleTrack,
+  TranscriptWordTiming,
   UUID,
 } from '@lingotorte/domain';
 
@@ -22,6 +23,7 @@ export type LocalStoreSnapshot = Readonly<{
   mediaObservations: MediaFileObservation[];
   subtitleTracks: Record<UUID, SubtitleTrack>;
   cues: Record<UUID, Cue>;
+  transcriptWordTimings: Record<UUID, TranscriptWordTiming>;
   savedItems: Record<UUID, SavedItem>;
   savedOccurrences: Record<UUID, SavedOccurrence>;
   reviewCards: Record<UUID, ReviewCard>;
@@ -38,6 +40,7 @@ export class LocalStore {
     mediaObservations: [],
     subtitleTracks: {},
     cues: {},
+    transcriptWordTimings: {},
     savedItems: {},
     savedOccurrences: {},
     reviewCards: {},
@@ -54,6 +57,7 @@ export class LocalStore {
       mediaObservations: [...this.state.mediaObservations],
       subtitleTracks: { ...this.state.subtitleTracks },
       cues: { ...this.state.cues },
+      transcriptWordTimings: { ...this.state.transcriptWordTimings },
       savedItems: { ...this.state.savedItems },
       savedOccurrences: { ...this.state.savedOccurrences },
       reviewCards: { ...this.state.reviewCards },
@@ -119,6 +123,23 @@ export class LocalStore {
     return Object.values(this.state.cues)
       .filter((c) => c.trackId === trackId)
       .sort((a, b) => a.cueIndex - b.cueIndex || a.startMs - b.startMs);
+  }
+
+  putTranscriptWordTiming(timing: TranscriptWordTiming): LocalStoreSnapshot {
+    this.state.transcriptWordTimings[timing.id] = timing;
+    return this.clone();
+  }
+
+  listTranscriptWordTimingsForTrack(trackId: UUID): TranscriptWordTiming[] {
+    return Object.values(this.state.transcriptWordTimings)
+      .filter((timing) => timing.trackId === trackId)
+      .sort((a, b) => a.startMs - b.startMs || a.wordIndex - b.wordIndex);
+  }
+
+  listTranscriptWordTimingsForCue(cueId: UUID): TranscriptWordTiming[] {
+    return Object.values(this.state.transcriptWordTimings)
+      .filter((timing) => timing.cueId === cueId)
+      .sort((a, b) => a.startMs - b.startMs || a.wordIndex - b.wordIndex);
   }
 
   putSavedItem(item: SavedItem): LocalStoreSnapshot {
