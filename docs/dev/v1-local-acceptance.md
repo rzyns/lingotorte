@@ -16,6 +16,7 @@ This baseline is still local/private. It is not a push, PR, release, deployment,
 The current baseline provides a local Vite/TypeScript app and test-backed domain packages for:
 
 - synthetic fixture import from the Library view;
+- browser-selected local media plus target `.srt` and optional native `.srt` import using local object URLs and `File.text()` without uploads;
 - local video/player shell with transcript and dual target/native subtitle cue projection;
 - cue navigation, cue loop toggle, and playback-speed control;
 - transcript token preview and source-backed saved sentence/phrase/vocabulary flows;
@@ -41,7 +42,7 @@ Run the full matrix from the V1 worktree before treating the branch as merge-rea
 | Whitespace | `git diff --check` | pass |
 | Committed-range whitespace | `git diff --check main...HEAD` or equivalent after commit | pass |
 | Secret scan | conservative tracked-file scan | zero hard findings |
-| Browser smoke | WSL Edge DevTools or browser fallback against `npm run dev -- --host 127.0.0.1` | no fatal console errors; no external network; fixture flow works as documented |
+| Browser smoke | WSL Edge DevTools or browser fallback against `npm run dev -- --host 127.0.0.1` | no fatal console errors; no external network; fixture flow and browser local file import flow work as documented |
 
 ## Latest local evidence
 
@@ -69,7 +70,7 @@ That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run te
 
 ## Known limitations
 
-- The current browser UI imports the synthetic fixture through **Library → Load synthetic fixture**; arbitrary local file picker/import UX is not yet V1-ready.
+- The current browser UI imports the synthetic fixture through **Library → Load synthetic fixture** and supports **Library → Import local media** for owned media plus `.srt` subtitle files. Durable persistence/local-service transcription integration is still future work beyond the browser object-URL import path.
 - Export creates a manifest object and preview path, not a persisted file.
 - Restore merges/upserts manifest records into existing local state; a future full replace/conflict-resolution flow remains a separate product decision.
 - The local Vite dev server is for acceptance smoke, not a deployed service.

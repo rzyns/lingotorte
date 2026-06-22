@@ -21,7 +21,7 @@ python3 validate_final_bundle.py
 npm run dev -- --host 127.0.0.1
 ```
 
-Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** to exercise the local player/transcript/saved/review/practice/export flows. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server reads for app assets are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
+Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** or **Library → Import local media** with an owned local media file plus `.srt` subtitles to exercise the local player/transcript/saved/review/practice/export flows. Browser imports use object URLs and `File.text()` locally; they do not upload files. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server reads for app assets are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
 
 If `npm ci --offline` cannot use the local cache, stop before any networked install unless Janusz explicitly authorizes that package-manager action.
 

@@ -4,14 +4,14 @@ Status: V4 local transcription runbook. This document describes how to run and i
 
 ## Scope and safety posture
 
-Lingotorte currently runs as a local Vite/TypeScript web app over synthetic fixtures:
+Lingotorte currently runs as a local Vite/TypeScript web app over synthetic fixtures and browser-selected local media/subtitle files:
 
 - media fixture: `fixtures/media/synthetic-polish-dialogue.webm`
 - target subtitles: `fixtures/subtitles/synthetic-polish-dialogue.target.srt`
 - native subtitles: `fixtures/subtitles/synthetic-polish-dialogue.native.srt`
 - fixture provenance: [`../../fixtures/README.md`](../../fixtures/README.md)
 
-The fixture set is synthetic/local and contains no Lingopie media, subtitles, screenshots, catalog data, account data, private API payloads, branding, tokens, or private examples. Product boundaries remain governed by [`../review/safety-privacy-boundary-review.md`](../review/safety-privacy-boundary-review.md). Public documentation links in planning files are evidence references only; the runtime app must not depend on public Lingopie services or provider calls.
+The fixture set is synthetic/local and contains no Lingopie media, subtitles, screenshots, catalog data, account data, private API payloads, branding, tokens, or private examples. The Library view also exposes browser local file inputs for Janusz-owned media plus target `.srt` and optional native `.srt` subtitles. Those browser imports stay on-device by using object URLs for media and `File.text()` for subtitle contents; they are not uploads and do not invoke a provider. Product boundaries remain governed by [`../review/safety-privacy-boundary-review.md`](../review/safety-privacy-boundary-review.md). Public documentation links in planning files are evidence references only; the runtime app must not depend on public Lingopie services or provider calls.
 
 ## Prerequisites
 
@@ -85,6 +85,8 @@ Use WSL Edge DevTools when available. Regular browser tooling is an acceptable f
 14. Open **Settings** and verify provider/sync/Anki/ASR states remain disabled.
 15. Inspect console and network requests after navigation and interactions.
 
+For a local-file smoke, return to **Library**, choose an owned `.mp4`/`.webm`/`.mkv`/`.mov`/audio media file, choose a target `.srt`, optionally choose a native `.srt`, then click **Import local media**. Verify the player uses a `blob:` media URL, the transcript shows the selected target cue text, the optional native cue text is displayed when provided, and replacing imported media revokes the previous object URL without uploading anything.
+
 Acceptable network traffic during dev smoke is limited to loopback/local dev-server reads, `data:`/`blob:` URLs, and Vite internals. Public-internet writes, provider calls, external account mutations, or runtime requests to an external host are V1 blockers unless Janusz has explicitly approved that exact opt-in path.
 
 ## V3 transcript lifecycle smoke
@@ -128,8 +130,8 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 
 ## Known V1/V4 limitations
 
-- The app is a local fixture-backed baseline, not a packaged desktop/mobile product.
-- The plain browser UI does not expose arbitrary local file pickers yet; it imports the synthetic fixture through the Library view.
+- The app is a local browser/Vite baseline, not a packaged desktop/mobile product.
+- The browser UI exposes local file pickers for owned media plus target/native `.srt` subtitles, but those imports are still browser-session object URLs unless later persisted through the local service/storage layer.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
