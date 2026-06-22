@@ -56,6 +56,7 @@ export type AppModel = {
     youtubeUrl: string;
     youtubeLanguage: string;
     publicReadAuthorized: boolean;
+    localAsrMediaPath: string;
     pendingCueEdits: Record<string, string>;
     lastMessage: string | null;
   };

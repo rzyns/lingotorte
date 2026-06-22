@@ -1,5 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { makeMediaAsset } from '@lingotorte/domain';
 import { createAppModel } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -29,12 +30,20 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 describe('P7 transcript lifecycle frontend', () => {
   let dom: ReturnType<typeof setupDom> extends Promise<infer T> ? T : never;
+  let previousFetch: typeof globalThis.fetch | undefined;
 
   beforeEach(async () => {
+    previousFetch = globalThis.fetch;
     dom = await setupDom();
   });
 
   afterEach(() => {
+    if (previousFetch) {
+      globalThis.fetch = previousFetch;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete (globalThis as Partial<typeof globalThis>).fetch;
+    }
     dom.window.close();
   });
 
@@ -97,5 +106,108 @@ describe('P7 transcript lifecycle frontend', () => {
     approvedSave?.click();
     await waitFor(() => Object.values(model.store.snapshot().savedItems).length === 1);
     expect(Object.values(model.store.snapshot().savedItems)[0]?.displayText).toBe('Corrected provider caption.');
+  });
+
+  it('generates local ASR drafts through the loopback service job API', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const ownedMedia = makeMediaAsset({
+      title: 'Owned local clip',
+      originalPath: '/home/openclaw/private/owned-local-clip.webm',
+      contentSha256: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      durationMs: 2000,
+      container: 'webm',
+      sizeBytes: 1234,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(ownedMedia);
+    model.currentMedia = ownedMedia;
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      if (url === 'http://127.0.0.1:5174/api/jobs' && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          ok: true,
+          job: { id: 'job-local-asr-1', kind: 'local-transcription', status: 'queued' },
+        }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'http://127.0.0.1:5174/api/jobs/job-local-asr-1') {
+        return new Response(JSON.stringify({
+          ok: true,
+          job: {
+            id: 'job-local-asr-1',
+            kind: 'local-transcription',
+            status: 'completed',
+            result: {
+              transcript: {
+                engine: 'whisperx',
+                modelName: 'whisperx-align-pl',
+                modelVersion: 'fake-service-1',
+                language: 'pl',
+                segments: [{
+                  startMs: 0,
+                  endMs: 1300,
+                  text: 'Serwis lokalny.',
+                  words: [{
+                    wordIndex: 0,
+                    text: 'Serwis',
+                    charStart: 0,
+                    charEnd: 6,
+                    startMs: 50,
+                    endMs: 610,
+                    confidence: 0.96,
+                    speakerId: 'speaker_0',
+                    sourceKind: 'forced-alignment',
+                  }, {
+                    wordIndex: 1,
+                    text: 'lokalny',
+                    charStart: 7,
+                    charEnd: 14,
+                    startMs: 700,
+                    endMs: 1250,
+                    confidence: 0.94,
+                    speakerId: 'speaker_0',
+                    sourceKind: 'forced-alignment',
+                  }],
+                }],
+              },
+            },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `Unexpected ${url}` }), { status: 500 });
+    }) as typeof fetch;
+
+    rerenderApp(model);
+    const asrButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Generate local ASR draft') as HTMLButtonElement | null;
+    expect(asrButton).toBeTruthy();
+    asrButton!.click();
+    await waitFor(() => model.cues.length === 1);
+
+    const createBody = JSON.parse(String(requests[0]?.init?.body)) as Record<string, unknown>;
+    expect(createBody).toMatchObject({
+      kind: 'local-transcription',
+      payload: {
+        mediaPath: ownedMedia.originalPath,
+        language: 'pl',
+        modelName: 'tiny',
+        alignWords: true,
+      },
+    });
+    expect(requests.map((request) => request.url)).toEqual([
+      'http://127.0.0.1:5174/api/jobs',
+      'http://127.0.0.1:5174/api/jobs/job-local-asr-1',
+    ]);
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('draft');
+    expect(model.cues[0]?.text).toBe('Serwis lokalny.');
+    expect(model.store.listTranscriptWordTimingsForTrack(model.targetTrackId!)[0]).toMatchObject({
+      text: 'Serwis',
+      sourceKind: 'forced-alignment',
+      engine: 'whisperx',
+      modelName: 'whisperx-align-pl',
+      modelVersion: 'fake-service-1',
+    });
+    expect(document.getElementById('app')?.textContent).toContain('Local service ASR draft generated');
   });
 });

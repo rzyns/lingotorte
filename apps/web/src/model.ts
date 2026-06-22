@@ -68,6 +68,7 @@ export function createAppModel(): AppModel {
       youtubeUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
       youtubeLanguage: 'pl',
       publicReadAuthorized: false,
+      localAsrMediaPath: '',
       pendingCueEdits: {},
       lastMessage: null,
     },
@@ -691,6 +692,156 @@ export function makeFakeLocalAsrProvider(seed: LocalAsrProviderResult): LocalAsr
     async transcribe() {
       callCount += 1;
       return seed;
+    },
+  };
+}
+
+export type LocalServiceAsrProviderOptions = Readonly<{
+  mediaPath?: string;
+  modelName?: string;
+  alignWords?: boolean;
+  pollAttempts?: number;
+  pollDelayMs?: number;
+}>;
+
+function recordField(value: unknown, label: string): Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    throw new TypeError(`${label} must be an object.`);
+  }
+  return value;
+}
+
+function stringField(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new TypeError(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function optionalStringField(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return stringField(value, label);
+}
+
+function numberField(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`${label} must be a finite number.`);
+  }
+  return value;
+}
+
+function optionalNumberField(value: unknown, label: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  return numberField(value, label);
+}
+
+function transcriptWordTimingSourceKind(value: unknown): TranscriptWordTimingSourceKind | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (value === 'provider-word-timing' || value === 'forced-alignment' || value === 'manual-edit') return value;
+  throw new TypeError(`Unsupported transcript word timing source kind: ${String(value)}`);
+}
+
+function transcriptWordTimingDraftFromJson(value: unknown, index: number): TranscriptWordTimingDraft {
+  const word = recordField(value, `local service transcript word ${index + 1}`);
+  const confidence = optionalNumberField(word.confidence, 'word confidence');
+  const speakerId = optionalStringField(word.speakerId, 'word speakerId');
+  const sourceKind = transcriptWordTimingSourceKind(word.sourceKind);
+  return {
+    wordIndex: numberField(word.wordIndex, 'wordIndex'),
+    text: stringField(word.text, 'word text'),
+    charStart: numberField(word.charStart, 'word charStart'),
+    charEnd: numberField(word.charEnd, 'word charEnd'),
+    startMs: numberField(word.startMs, 'word startMs'),
+    endMs: numberField(word.endMs, 'word endMs'),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(speakerId !== undefined ? { speakerId } : {}),
+    ...(sourceKind !== undefined ? { sourceKind } : {}),
+  };
+}
+
+function transcriptSegmentDraftFromJson(value: unknown, index: number): TranscriptSegmentDraft {
+  const segment = recordField(value, `local service transcript segment ${index + 1}`);
+  const wordsValue = segment.words;
+  const words = wordsValue === undefined
+    ? undefined
+    : Array.isArray(wordsValue)
+      ? wordsValue.map(transcriptWordTimingDraftFromJson)
+      : (() => { throw new TypeError('local service transcript segment words must be an array.'); })();
+  const confidence = optionalNumberField(segment.confidence, 'segment confidence');
+  return {
+    startMs: numberField(segment.startMs, 'segment startMs'),
+    endMs: numberField(segment.endMs, 'segment endMs'),
+    text: stringField(segment.text, 'segment text'),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(words !== undefined ? { words } : {}),
+  };
+}
+
+function localServiceAsrResultFromJson(value: unknown): LocalAsrProviderResult {
+  const transcript = recordField(value, 'local service transcription result');
+  const segments = transcript.segments;
+  if (!Array.isArray(segments)) {
+    throw new TypeError('local service transcription result segments must be an array.');
+  }
+  const modelVersion = optionalStringField(transcript.modelVersion, 'transcription modelVersion');
+  return {
+    engine: stringField(transcript.engine, 'transcription engine'),
+    modelName: stringField(transcript.modelName, 'transcription modelName'),
+    ...(modelVersion !== undefined ? { modelVersion } : {}),
+    language: stringField(transcript.language, 'transcription language'),
+    segments: segments.map(transcriptSegmentDraftFromJson),
+  };
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServiceAsrProviderOptions = {}): LocalAsrProvider {
+  let callCount = 0;
+  return {
+    providerId: 'lingotorte.loopback-local-service-asr',
+    privacyMode: 'local',
+    get calls() {
+      return callCount;
+    },
+    async transcribe(input) {
+      callCount += 1;
+      const mediaPath = options.mediaPath?.trim() || input.media.originalPath;
+      if (!mediaPath.startsWith('/')) {
+        throw new TypeError('Local service ASR requires a durable absolute local media path. Browser blob media must be reselected or imported through the loopback service before transcription.');
+      }
+      const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'local-transcription',
+          payload: {
+            mediaPath,
+            language: input.language,
+            modelName: options.modelName ?? 'tiny',
+            alignWords: options.alignWords ?? true,
+          },
+        }),
+      });
+      const createdJob = recordField(createResponse.job, 'local service created job');
+      const jobId = stringField(createdJob.id, 'local service job id');
+      const attempts = options.pollAttempts ?? 120;
+      const delayMs = options.pollDelayMs ?? 1000;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const jobResponse = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+        const job = recordField(jobResponse.job, 'local service transcription job');
+        const status = stringField(job.status, 'local service transcription job status');
+        if (status === 'completed') {
+          const result = recordField(job.result, 'local service transcription job result');
+          return localServiceAsrResultFromJson(result.transcript);
+        }
+        if (status === 'failed' || status === 'cancelled') {
+          const message = optionalStringField(job.message, 'local service transcription job message') ?? `status ${status}`;
+          throw new TypeError(`Local service transcription job did not complete: ${message}`);
+        }
+        if (delayMs > 0) await sleep(delayMs);
+      }
+      throw new TypeError(`Local service transcription job ${jobId} did not finish before the polling deadline.`);
     },
   };
 }

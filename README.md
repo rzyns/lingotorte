@@ -35,7 +35,7 @@ If `npm ci --offline` cannot use the local cache, stop before any networked inst
 - `alignWordsWithWhisperX()` plus `scripts/whisperx_align.py` for WhisperX-style forced word alignment.
 - `transcribeWithElevenLabsScribe()` for explicit-opt-in ElevenLabs Scribe v2 cloud STT using fake-HTTP tests by default.
 
-The browser UI still uses fake/local lifecycle controls unless a Node/local-service integration layer explicitly invokes these adapters. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
+The browser UI can now invoke the loopback local service for real local ASR jobs: start `npm run dev:local-service`, load or keep a current media asset, enter an absolute local media path in **Library → Transcript lifecycle** if the current browser media is a `blob:` URL, then click **Generate local ASR draft**. The service runs ffmpeg → faster-whisper → optional WhisperX alignment through injectable command runners and returns sanitized draft transcript segments/word timings. Heavy ASR/model dependencies still require an explicit local-machine install/approval; automated tests use fakes. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
 
 ## Recommended reading order
 

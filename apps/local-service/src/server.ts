@@ -1,10 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SqliteLocalPersistence } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
 import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStore.ts';
+import {
+  alignWordsWithWhisperX,
+  extractAudioWithFfmpeg,
+  nodeCommandRunner,
+  transcribeWithFasterWhisper,
+  type CommandRunner,
+  type LocalAsrTranscriptionResult,
+} from '../../../packages/local-transcription/src/index.ts';
 
 const SERVICE_NAME = 'lingotorte-local-service';
 const SERVICE_VERSION = '0.1.0';
@@ -27,9 +35,22 @@ type LocalJob = Readonly<{
   kind: LocalJobKind;
   status: LocalJobStatus;
   payload: unknown;
+  payloadSummary?: unknown;
+  result?: unknown;
   createdAt: string;
   updatedAt: string;
   message?: string;
+}>;
+
+export type LocalServiceRuntime = Readonly<{
+  commandRunner?: CommandRunner;
+  scriptRoot?: string;
+  pythonPath?: string;
+  ffmpegPath?: string;
+  defaultLanguage?: string;
+  defaultModelName?: string;
+  defaultDevice?: string;
+  defaultComputeType?: string;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -109,6 +130,19 @@ function jobKind(value: unknown): LocalJobKind {
   throw new TypeError('Unsupported local job kind.');
 }
 
+function publicJob(job: LocalJob): unknown {
+  return {
+    id: job.id,
+    kind: job.kind,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    ...(job.message !== undefined ? { message: job.message } : {}),
+    ...(job.payloadSummary !== undefined ? { payloadSummary: job.payloadSummary } : {}),
+    ...(job.result !== undefined ? { result: job.result } : {}),
+  };
+}
+
 function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence): unknown {
   return {
     ok: true,
@@ -159,7 +193,137 @@ async function cleanupScratchDirectory(scratchDir: string): Promise<number> {
   return deletedFiles;
 }
 
-export async function startLingotorteLocalService(config: LocalServiceConfig): Promise<RunningLingotorteLocalService> {
+function asObject(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredStringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new TypeError(`${key} must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
+function optionalStringField(record: Record<string, unknown>, key: string, fallback: string): string {
+  const value = record[key];
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new TypeError(`${key} must be a string when provided.`);
+  }
+  return value.trim();
+}
+
+function optionalBooleanField(record: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = record[key];
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${key} must be a boolean when provided.`);
+  }
+  return value;
+}
+
+function absolutePathField(path: string, label: string): string {
+  if (!isAbsolute(path)) {
+    throw new TypeError(`${label} must be an absolute local path.`);
+  }
+  return resolve(path);
+}
+
+function defaultScriptRoot(runtime: LocalServiceRuntime): string {
+  return runtime.scriptRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+}
+
+function redactLocalPaths(message: string, paths: readonly string[]): string {
+  let redacted = message;
+  for (const path of paths) {
+    if (path) redacted = redacted.split(path).join('[local-path]');
+  }
+  return redacted;
+}
+
+type LocalTranscriptionPayload = Readonly<{
+  mediaPath: string;
+  language: string;
+  modelName: string;
+  alignWords: boolean;
+  pythonPath: string;
+  ffmpegPath: string;
+  device: string;
+  computeType: string;
+}>;
+
+function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime): LocalTranscriptionPayload {
+  const body = asObject(value, 'local transcription payload');
+  return {
+    mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
+    language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
+    modelName: optionalStringField(body, 'modelName', runtime.defaultModelName ?? 'tiny'),
+    alignWords: optionalBooleanField(body, 'alignWords', true),
+    pythonPath: optionalStringField(body, 'pythonPath', runtime.pythonPath ?? 'python3'),
+    ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
+    device: optionalStringField(body, 'device', runtime.defaultDevice ?? 'cpu'),
+    computeType: optionalStringField(body, 'computeType', runtime.defaultComputeType ?? 'int8'),
+  };
+}
+
+function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
+  if (kind !== 'local-transcription') return undefined;
+  const record = asObject(payload, 'local transcription payload');
+  return {
+    language: typeof record.language === 'string' ? record.language : 'pl',
+    modelName: typeof record.modelName === 'string' ? record.modelName : 'tiny',
+    alignWords: record.alignWords !== false,
+    mediaPath: '[local-media-path]',
+  };
+}
+
+function mediaPathFromPayload(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined;
+  const mediaPath = (payload as Record<string, unknown>).mediaPath;
+  return typeof mediaPath === 'string' && mediaPath.length > 0 ? resolve(mediaPath) : undefined;
+}
+
+async function runLocalTranscription(payloadValue: unknown, config: LocalServiceConfig, runtime: LocalServiceRuntime, jobId: string): Promise<LocalAsrTranscriptionResult> {
+  const payload = localTranscriptionPayload(payloadValue, runtime);
+  const jobScratchDir = join(config.scratchDir, 'jobs', jobId);
+  await mkdir(jobScratchDir, { recursive: true });
+  const audioPath = join(jobScratchDir, 'audio.wav');
+  const fasterWhisperTranscriptPath = join(jobScratchDir, 'faster-whisper-transcript.json');
+  const scriptRoot = defaultScriptRoot(runtime);
+  const runner = runtime.commandRunner ?? nodeCommandRunner;
+
+  await extractAudioWithFfmpeg({
+    ffmpegPath: payload.ffmpegPath,
+    inputPath: payload.mediaPath,
+    outputPath: audioPath,
+  }, runner);
+  const transcript = await transcribeWithFasterWhisper({
+    pythonPath: payload.pythonPath,
+    scriptPath: join(scriptRoot, 'scripts', 'faster_whisper_transcribe.py'),
+    audioPath,
+    language: payload.language,
+    modelName: payload.modelName,
+    device: payload.device,
+    computeType: payload.computeType,
+  }, runner);
+  if (!payload.alignWords) return transcript;
+
+  await writeFile(fasterWhisperTranscriptPath, JSON.stringify(transcript), 'utf-8');
+  return alignWordsWithWhisperX({
+    pythonPath: payload.pythonPath,
+    scriptPath: join(scriptRoot, 'scripts', 'whisperx_align.py'),
+    audioPath,
+    transcriptJsonPath: fasterWhisperTranscriptPath,
+    language: transcript.language,
+    device: payload.device,
+  }, runner);
+}
+
+export async function startLingotorteLocalService(config: LocalServiceConfig, runtime: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
   assertLoopbackConfig(config);
   await mkdir(dirname(config.databasePath), { recursive: true });
   await mkdir(config.scratchDir, { recursive: true });
@@ -167,6 +331,40 @@ export async function startLingotorteLocalService(config: LocalServiceConfig): P
 
   const persistence = SqliteLocalPersistence.open(config.databasePath);
   const jobs = new Map<string, LocalJob>();
+
+  const finishLocalTranscriptionJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Running local transcription.' }));
+      try {
+        const transcript = await runLocalTranscription(queued.payload, config, runtime, jobId);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed',
+          message: 'Local transcription completed.',
+          result: { transcript },
+        }));
+      } catch (error) {
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const mediaPath = mediaPathFromPayload(current.payload);
+        const mediaDir = mediaPath !== undefined ? dirname(mediaPath) : undefined;
+        jobs.set(jobId, updateJob(current, {
+          status: 'failed',
+          message: redactLocalPaths(rawMessage, [
+            config.scratchDir,
+            config.modelCacheDir,
+            config.databasePath,
+            ...(mediaPath !== undefined ? [mediaPath] : []),
+            ...(mediaDir !== undefined ? [mediaDir] : []),
+          ]),
+        }));
+      }
+    })();
+  };
 
   const server: Server = createServer(async (request, response) => {
     try {
@@ -212,17 +410,20 @@ export async function startLingotorteLocalService(config: LocalServiceConfig): P
         const kind = jobKind(body.kind);
         const now = new Date().toISOString();
         const status: LocalJobStatus = kind === 'noop' ? 'completed' : 'queued';
+        const payload = body.payload ?? {};
         const job: LocalJob = {
           id: randomUUID(),
           kind,
           status,
-          payload: body.payload ?? {},
+          payload,
+          ...(payloadSummary(kind, payload) !== undefined ? { payloadSummary: payloadSummary(kind, payload) } : {}),
           createdAt: now,
           updatedAt: now,
           ...(kind === 'noop' ? { message: 'No-op local job completed.' } : {}),
         };
         jobs.set(job.id, job);
-        sendJson(response, 201, { ok: true, job });
+        if (kind === 'local-transcription') finishLocalTranscriptionJob(job.id);
+        sendJson(response, 201, { ok: true, job: publicJob(job) });
         return;
       }
 
@@ -233,7 +434,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig): P
           sendError(response, 404, 'Local job not found.');
           return;
         }
-        sendJson(response, 200, { ok: true, job });
+        sendJson(response, 200, { ok: true, job: publicJob(job) });
         return;
       }
       if (jobMatch && request.method === 'POST' && jobMatch[2] === 'cancel') {
@@ -244,7 +445,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig): P
         }
         const cancelled = job.status === 'completed' ? job : updateJob(job, { status: 'cancelled', message: 'Cancelled by local operator.' });
         jobs.set(cancelled.id, cancelled);
-        sendJson(response, 200, { ok: true, job: cancelled });
+        sendJson(response, 200, { ok: true, job: publicJob(cancelled) });
         return;
       }
 

@@ -48,7 +48,7 @@ import {
   createCorrectedTranscriptVersion,
   generateLocalAsrDraft,
   importYouTubeCaptionCandidate,
-  makeFakeLocalAsrProvider,
+  makeLocalServiceAsrProvider,
   makeFakeYouTubeCaptionProvider,
 } from './model';
 
@@ -1121,6 +1121,21 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   authLabel.append(authCheckbox, document.createTextNode(' I authorize a public caption metadata read.'));
   panel.appendChild(authLabel);
 
+  const localAsrPathLabel = document.createElement('label');
+  localAsrPathLabel.htmlFor = 'local-asr-media-path';
+  localAsrPathLabel.textContent = 'Local service ASR media path (absolute; optional if current media already has one)';
+  const localAsrPathInput = document.createElement('input');
+  localAsrPathInput.id = 'local-asr-media-path';
+  localAsrPathInput.name = 'local-asr-media-path';
+  localAsrPathInput.type = 'text';
+  localAsrPathInput.value = model.transcriptLifecycle.localAsrMediaPath;
+  localAsrPathInput.placeholder = '/absolute/path/to/owned-media.webm';
+  localAsrPathInput.addEventListener('input', () => {
+    model.transcriptLifecycle.localAsrMediaPath = localAsrPathInput.value;
+  });
+  localAsrPathLabel.appendChild(localAsrPathInput);
+  panel.appendChild(localAsrPathLabel);
+
   const actions = document.createElement('div');
   actions.className = 'form-actions';
   const importBtn = document.createElement('button');
@@ -1156,22 +1171,18 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 
   const asrBtn = document.createElement('button');
   asrBtn.className = 'btn-secondary';
-  asrBtn.textContent = 'Generate fake local ASR draft';
+  asrBtn.textContent = 'Generate local ASR draft';
   asrBtn.disabled = !model.currentMedia;
   asrBtn.addEventListener('click', () => {
-    const provider = makeFakeLocalAsrProvider({
-      engine: 'fake-local-asr',
-      modelName: 'tiny-test-model',
-      language: model.transcriptLifecycle.youtubeLanguage,
-      segments: [
-        { startMs: 0, endMs: 1600, text: 'Lokalny szkic ASR.' },
-        { startMs: 1600, endMs: 3200, text: 'Drugi szkic ASR.' },
-      ],
+    const provider = makeLocalServiceAsrProvider(model.localService.baseUrl, {
+      mediaPath: model.transcriptLifecycle.localAsrMediaPath,
+      modelName: 'tiny',
+      alignWords: true,
     });
     void generateLocalAsrDraft(model, provider, model.transcriptLifecycle.youtubeLanguage)
       .then(() => {
         model.transcriptLifecycle.pendingCueEdits = {};
-        model.transcriptLifecycle.lastMessage = 'Local ASR draft generated';
+        model.transcriptLifecycle.lastMessage = 'Local service ASR draft generated';
         model.importError = null;
         rerenderApp(model);
       })

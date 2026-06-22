@@ -75,6 +75,8 @@ curl -sS http://127.0.0.1:5174/api/status
 
 In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click **Connect local service**, then click **Save state now** or enable autosave. Connecting to a fresh empty service does not clobber unsaved browser state; save explicitly once you want the current browser state to become the durable SQLite snapshot.
 
+The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control creates and polls one of these jobs, then imports the returned transcript as a draft track. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process.
+
 ## Local dev server
 
 Start the app on loopback only:
@@ -127,7 +129,7 @@ The P7 transcript lane is implemented as a local/fakeable lifecycle slice. It do
 6. Return to **Library**, edit at least one cue in the correction textareas, and click **Create corrected transcript version**.
 7. Verify the current transcript is `correcting`, then click **Approve transcript for study**.
 8. Return to **Player** and verify **Save sentence** is enabled and saves the corrected cue text.
-9. Optional local-only ASR seam: after loading any local/synthetic media, use **Generate fake local ASR draft** and verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings.
+9. Optional local-only ASR service path: start `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute local media path in **Local service ASR media path** when the current browser media is a `blob:`/fixture URL, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them.
 
 Live YouTube caption retrieval and actual media acquisition remain separate, explicitly gated future work. `planYtDlpMediaAcquisition()` only produces a safe command plan; it does not execute `yt-dlp`.
 
@@ -157,8 +159,8 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 ## Known V1/V4 limitations
 
 - The app is a local browser/Vite baseline, not a packaged desktop/mobile product.
-- Browser local-file imports persist learner/transcript metadata through the local service, but browser `blob:` media handles themselves are session-scoped; if a durable snapshot is reloaded after restart, reselect the owned local media file before playback until a user-chosen file-handle/native packaging workflow exists.
+- Browser local-file imports persist learner/transcript metadata through the local service, but browser `blob:` media handles themselves are session-scoped; if a durable snapshot is reloaded after restart, reselect the owned local media file before playback until a user-chosen file-handle/native packaging workflow exists. For local-service ASR, paste the owned media's absolute local path into **Local service ASR media path** whenever the current browser media handle is only a `blob:` URL.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
-- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The current browser UI transcript lifecycle controls still use fake/local adapters; real ffmpeg/faster-whisper/WhisperX/ElevenLabs adapters are Node-side seams with explicit invocation boundaries.
+- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The current browser UI transcript lifecycle controls use fake/public-read-gated YouTube caption adapters by default and can invoke the loopback local service for real local ASR jobs only with an absolute local media path and separately installed local ASR dependencies. ElevenLabs remains an explicit-opt-in Node-side adapter boundary, not a default UI path.
