@@ -282,6 +282,7 @@ describe('P7 transcript lifecycle frontend', () => {
     await waitFor(() => model.cues.length === 2);
     const parentTrackId = model.targetTrackId!;
 
+    await waitFor(() => Boolean(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split cue 1')));
     const splitButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split cue 1') as HTMLButtonElement | null;
     expect(splitButton).toBeTruthy();
     splitButton!.click();
