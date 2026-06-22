@@ -1,6 +1,6 @@
 # Lingotorte local runbook
 
-Status: V1 local-only developer/user runbook. This document describes how to run and inspect the current local baseline without enabling providers, cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, or any external account mutation.
+Status: V3 local-only developer/user runbook. This document describes how to run and inspect the current local baseline without enabling cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, external account mutation, or unapproved media/model downloads. The transcript lifecycle lane includes fakeable/local adapter seams for provider captions and local ASR drafts; generated/provider tracks must be corrected and approved before learner study use.
 
 ## Scope and safety posture
 
@@ -87,11 +87,27 @@ Use WSL Edge DevTools when available. Regular browser tooling is an acceptable f
 
 Acceptable network traffic during dev smoke is limited to loopback/local dev-server reads, `data:`/`blob:` URLs, and Vite internals. Public-internet writes, provider calls, external account mutations, or runtime requests to an external host are V1 blockers unless Janusz has explicitly approved that exact opt-in path.
 
-## Known V1 limitations
+## V3 transcript lifecycle smoke
+
+The P7 transcript lane is implemented as a local/fakeable lifecycle slice. It does **not** fetch live YouTube captions, download media, install ASR models, or call network providers during default smoke.
+
+1. Open **Library** and locate **Transcript lifecycle**.
+2. Click **Import fake YouTube caption draft** without checking the authorization box; verify the action is blocked before adapter execution and no transcript appears.
+3. Enter or keep a public YouTube URL/video id, check **I authorize a public caption metadata read**, and click **Import fake YouTube caption draft**.
+4. Verify the current transcript is labeled `draft` with `youtube-auto-caption` provenance/warnings.
+5. Open **Player** and verify **Save sentence** is disabled with the approval-gate message.
+6. Return to **Library**, edit at least one cue in the correction textareas, and click **Create corrected transcript version**.
+7. Verify the current transcript is `correcting`, then click **Approve transcript for study**.
+8. Return to **Player** and verify **Save sentence** is enabled and saves the corrected cue text.
+9. Optional local-only ASR seam: after loading any local/synthetic media, use **Generate fake local ASR draft** and verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings.
+
+Live YouTube caption retrieval and actual media acquisition remain separate, explicitly gated future work. `planYtDlpMediaAcquisition()` only produces a safe command plan; it does not execute `yt-dlp`.
+
+## Known V1/V3 limitations
 
 - The app is a local fixture-backed baseline, not a packaged desktop/mobile product.
 - The plain browser UI does not expose arbitrary local file pickers yet; it imports the synthetic fixture through the Library view.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
-- Providers, AnkiConnect, cloud sync, live Lingopie inspection, generated subtitles/ASR, pronunciation/shadowing, and public sharing remain disabled or out of scope unless separately approved.
+- Live provider adapters, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or out of scope unless separately approved. The current YouTube/ASR lifecycle controls use fake/local adapters only.

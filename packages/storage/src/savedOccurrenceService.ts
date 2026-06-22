@@ -85,7 +85,18 @@ export class SavedOccurrenceService {
     return undefined;
   }
 
+  private requireApprovedTranscript(sourceContext: SavedOccurrence['sourceContext']): void {
+    const track = this.store.getSubtitleTrack(sourceContext.subtitleTrackId);
+    if (!track) {
+      throw new TypeError(`Cannot save learner occurrence: subtitle track ${sourceContext.subtitleTrackId} was not found`);
+    }
+    if (track.transcriptStatus !== 'approved') {
+      throw new TypeError(`Cannot save learner occurrence from ${track.transcriptStatus} transcript track; approved transcript is required before study use.`);
+    }
+  }
+
   saveSelection(input: SaveSelectionInput): SavedOccurrenceResult {
+    this.requireApprovedTranscript(input.sourceContext);
     const existingItem = this.findExistingItem(input.kind, input.language, input.displayText);
     if (existingItem) {
       const existingOccurrence = this.findExistingOccurrence(existingItem.id, input.sourceContext);

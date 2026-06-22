@@ -26,9 +26,9 @@
     {
       "path": "docs/spec/feature-implementation-playbook.md",
       "relative_path": "docs/spec/feature-implementation-playbook.md",
-      "bytes": 9665,
-      "lines": 59,
-      "sha256": "e8b1702950e54f1f491c8cf3567cfb62fda9a4f1f390933960cd6f1ec262fb2a"
+      "bytes": 10084,
+      "lines": 58,
+      "sha256": "ad374a98b4744395884b03ae7892bf3df2aac29c6cf43c1d3f32db959b8af559"
     },
     {
       "path": "docs/architecture/local-first-architecture.md",

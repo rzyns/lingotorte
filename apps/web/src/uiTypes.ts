@@ -52,6 +52,13 @@ export type AppModel = {
   view: ViewName;
   savedViewTab?: 'vocab' | 'sentences';
   transcriptQuery: string;
+  transcriptLifecycle: {
+    youtubeUrl: string;
+    youtubeLanguage: string;
+    publicReadAuthorized: boolean;
+    pendingCueEdits: Record<string, string>;
+    lastMessage: string | null;
+  };
   review: {
     currentCardId: string | null;
     activeCardId: string | null;

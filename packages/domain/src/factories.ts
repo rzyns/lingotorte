@@ -36,13 +36,21 @@ export function makeMediaAsset(
 }
 
 export function makeSubtitleTrack(
-  input: Pick<SubtitleTrack, 'mediaId' | 'language' | 'role' | 'format' | 'sourceKind' | 'sourcePath' | 'contentSha256' | 'isActive'>,
+  input: Pick<SubtitleTrack, 'mediaId' | 'language' | 'role' | 'format' | 'sourceKind' | 'sourcePath' | 'contentSha256' | 'isActive'> &
+    Partial<Pick<SubtitleTrack, 'transcriptStatus' | 'transcriptSourceKind' | 'provenance' | 'qualityReport'>>,
 ): SubtitleTrack {
   const now = isoNow();
+  const transcriptSourceKind = input.transcriptSourceKind ?? (input.sourceKind === 'synthetic' ? 'synthetic-fixture' : 'user-subtitle-file');
   return {
     id: uuid(),
     ...input,
     trackVersion: 1,
+    transcriptStatus: input.transcriptStatus ?? 'approved',
+    transcriptSourceKind,
+    provenance: input.provenance ?? {
+      language: input.language,
+      warningFlags: [],
+    },
     createdAt: now,
   };
 }

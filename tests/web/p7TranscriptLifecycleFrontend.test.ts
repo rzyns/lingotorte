@@ -1,0 +1,101 @@
+import { JSDOM } from 'jsdom';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createAppModel } from '../../apps/web/src/model';
+import { rerenderApp } from '../../apps/web/src/app';
+
+async function setupDom() {
+  const dom = new JSDOM('<!doctype html><html><body><main id="app"></main></body></html>', {
+    pretendToBeVisual: true,
+    url: 'http://localhost:5173/',
+  });
+  globalThis.document = dom.window.document;
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.HTMLVideoElement = dom.window.HTMLVideoElement;
+  globalThis.Element = dom.window.Element;
+  globalThis.Node = dom.window.Node;
+  globalThis.MutationObserver = dom.window.MutationObserver;
+  globalThis.requestAnimationFrame = () => 0;
+  return dom;
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  expect(predicate()).toBe(true);
+}
+
+describe('P7 transcript lifecycle frontend', () => {
+  let dom: ReturnType<typeof setupDom> extends Promise<infer T> ? T : never;
+
+  beforeEach(async () => {
+    dom = await setupDom();
+  });
+
+  afterEach(() => {
+    dom.window.close();
+  });
+
+  it('keeps provider captions in draft state until the learner corrects and approves them', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    rerenderApp(model);
+
+    expect(document.getElementById('app')?.textContent).toContain('Transcript lifecycle');
+    const importWithoutAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement | null;
+    expect(importWithoutAuth).toBeTruthy();
+    importWithoutAuth!.click();
+    await waitFor(() => Boolean(model.importError));
+    expect(model.importError).toMatch(/authorization/i);
+    expect(model.cues).toHaveLength(0);
+
+    const urlInput = document.querySelector('input[name="youtube-caption-url"]') as HTMLInputElement | null;
+    const authCheckbox = document.querySelector('input[name="youtube-public-read-auth"]') as HTMLInputElement | null;
+    expect(urlInput).toBeTruthy();
+    expect(authCheckbox).toBeTruthy();
+    urlInput!.value = 'https://www.youtube.com/watch?v=abcdefghijk';
+    urlInput!.dispatchEvent(new dom.window.Event('input'));
+    authCheckbox!.checked = true;
+    authCheckbox!.dispatchEvent(new dom.window.Event('change'));
+
+    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement;
+    importWithAuth.click();
+    await waitFor(() => model.cues.length === 2);
+
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('draft');
+    expect(document.getElementById('app')?.textContent).toContain('Draft transcript imported');
+    expect(model.currentMedia?.originalPath).toBe('youtube:abcdefghijk');
+
+    const playerButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Player') as HTMLButtonElement | null;
+    playerButton?.click();
+    expect(document.getElementById('app')?.textContent).toContain('Draft transcript: correct and approve before study use.');
+    const draftSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence') as HTMLButtonElement | null;
+    expect(draftSave?.disabled).toBe(true);
+
+    const libraryButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Library') as HTMLButtonElement | null;
+    libraryButton?.click();
+    const correction = document.querySelector('textarea[name="transcript-correction-cue-1"]') as HTMLTextAreaElement | null;
+    expect(correction).toBeTruthy();
+    correction!.value = 'Corrected provider caption.';
+    correction!.dispatchEvent(new dom.window.Event('input'));
+
+    const correctButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Create corrected transcript version') as HTMLButtonElement | null;
+    correctButton?.click();
+    await waitFor(() => model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus === 'correcting');
+    expect(document.getElementById('app')?.textContent).toContain('Corrected transcript version created');
+
+    const approveButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Approve transcript for study') as HTMLButtonElement | null;
+    approveButton?.click();
+    await waitFor(() => model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus === 'approved');
+    expect(document.getElementById('app')?.textContent).toContain('Transcript approved for study');
+
+    playerButton?.click();
+    const approvedSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence') as HTMLButtonElement | null;
+    expect(approvedSave?.disabled).toBe(false);
+    approvedSave?.click();
+    await waitFor(() => Object.values(model.store.snapshot().savedItems).length === 1);
+    expect(Object.values(model.store.snapshot().savedItems)[0]?.displayText).toBe('Corrected provider caption.');
+  });
+});
