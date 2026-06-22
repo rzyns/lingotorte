@@ -156,6 +156,88 @@ describe('P7 transcript provider adapters and correction lifecycle', () => {
     expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(0);
   });
 
+  it('stores local ASR word timings as first-class transcript artifacts', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    const provider = makeFakeLocalAsrProvider({
+      engine: 'faster-whisper',
+      modelName: 'small',
+      modelVersion: 'test-local-model',
+      language: 'pl',
+      segments: [{
+        startMs: 0,
+        endMs: 1500,
+        text: 'Lokalne słowa.',
+        words: [
+          { wordIndex: 0, text: 'Lokalne', charStart: 0, charEnd: 7, startMs: 0, endMs: 700, confidence: 0.88, speakerId: 'speaker_0' },
+          { wordIndex: 1, text: 'słowa', charStart: 8, charEnd: 13, startMs: 820, endMs: 1400, confidence: 0.84, speakerId: 'speaker_0' },
+        ],
+      }],
+    });
+
+    const result = await generateLocalAsrDraft(model, provider);
+    const timings = model.store.listTranscriptWordTimingsForTrack(result.track.id);
+
+    expect(timings).toHaveLength(2);
+    expect(timings[0]).toMatchObject({
+      cueId: result.cues[0]!.id,
+      trackId: result.track.id,
+      wordIndex: 0,
+      text: 'Lokalne',
+      normalizedText: 'lokalne',
+      charStart: 0,
+      charEnd: 7,
+      startMs: 0,
+      endMs: 700,
+      confidence: 0.88,
+      speakerId: 'speaker_0',
+      sourceKind: 'provider-word-timing',
+      engine: 'faster-whisper',
+      modelName: 'small',
+      modelVersion: 'test-local-model',
+    });
+    expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(0);
+  });
+
+  it('keeps WhisperX-style local alignment timings marked as forced-alignment artifacts', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    const provider = makeFakeLocalAsrProvider({
+      engine: 'whisperx',
+      modelName: 'whisperx-align-pl',
+      modelVersion: '3.4.2-test',
+      language: 'pl',
+      segments: [{
+        startMs: 0,
+        endMs: 1500,
+        text: 'Cześć świecie.',
+        words: [
+          { wordIndex: 0, text: 'Cześć', charStart: 0, charEnd: 5, startMs: 20, endMs: 600, confidence: 0.97, sourceKind: 'forced-alignment' },
+        ],
+      }],
+    });
+
+    const result = await generateLocalAsrDraft(model, provider);
+    const timings = model.store.listTranscriptWordTimingsForTrack(result.track.id);
+
+    expect(timings[0]).toMatchObject({
+      sourceKind: 'forced-alignment',
+      engine: 'whisperx',
+      modelName: 'whisperx-align-pl',
+      modelVersion: '3.4.2-test',
+    });
+  });
+
   it('keeps raw drafts immutable, creates corrected versions, and allows study saves only after approval', async () => {
     const model = createAppModel();
     const provider = makeFakeYouTubeCaptionProvider({

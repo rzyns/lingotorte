@@ -1,6 +1,6 @@
 # Lingotorte local runbook
 
-Status: V3 local-only developer/user runbook. This document describes how to run and inspect the current local baseline without enabling cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, external account mutation, or unapproved media/model downloads. The transcript lifecycle lane includes fakeable/local adapter seams for provider captions and local ASR drafts; generated/provider tracks must be corrected and approved before learner study use.
+Status: V4 local transcription runbook. This document describes how to run and inspect the current local baseline without enabling cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, external account mutation, or unapproved media/model downloads. The transcript lifecycle lane includes fakeable/local adapter seams for provider captions, real local ffmpeg/faster-whisper/WhisperX-style command adapters, and explicit-opt-in ElevenLabs Scribe v2 cloud STT. Generated/provider tracks must be corrected and approved before learner study use.
 
 ## Scope and safety posture
 
@@ -103,11 +103,34 @@ The P7 transcript lane is implemented as a local/fakeable lifecycle slice. It do
 
 Live YouTube caption retrieval and actual media acquisition remain separate, explicitly gated future work. `planYtDlpMediaAcquisition()` only produces a safe command plan; it does not execute `yt-dlp`.
 
-## Known V1/V3 limitations
+## V4 local/cloud transcription adapters
+
+The repo now ships a Node-side `@lingotorte/local-transcription` package plus dependency-lazy Python entrypoints for real transcription work. Automated tests use injected runners/fake HTTP clients; they do not execute ffmpeg, download models, call ElevenLabs, or run `yt-dlp`.
+
+Implemented adapter decisions:
+
+- **ffmpeg audio extraction:** `extractAudioWithFfmpeg()` executes `ffmpeg -hide_banner -y -i <media> -vn -ac 1 -ar 16000 -c:a pcm_s16le <audio.wav>` through an injectable command runner. Inputs/outputs must be absolute local paths and output must differ from input.
+- **Local faster-whisper transcription:** `transcribeWithFasterWhisper()` calls `scripts/faster_whisper_transcribe.py` and normalizes segment/word JSON into Lingotorte transcript segments. The Python script imports `faster_whisper` only after argument parsing, so `--help` works without installing the heavy dependency.
+- **WhisperX-style alignment:** `alignWordsWithWhisperX()` calls `scripts/whisperx_align.py` with an existing transcript JSON sidecar and normalizes aligned words with `sourceKind: "forced-alignment"`. The script imports `whisperx` only for actual alignment execution.
+- **First-class word timings:** local ASR and cloud STT word arrays are persisted as `TranscriptWordTiming` rows; WhisperX-style aligned words keep forced-alignment provenance instead of being downgraded to provider-native timing.
+- **ElevenLabs Scribe v2:** `transcribeWithElevenLabsScribe()` is explicit opt-in. It refuses before HTTP execution unless `allowOnlineProvider` is true, then posts `file`, `model_id=scribe_v2`, `timestamps_granularity=word`, `diarize=true`, and optional `language_code` to `POST https://api.elevenlabs.io/v1/speech-to-text`. Unit coverage uses a fake HTTP client.
+- **yt-dlp:** remains command-generation only through `planYtDlpMediaAcquisition()`. The app does not auto-execute `yt-dlp`, pass cookies, use browser credential paths, or bypass DRM.
+
+Example dependency-gated local commands, run only after approving model/dependency installation for the local machine:
+
+```bash
+ffmpeg -hide_banner -y -i /absolute/path/video.mp4 -vn -ac 1 -ar 16000 -c:a pcm_s16le /absolute/path/audio.wav
+python3 scripts/faster_whisper_transcribe.py --audio /absolute/path/audio.wav --language pl --model small --device cpu --compute-type int8 --word-timestamps
+python3 scripts/whisperx_align.py --audio /absolute/path/audio.wav --transcript-json /absolute/path/transcript-segments.json --language pl --device cpu
+```
+
+Cloud STT remains an explicit per-run decision because it sends local audio/media to ElevenLabs. Keep API keys out of logs, fixtures, commits, and screenshots.
+
+## Known V1/V4 limitations
 
 - The app is a local fixture-backed baseline, not a packaged desktop/mobile product.
 - The plain browser UI does not expose arbitrary local file pickers yet; it imports the synthetic fixture through the Library view.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
-- Live provider adapters, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or out of scope unless separately approved. The current YouTube/ASR lifecycle controls use fake/local adapters only.
+- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The current browser UI transcript lifecycle controls still use fake/local adapters; real ffmpeg/faster-whisper/WhisperX/ElevenLabs adapters are Node-side seams with explicit invocation boundaries.

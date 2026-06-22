@@ -10,7 +10,8 @@
     "packages/storage",
     "packages/subtitles",
     "packages/language",
-    "packages/review"
+    "packages/review",
+    "packages/local-transcription"
   ],
   "scripts": {
     "dev": "vite --config vite.config.ts",

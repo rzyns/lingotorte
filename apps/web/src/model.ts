@@ -20,6 +20,7 @@ import type {
   TranscriptQualityReport,
   TranscriptSourceKind,
   TranscriptWarningFlag,
+  TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
 import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
@@ -468,6 +469,7 @@ type TranscriptWordTimingDraft = Readonly<{
   endMs: number;
   confidence?: number;
   speakerId?: string;
+  sourceKind?: TranscriptWordTimingSourceKind;
 }>;
 
 export type YouTubeCaptionProviderResult = Readonly<{
@@ -662,6 +664,43 @@ async function putTranscriptSegments(model: AppModel, input: {
   return { track, cues };
 }
 
+function putTranscriptWordTimingsForSegments(model: AppModel, input: {
+  imported: TranscriptImportResult;
+  segments: readonly TranscriptSegmentDraft[];
+  sourceKind: TranscriptWordTimingSourceKind;
+  engine: string;
+  modelName: string;
+  modelVersion?: string;
+}): void {
+  for (let segmentIndex = 0; segmentIndex < input.segments.length; segmentIndex++) {
+    const segment = input.segments[segmentIndex]!;
+    const cue = input.imported.cues[segmentIndex];
+    if (!cue) throw new TypeError(`Transcript word timings reference missing cue for segment ${segmentIndex + 1}`);
+    for (const word of segment.words ?? []) {
+      const text = normalizeBrowserCueText(word.text);
+      if (!text) throw new TypeError(`Transcript word timing ${word.wordIndex} has empty text`);
+      if (word.endMs <= word.startMs) throw new TypeError(`Transcript word timing ${word.wordIndex} end time must be after start time`);
+      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+        trackId: input.imported.track.id,
+        cueId: cue.id,
+        wordIndex: word.wordIndex,
+        charStart: word.charStart,
+        charEnd: word.charEnd,
+        text,
+        normalizedText: text.toLowerCase(),
+        startMs: word.startMs,
+        endMs: word.endMs,
+        sourceKind: word.sourceKind ?? input.sourceKind,
+        engine: input.engine,
+        modelName: input.modelName,
+        ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
+        ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
+        ...(input.modelVersion !== undefined ? { modelVersion: input.modelVersion } : {}),
+      }));
+    }
+  }
+}
+
 export async function importYouTubeCaptionCandidate(
   model: AppModel,
   input: { url: string; language: string; allowPublicRead: boolean },
@@ -713,7 +752,7 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
   }
   const result = await provider.transcribe({ media: model.currentMedia, language });
   const warningFlags: TranscriptWarningFlag[] = ['asrDraft', 'timingUnverified', 'qualityUnreviewed'];
-  return putTranscriptSegments(model, {
+  const imported = await putTranscriptSegments(model, {
     media: model.currentMedia,
     language: result.language,
     role: 'target',
@@ -732,6 +771,15 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
   });
+  putTranscriptWordTimingsForSegments(model, {
+    imported,
+    segments: result.segments,
+    sourceKind: 'provider-word-timing',
+    engine: result.engine,
+    modelName: result.modelName,
+    ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+  });
+  return imported;
 }
 
 export async function generateElevenLabsScribeDraft(
@@ -767,32 +815,14 @@ export async function generateElevenLabsScribeDraft(
     segments: result.segments,
   });
 
-  for (let segmentIndex = 0; segmentIndex < result.segments.length; segmentIndex++) {
-    const segment = result.segments[segmentIndex]!;
-    const cue = imported.cues[segmentIndex]!;
-    for (const word of segment.words ?? []) {
-      const text = normalizeBrowserCueText(word.text);
-      if (!text) throw new TypeError(`ElevenLabs Scribe word timing ${word.wordIndex} has empty text`);
-      if (word.endMs <= word.startMs) throw new TypeError(`ElevenLabs Scribe word timing ${word.wordIndex} end time must be after start time`);
-      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
-        trackId: imported.track.id,
-        cueId: cue.id,
-        wordIndex: word.wordIndex,
-        charStart: word.charStart,
-        charEnd: word.charEnd,
-        text,
-        normalizedText: text.toLowerCase(),
-        startMs: word.startMs,
-        endMs: word.endMs,
-        sourceKind: 'provider-word-timing',
-        engine: 'elevenlabs',
-        modelName: result.modelName,
-        ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
-        ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
-        ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
-      }));
-    }
-  }
+  putTranscriptWordTimingsForSegments(model, {
+    imported,
+    segments: result.segments,
+    sourceKind: 'provider-word-timing',
+    engine: 'elevenlabs',
+    modelName: result.modelName,
+    ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+  });
 
   return imported;
 }

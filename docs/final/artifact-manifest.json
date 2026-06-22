@@ -6,112 +6,112 @@
       "path": "docs/final/war-room-final-synthesis.md",
       "relative_path": "docs/final/war-room-final-synthesis.md",
       "bytes": 7902,
-      "lines": 90,
+      "lines": 89,
       "sha256": "575a76cee145bc2bed6d9135b8cb9a7c6b6f633fee1073be61ed72013c38987a"
     },
     {
       "path": "docs/final/lingotorte-implementation-plan.md",
       "relative_path": "docs/final/lingotorte-implementation-plan.md",
       "bytes": 27082,
-      "lines": 348,
+      "lines": 347,
       "sha256": "c68f4640162bcefe025512e7fd486ab0e14a3892eabb22034f781756d9031cc2"
     },
     {
       "path": "docs/spec/lingopie-behavior-reference.md",
       "relative_path": "docs/spec/lingopie-behavior-reference.md",
       "bytes": 19399,
-      "lines": 290,
+      "lines": 289,
       "sha256": "6168fca25b1543d9d345deb406ba0d666c15f18d719b6e2c29274ef75c7be17e"
     },
     {
       "path": "docs/spec/feature-implementation-playbook.md",
       "relative_path": "docs/spec/feature-implementation-playbook.md",
       "bytes": 10355,
-      "lines": 59,
+      "lines": 58,
       "sha256": "ba392ac5f6ee900349c35d4f717be57529727afb830ee4a9ea3bac050ab7cca9"
     },
     {
       "path": "docs/architecture/local-first-architecture.md",
       "relative_path": "docs/architecture/local-first-architecture.md",
       "bytes": 8646,
-      "lines": 173,
+      "lines": 172,
       "sha256": "e2b615dcc138a79c9790887b8213b41bdae2b9dfb97344888bfe54bec1c67c04"
     },
     {
       "path": "docs/architecture/data-model-and-storage.md",
       "relative_path": "docs/architecture/data-model-and-storage.md",
-      "bytes": 18292,
-      "lines": 220,
-      "sha256": "76b7c2545fc515af7eaed4e25a22c4271a81a5e58e58120ee1290d3d1e761665"
+      "bytes": 18306,
+      "lines": 219,
+      "sha256": "068726ce91377e244391d26bd794d9304019fd49df9305d9e037d87005369b47"
     },
     {
       "path": "docs/architecture/language-adapter-design.md",
       "relative_path": "docs/architecture/language-adapter-design.md",
       "bytes": 15583,
-      "lines": 375,
+      "lines": 374,
       "sha256": "a3b500ed9ea69dd3cadb3736e8762aa367580a9138340993e496fde11a814b82"
     },
     {
       "path": "docs/product/srs-and-practice-design.md",
       "relative_path": "docs/product/srs-and-practice-design.md",
       "bytes": 9583,
-      "lines": 128,
+      "lines": 127,
       "sha256": "1676df2108d2bba0b6d8a91351e7573fdd86a28c7875f6a0fe07083235a03aa8"
     },
     {
       "path": "docs/research/public-product-cartography.md",
       "relative_path": "docs/research/public-product-cartography.md",
       "bytes": 12649,
-      "lines": 86,
+      "lines": 85,
       "sha256": "e9d5a432010f799ababb7402d82df534860126f9a5b9eed9e1a235e7d7e47fa4"
     },
     {
       "path": "docs/research/live-ui-inventory-expanded.md",
       "relative_path": "docs/research/live-ui-inventory-expanded.md",
       "bytes": 8173,
-      "lines": 222,
+      "lines": 221,
       "sha256": "40445c848f53c5e20f45197e69f056f9433e86cbe50fc4ff403a736efcfe8aba"
     },
     {
       "path": "docs/research/oss-substrate-assessment.md",
       "relative_path": "docs/research/oss-substrate-assessment.md",
       "bytes": 10046,
-      "lines": 75,
+      "lines": 74,
       "sha256": "6adb523239d851e12980a6e8d3f570f6ad2578ba7257ae36d0fa77089c9328e9"
     },
     {
       "path": "docs/review/safety-privacy-boundary-review.md",
       "relative_path": "docs/review/safety-privacy-boundary-review.md",
       "bytes": 14946,
-      "lines": 169,
+      "lines": 168,
       "sha256": "321dc7a148a389695f4627aaf74d509cc35d963ebfac6b683052de0f79381948"
     },
     {
       "path": "docs/plan/mvp-spike-plan.md",
       "relative_path": "docs/plan/mvp-spike-plan.md",
       "bytes": 6926,
-      "lines": 75,
+      "lines": 74,
       "sha256": "e63063262718bc847ae6dd848be0f3f826516f59db50df9f635b6438a83fd34d"
     },
     {
       "path": "docs/plan/v3-transcript-generation-correction-plan.md",
       "relative_path": "docs/plan/v3-transcript-generation-correction-plan.md",
       "bytes": 19177,
-      "lines": 276,
+      "lines": 275,
       "sha256": "185a8f1dcd7daf419c01c5cabf7ae90be7c873fa307c201e5404e06606a6dc1f"
     },
     {
       "path": "README.md",
       "relative_path": "README.md",
-      "bytes": 4959,
-      "lines": 74,
-      "sha256": "62826f81a3f6a8e21f37bc4f4d1bf1b2c337629a3003b06efd5036832d3b566c"
+      "bytes": 5711,
+      "lines": 84,
+      "sha256": "7b46dc0e0de22a9d88f0503418d7c7d863d975847fcb245372efe87260e3a25c"
     },
     {
       "path": "AGENTS.md",
       "relative_path": "AGENTS.md",
       "bytes": 3862,
-      "lines": 62,
+      "lines": 61,
       "sha256": "395627abc18a7c4f8973dcc5ca8cdb3325cf7caaa2ea6e9623730c08a19a3bc9"
     }
   ]

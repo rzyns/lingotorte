@@ -25,6 +25,17 @@ Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, an
 
 If `npm ci --offline` cannot use the local cache, stop before any networked install unless Janusz explicitly authorizes that package-manager action.
 
+## Local transcription adapters
+
+`packages/local-transcription` contains Node-side seams for the transcript-generation plan:
+
+- `extractAudioWithFfmpeg()` for real mono 16 kHz WAV extraction through ffmpeg.
+- `transcribeWithFasterWhisper()` plus `scripts/faster_whisper_transcribe.py` for local faster-whisper transcription.
+- `alignWordsWithWhisperX()` plus `scripts/whisperx_align.py` for WhisperX-style forced word alignment.
+- `transcribeWithElevenLabsScribe()` for explicit-opt-in ElevenLabs Scribe v2 cloud STT using fake-HTTP tests by default.
+
+The browser UI still uses fake/local lifecycle controls unless a Node/local-service integration layer explicitly invokes these adapters. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
+
 ## Recommended reading order
 
 1. `AGENTS.md` — automatically loaded project context and operating boundaries for future agents.
