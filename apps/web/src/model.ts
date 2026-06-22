@@ -1,4 +1,4 @@
-import { LocalStore } from '../../../packages/storage/src/localStore';
+import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/src/localStore';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
@@ -32,6 +32,7 @@ export const CUE_SYNC_TOLERANCE_MS = 100;
 export const MIN_PLAYBACK_RATE = 0.5;
 export const MAX_PLAYBACK_RATE = 1.5;
 export const PLAYBACK_RATE_STEP = 0.1;
+export const DEFAULT_LOCAL_SERVICE_BASE_URL = 'http://127.0.0.1:5174';
 
 export function createAppModel(): AppModel {
   const policy = defaultProviderPolicy();
@@ -90,7 +91,153 @@ export function createAppModel(): AppModel {
       confirmOverwrite: false,
       lastExport: null,
     },
+    localService: {
+      baseUrl: DEFAULT_LOCAL_SERVICE_BASE_URL,
+      status: 'disconnected',
+      lastMessage: 'Local service not connected.',
+      lastSavedAt: null,
+      autosaveEnabled: false,
+    },
   };
+}
+
+export type LocalServiceSyncResult = Readonly<{
+  ok: boolean;
+  message: string;
+}>;
+
+function normalizeLocalServiceBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim() || DEFAULT_LOCAL_SERVICE_BASE_URL;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function fetchLocalServiceJson(baseUrl: string, path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  const response = await fetch(`${normalizeLocalServiceBaseUrl(baseUrl)}${path}`, {
+    ...init,
+    headers: {
+      ...(init?.headers ?? {}),
+      ...(init?.body ? { 'content-type': 'application/json' } : {}),
+    },
+  });
+  const value: unknown = await response.json();
+  if (!isPlainObject(value)) {
+    throw new TypeError('Local service returned a non-object JSON response.');
+  }
+  if (!response.ok || value.ok === false) {
+    throw new TypeError(typeof value.error === 'string' ? value.error : `Local service request failed with HTTP ${response.status}`);
+  }
+  return value;
+}
+
+function newestFirst<T extends { importedAt?: string; createdAt?: string; lastSeenAt?: string }>(a: T, b: T): number {
+  const aStamp = a.lastSeenAt ?? a.importedAt ?? a.createdAt ?? '';
+  const bStamp = b.lastSeenAt ?? b.importedAt ?? b.createdAt ?? '';
+  return bStamp.localeCompare(aStamp);
+}
+
+function chooseActiveTrack(tracks: SubtitleTrack[], role: 'target' | 'native'): SubtitleTrack | null {
+  const candidates = tracks
+    .filter((track) => track.role === role && track.isActive)
+    .sort((a, b) => b.trackVersion - a.trackVersion || newestFirst(a, b));
+  return candidates[0] ?? null;
+}
+
+function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
+  return Object.values(snapshot.mediaAssets).length > 0
+    || Object.values(snapshot.subtitleTracks).length > 0
+    || Object.values(snapshot.cues).length > 0
+    || Object.values(snapshot.savedItems).length > 0
+    || Object.values(snapshot.savedOccurrences).length > 0
+    || Object.values(snapshot.reviewCards).length > 0
+    || Object.values(snapshot.reviewCardStates).length > 0
+    || Object.values(snapshot.practiceAttempts).length > 0
+    || Object.values(snapshot.transcriptWordTimings).length > 0;
+}
+
+function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
+  const hydrated = model.store.replaceSnapshot(snapshot);
+  const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
+  model.currentMedia = media;
+  if (!media) {
+    model.targetTrackId = null;
+    model.nativeTrackId = null;
+    model.cues = [];
+    model.player.durationMs = 0;
+    model.player.activeCueId = null;
+    return;
+  }
+
+  const tracks = Object.values(hydrated.subtitleTracks).filter((track) => track.mediaId === media.id);
+  const targetTrack = chooseActiveTrack(tracks, 'target');
+  const nativeTrack = chooseActiveTrack(tracks, 'native');
+  model.targetTrackId = targetTrack?.id ?? null;
+  model.nativeTrackId = nativeTrack?.id ?? null;
+  model.cues = targetTrack ? model.store.listCuesForTrack(targetTrack.id) : [];
+  model.player.durationMs = media.durationMs;
+  model.player.currentTimeMs = 0;
+  model.player.activeCueId = model.cues[0]?.id ?? null;
+}
+
+export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
+  const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
+  model.localService.baseUrl = normalizedBaseUrl;
+  try {
+    await fetchLocalServiceJson(normalizedBaseUrl, '/api/state', {
+      method: 'PUT',
+      body: JSON.stringify({ snapshot: model.store.snapshot() }),
+    });
+    const savedAt = new Date().toISOString();
+    model.localService.status = 'connected';
+    model.localService.lastSavedAt = savedAt;
+    model.localService.lastMessage = `Saved local state at ${savedAt}`;
+    return { ok: true, message: model.localService.lastMessage };
+  } catch (error) {
+    model.localService.status = 'error';
+    model.localService.lastMessage = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: model.localService.lastMessage };
+  }
+}
+
+export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
+  const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
+  model.localService.baseUrl = normalizedBaseUrl;
+  model.localService.status = 'connecting';
+  model.localService.lastMessage = 'Connecting to local service...';
+  try {
+    await fetchLocalServiceJson(normalizedBaseUrl, '/api/status');
+    const state = await fetchLocalServiceJson(normalizedBaseUrl, '/api/state');
+    const serviceSnapshot = state.snapshot as LocalStoreSnapshot;
+    if (snapshotHasDurableContent(serviceSnapshot) || !snapshotHasDurableContent(model.store.snapshot())) {
+      projectHydratedSnapshotIntoModel(model, serviceSnapshot);
+      model.localService.lastMessage = 'Connected to local service and loaded durable state.';
+    } else {
+      model.localService.lastMessage = 'Connected to empty local service; current browser state was kept until you save.';
+    }
+    model.localService.status = 'connected';
+    return { ok: true, message: model.localService.lastMessage };
+  } catch (error) {
+    model.localService.status = 'error';
+    model.localService.lastMessage = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: model.localService.lastMessage };
+  }
+}
+
+export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
+  model.localService.baseUrl = baseUrl;
+}
+
+export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void {
+  model.localService.autosaveEnabled = enabled;
+}
+
+export function persistIfLocalServiceAutosaveEnabled(model: AppModel): void {
+  if (model.localService.autosaveEnabled && model.localService.status === 'connected') {
+    void saveModelToLocalService(model);
+  }
 }
 
 export function activeCueAtTime(cues: readonly Cue[], timeMs: number): Cue | null {
@@ -446,6 +593,7 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
     model.player.currentTimeMs = 0;
     model.player.activeCueId = model.cues[0]?.id ?? null;
     model.importError = null;
+    persistIfLocalServiceAutosaveEnabled(model);
   } catch (err) {
     URL.revokeObjectURL(objectUrl);
     throw err;
@@ -661,6 +809,7 @@ async function putTranscriptSegments(model: AppModel, input: {
   model.player.currentTimeMs = 0;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+  persistIfLocalServiceAutosaveEnabled(model);
   return { track, cues };
 }
 
@@ -779,6 +928,7 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
     modelName: result.modelName,
     ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
   });
+  persistIfLocalServiceAutosaveEnabled(model);
   return imported;
 }
 
@@ -824,6 +974,7 @@ export async function generateElevenLabsScribeDraft(
     ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
   });
 
+  persistIfLocalServiceAutosaveEnabled(model);
   return imported;
 }
 
@@ -865,6 +1016,7 @@ export async function createCorrectedTranscriptVersion(
   const correctedTrack = { ...result.track, trackVersion: parent.trackVersion + 1 };
   model.store.putSubtitleTrack(correctedTrack);
   model.targetTrackId = correctedTrack.id;
+  persistIfLocalServiceAutosaveEnabled(model);
   return { track: correctedTrack, cues: result.cues };
 }
 
@@ -878,6 +1030,7 @@ export function approveTranscriptTrack(model: AppModel, trackId: string, approve
   };
   const approved = { ...track, transcriptStatus: 'approved' as const, qualityReport };
   model.store.putSubtitleTrack(approved);
+  persistIfLocalServiceAutosaveEnabled(model);
   return approved;
 }
 
@@ -957,6 +1110,7 @@ export async function importTargetOnlyFixture(model: AppModel, mediaPath: string
   model.player.durationMs = probe.durationMs;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+  persistIfLocalServiceAutosaveEnabled(model);
 }
 
 export async function importFixtureMediaAndSubtitles(
@@ -1004,6 +1158,7 @@ export async function importFixtureMediaAndSubtitles(
   model.player.durationMs = probe.durationMs;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+  persistIfLocalServiceAutosaveEnabled(model);
 }
 
 export async function saveSelection(model: AppModel): Promise<SavedItem | null> {
@@ -1035,6 +1190,7 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
     endMs: cue.endMs,
     sourceContext,
   });
+  persistIfLocalServiceAutosaveEnabled(model);
   return result.item;
 }
 
@@ -1062,6 +1218,7 @@ export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<Sa
     endMs: cue.endMs,
     sourceContext,
   });
+  persistIfLocalServiceAutosaveEnabled(model);
   return result.item;
 }
 
@@ -1089,6 +1246,7 @@ export function saveSelectedPhraseFromCue(model: AppModel, cue: Cue, text: strin
     endMs: cue.endMs,
     sourceContext,
   });
+  persistIfLocalServiceAutosaveEnabled(model);
   return result.item;
 }
 
@@ -1098,12 +1256,14 @@ export function createReviewCardForSavedItem(
   occurrence: SavedOccurrence,
   cardType: 'recognition' | 'production' = 'recognition',
 ): ReviewCard {
-  return model.reviewService.createCard({
+  const card = model.reviewService.createCard({
     savedItem: item,
     savedOccurrence: occurrence,
     cardType,
     promptTemplate: cardType === 'recognition' ? `Recognize: ${item.displayText}` : `Produce: ${item.meaning ?? item.displayText}`,
   }).card;
+  persistIfLocalServiceAutosaveEnabled(model);
+  return card;
 }
 
 export function listReviewBuckets(model: AppModel, asOf: Date, bucketConfig?: ReviewBucketConfig): {
@@ -1155,6 +1315,7 @@ export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard
 
 export function submitReviewRating(model: AppModel, cardId: string, rating: Rating, reviewedAt: Date): ReviewCardState {
   const { state } = model.reviewService.submitReview(cardId, rating, reviewedAt);
+  persistIfLocalServiceAutosaveEnabled(model);
   return state;
 }
 
@@ -1211,6 +1372,7 @@ export function submitPracticeAttempt(model: AppModel, answer: string, reviewedA
   model.practice.lastAttemptResult = { result, correct: result === 'pass' || result === 'pass-with-hesitation' };
   model.practice.pendingAnswer = '';
   model.review.activeCardId = null;
+  persistIfLocalServiceAutosaveEnabled(model);
   return attempt;
 }
 
@@ -1280,6 +1442,7 @@ export function confirmRestore(model: AppModel): void {
   model.exportImport.acknowledgedWarnings = [];
   model.exportImport.confirmOverwrite = false;
   model.exportImport.lastExport = null;
+  persistIfLocalServiceAutosaveEnabled(model);
 }
 
 export function setExportImportAcknowledgedWarning(model: AppModel, kind: import('@lingotorte/domain').PrivacyWarningKind, acknowledged: boolean): void {

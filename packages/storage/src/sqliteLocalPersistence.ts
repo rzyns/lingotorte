@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore';
+import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
 
 const CURRENT_SCHEMA_VERSION = 1;
 const SNAPSHOT_KEY = 'default';
@@ -14,7 +14,10 @@ export type SqliteLocalPersistenceStatus = Readonly<{
 }>;
 
 export class SqliteLocalPersistence {
-  private constructor(private readonly db: DatabaseSync) {
+  private readonly db: DatabaseSync;
+
+  private constructor(db: DatabaseSync) {
+    this.db = db;
     this.initialize();
   }
 

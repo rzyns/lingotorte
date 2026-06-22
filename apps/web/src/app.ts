@@ -40,6 +40,10 @@ import {
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
   setExportImportError,
+  connectLocalService,
+  saveModelToLocalService,
+  setLocalServiceAutosave,
+  setLocalServiceBaseUrl,
   approveTranscriptTrack,
   createCorrectedTranscriptVersion,
   generateLocalAsrDraft,
@@ -1721,6 +1725,75 @@ function renderSettingsView(model: AppModel): HTMLElement {
     list.appendChild(li);
   }
   section.appendChild(list);
+
+  const servicePanel = document.createElement('div');
+  servicePanel.className = 'local-service-panel';
+  const serviceHeading = document.createElement('h3');
+  serviceHeading.textContent = 'Local service / SQLite durable state';
+  servicePanel.appendChild(serviceHeading);
+
+  const serviceDescription = document.createElement('p');
+  serviceDescription.textContent = 'Connect to the loopback-only local service when you want SQLite-backed state, local transcription jobs, and scratch-artifact cleanup. This is explicit so default browser tests make no network calls.';
+  servicePanel.appendChild(serviceDescription);
+
+  const urlLabel = document.createElement('label');
+  urlLabel.textContent = 'Local service URL';
+  urlLabel.htmlFor = 'local-service-url';
+  const urlInput = document.createElement('input');
+  urlInput.id = 'local-service-url';
+  urlInput.name = 'local-service-url';
+  urlInput.type = 'url';
+  urlInput.value = model.localService.baseUrl;
+  urlInput.addEventListener('input', () => {
+    setLocalServiceBaseUrl(model, urlInput.value);
+  });
+  urlLabel.appendChild(urlInput);
+  servicePanel.appendChild(urlLabel);
+
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'button-row';
+  const connectButton = document.createElement('button');
+  connectButton.className = 'btn-primary';
+  connectButton.textContent = 'Connect local service';
+  connectButton.disabled = model.localService.status === 'connecting';
+  connectButton.addEventListener('click', () => {
+    void connectLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
+    rerenderApp(model);
+  });
+  buttonRow.appendChild(connectButton);
+
+  const saveButton = document.createElement('button');
+  saveButton.className = 'btn-secondary';
+  saveButton.textContent = 'Save state now';
+  saveButton.addEventListener('click', () => {
+    void saveModelToLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
+  });
+  buttonRow.appendChild(saveButton);
+  servicePanel.appendChild(buttonRow);
+
+  const autosaveLabel = document.createElement('label');
+  autosaveLabel.htmlFor = 'local-service-autosave';
+  const autosaveCheckbox = document.createElement('input');
+  autosaveCheckbox.type = 'checkbox';
+  autosaveCheckbox.id = 'local-service-autosave';
+  autosaveCheckbox.name = 'local-service-autosave';
+  autosaveCheckbox.checked = model.localService.autosaveEnabled;
+  autosaveCheckbox.addEventListener('change', () => {
+    setLocalServiceAutosave(model, autosaveCheckbox.checked);
+    rerenderApp(model);
+  });
+  autosaveLabel.appendChild(autosaveCheckbox);
+  autosaveLabel.append(' Autosave to local service after supported study-state changes');
+  servicePanel.appendChild(autosaveLabel);
+
+  const serviceStatus = document.createElement('div');
+  serviceStatus.className = `status-banner ${model.localService.status === 'error' ? 'error' : model.localService.status === 'connected' ? 'success' : ''}`;
+  serviceStatus.setAttribute('role', 'status');
+  serviceStatus.textContent = model.localService.status === 'connected'
+    ? `Connected to local service. SQLite durable state is available.${model.localService.lastSavedAt ? ` Last saved: ${model.localService.lastSavedAt}` : ''}`
+    : model.localService.lastMessage ?? 'Local service not connected.';
+  servicePanel.appendChild(serviceStatus);
+  section.appendChild(servicePanel);
 
   const status = document.createElement('div');
   status.className = 'status-banner';

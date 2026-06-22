@@ -18,10 +18,11 @@ npm run build
 npm run typecheck
 npm run scan:privacy
 python3 validate_final_bundle.py
-npm run dev -- --host 127.0.0.1
+npm run dev:local-service      # terminal 1, loopback SQLite service on 127.0.0.1:5174
+npm run dev -- --host 127.0.0.1 # terminal 2, Vite web UI
 ```
 
-Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** or **Library → Import local media** with an owned local media file plus `.srt` subtitles to exercise the local player/transcript/saved/review/practice/export flows. Browser imports use object URLs and `File.text()` locally; they do not upload files. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server reads for app assets are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
+Then open the loopback URL printed by Vite, usually `http://127.0.0.1:5173/`, and use **Library → Load synthetic fixture** or **Library → Import local media** with an owned local media file plus `.srt` subtitles to exercise the local player/transcript/saved/review/practice/export flows. Browser imports use object URLs and `File.text()` locally; they do not upload files. To persist learner/transcript state across browser reload/restart, keep `npm run dev:local-service` running, open **Settings**, connect to `http://127.0.0.1:5174`, and click **Save state now** or enable autosave. “Local-only” runtime behavior means no public-internet writes or provider calls without explicit opt-in; loopback/local dev-server/service reads and writes are expected during development. See `docs/dev/local-runbook.md` for the full local runbook and browser smoke checklist.
 
 If `npm ci --offline` cannot use the local cache, stop before any networked install unless Janusz explicitly authorizes that package-manager action.
 

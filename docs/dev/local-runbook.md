@@ -49,6 +49,32 @@ git diff --check
 
 For V1 acceptance also run a conservative tracked-file secret scan and a committed-range whitespace check after committing. If `validate_final_bundle.py` is run while generated dependency docs are present under `node_modules/`, remove generated local artifacts first or run validation in a clean repo-only state.
 
+## Local services
+
+For durable SQLite-backed learner/transcript state, start the loopback local service in a separate terminal before or after starting Vite:
+
+```bash
+npm run dev:local-service
+```
+
+Default service behavior:
+
+- binds only to `127.0.0.1:5174` unless loopback env vars override it;
+- stores the SQLite snapshot at `$HOME/.local/share/lingotorte/state.db` by default;
+- keeps scratch/model-cache directories under `$HOME/.local/share/lingotorte/`;
+- redacts local filesystem paths from `/api/status` and startup receipts;
+- refuses non-loopback hosts;
+- keeps online providers disabled unless `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` is explicitly set for a consented run.
+
+Useful checks:
+
+```bash
+curl -sS http://127.0.0.1:5174/api/health
+curl -sS http://127.0.0.1:5174/api/status
+```
+
+In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click **Connect local service**, then click **Save state now** or enable autosave. Connecting to a fresh empty service does not clobber unsaved browser state; save explicitly once you want the current browser state to become the durable SQLite snapshot.
+
 ## Local dev server
 
 Start the app on loopback only:
@@ -82,7 +108,7 @@ Use WSL Edge DevTools when available. Regular browser tooling is an acceptable f
 11. Reveal/rate the due card and verify review bucket/status changes locally.
 12. Open **Practice**, submit or skip a local attempt, and verify feedback appears.
 13. Open **Export / Import**, click **Generate local export**, and verify the privacy-warning summary appears.
-14. Open **Settings** and verify provider/sync/Anki/ASR states remain disabled.
+14. Open **Settings**, verify provider/sync/Anki/ASR states remain disabled, connect to the loopback local service if it is running, and save state once to verify the SQLite service path.
 15. Inspect console and network requests after navigation and interactions.
 
 For a local-file smoke, return to **Library**, choose an owned `.mp4`/`.webm`/`.mkv`/`.mov`/audio media file, choose a target `.srt`, optionally choose a native `.srt`, then click **Import local media**. Verify the player uses a `blob:` media URL, the transcript shows the selected target cue text, the optional native cue text is displayed when provided, and replacing imported media revokes the previous object URL without uploading anything.
@@ -131,7 +157,7 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 ## Known V1/V4 limitations
 
 - The app is a local browser/Vite baseline, not a packaged desktop/mobile product.
-- The browser UI exposes local file pickers for owned media plus target/native `.srt` subtitles, but those imports are still browser-session object URLs unless later persisted through the local service/storage layer.
+- Browser local-file imports persist learner/transcript metadata through the local service, but browser `blob:` media handles themselves are session-scoped; if a durable snapshot is reloaded after restart, reselect the owned local media file before playback until a user-chosen file-handle/native packaging workflow exists.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.

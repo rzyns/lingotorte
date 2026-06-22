@@ -79,6 +79,13 @@ export type AppModel = {
     confirmOverwrite: boolean;
     lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number } | null;
   };
+  localService: {
+    baseUrl: string;
+    status: 'disconnected' | 'connecting' | 'connected' | 'error';
+    lastMessage: string | null;
+    lastSavedAt: string | null;
+    autosaveEnabled: boolean;
+  };
 };
 
 export type ReviewBucketName = 'newCards' | 'learning' | 'review' | 'relearning' | 'mastered';
