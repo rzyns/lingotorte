@@ -34,8 +34,8 @@ export type LocalStoreSnapshot = Readonly<{
   importJobEvents: ImportJobEvent[];
 }>;
 
-export class LocalStore {
-  private readonly state: LocalStoreSnapshot = {
+export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
+  return {
     mediaAssets: {},
     mediaObservations: [],
     subtitleTracks: {},
@@ -50,23 +50,71 @@ export class LocalStore {
     importJobs: {},
     importJobEvents: [],
   };
+}
+
+function cloneSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
+  return {
+    mediaAssets: { ...snapshot.mediaAssets },
+    mediaObservations: [...snapshot.mediaObservations],
+    subtitleTracks: { ...snapshot.subtitleTracks },
+    cues: { ...snapshot.cues },
+    transcriptWordTimings: { ...snapshot.transcriptWordTimings },
+    savedItems: { ...snapshot.savedItems },
+    savedOccurrences: { ...snapshot.savedOccurrences },
+    reviewCards: { ...snapshot.reviewCards },
+    reviewCardStates: { ...snapshot.reviewCardStates },
+    reviewEvents: [...snapshot.reviewEvents],
+    practiceAttempts: [...snapshot.practiceAttempts],
+    importJobs: { ...snapshot.importJobs },
+    importJobEvents: [...snapshot.importJobEvents],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function recordOrEmpty<T>(value: unknown): Record<UUID, T> {
+  return isRecord(value) ? { ...(value as Record<UUID, T>) } : {};
+}
+
+function arrayOrEmpty<T>(value: unknown): T[] {
+  return Array.isArray(value) ? [...(value as T[])] : [];
+}
+
+export function normalizeLocalStoreSnapshot(value: unknown): LocalStoreSnapshot {
+  if (!isRecord(value)) return createEmptyLocalStoreSnapshot();
+  return {
+    mediaAssets: recordOrEmpty<MediaAsset>(value.mediaAssets),
+    mediaObservations: arrayOrEmpty<MediaFileObservation>(value.mediaObservations),
+    subtitleTracks: recordOrEmpty<SubtitleTrack>(value.subtitleTracks),
+    cues: recordOrEmpty<Cue>(value.cues),
+    transcriptWordTimings: recordOrEmpty<TranscriptWordTiming>(value.transcriptWordTimings),
+    savedItems: recordOrEmpty<SavedItem>(value.savedItems),
+    savedOccurrences: recordOrEmpty<SavedOccurrence>(value.savedOccurrences),
+    reviewCards: recordOrEmpty<ReviewCard>(value.reviewCards),
+    reviewCardStates: recordOrEmpty<ReviewCardState>(value.reviewCardStates),
+    reviewEvents: arrayOrEmpty<ReviewEvent>(value.reviewEvents),
+    practiceAttempts: arrayOrEmpty<PracticeAttempt>(value.practiceAttempts),
+    importJobs: recordOrEmpty<ImportJob>(value.importJobs),
+    importJobEvents: arrayOrEmpty<ImportJobEvent>(value.importJobEvents),
+  };
+}
+
+export class LocalStore {
+  private state: LocalStoreSnapshot;
+
+  constructor(initialSnapshot: LocalStoreSnapshot = createEmptyLocalStoreSnapshot()) {
+    this.state = cloneSnapshot(normalizeLocalStoreSnapshot(initialSnapshot));
+  }
+
+  replaceSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
+    this.state = cloneSnapshot(normalizeLocalStoreSnapshot(snapshot));
+    return this.clone();
+  }
 
   private clone(): LocalStoreSnapshot {
-    return {
-      mediaAssets: { ...this.state.mediaAssets },
-      mediaObservations: [...this.state.mediaObservations],
-      subtitleTracks: { ...this.state.subtitleTracks },
-      cues: { ...this.state.cues },
-      transcriptWordTimings: { ...this.state.transcriptWordTimings },
-      savedItems: { ...this.state.savedItems },
-      savedOccurrences: { ...this.state.savedOccurrences },
-      reviewCards: { ...this.state.reviewCards },
-      reviewCardStates: { ...this.state.reviewCardStates },
-      reviewEvents: [...this.state.reviewEvents],
-      practiceAttempts: [...this.state.practiceAttempts],
-      importJobs: { ...this.state.importJobs },
-      importJobEvents: [...this.state.importJobEvents],
-    };
+    return cloneSnapshot(this.state);
   }
 
   snapshot(): LocalStoreSnapshot {
