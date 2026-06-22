@@ -359,6 +359,7 @@ Provider classes:
 | Phrase translation | Local model or disabled | Online translation sends phrase/cue context. |
 | Sentence explanation | Local LLM or disabled | Online LLM sends sentence and possibly surrounding context/notes. |
 | ASR/transcription | Local faster-whisper/whisper.cpp-style pipeline | Online ASR sends audio/media snippets. |
+| YouTube caption import | Disabled unless user initiates URL import | Public caption reads send the URL/video ID to YouTube or transcript tooling; downloaded media remains separately gated. |
 | Pronunciation scoring | Local ASR/alignment or disabled | Online scoring sends learner voice recordings. |
 | Backup/sync | Manual local backup | Cloud sync may upload DB, cue text, notes, paths, and exported media. |
 

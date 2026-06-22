@@ -52,7 +52,8 @@ Recommended final-bundle reading order:
 9. `docs/product/srs-and-practice-design.md` — FSRS, review state, practice modes, UX flow, tests.
 10. `docs/research/public-product-cartography.md`, `docs/research/live-ui-inventory-expanded.md`, `docs/research/oss-substrate-assessment.md` — research backing.
 11. `docs/plan/mvp-spike-plan.md` — concrete MVP spikes with inputs, outputs, commands, and gates.
-12. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
+12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-V2 plan for YouTube caption candidate import, local ASR transcript generation, correction/approval, and transcript provenance.
+13. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
 
 ## Source provenance
 
@@ -69,4 +70,4 @@ Screenshots captured during the live UI inspection remain as local evidence file
 
 ## Boundary reminder
 
-Use Lingopie as a **reference UX/product**, not as a source of proprietary implementation or content. Public documentation URLs in this repo are planning evidence, not runtime dependencies. Do not extract private account data, tokens, raw subtitle/media assets, or proprietary API payloads. Future work should target local/owned media and explicit subtitle/transcript inputs.
+Use Lingopie as a **reference UX/product**, not as a source of proprietary implementation or content. Public documentation URLs in this repo are planning evidence, not runtime dependencies. Do not extract private account data, tokens, raw subtitle/media assets, or proprietary API payloads. Future work should target local/owned media, explicit subtitle/transcript inputs, generated local transcripts, or user-approved/corrected caption tracks.

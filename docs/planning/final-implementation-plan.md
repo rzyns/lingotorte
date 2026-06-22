@@ -224,8 +224,9 @@ See [Feature Build Roadmap](./feature-build-roadmap.md) for feature-by-feature d
 | P4 | Saved occurrences | Save vocab/phrase/sentence; My Vocab/My Sentences | Source context preserved and duplicate handling tested. |
 | P5 | FSRS review | Cards/events/due queue/video-backed prompts | FSRS verified; review events append-only; schedule deterministic. |
 | P6 | Practice/export | Practice modes; local Anki/export | Local distractors/scoring; export warnings; no external mutation. |
-| P7 | ASR/alignment/shadowing | Local spikes and quality reports | Measured feasibility; voice/media privacy gates. |
-| P8 | Progress/backup/sync | Dashboard, backup/restore, optional sync design | Backup roundtrip; media-copy/sync opt-in. |
+| P7 | Transcript generation/correction | YouTube/provider caption candidates, local ASR drafts, correction UI, approved transcript gate | Provider/ASR output remains draft until corrected/approved; no-network disabled state covered. |
+| P8 | ASR/alignment/shadowing | Local spikes and quality reports | Measured feasibility; voice/media privacy gates. |
+| P9 | Progress/backup/sync | Dashboard, backup/restore, optional sync design | Backup roundtrip; media-copy/sync opt-in. |
 
 ## Unresolved decisions and safe defaults
 
@@ -269,9 +270,10 @@ MVP is done only when a safe local fixture demonstrates:
 5. FSRS-backed review card and append-only review event;
 6. My Vocab/My Sentences views over local saved data;
 7. no network calls with providers disabled;
-8. no Lingopie runtime dependency, no proprietary fixtures, no account mutation;
-9. backup/export privacy warnings for any data leaving the app boundary.
+8. draft provider/ASR captions cannot become the default study source until corrected/approved;
+9. no Lingopie runtime dependency, no proprietary fixtures, no account mutation;
+10. backup/export privacy warnings for any data leaving the app boundary.
 
 ## Narrow recommendation
 
-Proceed to a future implementation DAG only after Janusz accepts or revises the safe defaults above. The first DAG should be P0 and P1 only: skeleton, fixtures, no-network harness, dependency provenance workflow, and media/subtitle/cue ingestion. Do not start ASR, online providers, AnkiConnect, live Lingopie inspection, or sync until their gates are explicitly opened.
+Proceed to a future implementation DAG only after Janusz accepts or revises the safe defaults above. The first DAG should be P0 and P1 only: skeleton, fixtures, no-network harness, dependency provenance workflow, and media/subtitle/cue ingestion. Do not start YouTube caption import, ASR, online providers, AnkiConnect, live Lingopie inspection, or sync until their gates are explicitly opened.

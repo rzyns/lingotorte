@@ -55,8 +55,9 @@ Fixture rules:
 | P4 saved objects | Saved word/phrase/sentence preserves media/cue/token/time context and handles duplicates. |
 | P5 FSRS | Review events update card state deterministically through a verified FSRS library. |
 | P6 practice/export | Practice modes grade correctly from local data; Anki/export warns about privacy and does not mutate external apps by default. |
-| P7 optional ASR/shadowing | Local-only spike reports quality/latency limits; microphone/audio lifecycle is privacy-safe. |
-| P8 backup/sync | Backup/restore roundtrip passes; media-copy/sync remains opt-in. |
+| P7 transcript generation/correction | YouTube/provider captions and local ASR outputs enter as draft tracks with provenance, quality warnings, correction UI, and explicit approval before study use. |
+| P8 optional ASR/shadowing | Local-only spike reports quality/latency limits; microphone/audio lifecycle is privacy-safe. |
+| P9 backup/sync | Backup/restore roundtrip passes; media-copy/sync remains opt-in. |
 
 ## Feature acceptance checklist
 
@@ -64,6 +65,8 @@ Fixture rules:
 |---|---|---|---|
 | Media import | Owned local video fixture | User imports media | App stores path/fingerprint/duration; no media copy unless configured. |
 | Subtitle import | Target/native subtitle fixtures | User selects tracks | Cues are parsed with ids/start/end/text/language/role. |
+| YouTube caption candidate | User provides a public/authorized YouTube URL with captions | User imports captions through an explicitly enabled provider action | Draft caption track is labeled with provenance and warnings; it cannot become default study source until corrected/approved. |
+| Transcript correction | Draft provider/ASR caption track exists | User edits cue text/timing and approves | A new versioned approved track is created; raw provider/ASR output remains immutable provenance. |
 | Cue alignment | Target/native cues with overlapping times | Alignment runs | Target cues link to best native cue or explicit no-match/ambiguous state. |
 | Player playback | Imported media | User plays/seeks | Video time updates transcript/caption state. |
 | Dual subtitles | Current cue has target/native pair | Video reaches cue time | Target and native lines render; missing native degrades gracefully. |
@@ -99,6 +102,7 @@ Exact commands depend on the future repo skeleton, but downstream implementation
 | Click-to-token lookup | Token fixture | `npm test -- token-lookup` | Token click returns typed occurrence + local lookup/unavailable state. | Not done if online provider is required. |
 | Saved occurrence + FSRS card | Saved item fixture | `npm test -- saved-item-review-card` | Saved item creates source-backed card and review event updates schedule. | Not done if source cue/time is lost. |
 | Generated subtitles/alignment | Owned audio/video fixture | `uv run pytest tests/asr_alignment` or chosen local command | Generated cues have timestamps and quality report. | Spike-only until latency/quality/privacy are measured. |
+| YouTube caption candidate + correction | User-provided public/authorized YouTube URL with available captions | fake-provider unit tests; `npm run test:no-network`; live retrieval only as approval-gated manual smoke | Captions import as draft tracks with provenance/warnings and require correction/approval before default study use. | Not done if raw provider captions become trusted learner state, credentials/cookies are used, or media download is implicit. |
 | Pronunciation/shadowing | Synthetic/owned prompt audio and test recording | `uv run pytest tests/shadowing_privacy` or chosen local command | Recording lifecycle and local ASR comparison work; temp audio deletion verified. | Optional; not MVP blocker. |
 
 ## No-network and no-account-mutation pattern

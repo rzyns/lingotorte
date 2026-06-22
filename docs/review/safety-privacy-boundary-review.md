@@ -29,6 +29,8 @@ This document repairs the independent challenge review's safety/privacy/legal bl
 | Save words, submit reviews, record pronunciation, or change account settings in Lingopie | Disallowed unless explicitly authorized | Prefer throwaway/test account if ever needed. |
 | Download/capture/decrypt/proxy DRM or protected streams | Disallowed | Out of scope. |
 | Use local media/subtitle fixtures | Allowed | Fixtures must be owned, synthetic, or explicitly licensed. |
+| Import YouTube-provided captions/transcripts | Gated public read | User-initiated caption metadata/text retrieval may be allowed for public/authorized videos, but imported captions start as draft/untrusted tracks and must be corrected/approved before default study use. |
+| Download YouTube or other online video media | Gated | Allowed only for owned, explicitly permitted, public-domain, or otherwise licensably safe media; no DRM/circumvention, no credential/cookie scraping, and not the default caption-import path. |
 | Use loopback/local dev-server reads | Allowed | Local browser development may read app assets over `127.0.0.1`/`localhost`, `data:`, and `blob:` URLs. |
 | Write to public-internet services | Gated | No public-internet writes, provider calls, public sharing, or account mutations without explicit opt-in/approval. |
 | Use online translation/LLM/ASR/dictionary providers | Disabled by default; opt-in only | Requires data-class disclosure and no-network tests for disabled state. |
@@ -41,7 +43,7 @@ This document repairs the independent challenge review's safety/privacy/legal bl
 | Data class | Examples | Default storage | External sharing default | Special notes |
 |---|---|---|---|---|
 | Media file references | `/path/video.mkv`, hash, duration | SQLite + local path reference | Never | Do not copy media into backups unless enabled. |
-| Subtitle/cue text | target/native cues, generated transcripts | SQLite/local cache | Never | May contain copyrighted/private text; redact from logs by default. |
+| Subtitle/cue text | target/native cues, generated transcripts, provider captions, corrected tracks | SQLite/local cache | Never | May contain copyrighted/private text; provider/ASR captions are draft until corrected/approved; redact from logs by default. |
 | Token/language analysis | tokens, lemma, POS, morphology | Recomputable local tables | Never unless adapter opted in | Adapter payloads must be versioned. |
 | Saved learning objects | saved word/phrase/sentence plus cue/time/media context | Local learner-state tables | Never | Occurrence-first; preserve source context. |
 | Review history | FSRS state, ratings, due dates, lapses | Local append-only review events | Never | Sensitive learning profile. |
@@ -72,6 +74,7 @@ Provider classes:
 | Phrase translation | Local model or disabled | Online translation sends phrase/cue context. |
 | Sentence explanation | Local LLM or disabled | Online LLM sends sentence and possibly surrounding context/notes. |
 | ASR/transcription | Local faster-whisper/whisper.cpp-style pipeline | Online ASR sends audio/media snippets. |
+| YouTube caption import | Disabled unless user initiates URL import | Public caption reads send the URL/video ID to YouTube or transcript tooling; downloaded media remains separately gated. |
 | Pronunciation scoring | Local ASR/alignment or disabled | Online scoring sends learner voice recordings. |
 | Backup/sync | Manual local backup | Cloud sync may upload DB, cue text, notes, paths, and exported media. |
 
@@ -127,6 +130,7 @@ Every implementation feature that touches privacy-sensitive boundaries should in
 | No-network default | With providers disabled, run feature tests under mocked/blocked network and verify no HTTP requests. |
 | No Lingopie runtime dependency | Runtime code must not contact or encode Lingopie URLs except in documentation/reference tooling. |
 | Local fixture use | Tests use synthetic/owned fixture media/subtitles, not Lingopie media/subtitles/screenshots. |
+| Transcript approval | Provider captions and ASR outputs must be marked draft/untrusted until corrected or explicitly approved for study use. |
 | Logging redaction | Logs include ids/status/error codes, not raw cue text/media paths/voice snippets by default. |
 | Export warnings | Any export containing text/media/review history includes local/privacy warning. |
 | Account mutation | No test or app code mutates Lingopie or any external account. |

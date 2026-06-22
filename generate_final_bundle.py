@@ -39,7 +39,8 @@ bundle_links = """- [Final synthesis](../final/war-room-final-synthesis.md)
 - [Live UI inventory expanded](../research/live-ui-inventory-expanded.md)
 - [OSS substrate assessment](../research/oss-substrate-assessment.md)
 - [Safety/privacy boundary review](../review/safety-privacy-boundary-review.md)
-- [MVP spike plan](../plan/mvp-spike-plan.md)"""
+- [MVP spike plan](../plan/mvp-spike-plan.md)
+- [Transcript generation/correction plan](../plan/v3-transcript-generation-correction-plan.md)"""
 
 write('docs/final/war-room-final-synthesis.md', f"""# Lingotorte War Room Final Synthesis
 
@@ -120,7 +121,7 @@ Status: implementation-facing plan for future autonomous agents. Planning only; 
 
 ## Roadmap summary
 
-{final_plan[final_plan.index('## Implementation phases'):final_plan.index('## Unresolved decisions and safe defaults')]}
+{final_plan[final_plan.index('## Implementation phases'):final_plan.index('## Unresolved decisions and safe defaults')].replace('(./feature-build-roadmap.md)', '(../planning/feature-build-roadmap.md)')}
 
 ## MVP-0 spikes, MVP-1, V1, V2
 
@@ -565,8 +566,6 @@ write('docs/plan/mvp-spike-plan.md', f"""# MVP Spike Plan
 
 Status: concrete spike plan for the future implementation repo. Planning only; commands are expected shapes to instantiate once the repo skeleton exists.
 
-## Fixture rules
-
 {testing[testing.index('## Fixture plan'):testing.index('## Acceptance gates by milestone')]}
 
 ## Concrete MVP-0 spikes
@@ -578,13 +577,10 @@ Status: concrete spike plan for the future implementation repo. Planning only; c
 | Click-to-token lookup | `fixtures/expected/tokens.polish.sample.json` plus target cue | Token lookup panel with lemma/POS/morph/meaning or unavailable state | `npm test -- token-lookup`; `npm run test:no-network` | Token offsets round-trip; online provider disabled causes zero calls; manual save still works | Requires online provider or loses cue/token source context |
 | Saved occurrence + FSRS card | Saved word/phrase/sentence fixture and review-card fixture | `saved_item`, `saved_occurrence`, `review_card`, append-only `review_event` | `npm test -- saved-item-review-card` | Card points to source media/cue/time/token span; Again/Hard/Good/Easy schedule deterministically | Review event rewrites history or source cue/time is lost |
 | Generated subtitles/alignment | Owned short audio/video fixture without subtitles | Generated `SubtitleTrack` labeled `generated`, timestamped cues, quality report | `uv run pytest tests/asr_alignment` or chosen local command; `npm run test:no-network` | Local engine only; confidence/warnings visible; discarded output does not affect saved state | Online ASR is required or quality/latency is not measured |
+| YouTube caption candidate + correction | User-provided public YouTube URL with available captions; no media download by default | Draft `SubtitleTrack` labeled `youtube-caption`/`youtube-auto-caption`, provenance, quality warnings, correction/approval state | fake-provider unit tests; `npm run test:no-network`; live retrieval only as an approval-gated manual smoke | Captions are imported as drafts, provider/auto-caption inaccuracies are visible, and approved/corrected track is required before default study use | Raw provider captions become trusted learner state automatically, credentials/cookies are used, or media is downloaded without rights/permission gate |
 | Optional pronunciation/shadowing | Synthetic/owned prompt audio and test recording | Recording lifecycle, local ASR/alignment comparison, deletion check | `uv run pytest tests/shadowing_privacy` or chosen local command | Microphone/recording gate explicit; temp audio deleted unless saved; no online scoring | Voice leaves machine by default or temp recordings persist unexpectedly |
 
-## Acceptance gates by milestone
-
 {testing[testing.index('## Acceptance gates by milestone'):testing.index('## Feature acceptance checklist')]}
-
-## No-network and no-account-mutation pattern
 
 {testing[testing.index('## No-network and no-account-mutation pattern'):testing.index('## Regression ledger for challenge-review fixes')]}
 """)
@@ -608,7 +604,8 @@ Recommended final-bundle reading order:
 9. `docs/product/srs-and-practice-design.md` — FSRS, review state, practice modes, UX flow, tests.
 10. `docs/research/public-product-cartography.md`, `docs/research/live-ui-inventory-expanded.md`, `docs/research/oss-substrate-assessment.md` — research backing.
 11. `docs/plan/mvp-spike-plan.md` — concrete MVP spikes with inputs, outputs, commands, and gates.
-12. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
+12. `docs/plan/v3-transcript-generation-correction-plan.md` — post-V2 plan for YouTube caption candidate import, local ASR transcript generation, correction/approval, and transcript provenance.
+13. `docs/planning/documentation-index.md` — retained parent crosswalk and previous synthesis index.
 
 ## Source provenance''', readme)
 write('README.md', new_readme)
@@ -628,13 +625,14 @@ Read these in order before planning, deep-diving, or launching implementation wo
 8. `docs/review/safety-privacy-boundary-review.md` — authoritative safety/privacy/legal gate.
 9. `docs/spec/feature-implementation-playbook.md` — feature-by-feature implementation playbook.
 10. `docs/plan/mvp-spike-plan.md` — concrete MVP spike inputs, outputs, commands, and gates.
+11. `docs/plan/v3-transcript-generation-correction-plan.md` — YouTube caption candidate, local ASR, transcript correction, and approved-track plan.
 
 ## Working hypothesis''', agents)
 write('AGENTS.md', new_agents)
 
 # artifact manifest
 paths = [
-'docs/final/war-room-final-synthesis.md','docs/final/lingotorte-implementation-plan.md','docs/spec/lingopie-behavior-reference.md','docs/spec/feature-implementation-playbook.md','docs/architecture/local-first-architecture.md','docs/architecture/data-model-and-storage.md','docs/architecture/language-adapter-design.md','docs/product/srs-and-practice-design.md','docs/research/public-product-cartography.md','docs/research/live-ui-inventory-expanded.md','docs/research/oss-substrate-assessment.md','docs/review/safety-privacy-boundary-review.md','docs/plan/mvp-spike-plan.md','README.md','AGENTS.md']
+'docs/final/war-room-final-synthesis.md','docs/final/lingotorte-implementation-plan.md','docs/spec/lingopie-behavior-reference.md','docs/spec/feature-implementation-playbook.md','docs/architecture/local-first-architecture.md','docs/architecture/data-model-and-storage.md','docs/architecture/language-adapter-design.md','docs/product/srs-and-practice-design.md','docs/research/public-product-cartography.md','docs/research/live-ui-inventory-expanded.md','docs/research/oss-substrate-assessment.md','docs/review/safety-privacy-boundary-review.md','docs/plan/mvp-spike-plan.md','docs/plan/v3-transcript-generation-correction-plan.md','README.md','AGENTS.md']
 manifest = {'generated_by':'generate_final_bundle.py','status':'planning-docs-only','artifacts':[]}
 for rel in paths:
     p=root/rel

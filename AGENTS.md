@@ -34,6 +34,7 @@ Read these in order before planning, deep-diving, or launching implementation wo
 8. `docs/review/safety-privacy-boundary-review.md` — authoritative safety/privacy/legal gate.
 9. `docs/spec/feature-implementation-playbook.md` — feature-by-feature implementation playbook.
 10. `docs/plan/mvp-spike-plan.md` — concrete MVP spike inputs, outputs, commands, and gates.
+11. `docs/plan/v3-transcript-generation-correction-plan.md` — YouTube caption candidate, local ASR, transcript correction, and approved-track plan.
 
 ## Working hypothesis
 

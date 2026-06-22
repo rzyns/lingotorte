@@ -142,7 +142,7 @@ sequenceDiagram
 | Data class | Examples | Default storage | External sharing default | Special notes |
 |---|---|---|---|---|
 | Media file references | `/path/video.mkv`, hash, duration | SQLite + local path reference | Never | Do not copy media into backups unless enabled. |
-| Subtitle/cue text | target/native cues, generated transcripts | SQLite/local cache | Never | May contain copyrighted/private text; redact from logs by default. |
+| Subtitle/cue text | target/native cues, generated transcripts, provider captions, corrected tracks | SQLite/local cache | Never | May contain copyrighted/private text; provider/ASR captions are draft until corrected/approved; redact from logs by default. |
 | Token/language analysis | tokens, lemma, POS, morphology | Recomputable local tables | Never unless adapter opted in | Adapter payloads must be versioned. |
 | Saved learning objects | saved word/phrase/sentence plus cue/time/media context | Local learner-state tables | Never | Occurrence-first; preserve source context. |
 | Review history | FSRS state, ratings, due dates, lapses | Local append-only review events | Never | Sensitive learning profile. |

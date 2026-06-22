@@ -68,6 +68,7 @@ The first useful implementation milestone should be narrow: import one owned loc
 - [OSS substrate assessment](../research/oss-substrate-assessment.md)
 - [Safety/privacy boundary review](../review/safety-privacy-boundary-review.md)
 - [MVP spike plan](../plan/mvp-spike-plan.md)
+- [Transcript generation/correction plan](../plan/v3-transcript-generation-correction-plan.md)
 
 ## Parent evidence incorporated
 

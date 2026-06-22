@@ -41,6 +41,7 @@ Fixture rules:
 | Click-to-token lookup | `fixtures/expected/tokens.polish.sample.json` plus target cue | Token lookup panel with lemma/POS/morph/meaning or unavailable state | `npm test -- token-lookup`; `npm run test:no-network` | Token offsets round-trip; online provider disabled causes zero calls; manual save still works | Requires online provider or loses cue/token source context |
 | Saved occurrence + FSRS card | Saved word/phrase/sentence fixture and review-card fixture | `saved_item`, `saved_occurrence`, `review_card`, append-only `review_event` | `npm test -- saved-item-review-card` | Card points to source media/cue/time/token span; Again/Hard/Good/Easy schedule deterministically | Review event rewrites history or source cue/time is lost |
 | Generated subtitles/alignment | Owned short audio/video fixture without subtitles | Generated `SubtitleTrack` labeled `generated`, timestamped cues, quality report | `uv run pytest tests/asr_alignment` or chosen local command; `npm run test:no-network` | Local engine only; confidence/warnings visible; discarded output does not affect saved state | Online ASR is required or quality/latency is not measured |
+| YouTube caption candidate + correction | User-provided public YouTube URL with available captions; no media download by default | Draft `SubtitleTrack` labeled `youtube-caption`/`youtube-auto-caption`, provenance, quality warnings, correction/approval state | fake-provider unit tests; `npm run test:no-network`; live retrieval only as an approval-gated manual smoke | Captions are imported as drafts, provider/auto-caption inaccuracies are visible, and approved/corrected track is required before default study use | Raw provider captions become trusted learner state automatically, credentials/cookies are used, or media is downloaded without rights/permission gate |
 | Optional pronunciation/shadowing | Synthetic/owned prompt audio and test recording | Recording lifecycle, local ASR/alignment comparison, deletion check | `uv run pytest tests/shadowing_privacy` or chosen local command | Microphone/recording gate explicit; temp audio deleted unless saved; no online scoring | Voice leaves machine by default or temp recordings persist unexpectedly |
 
 ## Acceptance gates by milestone
@@ -54,8 +55,9 @@ Fixture rules:
 | P4 saved objects | Saved word/phrase/sentence preserves media/cue/token/time context and handles duplicates. |
 | P5 FSRS | Review events update card state deterministically through a verified FSRS library. |
 | P6 practice/export | Practice modes grade correctly from local data; Anki/export warns about privacy and does not mutate external apps by default. |
-| P7 optional ASR/shadowing | Local-only spike reports quality/latency limits; microphone/audio lifecycle is privacy-safe. |
-| P8 backup/sync | Backup/restore roundtrip passes; media-copy/sync remains opt-in. |
+| P7 transcript generation/correction | YouTube/provider captions and local ASR outputs enter as draft tracks with provenance, quality warnings, correction UI, and explicit approval before study use. |
+| P8 optional ASR/shadowing | Local-only spike reports quality/latency limits; microphone/audio lifecycle is privacy-safe. |
+| P9 backup/sync | Backup/restore roundtrip passes; media-copy/sync remains opt-in. |
 
 
 
