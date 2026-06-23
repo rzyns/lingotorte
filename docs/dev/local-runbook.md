@@ -80,6 +80,39 @@ curl -sS http://127.0.0.1:5174/api/health
 curl -sS http://127.0.0.1:5174/api/status
 ```
 
+### Systemd user units
+
+This local checkout can be run durably through systemd user units installed under `~/.config/systemd/user/`:
+
+- `lingotorte-local-service.service` — loopback SQLite/job/ASR service on `127.0.0.1:5174`.
+- `lingotorte-web.service` — Vite web UI on `127.0.0.1:5173`.
+- `lingotorte.target` — grouping target that starts/stops both child services.
+
+The units consume the repo-local `.env` file via `EnvironmentFile=/home/openclaw/workspace/lingotorte/.env`. That file is git-ignored and should remain mode `0600` when it contains provider keys.
+
+Operator commands:
+
+```bash
+systemctl --user status lingotorte.target lingotorte-local-service.service lingotorte-web.service
+systemctl --user start lingotorte.target
+systemctl --user stop lingotorte.target
+systemctl --user restart lingotorte.target
+journalctl --user -u lingotorte-local-service.service -u lingotorte-web.service -f
+```
+
+The target is intended to be enabled with:
+
+```bash
+systemctl --user enable --now lingotorte.target
+```
+
+After any unit edit, run:
+
+```bash
+systemctl --user daemon-reload
+systemd-analyze --user verify ~/.config/systemd/user/lingotorte-local-service.service ~/.config/systemd/user/lingotorte-web.service ~/.config/systemd/user/lingotorte.target
+```
+
 In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click **Connect local service**, then click **Save state now** or enable autosave. Connecting to a fresh empty service does not clobber unsaved browser state; save explicitly once you want the current browser state to become the durable SQLite snapshot.
 
 The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control creates and polls one of these jobs, then imports the returned transcript as a draft track. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process.
