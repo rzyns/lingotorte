@@ -9,8 +9,10 @@ import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
   nodeCommandRunner,
+  transcribeWithElevenLabsScribe,
   transcribeWithFasterWhisper,
   type CommandRunner,
+  type ElevenLabsHttpClient,
   type LocalAsrTranscriptionResult,
 } from '../../../packages/local-transcription/src/index.ts';
 
@@ -25,6 +27,8 @@ export type LocalServiceConfig = Readonly<{
   scratchDir: string;
   modelCacheDir: string;
   allowOnlineProviders: boolean;
+  elevenLabsApiKey?: string;
+  elevenLabsBaseUrl?: string;
 }>;
 
 type LocalJobStatus = 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
@@ -52,6 +56,9 @@ export type LocalServiceRuntime = Readonly<{
   defaultDevice?: string;
   defaultComputeType?: string;
   fetchImpl?: typeof fetch;
+  elevenLabsApiKey?: string;
+  elevenLabsBaseUrl?: string;
+  elevenLabsHttpClient?: ElevenLabsHttpClient;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -157,6 +164,13 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
       modelCacheDir: '[local-model-cache]',
       allowOnlineProviders: config.allowOnlineProviders,
     },
+    providers: {
+      elevenLabsScribe: {
+        onlineProvidersAllowed: config.allowOnlineProviders,
+        apiKeyPresent: (config.elevenLabsApiKey?.trim().length ?? 0) > 0,
+        ready: config.allowOnlineProviders && (config.elevenLabsApiKey?.trim().length ?? 0) > 0,
+      },
+    },
     persistence: persistence.status(),
   };
 }
@@ -257,6 +271,14 @@ type LocalTranscriptionPayload = Readonly<{
   computeType: string;
 }>;
 
+type ElevenLabsScribePayload = Readonly<{
+  mediaPath: string;
+  language: string;
+  modelId: string;
+  allowOnlineProvider: boolean;
+  ffmpegPath: string;
+}>;
+
 type YouTubeCaptionPayload = Readonly<{
   url: string;
   language: string;
@@ -274,6 +296,17 @@ function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime)
     ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
     device: optionalStringField(body, 'device', runtime.defaultDevice ?? 'cpu'),
     computeType: optionalStringField(body, 'computeType', runtime.defaultComputeType ?? 'int8'),
+  };
+}
+
+function elevenLabsScribePayload(value: unknown, runtime: LocalServiceRuntime): ElevenLabsScribePayload {
+  const body = asObject(value, 'ElevenLabs Scribe payload');
+  return {
+    mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
+    language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
+    modelId: optionalStringField(body, 'modelId', 'scribe_v2'),
+    allowOnlineProvider: optionalBooleanField(body, 'allowOnlineProvider', false),
+    ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
   };
 }
 
@@ -296,6 +329,15 @@ function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
       mediaPath: '[local-media-path]',
     };
   }
+  if (kind === 'elevenlabs-scribe') {
+    const record = asObject(payload, 'ElevenLabs Scribe payload');
+    return {
+      language: typeof record.language === 'string' ? record.language : 'pl',
+      modelId: typeof record.modelId === 'string' ? record.modelId : 'scribe_v2',
+      providerConsent: record.allowOnlineProvider === true,
+      mediaPath: '[local-media-path]',
+    };
+  }
   if (kind === 'youtube-caption') {
     const record = asObject(payload, 'YouTube caption payload');
     return {
@@ -311,6 +353,25 @@ function mediaPathFromPayload(payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined;
   const mediaPath = (payload as Record<string, unknown>).mediaPath;
   return typeof mediaPath === 'string' && mediaPath.length > 0 ? resolve(mediaPath) : undefined;
+}
+
+function redactJobFailureMessage(error: unknown, payload: unknown, config: LocalServiceConfig, runtime: LocalServiceRuntime): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const mediaPath = mediaPathFromPayload(payload);
+  const mediaDir = mediaPath !== undefined ? dirname(mediaPath) : undefined;
+  let message = redactLocalPaths(rawMessage, [
+    config.scratchDir,
+    config.modelCacheDir,
+    config.databasePath,
+    ...(mediaPath !== undefined ? [mediaPath] : []),
+    ...(mediaDir !== undefined ? [mediaDir] : []),
+  ]);
+  for (const secret of [config.elevenLabsApiKey, runtime.elevenLabsApiKey]) {
+    if (secret !== undefined && secret.length > 0) {
+      message = message.split(secret).join('[secret]');
+    }
+  }
+  return message;
 }
 
 async function runLocalTranscription(payloadValue: unknown, config: LocalServiceConfig, runtime: LocalServiceRuntime, jobId: string): Promise<LocalAsrTranscriptionResult> {
@@ -347,6 +408,40 @@ async function runLocalTranscription(payloadValue: unknown, config: LocalService
     language: transcript.language,
     device: payload.device,
   }, runner);
+}
+
+async function runElevenLabsScribe(payloadValue: unknown, config: LocalServiceConfig, runtime: LocalServiceRuntime, jobId: string): Promise<LocalAsrTranscriptionResult> {
+  if (!config.allowOnlineProviders) {
+    throw new TypeError('ElevenLabs Scribe transcription is disabled; set LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true for this local service.');
+  }
+  const payload = elevenLabsScribePayload(payloadValue, runtime);
+  if (!payload.allowOnlineProvider) {
+    throw new TypeError('ElevenLabs Scribe transcription requires explicit provider consent.');
+  }
+  const apiKey = (runtime.elevenLabsApiKey ?? config.elevenLabsApiKey ?? '').trim();
+  if (apiKey.length === 0) {
+    throw new TypeError('ElevenLabs Scribe transcription requires ELEVENLABS_API_KEY in the local service environment.');
+  }
+  const jobScratchDir = join(config.scratchDir, 'jobs', jobId);
+  await mkdir(jobScratchDir, { recursive: true });
+  const audioPath = join(jobScratchDir, 'elevenlabs-scribe-audio.wav');
+  const runner = runtime.commandRunner ?? nodeCommandRunner;
+
+  await extractAudioWithFfmpeg({
+    ffmpegPath: payload.ffmpegPath,
+    inputPath: payload.mediaPath,
+    outputPath: audioPath,
+  }, runner);
+
+  const baseUrl = runtime.elevenLabsBaseUrl ?? config.elevenLabsBaseUrl;
+  return transcribeWithElevenLabsScribe({
+    allowOnlineProvider: true,
+    apiKey,
+    audioPath,
+    language: payload.language,
+    modelId: payload.modelId,
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
+  }, runtime.elevenLabsHttpClient);
 }
 
 function videoIdFromYouTubeUrl(url: string): string {
@@ -435,18 +530,34 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       } catch (error) {
         const current = jobs.get(jobId);
         if (!current || current.status === 'cancelled') return;
-        const rawMessage = error instanceof Error ? error.message : String(error);
-        const mediaPath = mediaPathFromPayload(current.payload);
-        const mediaDir = mediaPath !== undefined ? dirname(mediaPath) : undefined;
         jobs.set(jobId, updateJob(current, {
           status: 'failed',
-          message: redactLocalPaths(rawMessage, [
-            config.scratchDir,
-            config.modelCacheDir,
-            config.databasePath,
-            ...(mediaPath !== undefined ? [mediaPath] : []),
-            ...(mediaDir !== undefined ? [mediaDir] : []),
-          ]),
+          message: redactJobFailureMessage(error, current.payload, config, runtime),
+        }));
+      }
+    })();
+  };
+
+  const finishElevenLabsScribeJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Running ElevenLabs Scribe transcription.' }));
+      try {
+        const transcript = await runElevenLabsScribe(queued.payload, config, runtime, jobId);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed',
+          message: 'ElevenLabs Scribe transcription completed.',
+          result: { transcript },
+        }));
+      } catch (error) {
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'failed',
+          message: redactJobFailureMessage(error, current.payload, config, runtime),
         }));
       }
     })();
@@ -534,6 +645,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         };
         jobs.set(job.id, job);
         if (kind === 'local-transcription') finishLocalTranscriptionJob(job.id);
+        if (kind === 'elevenlabs-scribe') finishElevenLabsScribeJob(job.id);
         if (kind === 'youtube-caption') finishYouTubeCaptionJob(job.id);
         sendJson(response, 201, { ok: true, job: publicJob(job) });
         return;
@@ -619,6 +731,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServic
     scratchDir: env.LINGOTORTE_SCRATCH_DIR ?? join(dataRoot, 'scratch'),
     modelCacheDir: env.LINGOTORTE_MODEL_CACHE_DIR ?? join(dataRoot, 'models'),
     allowOnlineProviders: env.LINGOTORTE_ALLOW_ONLINE_PROVIDERS === 'true',
+    ...(env.ELEVENLABS_API_KEY !== undefined ? { elevenLabsApiKey: env.ELEVENLABS_API_KEY } : {}),
+    ...(env.ELEVENLABS_BASE_URL !== undefined ? { elevenLabsBaseUrl: env.ELEVENLABS_BASE_URL } : {}),
   };
 }
 
@@ -635,6 +749,13 @@ export async function startFromCli(): Promise<void> {
       scratchDir: '[local-scratch]',
       modelCacheDir: '[local-model-cache]',
       allowOnlineProviders: service.config.allowOnlineProviders,
+    },
+    providers: {
+      elevenLabsScribe: {
+        onlineProvidersAllowed: service.config.allowOnlineProviders,
+        apiKeyPresent: (service.config.elevenLabsApiKey?.trim().length ?? 0) > 0,
+        ready: service.config.allowOnlineProviders && (service.config.elevenLabsApiKey?.trim().length ?? 0) > 0,
+      },
     },
   }));
   const close = async () => {

@@ -266,6 +266,108 @@ describe('P7 transcript lifecycle frontend', () => {
     expect(occurrence.sourceContext.timeRangeMs).toEqual({ start: 650, end: 1260 });
   });
 
+  it('generates ElevenLabs Scribe v2 drafts through the loopback service job API only after explicit cloud consent', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const ownedMedia = makeMediaAsset({
+      title: 'Owned Scribe clip',
+      originalPath: '/home/openclaw/private/owned-scribe-clip.webm',
+      contentSha256: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+      durationMs: 2000,
+      container: 'webm',
+      sizeBytes: 1234,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(ownedMedia);
+    model.currentMedia = ownedMedia;
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      if (url === 'http://127.0.0.1:5174/api/jobs' && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          ok: true,
+          job: { id: 'job-elevenlabs-1', kind: 'elevenlabs-scribe', status: 'queued' },
+        }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'http://127.0.0.1:5174/api/jobs/job-elevenlabs-1') {
+        return new Response(JSON.stringify({
+          ok: true,
+          job: {
+            id: 'job-elevenlabs-1',
+            kind: 'elevenlabs-scribe',
+            status: 'completed',
+            result: {
+              transcript: {
+                engine: 'elevenlabs',
+                modelName: 'scribe_v2',
+                language: 'eng',
+                segments: [{
+                  startMs: 80,
+                  endMs: 760,
+                  text: 'Hello world.',
+                  words: [{
+                    wordIndex: 0,
+                    text: 'Hello',
+                    charStart: 0,
+                    charEnd: 5,
+                    startMs: 80,
+                    endMs: 340,
+                    confidence: 0.99,
+                    speakerId: 'speaker_0',
+                    sourceKind: 'provider-word-timing',
+                  }, {
+                    wordIndex: 1,
+                    text: 'world',
+                    charStart: 6,
+                    charEnd: 11,
+                    startMs: 420,
+                    endMs: 760,
+                    confidence: 0.98,
+                    speakerId: 'speaker_0',
+                    sourceKind: 'provider-word-timing',
+                  }],
+                }],
+              },
+            },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `Unexpected ${url}` }), { status: 500 });
+    }) as typeof fetch;
+
+    rerenderApp(model);
+    const cloudConsent = document.querySelector('input[name="elevenlabs-provider-auth"]') as HTMLInputElement | null;
+    expect(cloudConsent).toBeTruthy();
+    cloudConsent!.checked = true;
+    cloudConsent!.dispatchEvent(new dom.window.Event('change'));
+    const scribeButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Generate ElevenLabs Scribe v2 draft') as HTMLButtonElement | null;
+    expect(scribeButton).toBeTruthy();
+    scribeButton!.click();
+    await waitFor(() => model.cues.length === 1);
+
+    const createBody = JSON.parse(String(requests[0]?.init?.body)) as Record<string, unknown>;
+    expect(createBody).toMatchObject({
+      kind: 'elevenlabs-scribe',
+      payload: {
+        mediaPath: ownedMedia.originalPath,
+        language: 'pl',
+        modelId: 'scribe_v2',
+        allowOnlineProvider: true,
+      },
+    });
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('draft');
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptSourceKind).toBe('online-asr');
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.provenance.engine).toBe('elevenlabs');
+    expect(model.store.listTranscriptWordTimingsForTrack(model.targetTrackId!)[0]).toMatchObject({
+      text: 'Hello',
+      sourceKind: 'provider-word-timing',
+      engine: 'elevenlabs',
+      modelName: 'scribe_v2',
+    });
+    expect(document.getElementById('app')?.textContent).toContain('ElevenLabs Scribe v2 draft generated');
+  });
+
   it('splits and merges transcript cues into immutable corrected versions', async () => {
     const model = createAppModel();
     model.view = 'library';

@@ -84,6 +84,14 @@ In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click 
 
 The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control creates and polls one of these jobs, then imports the returned transcript as a draft track. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process.
 
+For ElevenLabs Scribe v2, start the service with both gates set in the service process, not in browser JavaScript:
+
+```bash
+LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true ELEVENLABS_API_KEY='<your-key>' npm run local
+```
+
+The `/api/status` response reports `providers.elevenLabsScribe.apiKeyPresent` and `ready` booleans without exposing the key. In **Library → Transcript lifecycle**, check **I authorize sending extracted audio to ElevenLabs Scribe v2**, enter an absolute owned media path if the current browser media is a `blob:` URL, then click **Generate ElevenLabs Scribe v2 draft**. This creates a `kind: "elevenlabs-scribe"` loopback job. The service extracts local audio with ffmpeg, sends that audio to ElevenLabs, imports the returned draft as `online-asr`, and keeps learner-state saves blocked until correction/approval. Do not click **Generate local ASR draft** when intending to use ElevenLabs; that local button intentionally runs faster-whisper.
+
 For public YouTube captions, the service accepts `kind: "youtube-caption"` jobs only when both gates are true: the browser/user payload includes `allowPublicRead: true` and the service was started with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`. This path reads public caption metadata through YouTube timedtext, returns draft caption segments, redacts the source URL from job summaries, and never downloads media.
 
 ## Local dev server
@@ -139,7 +147,8 @@ The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Defau
 7. Verify the current transcript is `correcting`, then click **Approve transcript for study**.
 8. Return to **Player** and verify **Save sentence** is enabled and saves the corrected cue text.
 9. Optional local ASR path: start `npm run local` or `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute local media path in **Local service ASR media path** when the current browser media is a `blob:`/fixture URL, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them.
-10. Optional live public-caption path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, check the public-read authorization box, and click **Import public YouTube caption draft**. Verify the resulting track is a draft YouTube caption track. This path reads public caption metadata only; it does not download media.
+10. Optional ElevenLabs Scribe v2 path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` and `ELEVENLABS_API_KEY` set, check **I authorize sending extracted audio to ElevenLabs Scribe v2**, enter an absolute owned media path when needed, then click **Generate ElevenLabs Scribe v2 draft**. Verify the resulting track is a draft `online-asr` track with ElevenLabs provenance and provider word timings. This sends extracted local audio to ElevenLabs and is not a local/offline ASR path.
+11. Optional live public-caption path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, check the public-read authorization box, and click **Import public YouTube caption draft**. Verify the resulting track is a draft YouTube caption track. This path reads public caption metadata only; it does not download media.
 
 Actual media acquisition remains command-generation only. `planYtDlpMediaAcquisition()` produces a safe command plan; Lingotorte does not execute `yt-dlp`.
 
@@ -173,4 +182,4 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
-- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The browser UI transcript lifecycle controls use fake/default-safe providers, a gated public YouTube caption job through the loopback service, and real local ASR jobs with an absolute local media path plus separately installed local ASR dependencies. ElevenLabs remains an explicit-opt-in Node-side adapter boundary, not a default UI path.
+- Live provider execution, networked ASR/model downloads, AnkiConnect, cloud sync, live Lingopie inspection, pronunciation/shadowing, and public sharing remain disabled or gated unless separately approved. The browser UI transcript lifecycle controls use fake/default-safe providers, a gated public YouTube caption job through the loopback service, real local ASR jobs with an absolute local media path plus separately installed local ASR dependencies, and an explicit opt-in ElevenLabs Scribe v2 control that requires the service online-provider gate plus `ELEVENLABS_API_KEY`.

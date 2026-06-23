@@ -68,6 +68,7 @@ export function createAppModel(): AppModel {
       youtubeUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
       youtubeLanguage: 'pl',
       publicReadAuthorized: false,
+      elevenLabsAuthorized: false,
       localAsrMediaPath: '',
       pendingCueEdits: {},
       pendingCueTimingEdits: {},
@@ -716,6 +717,14 @@ export type LocalServiceYouTubeCaptionProviderOptions = Readonly<{
   pollDelayMs?: number;
 }>;
 
+export type LocalServiceElevenLabsScribeProviderOptions = Readonly<{
+  mediaPath?: string;
+  modelId?: 'scribe_v2' | string;
+  allowOnlineProvider?: boolean;
+  pollAttempts?: number;
+  pollDelayMs?: number;
+}>;
+
 function recordField(value: unknown, label: string): Record<string, unknown> {
   if (!isPlainObject(value)) {
     throw new TypeError(`${label} must be an object.`);
@@ -868,6 +877,61 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
         if (delayMs > 0) await sleep(delayMs);
       }
       throw new TypeError(`Local service transcription job ${jobId} did not finish before the polling deadline.`);
+    },
+  };
+}
+
+export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, options: LocalServiceElevenLabsScribeProviderOptions = {}): ElevenLabsScribeProvider {
+  let callCount = 0;
+  return {
+    providerId: 'lingotorte.loopback-local-service-elevenlabs-scribe',
+    privacyMode: 'explicit-online',
+    get calls() {
+      return callCount;
+    },
+    async transcribe(input) {
+      callCount += 1;
+      const mediaPath = options.mediaPath?.trim() || input.media.originalPath;
+      if (!mediaPath.startsWith('/')) {
+        throw new TypeError('ElevenLabs Scribe requires a durable absolute local media path. Browser blob media must be reselected or imported through the loopback service before transcription.');
+      }
+      const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'elevenlabs-scribe',
+          payload: {
+            mediaPath,
+            language: input.language,
+            modelId: options.modelId ?? 'scribe_v2',
+            allowOnlineProvider: options.allowOnlineProvider === true,
+          },
+        }),
+      });
+      const createdJob = recordField(createResponse.job, 'local service created ElevenLabs Scribe job');
+      const jobId = stringField(createdJob.id, 'local service ElevenLabs Scribe job id');
+      const attempts = options.pollAttempts ?? 120;
+      const delayMs = options.pollDelayMs ?? 1000;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const jobResponse = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+        const job = recordField(jobResponse.job, 'local service ElevenLabs Scribe job');
+        const status = stringField(job.status, 'local service ElevenLabs Scribe job status');
+        if (status === 'completed') {
+          const result = recordField(job.result, 'local service ElevenLabs Scribe job result');
+          const transcript = localServiceAsrResultFromJson(result.transcript);
+          return {
+            language: transcript.language,
+            modelName: transcript.modelName,
+            ...(transcript.modelVersion !== undefined ? { modelVersion: transcript.modelVersion } : {}),
+            segments: transcript.segments,
+          };
+        }
+        if (status === 'failed' || status === 'cancelled') {
+          const message = optionalStringField(job.message, 'local service ElevenLabs Scribe job message') ?? `status ${status}`;
+          throw new TypeError(`Local service ElevenLabs Scribe job did not complete: ${message}`);
+        }
+        if (delayMs > 0) await sleep(delayMs);
+      }
+      throw new TypeError(`Local service ElevenLabs Scribe job ${jobId} did not finish before the polling deadline.`);
     },
   };
 }

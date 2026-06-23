@@ -49,9 +49,11 @@ import {
   createCorrectedTranscriptVersion,
   splitTranscriptCueInCorrectedVersion,
   mergeTranscriptCueWithNextInCorrectedVersion,
+  generateElevenLabsScribeDraft,
   generateLocalAsrDraft,
   importYouTubeCaptionCandidate,
   makeLocalServiceAsrProvider,
+  makeLocalServiceElevenLabsScribeProvider,
   makeLocalServiceYouTubeCaptionProvider,
   makeFakeYouTubeCaptionProvider,
 } from './model';
@@ -1298,6 +1300,18 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   authLabel.append(authCheckbox, document.createTextNode(' I authorize a public caption metadata read.'));
   panel.appendChild(authLabel);
 
+  const elevenLabsAuthLabel = document.createElement('label');
+  elevenLabsAuthLabel.className = 'checkbox-row';
+  const elevenLabsAuthCheckbox = document.createElement('input');
+  elevenLabsAuthCheckbox.name = 'elevenlabs-provider-auth';
+  elevenLabsAuthCheckbox.type = 'checkbox';
+  elevenLabsAuthCheckbox.checked = model.transcriptLifecycle.elevenLabsAuthorized;
+  elevenLabsAuthCheckbox.addEventListener('change', () => {
+    model.transcriptLifecycle.elevenLabsAuthorized = elevenLabsAuthCheckbox.checked;
+  });
+  elevenLabsAuthLabel.append(elevenLabsAuthCheckbox, document.createTextNode(' I authorize sending extracted audio to ElevenLabs Scribe v2 for an online ASR draft.'));
+  panel.appendChild(elevenLabsAuthLabel);
+
   const localAsrPathLabel = document.createElement('label');
   localAsrPathLabel.htmlFor = 'local-asr-media-path';
   localAsrPathLabel.textContent = 'Local service ASR media path (absolute; optional if current media already has one)';
@@ -1400,6 +1414,35 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       });
   });
   actions.appendChild(asrBtn);
+
+  const scribeBtn = document.createElement('button');
+  scribeBtn.className = 'btn-secondary';
+  scribeBtn.textContent = 'Generate ElevenLabs Scribe v2 draft';
+  scribeBtn.disabled = !model.currentMedia;
+  scribeBtn.addEventListener('click', () => {
+    const provider = makeLocalServiceElevenLabsScribeProvider(model.localService.baseUrl, {
+      mediaPath: model.transcriptLifecycle.localAsrMediaPath,
+      modelId: 'scribe_v2',
+      allowOnlineProvider: model.transcriptLifecycle.elevenLabsAuthorized,
+    });
+    void generateElevenLabsScribeDraft(model, provider, {
+      language: model.transcriptLifecycle.youtubeLanguage,
+      allowOnlineProvider: model.transcriptLifecycle.elevenLabsAuthorized,
+    })
+      .then(() => {
+        model.transcriptLifecycle.pendingCueEdits = {};
+        model.transcriptLifecycle.pendingCueTimingEdits = {};
+        model.transcriptLifecycle.pendingWordTimingEdits = {};
+        model.transcriptLifecycle.lastMessage = 'ElevenLabs Scribe v2 draft generated';
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  actions.appendChild(scribeBtn);
   panel.appendChild(actions);
 
   if (model.transcriptLifecycle.lastMessage) {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { makeMediaAsset } from '../../packages/domain/src';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server';
-import type { CommandRunner } from '../../packages/local-transcription/src';
+import type { CommandRunner, ElevenLabsHttpClient } from '../../packages/local-transcription/src';
 
 const fingerprint = 'sha256:1111111111111111111111111111111111111111111111111111111111111111' as const;
 
@@ -185,6 +185,132 @@ describe('Lingotorte loopback local service', () => {
         { startMs: 1200, endMs: 2000, text: 'Second cue.' },
       ],
     });
+  });
+
+  it('runs ElevenLabs Scribe jobs only with service online and provider consent without echoing secrets or paths', async () => {
+    const { root, config } = await makeTempConfig();
+    const mediaPath = join(root, 'owned-scribe-media.webm');
+    await writeFile(mediaPath, 'owned media bytes');
+    const requests: Parameters<ElevenLabsHttpClient>[0][] = [];
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: CommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      if (command === 'ffmpeg') {
+        await writeFile(args[args.length - 1]!, 'fake wav bytes');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
+    };
+    const elevenLabsHttpClient: ElevenLabsHttpClient = async (request) => {
+      requests.push(request);
+      return {
+        status: 200,
+        json: {
+          text: 'Hello world.',
+          language_code: 'eng',
+          language_probability: 0.99,
+          words: [
+            { type: 'word', text: 'Hello', start: 0.08, end: 0.34, logprob: -0.01, speaker_id: 'speaker_0' },
+            { type: 'word', text: 'world', start: 0.42, end: 0.76, logprob: -0.02, speaker_id: 'speaker_0' },
+          ],
+        },
+      };
+    };
+
+    const disabled = await startLingotorteLocalService(config, {
+      commandRunner: runner,
+      elevenLabsApiKey: 'test-elevenlabs-key',
+      elevenLabsHttpClient,
+    });
+    let disabledClosed = false;
+    cleanups.push(async () => {
+      if (!disabledClosed) await disabled.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const disabledCreated = await fetch(`${disabled.origin}/api/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'elevenlabs-scribe',
+        payload: { mediaPath, language: 'en', modelId: 'scribe_v2', allowOnlineProvider: true },
+      }),
+    }).then((response) => response.json());
+    const disabledResult = await waitForJob(disabled.origin, disabledCreated.job.id);
+    expect(disabledResult.job).toMatchObject({ kind: 'elevenlabs-scribe', status: 'failed' });
+    expect(JSON.stringify(disabledResult)).toMatch(/disabled/i);
+    expect(requests).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+
+    await disabled.close();
+    disabledClosed = true;
+
+    const enabled = await startLingotorteLocalService({ ...config, allowOnlineProviders: true }, {
+      commandRunner: runner,
+      elevenLabsApiKey: 'test-elevenlabs-key',
+      elevenLabsHttpClient,
+    });
+    cleanups.push(() => enabled.close());
+    const denied = await fetch(`${enabled.origin}/api/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'elevenlabs-scribe',
+        payload: { mediaPath, language: 'en', modelId: 'scribe_v2', allowOnlineProvider: false },
+      }),
+    }).then((response) => response.json());
+    const deniedResult = await waitForJob(enabled.origin, denied.job.id);
+    expect(deniedResult.job).toMatchObject({ kind: 'elevenlabs-scribe', status: 'failed' });
+    expect(JSON.stringify(deniedResult)).toMatch(/consent|authorization|disabled/i);
+    expect(requests).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+
+    const created = await fetch(`${enabled.origin}/api/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'elevenlabs-scribe',
+        payload: { mediaPath, language: 'en', modelId: 'scribe_v2', allowOnlineProvider: true },
+      }),
+    }).then((response) => response.json());
+    expect(created.job.payloadSummary).toMatchObject({
+      mediaPath: '[local-media-path]',
+      language: 'en',
+      modelId: 'scribe_v2',
+      providerConsent: true,
+    });
+    const completed = await waitForJob(enabled.origin, created.job.id);
+    const completedJob = completed.job as Record<string, unknown>;
+    const jobResult = completedJob.result as Record<string, unknown>;
+    const serialized = JSON.stringify(completed);
+
+    expect(completed.job).toMatchObject({ kind: 'elevenlabs-scribe', status: 'completed' });
+    expect(calls.map((call) => call.command)).toEqual(['ffmpeg']);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers['xi-api-key']).toBe('test-elevenlabs-key');
+    expect(requests[0]?.form).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'model_id', value: 'scribe_v2' }),
+      expect.objectContaining({ name: 'timestamps_granularity', value: 'word' }),
+      expect.objectContaining({ name: 'diarize', value: 'true' }),
+      expect.objectContaining({ name: 'language_code', value: 'en' }),
+    ]));
+    expect(jobResult.transcript).toMatchObject({
+      engine: 'elevenlabs',
+      modelName: 'scribe_v2',
+      language: 'eng',
+      segments: [expect.objectContaining({
+        text: 'Hello world.',
+        words: expect.arrayContaining([expect.objectContaining({
+          text: 'Hello',
+          startMs: 80,
+          endMs: 340,
+          sourceKind: 'provider-word-timing',
+          speakerId: 'speaker_0',
+        })]),
+      })],
+    });
+    expect(serialized).not.toContain(mediaPath);
+    expect(serialized).not.toContain(resolve(root));
+    expect(serialized).not.toContain('test-elevenlabs-key');
   });
 
   it('runs local transcription jobs through ffmpeg, faster-whisper, and optional WhisperX alignment without echoing private paths', async () => {

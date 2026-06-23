@@ -56,6 +56,7 @@ export type AppModel = {
     youtubeUrl: string;
     youtubeLanguage: string;
     publicReadAuthorized: boolean;
+    elevenLabsAuthorized: boolean;
     localAsrMediaPath: string;
     pendingCueEdits: Record<string, string>;
     pendingCueTimingEdits: Record<string, { startMs: number; endMs: number }>;

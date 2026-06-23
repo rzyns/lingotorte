@@ -38,6 +38,8 @@ If `npm ci --offline` cannot use the local cache, stop before any networked inst
 
 The browser UI can invoke the loopback local service for real local ASR jobs: start `npm run local` (or split terminals with `npm run dev:local-service`), load or keep a current media asset, enter an absolute local media path in **Library → Transcript lifecycle** if the current browser media is a `blob:` URL, then click **Generate local ASR draft**. The service runs ffmpeg → faster-whisper → optional WhisperX alignment through injectable command runners and returns sanitized draft transcript segments/word timings. Heavy ASR/model dependencies still require an explicit local-machine install/approval; automated tests use fakes.
 
+To use ElevenLabs instead of local faster-whisper, start the local service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` and `ELEVENLABS_API_KEY` set, check the visible ElevenLabs authorization box in **Library → Transcript lifecycle**, enter an absolute owned media path when needed, and click **Generate ElevenLabs Scribe v2 draft**. This creates a separate `elevenlabs-scribe` job and imports an `online-asr` draft; the **Generate local ASR draft** button intentionally remains the faster-whisper path.
+
 The same transcript lifecycle panel also has an explicit **Import public YouTube caption draft** path through the loopback service. It requires the visible public-read checkbox and a service process started with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`; it reads public caption metadata only and does not download media. `yt-dlp` remains plan-only via `planYtDlpMediaAcquisition()`.
 
 ## Recommended reading order
