@@ -512,7 +512,7 @@ async function importBrowserSyntheticFixture(
 
 export type BrowserLocalFileImportInput = Readonly<{
   mediaFile: File;
-  targetSubtitleFile: File;
+  targetSubtitleFile?: File | null;
   nativeSubtitleFile?: File | null;
   targetLanguage?: string;
   nativeLanguage?: string;
@@ -542,7 +542,7 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
   const mediaBytes = await input.mediaFile.arrayBuffer();
   const objectUrl = URL.createObjectURL(input.mediaFile);
   try {
-    const targetText = await input.targetSubtitleFile.text();
+    const targetText = input.targetSubtitleFile ? await input.targetSubtitleFile.text() : null;
     const nativeText = input.nativeSubtitleFile ? await input.nativeSubtitleFile.text() : null;
     const asset = makeMediaAsset({
       title: titleFromFileName(input.mediaFile.name),
@@ -553,14 +553,16 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
       sizeBytes: input.mediaFile.size,
       privacyLabel: 'owned',
     });
-    const targetParsed = await parseBrowserSrtText({
-      mediaId: asset.id,
-      language: input.targetLanguage ?? 'pl',
-      role: 'target',
-      path: input.targetSubtitleFile.name,
-      text: targetText,
-      sourceKind: 'owned',
-    });
+    const targetParsed = input.targetSubtitleFile && targetText !== null
+      ? await parseBrowserSrtText({
+          mediaId: asset.id,
+          language: input.targetLanguage ?? 'pl',
+          role: 'target',
+          path: input.targetSubtitleFile.name,
+          text: targetText,
+          sourceKind: 'owned',
+        })
+      : null;
     const nativeParsed = nativeText && input.nativeSubtitleFile
       ? await parseBrowserSrtText({
           mediaId: asset.id,
@@ -571,16 +573,18 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
           sourceKind: 'owned',
         })
       : null;
-    const lastTargetCue = targetParsed.cues[targetParsed.cues.length - 1];
-    const durationMs = Math.max(1000, lastTargetCue?.endMs ?? 0);
+    const allParsedCues = [...(targetParsed?.cues ?? []), ...(nativeParsed?.cues ?? [])];
+    const durationMs = Math.max(1000, ...allParsedCues.map((cue) => cue.endMs));
     const assetWithDuration = { ...asset, durationMs };
 
     revokeCurrentMediaObjectUrl(model);
     model.store.putMediaAsset(assetWithDuration);
-    model.store.putSubtitleTrack(targetParsed.track);
+    if (targetParsed) model.store.putSubtitleTrack(targetParsed.track);
     if (nativeParsed) model.store.putSubtitleTrack(nativeParsed.track);
-    for (const cue of targetParsed.cues) {
-      model.store.putCue(cue);
+    if (targetParsed) {
+      for (const cue of targetParsed.cues) {
+        model.store.putCue(cue);
+      }
     }
     if (nativeParsed) {
       for (const cue of nativeParsed.cues) {
@@ -589,9 +593,9 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
     }
 
     model.currentMedia = assetWithDuration;
-    model.targetTrackId = targetParsed.track.id;
+    model.targetTrackId = targetParsed?.track.id ?? null;
     model.nativeTrackId = nativeParsed?.track.id ?? null;
-    model.cues = model.store.listCuesForTrack(targetParsed.track.id);
+    model.cues = targetParsed ? model.store.listCuesForTrack(targetParsed.track.id) : [];
     model.player.durationMs = durationMs;
     model.player.currentTimeMs = 0;
     model.player.activeCueId = model.cues[0]?.id ?? null;

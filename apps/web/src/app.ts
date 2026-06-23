@@ -989,7 +989,7 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
   if (model.cues.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No transcript loaded. Import media and subtitles in the Library view.';
+    empty.textContent = 'No transcript loaded yet. Import subtitles in the Library view, or use Generate local ASR draft after connecting the loopback local service.';
     panel.appendChild(empty);
     return panel;
   }
@@ -1647,7 +1647,7 @@ function renderLibraryView(model: AppModel): HTMLElement {
   h2.textContent = 'Library';
   section.appendChild(h2);
   const p = document.createElement('p');
-  p.textContent = 'Load the synthetic local fixture, or choose your own local video and subtitle files. Browser imports stay on this device: media is opened via a local object URL and subtitles are read with File.text().';
+  p.textContent = 'Load the synthetic local fixture, or choose your own local video with optional subtitle files. Browser imports stay on this device: media is opened via a local object URL and subtitles are read with File.text().';
   section.appendChild(p);
 
   const form = document.createElement('div');
@@ -1693,7 +1693,7 @@ function renderLibraryView(model: AppModel): HTMLElement {
 
   const targetLabel = document.createElement('label');
   targetLabel.htmlFor = 'local-target-subtitle-file';
-  targetLabel.textContent = 'Target subtitle file (.srt)';
+  targetLabel.textContent = 'Target subtitle file (.srt, optional)';
   const targetInput = document.createElement('input');
   targetInput.id = 'local-target-subtitle-file';
   targetInput.name = 'local-target-subtitle-file';
@@ -1714,17 +1714,20 @@ function renderLibraryView(model: AppModel): HTMLElement {
   const localImportBtn = document.createElement('button');
   localImportBtn.className = 'btn-primary';
   localImportBtn.textContent = 'Import local media';
-  localImportBtn.setAttribute('aria-label', 'Import selected local media and subtitle files');
+  localImportBtn.setAttribute('aria-label', 'Import selected local media and optional subtitle files');
   localImportBtn.addEventListener('click', () => {
     const mediaFile = mediaInput.files?.[0];
     const targetSubtitleFile = targetInput.files?.[0];
     const nativeSubtitleFile = nativeInput.files?.[0] ?? null;
-    if (!mediaFile || !targetSubtitleFile) {
-      model.importError = 'Choose a local media file and a target .srt subtitle file before importing.';
+    if (!mediaFile) {
+      model.importError = 'Choose a local media file before importing. A target .srt subtitle file is optional; you can generate an ASR draft afterward.';
       rerenderApp(model);
       return;
     }
-    void importBrowserLocalFiles(model, { mediaFile, targetSubtitleFile, nativeSubtitleFile })
+    const importInput = targetSubtitleFile
+      ? { mediaFile, targetSubtitleFile, nativeSubtitleFile }
+      : { mediaFile, nativeSubtitleFile };
+    void importBrowserLocalFiles(model, importInput)
       .then(() => {
         setView(model, 'player');
         model.importError = null;

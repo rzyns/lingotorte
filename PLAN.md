@@ -38,7 +38,7 @@ Recent relevant commits:
 - Browser Library UI exposes:
   - synthetic fixture load;
   - local media file input;
-  - target `.srt` input;
+  - optional target `.srt` input;
   - optional native `.srt` input.
 - Existing tested local flows include:
   - local video/player shell;
@@ -340,7 +340,7 @@ Take Lingotorte from its current test-backed local prototype to a live, locally 
 
 Current known state:
 - `npm run local` starts the loopback local service and Vite UI together; split-terminal service/UI commands remain available for debugging.
-- The Library UI has local media + target .srt + optional native .srt file inputs.
+- The Library UI has local media + optional target .srt + optional native .srt file inputs; media-only import is supported before ASR draft generation.
 - The loopback service provides health/config/status, SQLite snapshot save/load, scratch cleanup, local transcription jobs, an ElevenLabs job seam, and gated public YouTube caption jobs.
 - The browser can connect/save/autosave local state through the service; browser `blob:` media handles are still session-scoped and may need reselecting after restart.
 - Transcript lifecycle UI includes draft import, local ASR job import, public-caption job import, cue text/timing edits, word-timing edits, split/merge, source comparison, immutable corrected versions, and approval gates.

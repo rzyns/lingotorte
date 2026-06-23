@@ -16,7 +16,7 @@ This baseline is still local/private. It is not a push, PR, release, deployment,
 The current baseline provides a local Vite/TypeScript app and test-backed domain packages for:
 
 - synthetic fixture import from the Library view;
-- browser-selected local media plus target `.srt` and optional native `.srt` import using local object URLs and `File.text()` without uploads;
+- browser-selected local media with optional target `.srt` and optional native `.srt` import using local object URLs and `File.text()` without uploads; media-only import is supported for later ASR draft generation;
 - durable SQLite-backed learner/transcript state through the loopback local service (`npm run local` or `npm run dev:local-service`) with explicit save/autosave;
 - loopback job APIs for local transcription and gated public YouTube caption metadata reads;
 - local video/player shell with transcript and dual target/native subtitle cue projection;
@@ -72,7 +72,7 @@ That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run te
 
 ## Known limitations
 
-- The browser UI imports the synthetic fixture through **Library → Load synthetic fixture** and supports **Library → Import local media** for owned media plus `.srt` subtitle files. Learner/transcript metadata can persist through the loopback SQLite service; browser `blob:` media handles remain session-scoped and must be reselected after browser restart for playback.
+- The browser UI imports the synthetic fixture through **Library → Load synthetic fixture** and supports **Library → Import local media** for owned media with or without `.srt` subtitle files. Learner/transcript metadata can persist through the loopback SQLite service; browser `blob:` media handles remain session-scoped and must be reselected after browser restart for playback.
 - Local transcription jobs require a durable absolute media path plus locally installed ffmpeg/Python ASR dependencies; automated tests use injected fake runners.
 - Public YouTube caption reads are metadata-only, require the visible public-read authorization plus `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, and do not download media.
 - Export creates a manifest object and preview path, not a persisted file.

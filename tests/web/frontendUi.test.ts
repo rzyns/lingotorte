@@ -116,6 +116,46 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(app.textContent).toContain('This is my own file.');
   });
 
+  it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const createObjectURL = vi.fn(() => 'blob:media-only-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+
+    rerenderApp(model);
+    const mediaInput = document.querySelector('input[name="local-media-file"]') as HTMLInputElement | null;
+    const targetInput = document.querySelector('input[name="local-target-subtitle-file"]') as HTMLInputElement | null;
+    expect(mediaInput).toBeTruthy();
+    expect(targetInput).toBeTruthy();
+    const mediaFile = new dom.window.File([new Uint8Array([4, 5, 6])], 'needs-asr.webm', { type: 'video/webm' });
+    Object.defineProperty(mediaInput!, 'files', { configurable: true, value: [mediaFile] });
+    Object.defineProperty(targetInput!, 'files', { configurable: true, value: [] });
+
+    const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
+    expect(importButton).toBeTruthy();
+    importButton!.click();
+    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const app = document.getElementById('app')!;
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(model.importError).toBeNull();
+    expect(model.view).toBe('player');
+    expect(model.currentMedia?.title).toBe('needs-asr');
+    expect(model.currentMedia?.originalPath).toBe('blob:media-only-video');
+    expect(model.targetTrackId).toBeNull();
+    expect(model.nativeTrackId).toBeNull();
+    expect(model.cues).toHaveLength(0);
+    expect(video?.src).toBe('blob:media-only-video');
+    expect(createObjectURL).toHaveBeenCalledWith(mediaFile);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(app.textContent).toContain('No transcript loaded yet');
+    expect(app.textContent).toContain('Generate local ASR draft');
+  });
+
   it('shows local subtitle parse errors and revokes the failed object URL', async () => {
     const model = createAppModel();
     model.view = 'library';
