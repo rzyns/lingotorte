@@ -1,6 +1,6 @@
 # Lingotorte Planning Documentation Index
 
-Status: final planning bundle index and crosswalk. Planning only; not an implementation artifact.
+Status: historical/reference planning bundle index and crosswalk. Planning only; not an implementation status ledger. For current implementation status and remaining work, start with `../../PLAN.md`.
 
 ## Final planning bundle
 

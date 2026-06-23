@@ -1,6 +1,8 @@
 # Lingotorte Feature Build Roadmap
 
-Status: implementation-facing roadmap for a future autonomous fleet. Planning only; no app code is implemented here.
+Status: historical/reference roadmap from the original planning bundle. Planning only; current implementation status and the short remaining backlog are maintained in `../../PLAN.md`.
+
+Current-status note: many early milestones in this roadmap are now implemented in the local app. Use this file for sequencing rationale and acceptance gates, then verify status against current docs/code/tests before creating work.
 
 Related docs: [Final Implementation Plan](./final-implementation-plan.md), [Evidence Index](./evidence-index.md), [Safety Boundaries](./safety-privacy-legal-boundaries.md), [Testing and Acceptance Plan](./testing-and-acceptance-plan.md), [Documentation Index](./documentation-index.md).
 

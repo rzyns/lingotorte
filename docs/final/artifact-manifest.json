@@ -5,16 +5,16 @@
     {
       "path": "docs/final/war-room-final-synthesis.md",
       "relative_path": "docs/final/war-room-final-synthesis.md",
-      "bytes": 7902,
-      "lines": 89,
-      "sha256": "575a76cee145bc2bed6d9135b8cb9a7c6b6f633fee1073be61ed72013c38987a"
+      "bytes": 8459,
+      "lines": 93,
+      "sha256": "c35a1d9bcab3c9e862a7210600ffdc9d1e4dd57ee574b2c71ce032aa6f3fe357"
     },
     {
       "path": "docs/final/lingotorte-implementation-plan.md",
       "relative_path": "docs/final/lingotorte-implementation-plan.md",
-      "bytes": 27082,
-      "lines": 347,
-      "sha256": "c68f4640162bcefe025512e7fd486ab0e14a3892eabb22034f781756d9031cc2"
+      "bytes": 27385,
+      "lines": 349,
+      "sha256": "ec2174d61adbceab5a2df880852b7ae574c2caa4c0b36ccb4e033de4023c9d2e"
     },
     {
       "path": "docs/spec/lingopie-behavior-reference.md",

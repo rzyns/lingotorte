@@ -1,6 +1,8 @@
 # Lingotorte Final Implementation Plan
 
-Status: final planning synthesis for a future implementation fleet. This document does not implement the app and does not approve scraping, account mutation, online providers, code reuse, deployment, publishing, or legal/license conclusions.
+Status: historical/reference final planning synthesis from the original planning bundle. This document predates much of the current local implementation; use `../../PLAN.md`, `../dev/local-runbook.md`, recent commits, and code/tests for current status. It does not approve scraping, account mutation, online providers, code reuse, deployment, publishing, or legal/license conclusions.
+
+Current-status note: retain this file for design rationale and acceptance criteria, but do not treat its future-tense phase lists as proof that a feature remains unfinished.
 
 Core decision for Janusz: proceed with a local-first, artifact-centered MVP if the P0 fixture/skeleton/provenance gates are accepted. Target ElevenLabs Scribe v2 as the first real STT adapter for Janusz's explicitly configured personal deployment, while preserving disabled-provider defaults and a future local WhisperX/faster-whisper-style opt-out lane. Keep remaining open decisions explicit: target-language priority, app shell, asbplayer/custom-player substrate, Anki role, non-STT online-provider strictness, Mastered threshold, screenshot policy, and backup media policy.
 

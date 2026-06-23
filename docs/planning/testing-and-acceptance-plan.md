@@ -1,6 +1,8 @@
 # Lingotorte Testing and Acceptance Plan
 
-Status: planning document for future implementation verification. No tests are run here because no app code exists in this workspace yet.
+Status: historical/reference planning document for implementation verification. This file predates the current app implementation; use it for acceptance criteria and no-network/privacy patterns, not as a claim that no code exists.
+
+Current-status note: current validation commands and remaining-work routing live in `../../PLAN.md` and `../dev/local-runbook.md`.
 
 Related docs: [Final Implementation Plan](./final-implementation-plan.md), [Feature Build Roadmap](./feature-build-roadmap.md), [Evidence Index](./evidence-index.md), [Safety Boundaries](./safety-privacy-legal-boundaries.md).
 

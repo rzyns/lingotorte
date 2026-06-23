@@ -1,6 +1,8 @@
 # Lingotorte Implementation Plan
 
-Status: implementation-facing plan for future autonomous agents. Planning only; do not implement from this workspace without a separate implementation task.
+Status: historical/reference implementation plan from the original planning mission. Planning only; do not treat future-tense phase lists here as current status without checking `../../PLAN.md`, `../dev/local-runbook.md`, recent commits, and code/tests.
+
+Current-status note: the current short backlog and implemented-vs-outstanding classification live in `../../PLAN.md`. This file remains useful for design rationale, acceptance criteria, and backlog seeds.
 
 ## Roadmap summary
 

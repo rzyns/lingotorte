@@ -1,6 +1,8 @@
 # Lingotorte War Room Final Synthesis
 
-Status: final fan-in synthesis for the Lingotorte planning/documentation mission. This is a planning artifact only; it does not implement the app and does not authorize scraping, proprietary copying, account mutation, external providers, deployment, or publishing.
+Status: historical/reference fan-in synthesis for the original Lingotorte planning/documentation mission. It predates the current local implementation; use `../../PLAN.md`, `../dev/local-runbook.md`, recent commits, and code/tests for current status. This remains a planning/reference artifact only; it does not authorize scraping, proprietary copying, account mutation, external providers, deployment, or publishing.
+
+Current-status note: many P0-P7 implementation steps listed below have since landed in the local app. Treat this file as synthesis/background and verify any unfinished-work claim against the current plan and implementation.
 
 ## Executive summary
 
@@ -47,7 +49,9 @@ The first useful implementation milestone should be narrow: import one owned loc
 | Screenshot evidence | Sanitized text only | Screenshots may contain proprietary/private context. |
 | Backup media policy | Metadata-only backup | Full media copy can duplicate private/copyrighted files. |
 
-## Exact next implementation steps
+## Historical exact next implementation steps
+
+The list below records the original planning-mission handoff. It is intentionally retained for provenance, but it is superseded for current status by `../../PLAN.md`.
 
 1. Create future implementation card P0.1: choose repo skeleton, TypeScript/Vite test runner, fixture layout, and no-network test harness.
 2. Create P0.2: add synthetic/owned media and subtitle fixtures plus provenance README; verify no Lingopie media/subtitles/screenshots/private data.
