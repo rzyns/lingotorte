@@ -12,6 +12,7 @@ import {
   clampPlaybackRate,
   setPlaybackRate,
 } from '../../apps/web/src/model';
+import { makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -37,6 +38,75 @@ const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
 const nativeSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.native.srt';
 const targetOnlySrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target-only.srt';
 const sha256Placeholder = 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const;
+
+function installTimedSingleCueModel(words: string[], activeWordIndex: number) {
+  const model = createAppModel();
+  const asset = makeMediaAsset({
+    title: 'Long generated subtitle test',
+    originalPath: '/home/openclaw/Videos/lingotorte/qWogfTE27B8/NAJWIĘKSZE Błędy Paleontologów w Historii [qWogfTE27B8].webm',
+    contentSha256: sha256Placeholder,
+    durationMs: words.length * 500,
+    container: 'webm',
+    sizeBytes: 12345,
+    privacyLabel: 'owned',
+  });
+  model.store.putMediaAsset(asset);
+  model.currentMedia = asset;
+
+  const track = makeSubtitleTrack({
+    mediaId: asset.id,
+    language: 'pl',
+    role: 'target',
+    format: 'srt',
+    sourceKind: 'synthetic',
+    sourcePath: 'generated-long-block.srt',
+    contentSha256: sha256Placeholder,
+    isActive: true,
+    transcriptStatus: 'approved',
+  });
+  model.store.putSubtitleTrack(track);
+  model.targetTrackId = track.id;
+
+  const text = words.join(' ');
+  const cue = makeCue({
+    trackId: track.id,
+    cueIndex: 0,
+    startMs: 0,
+    endMs: words.length * 500,
+    text,
+    normalizedText: text.toLocaleLowerCase('pl'),
+    textSha256: sha256Placeholder,
+  });
+  model.store.putCue(cue);
+  model.cues = [cue];
+  model.player.activeCueId = cue.id;
+  model.player.currentTimeMs = activeWordIndex * 500 + 100;
+  model.player.durationMs = cue.endMs;
+
+  let cursor = 0;
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index]!;
+    const charStart = text.indexOf(word, cursor);
+    const charEnd = charStart + word.length;
+    cursor = charEnd;
+    model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+      trackId: track.id,
+      cueId: cue.id,
+      wordIndex: index,
+      charStart,
+      charEnd,
+      text: word,
+      normalizedText: word.toLocaleLowerCase('pl'),
+      startMs: index * 500,
+      endMs: index * 500 + 420,
+      sourceKind: 'provider-word-timing',
+      engine: 'test-asr',
+      modelName: 'test-model',
+    }));
+  }
+
+  return { model, cue, track, asset };
+}
 
 describe('P2 player dual-subtitle and transcript projection', () => {
   let dom: ReturnType<typeof setupDom> extends Promise<infer T> ? T : never;
@@ -89,6 +159,49 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(activeRow?.textContent).toContain('Cześć, to jest lokalny test.');
     expect(activeRow?.textContent).toContain('Hello, this is a local test.');
     expect(activeRow?.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('renders long generated subtitle cues as a timed sliding caption window', () => {
+    const words = [
+      'pierwsze', 'bardzo', 'dalekie', 'słowa', 'które', 'nie', 'powinny', 'zasłaniać', 'ekranu', 'wcale',
+      'teraz', 'aktywny', 'fragment', 'o', 'dinozaurach', 'jest', 'krótki', 'i', 'czytelny',
+      'końcowe', 'odległe', 'zdanie', 'również', 'nie', 'należy', 'do', 'okna', 'napisów',
+    ];
+    const activeWordIndex = words.indexOf('dinozaurach');
+    const { model } = installTimedSingleCueModel(words, activeWordIndex);
+
+    rerenderApp(model);
+
+    const target = document.querySelector('.subtitle-overlay .subtitle-target') as HTMLElement | null;
+    expect(target).toBeTruthy();
+    const renderedText = target?.textContent ?? '';
+    expect(renderedText).toContain('dinozaurach');
+    expect(renderedText).toContain('aktywny');
+    expect(renderedText).not.toContain('pierwsze');
+    expect(renderedText).not.toContain('końcowe');
+    expect(target?.querySelectorAll('.subtitle-word').length).toBeLessThanOrEqual(12);
+  });
+
+  it('clicking an overlay word immediately saves it as a lexeme in My Vocab', () => {
+    const words = ['kliknij', 'teraz', 'dinozaur', 'żeby', 'dodać', 'słowo'];
+    const { model } = installTimedSingleCueModel(words, words.indexOf('dinozaur'));
+
+    rerenderApp(model);
+
+    const wordButton = Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find(
+      (button) => button.textContent === 'dinozaur',
+    ) as HTMLElement | null;
+    expect(wordButton).toBeTruthy();
+    wordButton?.click();
+
+    const savedItems = Object.values(model.store.snapshot().savedItems);
+    expect(savedItems).toHaveLength(1);
+    expect(savedItems[0]).toMatchObject({ kind: 'lexeme', displayText: 'dinozaur' });
+
+    const savedOccurrences = Object.values(model.store.snapshot().savedOccurrences);
+    expect(savedOccurrences).toHaveLength(1);
+    expect(savedOccurrences[0]?.selectionKind).toBe('lexeme');
+    expect(savedOccurrences[0]?.sourceContext.charSpan).toEqual({ start: model.cues[0]!.text.indexOf('dinozaur'), end: model.cues[0]!.text.indexOf('dinozaur') + 'dinozaur'.length });
   });
 
   it('clicking a transcript cue seeks and marks it active', async () => {

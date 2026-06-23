@@ -19,6 +19,7 @@ import {
   saveSelection,
   saveSentenceFromCue,
   saveSelectedPhraseFromCue,
+  saveLexemeFromCue,
   seekToCue,
   seekToTime,
   setPlaybackRate,
@@ -760,6 +761,177 @@ function renderVideoStage(model: AppModel): HTMLElement {
   return stage;
 }
 
+type SubtitleWord = Readonly<{
+  text: string;
+  charStart: number;
+  charEnd: number;
+  tokenIndex: number;
+  startMs?: number;
+  endMs?: number;
+}>;
+
+const SUBTITLE_WINDOW_MAX_WORDS = 10;
+const SUBTITLE_WINDOW_MAX_CHARS = 84;
+const subtitleWordPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?/gu;
+
+function subtitleWordsForCue(model: AppModel, cue: Cue): SubtitleWord[] {
+  const timedWords = model.store
+    .listTranscriptWordTimingsForCue(cue.id)
+    .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
+    .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
+  if (timedWords.length > 0) {
+    return timedWords.map((word) => {
+      const charStart = Math.max(0, Math.min(word.charStart, cue.text.length));
+      const charEnd = Math.max(charStart, Math.min(word.charEnd, cue.text.length));
+      return {
+        text: cue.text.slice(charStart, charEnd) || word.text,
+        charStart,
+        charEnd,
+        tokenIndex: word.wordIndex,
+        startMs: word.startMs,
+        endMs: word.endMs,
+      };
+    });
+  }
+
+  const words: SubtitleWord[] = [];
+  subtitleWordPattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = subtitleWordPattern.exec(cue.text)) !== null) {
+    words.push({
+      text: match[0],
+      charStart: match.index,
+      charEnd: match.index + match[0].length,
+      tokenIndex: words.length,
+    });
+  }
+  return words;
+}
+
+function activeSubtitleWordIndex(words: readonly SubtitleWord[], cue: Cue, currentTimeMs: number): number {
+  if (words.length === 0) return -1;
+  const timedIndex = words.findIndex((word) =>
+    word.startMs !== undefined && word.endMs !== undefined && word.startMs <= currentTimeMs && word.endMs >= currentTimeMs,
+  );
+  if (timedIndex >= 0) return timedIndex;
+
+  const timedCandidates = words.filter((word) => word.startMs !== undefined && word.endMs !== undefined);
+  if (timedCandidates.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < words.length; index += 1) {
+      const word = words[index]!;
+      if (word.startMs === undefined || word.endMs === undefined) continue;
+      const midpoint = (word.startMs + word.endMs) / 2;
+      const distance = Math.abs(midpoint - currentTimeMs);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    return bestIndex;
+  }
+
+  const cueDuration = Math.max(1, cue.endMs - cue.startMs);
+  const ratio = Math.max(0, Math.min(1, (currentTimeMs - cue.startMs) / cueDuration));
+  const estimatedChar = ratio * cue.text.length;
+  const estimatedIndex = words.findIndex((word) => word.charStart <= estimatedChar && word.charEnd >= estimatedChar);
+  if (estimatedIndex >= 0) return estimatedIndex;
+  const nextIndex = words.findIndex((word) => word.charStart > estimatedChar);
+  return nextIndex >= 0 ? nextIndex : words.length - 1;
+}
+
+function chooseSubtitleWindow(words: readonly SubtitleWord[], cue: Cue, currentTimeMs: number): SubtitleWord[] {
+  if (words.length === 0) return [];
+  const fullCueIsCaptionSized = words.length <= SUBTITLE_WINDOW_MAX_WORDS && cue.text.trim().length <= SUBTITLE_WINDOW_MAX_CHARS;
+  if (fullCueIsCaptionSized) return [...words];
+
+  const activeIndex = Math.max(0, activeSubtitleWordIndex(words, cue, currentTimeMs));
+  const halfWindow = Math.floor(SUBTITLE_WINDOW_MAX_WORDS / 2);
+  let start = Math.max(0, Math.min(activeIndex - halfWindow, words.length - SUBTITLE_WINDOW_MAX_WORDS));
+  let end = Math.min(words.length, start + SUBTITLE_WINDOW_MAX_WORDS);
+
+  while (end - start > 1) {
+    const charStart = words[start]!.charStart;
+    const charEnd = words[end - 1]!.charEnd;
+    if (charEnd - charStart <= SUBTITLE_WINDOW_MAX_CHARS) break;
+    if (activeIndex - start > end - 1 - activeIndex) {
+      start += 1;
+    } else {
+      end -= 1;
+    }
+  }
+
+  return words.slice(start, end);
+}
+
+function clippedPlainSubtitleText(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= SUBTITLE_WINDOW_MAX_CHARS) return normalized;
+  return `${normalized.slice(0, SUBTITLE_WINDOW_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: Cue): void {
+  const words = subtitleWordsForCue(model, cue);
+  const windowWords = chooseSubtitleWindow(words, cue, model.player.currentTimeMs);
+  if (windowWords.length === 0) {
+    target.textContent = clippedPlainSubtitleText(cue.text);
+    return;
+  }
+
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const canSaveFromTargetTrack = targetTrack?.transcriptStatus === 'approved';
+  const firstWord = windowWords[0]!;
+  const lastWord = windowWords[windowWords.length - 1]!;
+  const hasLeadingText = firstWord !== words[0];
+  const hasTrailingText = lastWord !== words[words.length - 1];
+  const renderStartChar = hasLeadingText ? firstWord.charStart : 0;
+  const renderEndChar = hasTrailingText ? lastWord.charEnd : cue.text.length;
+  target.dataset.windowStartChar = String(renderStartChar);
+  target.dataset.windowEndChar = String(renderEndChar);
+
+  if (hasLeadingText) target.appendChild(document.createTextNode('… '));
+  let cursor = renderStartChar;
+  for (const word of windowWords) {
+    if (word.charStart > cursor) {
+      target.appendChild(document.createTextNode(cue.text.slice(cursor, word.charStart)));
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'subtitle-word';
+    button.textContent = cue.text.slice(word.charStart, word.charEnd) || word.text;
+    button.dataset.subtitleCueId = cue.id;
+    button.dataset.charStart = String(word.charStart);
+    button.dataset.charEnd = String(word.charEnd);
+    button.dataset.tokenIndex = String(word.tokenIndex);
+    button.setAttribute('aria-label', `Add ${button.textContent} to My Vocab`);
+    if (!canSaveFromTargetTrack) {
+      button.disabled = true;
+      button.title = 'Approve this transcript before saving learner study items.';
+    }
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!canSaveFromTargetTrack) return;
+      try {
+        const displayText = button.textContent ?? word.text;
+        const item = saveLexemeFromCue(model, cue, displayText, word.charStart, word.charEnd, word.tokenIndex);
+        if (item) {
+          model.player.lastTokenPreview = `Saved “${item.displayText}” to My Vocab`;
+        }
+      } catch (err: unknown) {
+        model.importError = err instanceof Error ? err.message : String(err);
+      }
+      rerenderApp(model);
+    });
+    target.appendChild(button);
+    cursor = word.charEnd;
+  }
+  if (cursor < renderEndChar) {
+    target.appendChild(document.createTextNode(cue.text.slice(cursor, renderEndChar)));
+  }
+  if (hasTrailingText) target.appendChild(document.createTextNode(' …'));
+}
+
 function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): void {
   const overlay = (stage as any).__overlay as HTMLElement | undefined;
   if (!overlay) return;
@@ -770,7 +942,7 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   overlay.innerHTML = '';
   const target = document.createElement('div');
   target.className = 'subtitle-target';
-  target.textContent = cue.text;
+  appendSubtitleTargetWindow(target, model, cue);
   overlay.appendChild(target);
 
   const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
@@ -779,7 +951,7 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   if (nativeText) {
     const native = document.createElement('div');
     native.className = 'subtitle-native';
-    native.textContent = nativeText;
+    native.textContent = clippedPlainSubtitleText(nativeText);
     overlay.appendChild(native);
   }
 }

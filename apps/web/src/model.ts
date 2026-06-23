@@ -1682,6 +1682,36 @@ export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<Sa
   return result.item;
 }
 
+export function saveLexemeFromCue(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenIndex: number): SavedItem | null {
+  if (!model.currentMedia || !model.targetTrackId) return null;
+  const selectionTimeRange = selectionTimeRangeForCue(model, cue, charStart, charEnd);
+  const sourceContext = buildSourceContext(
+    model.currentMedia.id,
+    model.currentMedia.originalPath,
+    model.currentMedia.contentSha256,
+    model.targetTrackId,
+    cue,
+    tokenIndex,
+    tokenIndex + 1,
+    charStart,
+    charEnd,
+    selectionTimeRange,
+  );
+
+  const result = model.savedOccurrenceService.saveSelection({
+    kind: 'lexeme',
+    language: 'pl',
+    displayText: text,
+    mediaId: model.currentMedia.id,
+    cueId: cue.id,
+    startMs: selectionTimeRange.start,
+    endMs: selectionTimeRange.end,
+    sourceContext,
+  });
+  persistIfLocalServiceAutosaveEnabled(model);
+  return result.item;
+}
+
 export function saveSelectedPhraseFromCue(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenStart: number, tokenEnd: number): SavedItem | null {
   if (!model.currentMedia || !model.targetTrackId) return null;
   const selectionTimeRange = selectionTimeRangeForCue(model, cue, charStart, charEnd);

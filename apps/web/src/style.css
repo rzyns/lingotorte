@@ -214,23 +214,59 @@ textarea:focus-visible,
   left: 0;
   right: 0;
   bottom: 0;
+  max-height: 38%;
+  overflow: hidden;
   padding: 0.75rem 1rem;
   display: grid;
+  justify-items: center;
+  align-content: end;
   gap: 0.35rem;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
   text-align: center;
   pointer-events: none;
 }
 
 .subtitle-target {
+  max-width: min(92%, 68ch);
   font-size: clamp(1rem, 2.2vw, 1.35rem);
   font-weight: 600;
+  line-height: 1.35;
   color: #fff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
+.subtitle-word {
+  appearance: none;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0 0.06em;
+  pointer-events: auto;
+  text-shadow: inherit;
+}
+
+.subtitle-word:hover,
+.subtitle-word:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: 2px solid rgba(255, 255, 255, 0.72);
+  outline-offset: 2px;
+}
+
+.subtitle-word:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .subtitle-native {
+  max-width: min(92%, 72ch);
   font-size: clamp(0.8rem, 1.6vw, 1rem);
+  line-height: 1.3;
   color: rgba(255, 255, 255, 0.82);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
