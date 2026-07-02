@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "docs/design/open-design-proposals/2026-07-02-lingotorte-ux/variant-b-transcript-workbench.html",
+  "entry": "docs/design/open-design-proposals/2026-07-02-lingotorte-ux/variant-b-transcript-workbench.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-07-02T13:46:29.536Z",
+  "updatedAt": "2026-07-02T13:46:29.536Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}
