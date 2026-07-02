@@ -1,0 +1,74 @@
+{
+  "status": "proposal",
+  "proposalRoot": "docs/design/open-design-proposals/2026-07-02-lingotorte-ux/",
+  "generatedAt": "2026-07-02",
+  "artifacts": [
+    {
+      "path": "variant-a-study-cockpit.html",
+      "kind": "self-contained-html-prototype",
+      "title": "Variant A \u2014 Immersive Study Cockpit",
+      "status": "proposal",
+      "description": "Artifact-centered local video/transcript study cockpit with empty, loaded, selected-word, draft-gate, and review-handoff states."
+    },
+    {
+      "path": "variant-b-transcript-workbench.html",
+      "kind": "self-contained-html-prototype",
+      "title": "Variant B \u2014 Transcript Correction Workbench",
+      "status": "proposal",
+      "description": "Staged transcript source, draft, correction, word-timing, provenance, and approval workbench proposal."
+    },
+    {
+      "path": "proposal-rationale.md",
+      "kind": "markdown-rationale",
+      "title": "Proposal rationale",
+      "status": "proposal",
+      "description": "Rationale, component taxonomy, state inventory, accessibility notes, privacy gates, implementation slice recommendations, and caveats."
+    },
+    {
+      "path": "artifact-manifest.json",
+      "kind": "manifest",
+      "title": "Proposal artifact manifest",
+      "status": "proposal",
+      "description": "Exact artifact list, source files consulted, non-authorizations, and caveats."
+    }
+  ],
+  "sourceFilesConsulted": [
+    "AGENTS.md",
+    "README.md",
+    "PLAN.md",
+    "docs/dev/local-runbook.md",
+    "docs/review/safety-privacy-boundary-review.md",
+    "docs/design/open-design-run-brief-2026-07-02.md",
+    "docs/design/open-design-ux-critique-2026-07-02.md",
+    "apps/web/src/app.ts",
+    "apps/web/src/model.ts",
+    "apps/web/src/uiTypes.ts",
+    "apps/web/src/style.css",
+    "packages/domain/src/coreTypes.ts",
+    "packages/domain/src/sourceContext.ts",
+    "/home/openclaw/open-design/plugins/_official/examples/web-prototype/assets/template.html",
+    "/home/openclaw/open-design/plugins/_official/examples/web-prototype/references/layouts.md",
+    "/home/openclaw/open-design/plugins/_official/examples/web-prototype/references/checklist.md"
+  ],
+  "nonAuthorizations": [
+    "No production implementation approval.",
+    "No edits to apps/web/src/app.ts, apps/web/src/model.ts, apps/web/src/style.css, package files, tests, local-service code, or runtime config.",
+    "No Lingopie proprietary source code, assets, API payloads, media, subtitles, catalog/account data, credentials, tokens, or style copying.",
+    "No DRM/circumvention, protected-stream capture, credential/cookie extraction, automatic online media download, provider calls, public writes, push/PR/release/deploy/public sharing, cloud sync, AnkiConnect, or microphone recording.",
+    "Provider, model-download, online STT/translation/LLM, public-caption, and media-download concepts remain explicit opt-in gates.",
+    "Generated/provider transcripts remain draft evidence until corrected/approved."
+  ],
+  "caveats": [
+    "Proposal artifacts are static/self-contained prototypes with lightweight simulated state switching; they are not production code.",
+    "No live provider calls, media downloads, model downloads, or browser account inspection were performed.",
+    "Pixel-level browser QA was not performed in this generation pass; run a local preview smoke before implementation decisions.",
+    "The repo had pre-existing unrelated dirt/untracked files before this proposal packet was written."
+  ],
+  "boundariesPreserved": [
+    "local/private by default",
+    "provider-gated by default",
+    "non-proprietary Lingotorte direction",
+    "source-backed saved occurrence anchoring",
+    "draft transcript approval gate"
+  ]
+}

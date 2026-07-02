@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lingotorte UX Proposal · Variant A Study Cockpit</title>
+  <style>
+
+:root {
+  --bg: oklch(13% 0.024 252);
+  --surface: oklch(18% 0.03 252);
+  --surface-2: oklch(22% 0.035 252);
+  --surface-3: oklch(26% 0.042 252);
+  --fg: oklch(96% 0.006 248);
+  --muted: oklch(72% 0.035 248);
+  --border: oklch(34% 0.045 248);
+  --accent: oklch(70% 0.13 178);
+  --accent-2: oklch(72% 0.12 235);
+  --warning: oklch(78% 0.13 78);
+  --danger: oklch(70% 0.15 28);
+  --success: oklch(74% 0.13 145);
+  --font-display: ui-serif, Georgia, 'Iowan Old Style', 'Charter', serif;
+  --font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --radius: 18px;
+  --radius-sm: 10px;
+  --shadow: 0 24px 80px oklch(0% 0 0 / 0.34);
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body { margin: 0; background: radial-gradient(circle at 20% 0%, color-mix(in oklch, var(--accent-2) 15%, transparent), transparent 34rem), var(--bg); color: var(--fg); font-family: var(--font-body); line-height: 1.45; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .52; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px solid color-mix(in oklch, var(--accent) 55%, transparent); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.025em; text-wrap: balance; }
+p { text-wrap: pretty; }
+.app-shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+.topbar { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--bg) 88%, transparent); backdrop-filter: blur(18px); }
+.topbar-inner { max-width: 1480px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand strong { font-family: var(--font-display); font-size: 23px; letter-spacing: -0.02em; }
+.brand span, .fine { color: var(--muted); font-size: 13px; }
+.workflow-tabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tab { border: 1px solid var(--border); color: var(--muted); background: color-mix(in oklch, var(--surface) 78%, transparent); border-radius: 999px; min-height: 40px; padding: 8px 13px; }
+.tab[aria-selected='true'] { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 760; }
+main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 24px; }
+.panel { background: color-mix(in oklch, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.panel-soft { background: color-mix(in oklch, var(--surface-2) 78%, transparent); border: 1px solid var(--border); border-radius: var(--radius); }
+.pill { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); padding: 5px 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .025em; white-space: nowrap; }
+.pill.good { color: var(--success); border-color: color-mix(in oklch, var(--success) 50%, var(--border)); background: color-mix(in oklch, var(--success) 10%, transparent); }
+.pill.warn { color: var(--warning); border-color: color-mix(in oklch, var(--warning) 55%, var(--border)); background: color-mix(in oklch, var(--warning) 12%, transparent); }
+.pill.danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 55%, var(--border)); background: color-mix(in oklch, var(--danger) 11%, transparent); }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.btn { border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 42px; padding: 9px 13px; color: var(--fg); background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 800; }
+.btn.ghost { background: transparent; }
+.input, .textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: color-mix(in oklch, var(--bg) 58%, var(--surface)); color: var(--fg); padding: 11px 12px; min-height: 42px; }
+.textarea { min-height: 92px; resize: vertical; }
+.footer { max-width: 1480px; width: 100%; margin: 0 auto; padding: 18px 24px 28px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+@media (max-width: 920px) { .topbar-inner { align-items: flex-start; flex-direction: column; } main { padding: 14px; } .workflow-tabs { justify-content: flex-start; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+.cockpit-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) 420px; gap: 18px; align-items: start; }
+.video-card { overflow: hidden; }
+.video-stage { position: relative; aspect-ratio: 16 / 9; border-radius: calc(var(--radius) - 2px); background: linear-gradient(145deg, oklch(9% 0.018 252), oklch(18% 0.038 248)); border: 1px solid color-mix(in oklch, var(--border) 70%, transparent); min-height: 420px; display: grid; place-items: center; overflow: hidden; }
+.video-stage::before { content: ''; position: absolute; inset: 18px; border-radius: 14px; background: linear-gradient(135deg, color-mix(in oklch, var(--accent-2) 20%, transparent), transparent 42%), linear-gradient(0deg, oklch(0% 0 0 / .64), transparent 34%); border: 1px solid oklch(100% 0 0 / .08); }
+.video-empty { position: relative; z-index: 1; text-align: center; max-width: 42ch; padding: 28px; }
+.video-empty h1 { font-size: clamp(34px, 5vw, 64px); margin-bottom: 12px; }
+.overlay-cue { position: absolute; z-index: 2; left: 8%; right: 8%; bottom: 30px; display: grid; gap: 10px; justify-items: center; text-align: center; }
+.target-line { font-size: clamp(28px, 3vw, 44px); font-weight: 850; line-height: 1.15; text-shadow: 0 3px 18px oklch(0% 0 0 / .8); }
+.target-line button { border: 0; border-radius: 8px; padding: 0 4px; background: transparent; color: inherit; font-weight: inherit; }
+.target-line button.active { background: color-mix(in oklch, var(--accent) 32%, transparent); box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 60%, transparent); }
+.native-line { color: oklch(88% 0.014 248); font-size: clamp(16px, 1.5vw, 22px); text-shadow: 0 2px 10px oklch(0% 0 0 / .7); }
+.control-dock { padding: 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; border-top: 1px solid var(--border); }
+.cue-timeline { height: 10px; border-radius: 999px; background: var(--surface-3); position: relative; overflow: hidden; }
+.cue-timeline span { position: absolute; inset: 0 auto 0 0; width: 37%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: inherit; }
+.toolstrip { display: flex; gap: 8px; flex-wrap: wrap; }
+.side-stack { display: grid; gap: 14px; }
+.side-card { padding: 16px; }
+.side-card h2 { font-size: 24px; margin-bottom: 12px; }
+.side-card h3 { font-size: 18px; margin-bottom: 8px; }
+.cue-row { display: grid; grid-template-columns: 68px 1fr; gap: 12px; padding: 12px; border-radius: 14px; border: 1px solid transparent; background: color-mix(in oklch, var(--surface-2) 76%, transparent); margin-top: 8px; }
+.cue-row.active { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 10%, var(--surface-2)); }
+.cue-text { font-size: 15px; }
+.cue-native { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.source-card { display: grid; gap: 12px; }
+.source-line { display: grid; grid-template-columns: 116px 1fr; gap: 12px; color: var(--muted); font-size: 13px; }
+.save-panel { padding: 18px; display: grid; gap: 12px; border: 1px solid color-mix(in oklch, var(--accent) 52%, var(--border)); background: color-mix(in oklch, var(--accent) 8%, var(--surface)); }
+.save-panel .selected { font-family: var(--font-display); font-size: 32px; }
+.handoff { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: color-mix(in oklch, var(--success) 9%, var(--surface-2)); border: 1px solid color-mix(in oklch, var(--success) 42%, var(--border)); }
+.empty-import { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.empty-import article { padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: color-mix(in oklch, var(--surface) 70%, transparent); }
+.state-note { color: var(--muted); margin: 10px 0 0; }
+@media (max-width: 1120px) { .cockpit-grid { grid-template-columns: 1fr; } .video-stage { min-height: 320px; } }
+@media (max-width: 640px) { .control-dock, .empty-import { grid-template-columns: 1fr; } .source-line { grid-template-columns: 1fr; } .target-line { font-size: 28px; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar" data-od-id="variant-a-topbar">
+      <div class="topbar-inner">
+        <div class="brand"><strong>Lingotorte</strong><span>Study Cockpit proposal · local/private by default</span></div>
+        <nav class="workflow-tabs" aria-label="Study cockpit states">
+          <button class="tab" data-state="empty" aria-selected="false">Import</button>
+          <button class="tab" data-state="loaded" aria-selected="true">Study cue</button>
+          <button class="tab" data-state="selected" aria-selected="false">Word selected</button>
+          <button class="tab" data-state="draft" aria-selected="false">Draft gate</button>
+          <button class="tab" data-state="handoff" aria-selected="false">Review handoff</button>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section class="cockpit-grid" data-od-id="study-cockpit-shell">
+        <div class="panel video-card" data-od-id="artifact-video-canvas">
+          <div class="video-stage" aria-label="Local video segment and subtitle overlay">
+            <div class="video-empty" data-empty-only>
+              <h1>Bring in owned media, then study from the cue.</h1>
+              <p class="state-note">Default path: local video plus optional target/native subtitles. No provider call, cloud sync, or public write.</p>
+              <div class="empty-import">
+                <article><span class="pill good">local file</span><p>Choose an owned video or audio file.</p></article>
+                <article><span class="pill good">optional srt</span><p>Add target and native subtitle tracks.</p></article>
+                <article><span class="pill warn">draft path</span><p>Generate ASR only after explicit gates.</p></article>
+              </div>
+            </div>
+            <div class="overlay-cue" data-loaded-only>
+              <div class="target-line">Czy <button class="word">możemy</button> <button class="word active">powtórzyć</button> to zdanie?</div>
+              <div class="native-line">Can we repeat this sentence?</div>
+            </div>
+          </div>
+          <div class="control-dock" data-loaded-only>
+            <div class="toolstrip" aria-label="Study playback controls">
+              <button class="btn primary">Replay cue R</button>
+              <button class="btn">Loop on</button>
+              <button class="btn">− speed</button>
+              <button class="btn">+ speed</button>
+            </div>
+            <div class="cue-timeline" aria-label="Cue progress"><span></span></div>
+            <span class="num fine">00:18.40 / 00:22.10</span>
+          </div>
+        </div>
+        <aside class="side-stack" data-od-id="study-copilot-panel">
+          <section class="panel side-card" data-od-id="privacy-status-card">
+            <div class="toolstrip" aria-label="Status badges">
+              <span class="pill good">local fixture</span>
+              <span class="pill good">providers off</span>
+              <span class="pill" id="trackStatus">approved track</span>
+            </div>
+            <h2>One artifact, many orbiting actions.</h2>
+            <p class="state-note">The current segment, cue, transcript version, selected span, and review handoff stay visibly connected.</p>
+          </section>
+          <section class="panel side-card" data-od-id="transcript-copilot">
+            <h2>Transcript co-pilot</h2>
+            <label class="fine" for="cue-search">Search transcript</label>
+            <input id="cue-search" class="input" value="powtórzyć" />
+            <div class="cue-row"><span class="num fine">00:14.80</span><div><div class="cue-text">Dobrze, zaczynamy jeszcze raz.</div><div class="cue-native">Okay, we start again.</div></div></div>
+            <div class="cue-row active"><span class="num fine">00:18.40</span><div><div class="cue-text">Czy możemy powtórzyć to zdanie?</div><div class="cue-native">Can we repeat this sentence?</div></div></div>
+            <div class="cue-row"><span class="num fine">00:22.10</span><div><div class="cue-text">Tak, wolniej i z pauzą.</div><div class="cue-native">Yes, slower and with a pause.</div></div></div>
+          </section>
+          <section class="panel side-card source-card" data-od-id="source-context-card">
+            <h3>Source context</h3>
+            <div class="source-line"><strong>Media</strong><span>synthetic-polish-dialogue.webm</span></div>
+            <div class="source-line"><strong>Cue</strong><span class="num">00:18.40–00:22.10 · cue 4</span></div>
+            <div class="source-line"><strong>Span</strong><span id="spanLabel">token 2 · chars 12–21</span></div>
+            <div class="source-line"><strong>Version</strong><span>target track v3 · approved</span></div>
+          </section>
+          <section class="panel save-panel" data-od-id="source-backed-save-panel" id="savePanel">
+            <span class="pill good">source-backed save</span>
+            <div class="selected">powtórzyć</div>
+            <label class="fine" for="meaning">Meaning</label>
+            <input class="input" id="meaning" value="to repeat" />
+            <label class="fine" for="notes">Study note</label>
+            <textarea class="textarea" id="notes">Selected from the active cue; keep time, token span, and transcript version with the occurrence.</textarea>
+            <div class="toolstrip"><button class="btn">Cancel</button><button class="btn primary">Save occurrence</button></div>
+          </section>
+          <section class="panel side-card" data-od-id="draft-approval-gate" id="draftPanel">
+            <span class="pill danger">draft transcript</span>
+            <h3>Saves are blocked until correction and approval.</h3>
+            <p class="state-note">Draft captions/ASR remain evidence only. Word buttons stay disabled and explain the approval gate.</p>
+            <button class="btn" disabled>Save sentence blocked</button>
+          </section>
+          <section class="handoff" data-od-id="review-handoff-card" id="handoffPanel">
+            <div><span class="pill good">saved occurrence</span><p class="state-note">Queued as recognition review with source replay available.</p></div>
+            <button class="btn primary">Open Review</button>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <footer class="footer" data-od-id="variant-a-footer"><span>Proposal artifact only; not production implementation approval.</span><span>Preserves local-first/provider-gated/non-proprietary boundaries.</span></footer>
+  </div>
+  <script>
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const emptyOnly = Array.from(document.querySelectorAll('[data-empty-only]'));
+    const loadedOnly = Array.from(document.querySelectorAll('[data-loaded-only]'));
+    const savePanel = document.getElementById('savePanel');
+    const draftPanel = document.getElementById('draftPanel');
+    const handoffPanel = document.getElementById('handoffPanel');
+    const trackStatus = document.getElementById('trackStatus');
+    function setState(state) {
+      tabs.forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.state === state)));
+      emptyOnly.forEach(el => el.hidden = state !== 'empty');
+      loadedOnly.forEach(el => el.hidden = state === 'empty');
+      savePanel.hidden = state !== 'selected';
+      draftPanel.hidden = state !== 'draft';
+      handoffPanel.hidden = state !== 'handoff';
+      trackStatus.textContent = state === 'draft' ? 'draft track' : state === 'empty' ? 'no transcript' : 'approved track';
+      trackStatus.className = state === 'draft' ? 'pill danger' : state === 'empty' ? 'pill warn' : 'pill good';
+    }
+    tabs.forEach(tab => tab.addEventListener('click', () => setState(tab.dataset.state)));
+    setState('loaded');
+  </script>
+</body>
+</html>

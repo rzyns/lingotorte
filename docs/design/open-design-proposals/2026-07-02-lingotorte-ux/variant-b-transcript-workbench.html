@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lingotorte UX Proposal · Variant B Transcript Workbench</title>
+  <style>
+
+:root {
+  --bg: oklch(13% 0.024 252);
+  --surface: oklch(18% 0.03 252);
+  --surface-2: oklch(22% 0.035 252);
+  --surface-3: oklch(26% 0.042 252);
+  --fg: oklch(96% 0.006 248);
+  --muted: oklch(72% 0.035 248);
+  --border: oklch(34% 0.045 248);
+  --accent: oklch(70% 0.13 178);
+  --accent-2: oklch(72% 0.12 235);
+  --warning: oklch(78% 0.13 78);
+  --danger: oklch(70% 0.15 28);
+  --success: oklch(74% 0.13 145);
+  --font-display: ui-serif, Georgia, 'Iowan Old Style', 'Charter', serif;
+  --font-body: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --radius: 18px;
+  --radius-sm: 10px;
+  --shadow: 0 24px 80px oklch(0% 0 0 / 0.34);
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body { margin: 0; background: radial-gradient(circle at 20% 0%, color-mix(in oklch, var(--accent-2) 15%, transparent), transparent 34rem), var(--bg); color: var(--fg); font-family: var(--font-body); line-height: 1.45; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .52; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 3px solid color-mix(in oklch, var(--accent) 55%, transparent); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.025em; text-wrap: balance; }
+p { text-wrap: pretty; }
+.app-shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+.topbar { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--bg) 88%, transparent); backdrop-filter: blur(18px); }
+.topbar-inner { max-width: 1480px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand strong { font-family: var(--font-display); font-size: 23px; letter-spacing: -0.02em; }
+.brand span, .fine { color: var(--muted); font-size: 13px; }
+.workflow-tabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tab { border: 1px solid var(--border); color: var(--muted); background: color-mix(in oklch, var(--surface) 78%, transparent); border-radius: 999px; min-height: 40px; padding: 8px 13px; }
+.tab[aria-selected='true'] { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 760; }
+main { max-width: 1480px; width: 100%; margin: 0 auto; padding: 24px; }
+.panel { background: color-mix(in oklch, var(--surface) 94%, transparent); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.panel-soft { background: color-mix(in oklch, var(--surface-2) 78%, transparent); border: 1px solid var(--border); border-radius: var(--radius); }
+.pill { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); padding: 5px 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .025em; white-space: nowrap; }
+.pill.good { color: var(--success); border-color: color-mix(in oklch, var(--success) 50%, var(--border)); background: color-mix(in oklch, var(--success) 10%, transparent); }
+.pill.warn { color: var(--warning); border-color: color-mix(in oklch, var(--warning) 55%, var(--border)); background: color-mix(in oklch, var(--warning) 12%, transparent); }
+.pill.danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 55%, var(--border)); background: color-mix(in oklch, var(--danger) 11%, transparent); }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.btn { border: 1px solid var(--border); border-radius: var(--radius-sm); min-height: 42px; padding: 9px 13px; color: var(--fg); background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 800; }
+.btn.ghost { background: transparent; }
+.input, .textarea { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); background: color-mix(in oklch, var(--bg) 58%, var(--surface)); color: var(--fg); padding: 11px 12px; min-height: 42px; }
+.textarea { min-height: 92px; resize: vertical; }
+.footer { max-width: 1480px; width: 100%; margin: 0 auto; padding: 18px 24px 28px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+@media (max-width: 920px) { .topbar-inner { align-items: flex-start; flex-direction: column; } main { padding: 14px; } .workflow-tabs { justify-content: flex-start; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+.workbench { display: grid; grid-template-columns: 280px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.rail { padding: 14px; display: grid; gap: 10px; position: sticky; top: 86px; }
+.stage-button { text-align: left; display: grid; gap: 4px; border: 1px solid var(--border); border-radius: 16px; padding: 12px; color: var(--muted); background: color-mix(in oklch, var(--surface-2) 68%, transparent); min-height: 74px; }
+.stage-button[aria-selected='true'] { color: var(--fg); border-color: var(--accent); background: color-mix(in oklch, var(--accent) 9%, var(--surface-2)); }
+.stage-button strong { color: var(--fg); }
+.stage-button span { font-size: 12px; }
+.main-stage { padding: 18px; min-height: 760px; }
+.stage-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px; }
+.stage-head h1 { font-size: clamp(32px, 4vw, 58px); }
+.stage-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.video-mini { aspect-ratio: 16 / 9; border-radius: 16px; border: 1px solid var(--border); background: linear-gradient(145deg, oklch(9% 0.018 252), oklch(19% 0.04 252)); position: relative; overflow: hidden; display: grid; place-items: center; color: var(--muted); }
+.video-mini::after { content: '00:18.40–00:22.10'; position: absolute; right: 14px; bottom: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--fg); background: oklch(0% 0 0 / .44); padding: 5px 8px; border-radius: 999px; }
+.card-grid { display: grid; gap: 12px; }
+.source-option { padding: 14px; border-radius: 16px; border: 1px solid var(--border); background: color-mix(in oklch, var(--surface-2) 68%, transparent); display: grid; gap: 10px; }
+.source-option.selected { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 8%, var(--surface-2)); }
+.risk-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.editor { display: grid; gap: 12px; }
+.cue-editor { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: color-mix(in oklch, var(--surface-2) 72%, transparent); }
+.time-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.word-row { display: grid; grid-template-columns: 1fr 90px 90px 74px; gap: 8px; align-items: center; padding: 8px; border-radius: 12px; background: color-mix(in oklch, var(--surface-3) 70%, transparent); }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.compare article { padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: color-mix(in oklch, var(--surface-2) 70%, transparent); }
+.report-list { display: grid; gap: 10px; }
+.report-row { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 9px; }
+.right { padding: 16px; display: grid; gap: 14px; position: sticky; top: 86px; }
+.approval { padding: 14px; border-radius: 16px; border: 1px solid color-mix(in oklch, var(--success) 50%, var(--border)); background: color-mix(in oklch, var(--success) 8%, var(--surface)); }
+.warning-box { padding: 14px; border-radius: 16px; border: 1px solid color-mix(in oklch, var(--warning) 58%, var(--border)); background: color-mix(in oklch, var(--warning) 10%, var(--surface)); }
+.stage-panel[hidden] { display: none; }
+@media (max-width: 1200px) { .workbench { grid-template-columns: 1fr; } .rail, .right { position: static; } .rail { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; } }
+@media (max-width: 760px) { .stage-grid, .compare, .cue-editor, .risk-row { grid-template-columns: 1fr; } .word-row { grid-template-columns: 1fr 1fr; } .stage-head { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar" data-od-id="variant-b-topbar">
+      <div class="topbar-inner">
+        <div class="brand"><strong>Lingotorte</strong><span>Transcript Workbench proposal · staged correction and approval</span></div>
+        <div class="toolstrip"><span class="pill good">loopback local service</span><span class="pill warn">providers gated</span><span class="pill danger" id="approvalPill">draft not study-ready</span></div>
+      </div>
+    </header>
+    <main>
+      <section class="workbench" data-od-id="transcript-workbench-shell">
+        <nav class="panel rail" aria-label="Transcript lifecycle stages" data-od-id="lifecycle-stage-rail">
+          <button class="stage-button" data-stage="source" aria-selected="true"><strong>1 Source candidates</strong><span>Local SRT, public captions, local ASR, online ASR.</span></button>
+          <button class="stage-button" data-stage="draft" aria-selected="false"><strong>2 Draft track</strong><span>Warnings and provenance before correction.</span></button>
+          <button class="stage-button" data-stage="cue" aria-selected="false"><strong>3 Cue correction</strong><span>Text, timing, split/merge, source comparison.</span></button>
+          <button class="stage-button" data-stage="word" aria-selected="false"><strong>4 Word timing</strong><span>Inspect and repair first-class word spans.</span></button>
+          <button class="stage-button" data-stage="approved" aria-selected="false"><strong>5 Approval</strong><span>Unlock learner saves only after review.</span></button>
+        </nav>
+        <section class="panel main-stage" data-od-id="workbench-main-stage">
+          <div class="stage-head">
+            <div><p class="pill" id="stageKicker">Source candidates</p><h1 id="stageTitle">Choose the safest transcript starting point.</h1><p class="state-note" id="stageLead">The workbench makes each source class explicit before any draft can become learner material.</p></div>
+            <div class="video-mini" aria-label="Current local video cue preview">local video cue preview</div>
+          </div>
+          <div class="stage-panel" data-panel="source" data-od-id="source-candidates-panel">
+            <div class="stage-grid">
+              <div class="card-grid">
+                <article class="source-option selected"><div class="toolstrip"><span class="pill good">local safe</span><span class="pill">recommended</span></div><h2>Subtitle file import</h2><p class="state-note">Target/native .srt files read by the browser from owned local files. No upload.</p><button class="btn primary">Choose local subtitle</button></article>
+                <article class="source-option"><div class="toolstrip"><span class="pill warn">public read</span><span class="pill danger">draft evidence</span></div><h2>Public caption candidate</h2><p class="state-note">Requires visible public-read authorization and returns an unapproved draft track.</p><button class="btn">Authorize public caption read</button></article>
+                <article class="source-option"><div class="toolstrip"><span class="pill good">local dependency</span><span class="pill warn">model gate</span></div><h2>Local ASR draft</h2><p class="state-note">Loopback service job using explicitly installed ffmpeg/faster-whisper/WhisperX-style tooling.</p><button class="btn">Generate local ASR draft</button></article>
+                <article class="source-option"><div class="toolstrip"><span class="pill danger">online audio upload</span><span class="pill warn">provider gate</span></div><h2>ElevenLabs Scribe draft</h2><p class="state-note">Requires service env, API key, visible authorization, and owned-media disclosure.</p><button class="btn">Review provider consent</button></article>
+              </div>
+              <aside class="warning-box"><h2>Risk tiers stay visible.</h2><div class="risk-row"><span class="pill good">local</span><span>Browser file, fixture, loopback state.</span><span class="num">0</span></div><div class="risk-row"><span class="pill warn">public read</span><span>Caption metadata/text read for public URL.</span><span class="num">1</span></div><div class="risk-row"><span class="pill danger">online ASR</span><span>Audio/media leaves the machine.</span><span class="num">2</span></div></aside>
+            </div>
+          </div>
+          <div class="stage-panel" data-panel="draft" data-od-id="draft-track-panel" hidden>
+            <div class="stage-grid"><div class="card-grid"><article class="warning-box"><span class="pill danger">draft evidence</span><h2>Imported YouTube auto-caption candidate</h2><p class="state-note">Status: draft · source: youtube-auto-caption · warnings: asrDraft, needsCorrection, unapprovedTrack.</p></article><div class="compare"><article><h3>Draft cue</h3><p>Provider caption draft with imperfect timing.</p><p class="num fine">00:18.10–00:21.70</p></article><article><h3>Reference/local cue</h3><p>Aligned native subtitle remains separate until approved.</p><p class="num fine">00:18.40–00:22.10</p></article></div></div><aside class="warning-box"><h2>Study save gate</h2><p class="state-note">Word buttons, sentence saves, and review-card creation remain disabled until a corrected/approved track is active.</p><button class="btn" disabled>Save occurrence blocked</button></aside></div>
+          </div>
+          <div class="stage-panel" data-panel="cue" data-od-id="cue-correction-panel" hidden>
+            <div class="editor">
+              <div class="cue-editor"><div><span class="pill warn">cue 4</span><p class="num fine">00:18.40–00:22.10</p><div class="time-fields"><input class="input" value="18400" aria-label="Start milliseconds" /><input class="input" value="22100" aria-label="End milliseconds" /></div></div><div><label class="fine" for="cue4">Corrected cue text</label><textarea id="cue4" class="textarea">Czy możemy powtórzyć to zdanie?</textarea><div class="toolstrip"><button class="btn">Split cue</button><button class="btn">Merge with next</button><button class="btn primary">Create corrected version</button></div></div></div>
+              <div class="compare"><article><h3>Source comparison · draft</h3><p>Provider caption draft.</p><p class="state-note">Timing starts too early and misses punctuation.</p></article><article><h3>Corrected version</h3><p>Czy możemy powtórzyć to zdanie?</p><p class="state-note">Aligned to local video segment and native cue.</p></article></div>
+            </div>
+          </div>
+          <div class="stage-panel" data-panel="word" data-od-id="word-timing-panel" hidden>
+            <div class="editor">
+              <article class="warning-box"><span class="pill warn">word timings</span><h2>First-class spans, not opaque provider payloads.</h2><p class="state-note">Each word has text, character span, time range, confidence/source kind, engine, and model name.</p></article>
+              <div class="card-grid" aria-label="Word timing editor">
+                <div class="word-row"><input class="input" value="Czy" /><input class="input" value="18400" /><input class="input" value="18680" /><span class="pill good">manual</span></div>
+                <div class="word-row"><input class="input" value="możemy" /><input class="input" value="18720" /><input class="input" value="19380" /><span class="pill warn">forced</span></div>
+                <div class="word-row"><input class="input" value="powtórzyć" /><input class="input" value="19420" /><input class="input" value="20600" /><span class="pill warn">forced</span></div>
+                <div class="word-row"><input class="input" value="zdanie" /><input class="input" value="21240" /><input class="input" value="22020" /><span class="pill good">manual</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="stage-panel" data-panel="approved" data-od-id="approved-track-panel" hidden>
+            <div class="stage-grid"><article class="approval"><span class="pill good">approved for study</span><h2>Study saves can now carry this track version.</h2><p class="state-note">Learner saves and reviews anchor to media id, cue id, char/token span, time range, fingerprint, and transcript version.</p><div class="toolstrip"><button class="btn primary">Approve transcript for study</button><button class="btn">Open Study Cockpit</button></div></article><aside class="panel-soft" style="padding: 16px;"><h2>Readiness summary</h2><div class="report-list"><div class="report-row"><span>Segment count</span><strong class="num">18</strong></div><div class="report-row"><span>Coverage</span><strong class="num">01:42.30</strong></div><div class="report-row"><span>Warnings</span><strong>none active</strong></div><div class="report-row"><span>Provider payload</span><strong>not logged</strong></div></div></aside></div>
+          </div>
+        </section>
+        <aside class="panel right" data-od-id="provenance-quality-sidebar">
+          <h2>Quality & provenance</h2>
+          <div class="report-list">
+            <div class="report-row"><span>Current media</span><strong>owned local file</strong></div>
+            <div class="report-row"><span>Track status</span><strong id="sideStatus">draft</strong></div>
+            <div class="report-row"><span>Source kind</span><strong id="sideSource">local-subtitle</strong></div>
+            <div class="report-row"><span>Online providers</span><strong>disabled unless opted in</strong></div>
+            <div class="report-row"><span>Save readiness</span><strong id="sideReadiness">blocked</strong></div>
+          </div>
+          <div class="warning-box"><span class="pill warn">calm but explicit</span><p class="state-note">The warning language is staged near the risky action instead of making the whole interface feel alarmed.</p></div>
+        </aside>
+      </section>
+    </main>
+    <footer class="footer" data-od-id="variant-b-footer"><span>Proposal artifact only; not production implementation approval.</span><span>No provider calls, downloads, public writes, or production files changed.</span></footer>
+  </div>
+  <script>
+    const stageMeta = {
+      source: ['Source candidates', 'Choose the safest transcript starting point.', 'The workbench makes each source class explicit before any draft can become learner material.', 'draft', 'local-subtitle', 'blocked', 'draft not study-ready'],
+      draft: ['Draft track', 'Keep generated captions visibly unapproved.', 'Draft tracks are evidence for correction, not default study material.', 'draft', 'youtube-auto-caption', 'blocked', 'draft not study-ready'],
+      cue: ['Cue correction', 'Correct text and timing beside the source artifact.', 'The editor keeps the cue, comparison, and video segment in the same working frame.', 'correcting', 'corrected-version', 'blocked', 'correction in progress'],
+      word: ['Word timing', 'Repair saved-span anchors before study use.', 'Word timings are first-class rows with source kind, engine, and model provenance.', 'correcting', 'forced-alignment', 'blocked', 'word timing review'],
+      approved: ['Approval', 'Approve once the track is study-ready.', 'Approval unlocks source-backed saves and review handoffs without losing provenance.', 'approved', 'manual-corrected', 'ready', 'approved for study']
+    };
+    const buttons = Array.from(document.querySelectorAll('.stage-button'));
+    const panels = Array.from(document.querySelectorAll('.stage-panel'));
+    function setStage(stage) {
+      buttons.forEach(button => button.setAttribute('aria-selected', String(button.dataset.stage === stage)));
+      panels.forEach(panel => panel.hidden = panel.dataset.panel !== stage);
+      const [kicker, title, lead, status, source, ready, pillText] = stageMeta[stage];
+      document.getElementById('stageKicker').textContent = kicker;
+      document.getElementById('stageTitle').textContent = title;
+      document.getElementById('stageLead').textContent = lead;
+      document.getElementById('sideStatus').textContent = status;
+      document.getElementById('sideSource').textContent = source;
+      document.getElementById('sideReadiness').textContent = ready;
+      const approvalPill = document.getElementById('approvalPill');
+      approvalPill.textContent = pillText;
+      approvalPill.className = stage === 'approved' ? 'pill good' : stage === 'source' ? 'pill warn' : 'pill danger';
+    }
+    buttons.forEach(button => button.addEventListener('click', () => setStage(button.dataset.stage)));
+    setStage('source');
+  </script>
+</body>
+</html>
