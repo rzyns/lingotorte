@@ -69,6 +69,32 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(text).toContain('Cześć, to jest lokalny test.');
   });
 
+  it('presents a source-backed study cockpit with transcript and status tokens', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    rerenderApp(model);
+
+    const cockpit = document.querySelector('.study-cockpit');
+    expect(cockpit).toBeTruthy();
+    expect(cockpit?.querySelector('.artifact-workbench .video-stage')).toBeTruthy();
+    expect(cockpit?.querySelector('.artifact-workbench .player-controls')).toBeTruthy();
+    expect(cockpit?.querySelector('.transcript-copilot .transcript-panel')).toBeTruthy();
+
+    const statusTokens = Array.from(cockpit?.querySelectorAll('.status-token') ?? []).map((token) => token.textContent?.trim());
+    expect(statusTokens).toContain('local/private');
+    expect(statusTokens).toContain('approved');
+
+    const sourceContext = cockpit?.querySelector('.source-context-row');
+    expect(sourceContext?.textContent).toContain('fixtures/media/synthetic-polish-dialogue.webm');
+    expect(sourceContext?.textContent).toContain('cue 1');
+    expect(sourceContext?.textContent).toContain('0:00–0:02');
+  });
+
   it('imports browser-selected local media and subtitle files into the player without upload', async () => {
     const model = createAppModel();
     model.view = 'library';

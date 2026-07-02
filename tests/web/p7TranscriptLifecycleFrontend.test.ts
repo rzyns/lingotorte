@@ -47,6 +47,30 @@ describe('P7 transcript lifecycle frontend', () => {
     dom.window.close();
   });
 
+  it('presents transcript lifecycle as a staged workbench with risk-tier source cards', () => {
+    const model = createAppModel();
+    model.view = 'library';
+    rerenderApp(model);
+
+    const workbench = document.querySelector('.transcript-workbench');
+    expect(workbench).toBeTruthy();
+    const stages = Array.from(workbench?.querySelectorAll('.lifecycle-stage') ?? []).map((stage) => stage.textContent?.trim());
+    expect(stages).toEqual([
+      '1 Source candidates',
+      '2 Draft evidence',
+      '3 Cue correction',
+      '4 Word timing',
+      '5 Approval',
+    ]);
+
+    const riskTokens = Array.from(workbench?.querySelectorAll('.risk-token') ?? []).map((token) => token.textContent?.trim());
+    expect(riskTokens).toContain('local safe');
+    expect(riskTokens).toContain('public metadata read');
+    expect(riskTokens).toContain('local dependency required');
+    expect(riskTokens).toContain('online audio upload');
+    expect(workbench?.textContent).toContain('Drafts cannot create saved study items until corrected and approved.');
+  });
+
   it('keeps provider captions in draft state until the learner corrects and approves them', async () => {
     const model = createAppModel();
     model.view = 'library';

@@ -675,24 +675,179 @@ function renderFooter(): HTMLElement {
   return footer;
 }
 
+function renderStatusToken(label: string, tone: 'local' | 'approved' | 'draft' | 'warning' | 'neutral' = 'neutral'): HTMLElement {
+  const token = document.createElement('span');
+  token.className = `status-token status-token-${tone}`;
+  token.textContent = label;
+  return token;
+}
+
+function formatCompactTimeMs(ms: number): string {
+  return formatTimeMs(ms).replace(/\.00$/, '');
+}
+
+function renderStudyStatusRail(model: AppModel): HTMLElement {
+  const rail = document.createElement('div');
+  rail.className = 'status-token-rail';
+  rail.setAttribute('aria-label', 'Study status');
+  rail.appendChild(renderStatusToken('local/private', 'local'));
+
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const transcriptStatus = targetTrack?.transcriptStatus ?? 'no transcript';
+  const statusTone = transcriptStatus === 'approved'
+    ? 'approved'
+    : transcriptStatus === 'draft'
+      ? 'draft'
+      : transcriptStatus === 'correcting'
+        ? 'warning'
+        : 'neutral';
+  rail.appendChild(renderStatusToken(transcriptStatus, statusTone));
+
+  const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
+  rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
+  return rail;
+}
+
+function renderSourceContextRow(model: AppModel): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'source-context-row';
+  row.setAttribute('aria-label', 'Current source context');
+
+  const activeCue = currentKeyboardCue(model);
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const parts: string[] = [];
+  if (model.currentMedia) {
+    const loadedCueEndMs = model.cues.reduce((maxEnd, cue) => Math.max(maxEnd, cue.endMs), model.currentMedia.durationMs);
+    parts.push(`media: ${model.currentMedia.originalPath}`);
+    parts.push(`media ${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
+  } else {
+    parts.push('no media loaded');
+  }
+  if (activeCue) {
+    parts.push(`cue ${activeCue.cueIndex}`);
+    parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
+  } else {
+    parts.push('no active cue');
+  }
+  if (targetTrack) {
+    parts.push(`track v${targetTrack.trackVersion}`);
+    parts.push(targetTrack.transcriptStatus);
+  }
+  row.textContent = parts.join(' • ');
+  return row;
+}
+
+function slugClass(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function renderRiskToken(label: string, tone: 'local' | 'warning' | 'draft' | 'neutral'): HTMLElement {
+  const token = renderStatusToken(label, tone);
+  token.classList.add('risk-token', `risk-token-${slugClass(label)}`);
+  return token;
+}
+
+function renderLifecycleStageRail(): HTMLElement {
+  const rail = document.createElement('div');
+  rail.className = 'lifecycle-stage-rail';
+  rail.setAttribute('aria-label', 'Transcript lifecycle stages');
+  ['Source candidates', 'Draft evidence', 'Cue correction', 'Word timing', 'Approval'].forEach((label, index) => {
+    const stage = document.createElement('span');
+    stage.className = 'lifecycle-stage';
+    stage.textContent = `${index + 1} ${label}`;
+    rail.appendChild(stage);
+  });
+  return rail;
+}
+
+function renderSourceCandidateCard(title: string, body: string, risks: HTMLElement[]): HTMLElement {
+  const card = document.createElement('article');
+  card.className = 'source-candidate-card';
+  const heading = document.createElement('h4');
+  heading.textContent = title;
+  const riskRail = document.createElement('div');
+  riskRail.className = 'risk-token-rail';
+  riskRail.append(...risks);
+  const description = document.createElement('p');
+  description.textContent = body;
+  card.append(heading, riskRail, description);
+  return card;
+}
+
+function renderTranscriptWorkbenchOverview(): HTMLElement {
+  const overview = document.createElement('div');
+  overview.className = 'transcript-workbench-overview';
+  overview.appendChild(renderLifecycleStageRail());
+
+  const candidates = document.createElement('div');
+  candidates.className = 'source-candidate-grid';
+  candidates.append(
+    renderSourceCandidateCard(
+      'Local files / existing subtitles',
+      'Best default: use owned media and explicit subtitle files already on this machine.',
+      [renderRiskToken('local safe', 'local')],
+    ),
+    renderSourceCandidateCard(
+      'Local ASR draft',
+      'Uses the loopback local service and local tools when those dependencies are installed and explicitly chosen.',
+      [renderRiskToken('local dependency required', 'warning')],
+    ),
+    renderSourceCandidateCard(
+      'Public caption draft',
+      'Reads public caption metadata/text only after visible authorization; imported tracks remain drafts.',
+      [renderRiskToken('public metadata read', 'warning')],
+    ),
+    renderSourceCandidateCard(
+      'ElevenLabs Scribe v2 draft',
+      'Sends extracted audio to an online provider only after explicit consent and service configuration.',
+      [renderRiskToken('online audio upload', 'draft')],
+    ),
+  );
+  overview.appendChild(candidates);
+
+  const draftEvidence = document.createElement('div');
+  draftEvidence.className = 'draft-evidence-card';
+  draftEvidence.textContent = 'Drafts cannot create saved study items until corrected and approved.';
+  overview.appendChild(draftEvidence);
+  return overview;
+}
+
 function renderPlayerView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
-  section.className = 'player-layout';
+  section.className = 'study-cockpit';
+  section.setAttribute('aria-label', 'Source-backed study cockpit');
+
+  const header = document.createElement('div');
+  header.className = 'study-cockpit-header card';
+  const headingGroup = document.createElement('div');
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Study cockpit';
+  const intro = document.createElement('p');
+  intro.textContent = 'Study from a local video segment, keep the transcript beside it, and preserve cue/time/source context for every saved item.';
+  headingGroup.append(h2, intro);
+  header.append(headingGroup, renderStudyStatusRail(model));
+  section.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'player-layout study-cockpit-grid';
 
   const left = document.createElement('div');
+  left.className = 'artifact-workbench';
+  left.appendChild(renderSourceContextRow(model));
   left.appendChild(renderVideoStage(model));
   left.appendChild(renderPlayerControls(model));
   left.appendChild(renderSelectionPanel(model));
-  section.appendChild(left);
+  grid.appendChild(left);
 
-  const right = document.createElement('div');
-  right.className = 'card';
-  const h2 = document.createElement('h2');
-  h2.textContent = 'Transcript';
-  right.appendChild(h2);
+  const right = document.createElement('aside');
+  right.className = 'card transcript-copilot';
+  const transcriptHeading = document.createElement('h2');
+  transcriptHeading.textContent = 'Transcript co-pilot';
+  right.appendChild(transcriptHeading);
   right.appendChild(renderTranscriptPanel(model));
-  section.appendChild(right);
+  grid.appendChild(right);
 
+  section.appendChild(grid);
   return section;
 }
 
@@ -1435,7 +1590,7 @@ function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrackId: ty
 
 function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
-  panel.className = 'transcript-lifecycle-panel';
+  panel.className = 'transcript-lifecycle-panel transcript-workbench';
 
   const heading = document.createElement('h3');
   heading.textContent = 'Transcript lifecycle';
@@ -1444,6 +1599,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const intro = document.createElement('p');
   intro.textContent = 'Provider/ASR transcripts enter as drafts. Correct and approve a transcript before creating learner study items from it.';
   panel.appendChild(intro);
+  panel.appendChild(renderTranscriptWorkbenchOverview());
 
   const urlLabel = document.createElement('label');
   urlLabel.htmlFor = 'youtube-caption-url';
