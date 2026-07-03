@@ -67,6 +67,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(rows?.length).toBe(2);
     const text = app?.textContent ?? '';
     expect(text).toContain('Cześć, to jest lokalny test.');
+    expect(text).toContain('We study from our own subtitles.');
   });
 
   it('presents a source-backed study cockpit with transcript and status tokens', async () => {

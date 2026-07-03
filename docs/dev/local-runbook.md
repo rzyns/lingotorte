@@ -172,8 +172,8 @@ Acceptable network traffic during dev smoke is limited to loopback/local dev-ser
 The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Default smoke uses fake/local providers and makes no external reads; the live public YouTube caption path is separate and requires both a visible browser public-read authorization and `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` on the loopback service.
 
 1. Open **Library** and locate **Transcript lifecycle**.
-2. Click **Import fake YouTube caption draft** without checking the authorization box; verify the action is blocked before adapter execution and no transcript appears.
-3. Enter or keep a public YouTube URL/video id, check **I authorize a public caption metadata read**, and click **Import fake YouTube caption draft**.
+2. Click **Import gated demo caption draft** without checking the authorization box; verify the action is blocked before adapter execution and no transcript appears.
+3. Enter or keep a public YouTube URL/video id, check **I authorize a public caption metadata read**, and click **Import gated demo caption draft**.
 4. Verify the current transcript is labeled `draft` with `youtube-auto-caption` provenance/warnings.
 5. Open **Player** and verify **Save sentence** is disabled with the approval-gate message.
 6. Return to **Library**, edit cue text/timing or word timing fields, optionally use **Split cue N** / **Merge cue N with next**, and click **Create corrected transcript version**.

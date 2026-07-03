@@ -77,7 +77,7 @@ describe('P7 transcript lifecycle frontend', () => {
     rerenderApp(model);
 
     expect(document.getElementById('app')?.textContent).toContain('Transcript lifecycle');
-    const importWithoutAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement | null;
+    const importWithoutAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import gated demo caption draft') as HTMLButtonElement | null;
     expect(importWithoutAuth).toBeTruthy();
     importWithoutAuth!.click();
     await waitFor(() => Boolean(model.importError));
@@ -93,7 +93,7 @@ describe('P7 transcript lifecycle frontend', () => {
     authCheckbox!.checked = true;
     authCheckbox!.dispatchEvent(new dom.window.Event('change'));
 
-    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement;
+    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import gated demo caption draft') as HTMLButtonElement;
     importWithAuth.click();
     await waitFor(() => model.cues.length === 2);
 
@@ -403,7 +403,7 @@ describe('P7 transcript lifecycle frontend', () => {
     urlInput.dispatchEvent(new dom.window.Event('input'));
     authCheckbox.checked = true;
     authCheckbox.dispatchEvent(new dom.window.Event('change'));
-    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import fake YouTube caption draft') as HTMLButtonElement;
+    const importWithAuth = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import gated demo caption draft') as HTMLButtonElement;
     importWithAuth.click();
     await waitFor(() => model.cues.length === 2);
     const parentTrackId = model.targetTrackId!;

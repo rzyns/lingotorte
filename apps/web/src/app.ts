@@ -383,7 +383,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
     }
     const sourceNote = document.createElement('p');
     sourceNote.className = 'meta';
-    sourceNote.textContent = `Media: ${occurrence.sourceContext.mediaPath}`;
+    appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
     context.appendChild(sourceNote);
   }
   section.appendChild(context);
@@ -686,6 +686,46 @@ function formatCompactTimeMs(ms: number): string {
   return formatTimeMs(ms).replace(/\.00$/, '');
 }
 
+function compactPathLabel(path: string): string {
+  if (path.startsWith('blob:')) return 'browser-local media';
+  if (path.startsWith('youtube:')) return path;
+  const withoutQuery = path.split(/[?#]/)[0] ?? path;
+  const parts = withoutQuery.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+function mediaLabel(model: AppModel, fallbackPath?: string): string {
+  if (model.currentMedia?.title) return model.currentMedia.title;
+  if (fallbackPath) return compactPathLabel(fallbackPath);
+  if (model.currentMedia?.originalPath) return compactPathLabel(model.currentMedia.originalPath);
+  return 'No media loaded';
+}
+
+function appendSourceDisclosure(container: HTMLElement, summaryText: string, detailText: string): void {
+  const summary = document.createElement('span');
+  summary.className = 'source-compact-summary';
+  summary.textContent = summaryText;
+  container.appendChild(summary);
+
+  if (!detailText) return;
+  const details = document.createElement('details');
+  details.className = 'source-disclosure';
+  details.addEventListener('click', (event) => event.stopPropagation());
+  const disclosureSummary = document.createElement('summary');
+  disclosureSummary.textContent = 'details';
+  const code = document.createElement('code');
+  code.textContent = detailText;
+  details.append(disclosureSummary, code);
+  container.appendChild(details);
+}
+
+function renderSourceMetaChip(text: string): HTMLElement {
+  const chip = document.createElement('span');
+  chip.className = 'source-meta-chip';
+  chip.textContent = text;
+  return chip;
+}
+
 function renderStudyStatusRail(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'status-token-rail';
@@ -716,24 +756,45 @@ function renderSourceContextRow(model: AppModel): HTMLElement {
   const activeCue = currentKeyboardCue(model);
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   const parts: string[] = [];
+  const visibleParts: string[] = [];
   if (model.currentMedia) {
     const loadedCueEndMs = model.cues.reduce((maxEnd, cue) => Math.max(maxEnd, cue.endMs), model.currentMedia.durationMs);
     parts.push(`media: ${model.currentMedia.originalPath}`);
     parts.push(`media ${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
+    visibleParts.push(mediaLabel(model));
+    visibleParts.push(`${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
   } else {
     parts.push('no media loaded');
+    visibleParts.push('no media loaded');
   }
   if (activeCue) {
     parts.push(`cue ${activeCue.cueIndex}`);
     parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
+    visibleParts.push(`cue ${activeCue.cueIndex}`);
+    visibleParts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
   } else {
     parts.push('no active cue');
+    visibleParts.push('no active cue');
   }
   if (targetTrack) {
     parts.push(`track v${targetTrack.trackVersion}`);
     parts.push(targetTrack.transcriptStatus);
+    visibleParts.push(`track v${targetTrack.trackVersion}`);
+    visibleParts.push(targetTrack.transcriptStatus);
   }
-  row.textContent = parts.join(' • ');
+  const primary = document.createElement('div');
+  primary.className = 'source-context-primary';
+  appendSourceDisclosure(primary, visibleParts.join(' • '), parts.join(' • '));
+  row.appendChild(primary);
+
+  if (model.currentMedia || activeCue || targetTrack) {
+    const chips = document.createElement('div');
+    chips.className = 'source-context-chips';
+    if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
+    if (activeCue) chips.appendChild(renderSourceMetaChip(`cue ${activeCue.cueIndex}`));
+    if (targetTrack) chips.appendChild(renderSourceMetaChip(targetTrack.transcriptStatus));
+    row.appendChild(chips);
+  }
   return row;
 }
 
@@ -747,13 +808,32 @@ function renderRiskToken(label: string, tone: 'local' | 'warning' | 'draft' | 'n
   return token;
 }
 
-function renderLifecycleStageRail(): HTMLElement {
+function lifecycleStageState(model: AppModel, index: number): 'completed' | 'active' | 'pending' {
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  if (!targetTrack) return index === 0 ? 'active' : 'pending';
+  if (targetTrack.transcriptStatus === 'approved') return 'completed';
+  if (targetTrack.transcriptStatus === 'correcting') {
+    if (index < 4) return 'completed';
+    return 'active';
+  }
+  if (targetTrack.transcriptStatus === 'draft') {
+    if (index < 2) return 'completed';
+    if (index === 2) return 'active';
+    return 'pending';
+  }
+  return index === 0 ? 'active' : 'pending';
+}
+
+function renderLifecycleStageRail(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'lifecycle-stage-rail';
   rail.setAttribute('aria-label', 'Transcript lifecycle stages');
   ['Source candidates', 'Draft evidence', 'Cue correction', 'Word timing', 'Approval'].forEach((label, index) => {
     const stage = document.createElement('span');
-    stage.className = 'lifecycle-stage';
+    const state = lifecycleStageState(model, index);
+    stage.className = `lifecycle-stage lifecycle-stage-${state}`;
+    stage.dataset.state = state;
+    if (state === 'active') stage.setAttribute('aria-current', 'step');
     stage.textContent = `${index + 1} ${label}`;
     rail.appendChild(stage);
   });
@@ -774,10 +854,10 @@ function renderSourceCandidateCard(title: string, body: string, risks: HTMLEleme
   return card;
 }
 
-function renderTranscriptWorkbenchOverview(): HTMLElement {
+function renderTranscriptWorkbenchOverview(model: AppModel): HTMLElement {
   const overview = document.createElement('div');
   overview.className = 'transcript-workbench-overview';
-  overview.appendChild(renderLifecycleStageRail());
+  overview.appendChild(renderLifecycleStageRail(model));
 
   const candidates = document.createElement('div');
   candidates.className = 'source-candidate-grid';
@@ -853,16 +933,20 @@ function renderPlayerView(model: AppModel): HTMLElement {
 
 function renderVideoStage(model: AppModel): HTMLElement {
   const stage = document.createElement('div');
-  stage.className = 'video-stage';
+  stage.className = `video-stage${model.currentMedia ? '' : ' video-stage-empty'}`;
+
+  if (!model.currentMedia) {
+    stage.appendChild(renderEmptyVideoPlaceholder(model));
+    return stage;
+  }
+
   const video = document.createElement('video');
   video.setAttribute('controls', '');
   video.setAttribute('preload', 'metadata');
   video.setAttribute('role', 'img');
-  video.setAttribute('aria-label', model.currentMedia?.title ?? 'Video player');
-  if (model.currentMedia) {
-    video.src = model.currentMedia.originalPath;
-    video.playbackRate = model.player.playbackRate;
-  }
+  video.setAttribute('aria-label', model.currentMedia.title);
+  video.src = model.currentMedia.originalPath;
+  video.playbackRate = model.player.playbackRate;
   video.addEventListener('timeupdate', () => {
     const timeMs = Math.round(video.currentTime * 1000);
     model.player.currentTimeMs = timeMs;
@@ -906,14 +990,54 @@ function renderVideoStage(model: AppModel): HTMLElement {
   const initialCue = activeCueAtTime(model.cues, model.player.currentTimeMs);
   updateOverlay(stage, model, initialCue);
 
-  if (!model.currentMedia) {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'video-placeholder';
-    placeholder.innerHTML = `<span aria-hidden="true">📁</span><p>Import a local video in the Library view to begin.</p>`;
-    stage.appendChild(placeholder);
-  }
-
   return stage;
+}
+
+function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'video-placeholder';
+
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '📁';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Start with owned local media';
+  const body = document.createElement('p');
+  body.textContent = 'Import a video/audio file and optional subtitle tracks, or load the synthetic fixture for a private smoke test.';
+
+  const actions = document.createElement('div');
+  actions.className = 'empty-video-actions';
+  const libraryBtn = document.createElement('button');
+  libraryBtn.className = 'btn-primary';
+  libraryBtn.type = 'button';
+  libraryBtn.textContent = 'Import local files';
+  libraryBtn.addEventListener('click', () => {
+    setView(model, 'library');
+    rerenderApp(model);
+  });
+  const fixtureBtn = document.createElement('button');
+  fixtureBtn.className = 'btn-secondary';
+  fixtureBtn.type = 'button';
+  fixtureBtn.textContent = 'Load synthetic fixture';
+  fixtureBtn.addEventListener('click', () => {
+    void importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    )
+      .then(() => {
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  actions.append(libraryBtn, fixtureBtn);
+  placeholder.append(icon, heading, body, actions);
+  return placeholder;
 }
 
 type SubtitleWord = Readonly<{
@@ -1238,6 +1362,16 @@ function seekRenderedVideoToMs(timeMs: number): void {
   }
 }
 
+function renderCueSourceContext(model: AppModel, cue: Cue): HTMLElement {
+  const context = document.createElement('div');
+  context.className = 'cue-context';
+  const mediaPath = model.currentMedia?.originalPath ?? 'no media';
+  const compact = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${mediaLabel(model, mediaPath)}`;
+  const full = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${mediaPath}`;
+  appendSourceDisclosure(context, compact, full);
+  return context;
+}
+
 function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
   const target = document.createElement('div');
   target.className = 'cue-target';
@@ -1367,11 +1501,7 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
       row.appendChild(native);
     }
 
-    const context = document.createElement('div');
-    context.className = 'cue-context';
-    context.setAttribute('aria-hidden', 'true');
-    context.textContent = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${model.currentMedia?.originalPath ?? 'no media'}`;
-    row.appendChild(context);
+    row.appendChild(renderCueSourceContext(model, cue));
 
     const actions = document.createElement('div');
     actions.className = 'cue-actions';
@@ -1471,6 +1601,29 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
   return panel;
 }
 
+function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
+  const cue = currentKeyboardCue(model);
+  if (!cue) return null;
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const summary = document.createElement('div');
+  summary.className = 'selection-source-summary';
+  summary.append(
+    renderSourceMetaChip(mediaLabel(model)),
+    renderSourceMetaChip(`cue ${cue.cueIndex}`),
+    renderSourceMetaChip(`${formatCompactTimeMs(cue.startMs)}–${formatCompactTimeMs(cue.endMs)}`),
+  );
+  if (targetTrack) {
+    summary.append(renderSourceMetaChip(`track v${targetTrack.trackVersion}`), renderSourceMetaChip(targetTrack.transcriptStatus));
+  }
+  if (model.currentMedia?.originalPath) {
+    const detail = document.createElement('div');
+    detail.className = 'selection-source-detail';
+    appendSourceDisclosure(detail, 'source details', model.currentMedia.originalPath);
+    summary.appendChild(detail);
+  }
+  return summary;
+}
+
 function renderSelectionPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'card selection-panel';
@@ -1480,18 +1633,26 @@ function renderSelectionPanel(model: AppModel): HTMLElement {
 
   if (model.player.lastTokenPreview) {
     const preview = document.createElement('div');
-    preview.className = 'token-preview';
+    const isSavedPreview = model.player.lastTokenPreview.startsWith('Saved ');
+    preview.className = `token-preview${isSavedPreview ? ' saved-occurrence-preview' : ''}`;
     const label = document.createElement('strong');
-    label.textContent = 'Token preview:';
+    label.textContent = isSavedPreview ? 'Saved occurrence:' : 'Token preview:';
     const value = document.createElement('span');
     value.textContent = model.player.lastTokenPreview;
     preview.append(label, value);
+    if (isSavedPreview) {
+      const sourceSummary = renderSelectionSourceSummary(model);
+      if (sourceSummary) preview.appendChild(sourceSummary);
+    }
     panel.appendChild(preview);
   }
 
   if (!model.selection) {
     const p = document.createElement('p');
-    p.textContent = 'Select a word or phrase in a transcript cue to save it with source context.';
+    p.className = 'selection-help';
+    p.textContent = model.player.lastTokenPreview?.startsWith('Saved ')
+      ? 'Saved to My Vocab with the current cue/time/source anchor. Select another transcript word or open My Vocab to review occurrences.'
+      : 'Select a word or phrase in a transcript cue to save it with source context.';
     panel.appendChild(p);
     return panel;
   }
@@ -1599,7 +1760,10 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const intro = document.createElement('p');
   intro.textContent = 'Provider/ASR transcripts enter as drafts. Correct and approve a transcript before creating learner study items from it.';
   panel.appendChild(intro);
-  panel.appendChild(renderTranscriptWorkbenchOverview());
+  panel.appendChild(renderTranscriptWorkbenchOverview(model));
+
+  const gateControls = document.createElement('div');
+  gateControls.className = 'transcript-gate-controls';
 
   const urlLabel = document.createElement('label');
   urlLabel.htmlFor = 'youtube-caption-url';
@@ -1614,7 +1778,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     model.transcriptLifecycle.youtubeUrl = urlInput.value;
   });
   urlLabel.appendChild(urlInput);
-  panel.appendChild(urlLabel);
+  gateControls.appendChild(urlLabel);
 
   const authLabel = document.createElement('label');
   authLabel.className = 'checkbox-row';
@@ -1626,7 +1790,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     model.transcriptLifecycle.publicReadAuthorized = authCheckbox.checked;
   });
   authLabel.append(authCheckbox, document.createTextNode(' I authorize a public caption metadata read.'));
-  panel.appendChild(authLabel);
+  gateControls.appendChild(authLabel);
 
   const elevenLabsAuthLabel = document.createElement('label');
   elevenLabsAuthLabel.className = 'checkbox-row';
@@ -1638,7 +1802,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     model.transcriptLifecycle.elevenLabsAuthorized = elevenLabsAuthCheckbox.checked;
   });
   elevenLabsAuthLabel.append(elevenLabsAuthCheckbox, document.createTextNode(' I authorize sending extracted audio to ElevenLabs Scribe v2 for an online ASR draft.'));
-  panel.appendChild(elevenLabsAuthLabel);
+  gateControls.appendChild(elevenLabsAuthLabel);
 
   const localAsrPathLabel = document.createElement('label');
   localAsrPathLabel.htmlFor = 'local-asr-media-path';
@@ -1653,13 +1817,19 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     model.transcriptLifecycle.localAsrMediaPath = localAsrPathInput.value;
   });
   localAsrPathLabel.appendChild(localAsrPathInput);
-  panel.appendChild(localAsrPathLabel);
+  gateControls.appendChild(localAsrPathLabel);
+  panel.appendChild(gateControls);
+
+  const demoGateNote = document.createElement('p');
+  demoGateNote.className = 'gate-note';
+  demoGateNote.textContent = 'The demo caption button uses a fake provider, but intentionally exercises the same public-caption authorization gate as the real YouTube caption path.';
+  panel.appendChild(demoGateNote);
 
   const actions = document.createElement('div');
-  actions.className = 'form-actions';
+  actions.className = 'form-actions transcript-action-row';
   const importBtn = document.createElement('button');
   importBtn.className = 'btn-primary';
-  importBtn.textContent = 'Import fake YouTube caption draft';
+  importBtn.textContent = 'Import gated demo caption draft';
   importBtn.addEventListener('click', () => {
     const provider = makeFakeYouTubeCaptionProvider({
       videoId: 'abcdefghijk',
@@ -1784,8 +1954,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   if (!targetTrack) return panel;
 
-  const trackMeta = document.createElement('p');
-  trackMeta.className = 'meta';
+  const trackMeta = document.createElement('div');
+  trackMeta.className = 'status-banner transcript-track-summary';
+  trackMeta.setAttribute('role', 'status');
   trackMeta.textContent = `Current transcript: ${targetTrack.transcriptStatus} • ${targetTrack.transcriptSourceKind} • warnings: ${targetTrack.provenance.warningFlags.join(', ') || 'none'}`;
   panel.appendChild(trackMeta);
 
@@ -1793,6 +1964,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     const correctionGroup = document.createElement('div');
     correctionGroup.className = 'transcript-correction-list';
     for (const cue of model.cues) {
+      const cueEditor = document.createElement('article');
+      cueEditor.className = 'transcript-cue-editor';
       const label = document.createElement('label');
       label.htmlFor = `transcript-correction-cue-${cue.cueIndex}`;
       label.textContent = `Cue ${cue.cueIndex} correction`;
@@ -1939,10 +2112,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       });
       structureRow.append(splitCueButton, mergeCueButton);
       if (sourceComparison) {
-        correctionGroup.append(label, sourceComparison, timingRow, wordTimingPanel, structureRow);
+        cueEditor.append(label, sourceComparison, timingRow, wordTimingPanel, structureRow);
       } else {
-        correctionGroup.append(label, timingRow, wordTimingPanel, structureRow);
+        cueEditor.append(label, timingRow, wordTimingPanel, structureRow);
       }
+      correctionGroup.appendChild(cueEditor);
     }
     panel.appendChild(correctionGroup);
 
@@ -2050,7 +2224,13 @@ function renderLibraryView(model: AppModel): HTMLElement {
   localImportGroup.className = 'local-file-import';
   const localHeading = document.createElement('h3');
   localHeading.textContent = 'Import your local files';
-  localImportGroup.appendChild(localHeading);
+  const localIntro = document.createElement('p');
+  localIntro.className = 'file-hint';
+  localIntro.textContent = 'Everything stays in this browser session: media opens as a local object URL, subtitle files are read with File.text(), and provider drafts stay gated.';
+  localImportGroup.append(localHeading, localIntro);
+
+  const localFileGrid = document.createElement('div');
+  localFileGrid.className = 'local-file-grid';
 
   const mediaLabel = document.createElement('label');
   mediaLabel.htmlFor = 'local-media-file';
@@ -2060,7 +2240,13 @@ function renderLibraryView(model: AppModel): HTMLElement {
   mediaInput.name = 'local-media-file';
   mediaInput.type = 'file';
   mediaInput.accept = 'video/*,audio/*,.mp4,.m4v,.webm,.mkv,.mov,.mp3,.m4a,.wav';
-  localImportGroup.append(mediaLabel, mediaInput);
+  const mediaField = document.createElement('div');
+  mediaField.className = 'file-field file-field-required';
+  const mediaHint = document.createElement('p');
+  mediaHint.className = 'file-hint';
+  mediaHint.textContent = 'Required. Use owned media from this machine.';
+  mediaField.append(mediaLabel, mediaInput, mediaHint);
+  localFileGrid.appendChild(mediaField);
 
   const targetLabel = document.createElement('label');
   targetLabel.htmlFor = 'local-target-subtitle-file';
@@ -2070,7 +2256,13 @@ function renderLibraryView(model: AppModel): HTMLElement {
   targetInput.name = 'local-target-subtitle-file';
   targetInput.type = 'file';
   targetInput.accept = '.srt,text/plain,application/x-subrip';
-  localImportGroup.append(targetLabel, targetInput);
+  const targetField = document.createElement('div');
+  targetField.className = 'file-field';
+  const targetHint = document.createElement('p');
+  targetHint.className = 'file-hint';
+  targetHint.textContent = 'Optional target-language .srt. Without it, use a draft ASR workflow later.';
+  targetField.append(targetLabel, targetInput, targetHint);
+  localFileGrid.appendChild(targetField);
 
   const nativeLabel = document.createElement('label');
   nativeLabel.htmlFor = 'local-native-subtitle-file';
@@ -2080,12 +2272,19 @@ function renderLibraryView(model: AppModel): HTMLElement {
   nativeInput.name = 'local-native-subtitle-file';
   nativeInput.type = 'file';
   nativeInput.accept = '.srt,text/plain,application/x-subrip';
-  localImportGroup.append(nativeLabel, nativeInput);
+  const nativeField = document.createElement('div');
+  nativeField.className = 'file-field';
+  const nativeHint = document.createElement('p');
+  nativeHint.className = 'file-hint';
+  nativeHint.textContent = 'Optional native-language support track for dual subtitles.';
+  nativeField.append(nativeLabel, nativeInput, nativeHint);
+  localFileGrid.appendChild(nativeField);
+  localImportGroup.appendChild(localFileGrid);
 
   const localImportBtn = document.createElement('button');
   localImportBtn.className = 'btn-primary';
   localImportBtn.textContent = 'Import local media';
-  localImportBtn.setAttribute('aria-label', 'Import selected local media and optional subtitle files');
+  localImportBtn.setAttribute('aria-label', 'Import local media');
   localImportBtn.addEventListener('click', () => {
     const mediaFile = mediaInput.files?.[0];
     const targetSubtitleFile = targetInput.files?.[0];
@@ -2109,7 +2308,10 @@ function renderLibraryView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
   });
-  localImportGroup.appendChild(localImportBtn);
+  const localImportActions = document.createElement('div');
+  localImportActions.className = 'local-import-actions';
+  localImportActions.appendChild(localImportBtn);
+  localImportGroup.appendChild(localImportActions);
   form.appendChild(localImportGroup);
   form.appendChild(renderTranscriptLifecyclePanel(model));
 
@@ -2243,11 +2445,14 @@ function renderSavedView(model: AppModel): HTMLElement {
 
       const contextLine = document.createElement('div');
       contextLine.className = 'occurrence-context';
-      contextLine.setAttribute('aria-hidden', 'true');
       const tokenSpanText = occurrence.sourceContext.tokenSpan.startToken === occurrence.sourceContext.tokenSpan.endToken - 1
         ? `token ${occurrence.sourceContext.tokenSpan.startToken}`
         : `tokens ${occurrence.sourceContext.tokenSpan.startToken}–${occurrence.sourceContext.tokenSpan.endToken - 1}`;
-      contextLine.textContent = `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`;
+      appendSourceDisclosure(
+        contextLine,
+        `${compactPathLabel(occurrence.sourceContext.mediaPath)} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
+        `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
+      );
       occurrenceGroup.appendChild(contextLine);
     }
     card.appendChild(occurrenceGroup);
@@ -2363,7 +2568,7 @@ function renderReviewView(model: AppModel): HTMLElement {
       }
       const sourceNote = document.createElement('p');
       sourceNote.className = 'meta';
-      sourceNote.textContent = `Media: ${occurrence.sourceContext.mediaPath}`;
+      appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
     }

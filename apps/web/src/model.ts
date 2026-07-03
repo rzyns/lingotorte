@@ -290,8 +290,23 @@ export function toggleLoopCue(model: AppModel): void {
 
 export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | undefined, nativeCues: readonly Cue[]): string | undefined {
   if (!nativeTrack) return undefined;
-  // Find best native cue overlapping target cue, with tolerance.
-  const best = nativeCues.find((nc) => nc.startMs <= cue.endMs + CUE_SYNC_TOLERANCE_MS && nc.endMs > cue.startMs - CUE_SYNC_TOLERANCE_MS);
+  // Find the best native cue overlapping the target cue. A tolerance is useful
+  // for hand-authored subtitle drift, but boundary-adjacent cues can otherwise
+  // make `.find()` pick the previous native line for an exact cue boundary.
+  const cueMidpoint = (cue.startMs + cue.endMs) / 2;
+  const best = nativeCues
+    .map((nativeCue) => {
+      const overlapStart = Math.max(cue.startMs, nativeCue.startMs);
+      const overlapEnd = Math.min(cue.endMs, nativeCue.endMs);
+      const directOverlapMs = Math.max(0, overlapEnd - overlapStart);
+      const withinTolerance = nativeCue.startMs <= cue.endMs + CUE_SYNC_TOLERANCE_MS
+        && nativeCue.endMs >= cue.startMs - CUE_SYNC_TOLERANCE_MS;
+      const midpointDistanceMs = Math.abs(((nativeCue.startMs + nativeCue.endMs) / 2) - cueMidpoint);
+      return { nativeCue, directOverlapMs, withinTolerance, midpointDistanceMs };
+    })
+    .filter((candidate) => candidate.withinTolerance)
+    .sort((a, b) => b.directOverlapMs - a.directOverlapMs || a.midpointDistanceMs - b.midpointDistanceMs)[0]
+    ?.nativeCue;
   return best?.text;
 }
 
