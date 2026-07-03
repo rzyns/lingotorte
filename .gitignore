@@ -4,6 +4,7 @@ apps/web/dist/
 coverage/
 .vite/
 .DS_Store
+.worktrees/
 .env
 .env.*
 !.env.example
