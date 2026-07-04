@@ -11,6 +11,24 @@ Status: **B1 (granular storage/migrations/auditability) is complete.** All other
 - Branch: `main`, ahead of `origin/main` by 14 commits (including `66657b8` audio-recall P6 feature)
 - Worktree: clean
 
+## Fable 5 Review — B1 remaining item scoped
+
+**Session:** `7a1a6e11-7eee-48eb-bf6e-c9d8f42de699` (claude-fable-5, 2026-07-04)
+**Model usage:** inputTokens: 7867, outputTokens: 9272, cacheReadInputTokens: 170709, costUSD: 1.84
+**Full artifact:** `.claude/fable-review-B1-export-provider-policy.md`
+
+**Two entities scoped as B1's remaining items:**
+
+### `export_job` (next — migration v6)
+10-column `export_job` table: `id`, `kind` ('learner-json-manifest'), `status` ('pending'|'running'|'completed'|'failed'), `started_at`, `completed_at`, `destination_kind` ('browser-download'|'file-system-access'), `destination_label` (filename only — never absolute path), `manifest_sha256`, `content_summary_json`, `error_code`. Mutable projection, no foreign keys, no append-only event stream until async export is needed. Follows B1 naming/migration/column conventions.
+
+### `provider_policy` (follow-on — migration v7)
+8-column `provider_policy` table: `id`, `provider_id` ('elevenlabs-scribe'|'youtube-caption'), `enabled` (default false — absence means disabled, never seed enabled rows), `allowed_data_classes` (JSON), `requires_confirmation` (default true — preserves two-layer gate), `first_approved_at`, `created_at`, `updated_at`. No credentials in DB; env-only pattern preserved. Mutable, not append-only.
+
+**Relationship:** independent — no FK between them. ElevenLabs/YouTube are import providers, not export providers.
+
+**Explicit guesses to verify at implementation time:** exact `ExportIntegrity` field name for manifest digest; whether B3 save path exposes a filename as `destination_label`; `providerId` enum spelling.
+
 ## PLAN.md backlog status
 
 | Slice | Goal | Status | Notes |
