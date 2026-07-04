@@ -1997,6 +1997,26 @@ export function setPracticeMode(model: AppModel, mode: import('@lingotorte/domai
   model.practice.mode = mode;
 }
 
+export function generateMultipleChoices(model: AppModel, correctText: string): string[] {
+  const savedItems = Object.values(model.store.snapshot().savedItems)
+    .map((item) => item.displayText)
+    .filter((text) => text.trim().toLowerCase() !== correctText.trim().toLowerCase())
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3);
+  const cues = model.store.snapshot().cues
+    ? Object.values(model.store.snapshot().cues)
+        .map((cue) => cue.text)
+        .filter((text) => text.trim().toLowerCase() !== correctText.trim().toLowerCase())
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3)
+    : [];
+  const distractors = [...savedItems, ...cues]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3);
+  const allChoices = [correctText, ...distractors].sort(() => Math.random() - 0.5);
+  return allChoices;
+}
+
 export function setPracticePendingAnswer(model: AppModel, value: string): void {
   model.practice.pendingAnswer = value;
 }

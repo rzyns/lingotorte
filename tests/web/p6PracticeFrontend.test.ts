@@ -8,6 +8,7 @@ import {
   setReviewBucketAsOf,
   setView,
   submitPracticeAttempt,
+  setPracticeMode,
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
   previewRestoreManifest,
@@ -368,5 +369,22 @@ describe('P6 frontend export / import local learner state', () => {
       return clean;
     });
     expect(networkAttempts).toHaveLength(0);
+  });
+
+  it('shows multiple-choice answer buttons when multiple-choice mode is selected', async () => {
+    const { value: { model, item } } = await createPracticeModel();
+    setPracticeMode(model, 'multiple-choice');
+    renderPractice(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).not.toContain('Type the target text');
+    const choiceButtons = Array.from(document.querySelectorAll('button[data-choice-index]'));
+    expect(choiceButtons.length).toBeGreaterThanOrEqual(2);
+    const correctChoice = choiceButtons.find((b) => b.textContent === item.displayText) as HTMLButtonElement | undefined;
+    expect(correctChoice).toBeTruthy();
+    correctChoice!.click();
+    renderPractice(model);
+
+    expect(app.textContent).toContain('pass');
   });
 });

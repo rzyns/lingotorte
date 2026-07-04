@@ -62,6 +62,7 @@ import {
   needsMediaRelink,
   handleNameFromMedia,
   learnerProgress,
+  generateMultipleChoices,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -328,7 +329,27 @@ function renderPracticeView(model: AppModel): HTMLElement {
 
   const typedEnabled = model.practice.mode === 'typed-input' || model.practice.typedAttemptsEnabled;
 
-  if (typedEnabled) {
+  if (model.practice.mode === 'multiple-choice') {
+    const choices = generateMultipleChoices(model, active.savedItem.displayText);
+    const choiceGroup = document.createElement('div');
+    choiceGroup.className = 'practice-choices';
+    choiceGroup.setAttribute('role', 'group');
+    choiceGroup.setAttribute('aria-label', 'Multiple choice answers');
+    for (let i = 0; i < choices.length; i++) {
+      const choiceBtn = document.createElement('button');
+      choiceBtn.className = 'btn-secondary practice-choice';
+      choiceBtn.type = 'button';
+      choiceBtn.dataset.choiceIndex = String(i);
+      choiceBtn.textContent = choices[i]!;
+      choiceBtn.setAttribute('aria-label', `Answer choice ${i + 1}`);
+      choiceBtn.addEventListener('click', () => {
+        submitPracticeAttempt(model, choices[i]!, model.review.bucketAsOf);
+        rerenderApp(model);
+      });
+      choiceGroup.appendChild(choiceBtn);
+    }
+    section.appendChild(choiceGroup);
+  } else if (typedEnabled) {
     const answerGroup = document.createElement('div');
     answerGroup.className = 'practice-answer';
     const answerLabel = document.createElement('label');
