@@ -2,12 +2,13 @@
 
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
-Last reconciled: 2026-07-03.
-Current branch posture at reconciliation: `main...origin/main` before this B1 slice.
+Last reconciled: 2026-07-04.
+Current branch posture at reconciliation: `main...origin/main` before this B1 slice; `66657b8` audio-recall P6 feature added after reconciliation.
 Known unrelated local dirt at reconciliation: `.understand-anything/` untracked generated artifacts; leave those out of Lingotorte plan/status commits unless Janusz separately scopes them.
 
 Recent relevant commits:
 
+- `66657b8 feat(p6): audio-recall practice mode — P6 learner state, recording UI, submit flow`
 - `acfe67b Make subtitle overlay windowed and clickable`
 - `7b17e76 Document Lingotorte systemd user services`
 - `56bb804 Wire ElevenLabs Scribe local-service path`
