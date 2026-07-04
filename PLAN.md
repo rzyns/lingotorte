@@ -24,11 +24,11 @@ Recent relevant commits:
 | `docs/dev/local-runbook.md` | Current local runbook, one-command/systemd local start, local-service/ASR/public-caption smoke checklist, and known limitations. |
 | `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline and deferred cleanup ledger. Some details are older, but the limitation/deferred tables remain useful. |
 | `docs/plan/v3-transcript-generation-correction-plan.md` | Governing transcript-generation/correction design lane. Many slices are now implemented; use this for semantics and gates, not status. |
-| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite plus a forward-only migration ledger and initial `media_asset` projection, so this remains backlog evidence for the rest of B1. |
+| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite plus a forward-only migration ledger and typed projections for current `LocalStore` media, transcript, learner, review, practice, and import-job state; the doc remains backlog evidence for authoritative append-only replay/export metadata and future entities. |
 | `docs/review/safety-privacy-boundary-review.md` | Binding safety/privacy/legal boundary. Not historical. Preserve these gates. |
 | `docs/planning/` | Historical parent planning/reference bundle. Use for rationale, acceptance criteria, and backlog seeds only after checking current code/docs. |
 | `docs/final/` | Historical final fan-in bundle from the original planning mission. Use for synthesis/background, not current status. |
-| `packages/storage/src/localStore.ts` and `packages/storage/src/sqliteLocalPersistence.ts` | Typed in-memory store plus SQLite snapshot persistence adapter, migration ledger, and initial typed `media_asset` projection used by the loopback service. |
+| `packages/storage/src/localStore.ts` and `packages/storage/src/sqliteLocalPersistence.ts` | Typed in-memory store plus SQLite snapshot persistence adapter, migration ledger, and typed projections for current local media/transcript/learner/review/practice/import-job state used by the loopback service. |
 | `apps/local-service/src/server.ts` | Loopback service for health/status, SQLite state save/load, scratch cleanup, job create/status/cancel, local ASR, ElevenLabs, and gated public YouTube caption jobs. |
 | `packages/local-transcription/src/index.ts` | Node-side ffmpeg/faster-whisper/WhisperX/ElevenLabs adapter seams. |
 | `scripts/faster_whisper_transcribe.py` | Dependency-lazy faster-whisper CLI entrypoint. |
@@ -74,7 +74,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
   - browser JSON export/import with privacy warnings and merge/update restore preview.
 - Loopback local service supports:
   - health/status endpoints;
-  - SQLite snapshot save/load with a forward-only `schema_migration` ledger and initial typed `media_asset` projection;
+  - SQLite snapshot save/load with a forward-only `schema_migration` ledger and typed projections for current media, subtitle track/cue, word timing, media observation, saved item/occurrence, review, practice, and import job/event state;
   - scratch cleanup;
   - job create/status/cancel;
   - local transcription jobs;
@@ -109,7 +109,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
 
 These work today as local prototype/product slices, but are not the final daily-driver shape:
 
-- SQLite persistence is still snapshot-centered, but it now has a forward-only migration ledger and an initial typed `media_asset` projection; it is not yet the full granular schema/audit/conflict model in the architecture docs.
+- SQLite persistence is still snapshot-centered, but it now has a forward-only migration ledger and typed projections for all current `LocalStore` entity groups; it is not yet a fully authoritative append-only replay/conflict/export system.
 - Browser `blob:` media handles are session-scoped; after restart, saved metadata can persist but playback/local ASR may require reselecting the owned media file or pasting an absolute local path.
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
 - Practice is basic and local; richer game-like practice/progress views remain future work.
@@ -124,13 +124,13 @@ Work below is already planned or deferred in older docs and remains legitimately
 
 Goal: replace/augment snapshot SQLite with typed durable tables, migrations, and audit/replay surfaces where they matter.
 
-Scope:
+Scope/status:
 
-- Forward-only migration ledger. **Implemented first slice:** `schema_migration` applies versioned checksummed migrations for the snapshot store and initial `media_asset` projection.
-- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented first slice:** rebuildable `media_asset` projection from the latest typed snapshot; remaining tables/projections are still backlog.
-- Append-only review/import/provider/export events where useful.
-- Round-trip tests from empty DB and at least one migration test. **Implemented first slice:** targeted tests cover empty-DB migration ledger, snapshot round-trip, and media projection rebuild.
-- Clear source-missing/broken-media behavior without silently deleting learner history.
+- Forward-only migration ledger. **Implemented:** `schema_migration` applies versioned checksummed migrations through v5.
+- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented for current `LocalStore` state:** rebuildable projections now cover `media_asset`, `media_file_observation`, `subtitle_track`, `cue`, `transcript_word_timing`, `saved_item`, `saved_occurrence`, `review_card`, `review_card_state`, `review_event`, `practice_attempt`, `import_job`, and `import_job_event`. **Remaining:** export-job/provider-policy projections when those become first-class local store entities.
+- Append-only review/import/provider/export events where useful. **Partially implemented:** review/import events have typed tables, but the current write path still rebuilds projections from the compatibility snapshot. Making these tables the authoritative append-only replay source is a separate storage-design decision.
+- Round-trip tests from empty DB and at least one migration test. **Implemented:** targeted tests cover empty-DB migration ledger plus media/transcript/learner/review/practice/import projections.
+- Clear source-missing/broken-media behavior without silently deleting learner history. **Implemented storage guard:** missing-media observations can persist while saved learner anchors remain queryable even when the media asset projection is unavailable. UI/repair affordances continue under B2.
 
 Not in scope without fresh approval: cloud sync or destructive data cleanup.
 
@@ -216,7 +216,7 @@ These remain planned/reference ideas, not current default work:
 | Old workstream | Current status | Remaining route |
 |---|---|---|
 | WS0 — plan/status hygiene | This reconciliation pass refreshes status and marks old planning bundles as historical/reference. | Keep docs current after major implementation commits. |
-| WS1 — durable local persistence | Partially implemented as SQLite snapshot save/load/autosave. | B1, B2, B3. |
+| WS1 — durable local persistence | Mostly implemented as SQLite snapshot save/load/autosave plus forward-only migrations and typed projections for current local store entities. | B2, B3, and the separate design decision for authoritative append-only replay/export metadata. |
 | WS2 — loopback local service boundary | Implemented baseline: health/status/state/jobs/cancel/cleanup, loopback-only, redacted status. | Maintain safety tests as service grows. |
 | WS3 — real transcription job integration | Implemented service/UI seams for local ASR, ElevenLabs, and public captions. | B4 for real local dependency proof; live ElevenLabs only by explicit consent. |
 | WS4 — transcript correction editor MVP | Implemented baseline: correction, split/merge, word timing edits, source comparison, immutable corrected versions, approval gate. | Polish UX as issues arise; preserve approved-track gate. |
@@ -281,7 +281,7 @@ Current known state:
 - Loopback service supports health/status/state/jobs/cancel/cleanup, local ASR, ElevenLabs Scribe behind gates, and public YouTube caption reads behind gates.
 - Transcript lifecycle has draft/correction/approval, split/merge, word timing edits, source comparison, immutable corrected versions, and approved-track learner-save gate.
 - Subtitle overlay is windowed and clickable; overlay words save lexeme occurrences through the approved source-backed path.
-- SQLite persistence is snapshot-oriented and remains the main storage/durability gap.
+- SQLite remains snapshot-compatible, now with forward-only migrations and typed projections for current LocalStore entities; the remaining storage design question is whether/when append-only event tables become authoritative replay sources instead of rebuildable projections.
 - Browser blob media handles remain session-scoped and may need reselecting after restart.
 - Export/import works as browser JSON manifest download/paste+merge, not full backup/restore.
 - Polish analysis is useful but heuristic/local.

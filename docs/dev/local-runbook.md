@@ -67,7 +67,7 @@ npm run dev -- --host 127.0.0.1
 Default service behavior:
 
 - binds only to `127.0.0.1:5174` unless loopback env vars override it;
-- stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot plus forward-only `schema_migration` ledger and rebuildable typed projections;
+- stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot plus forward-only `schema_migration` ledger and rebuildable typed projections for current media/transcript/learner/review/practice/import-job state;
 - keeps scratch/model-cache directories under `$HOME/.local/share/lingotorte/`;
 - redacts local filesystem paths from `/api/status` and startup receipts;
 - reports persistence status, including applied migration metadata, without exposing the database path;
