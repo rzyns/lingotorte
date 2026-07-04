@@ -187,7 +187,7 @@ Scope/status:
 
 - Richer local practice modes: meaning quiz, match/context/audio recall, sentence builder, and better prompt/reveal feedback.
 - Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear. **Partially implemented:** the study cockpit status rail now shows `N saved • N due • N reviews • N practice` counts derived from local store state via `learnerProgress(model, asOf)`.
-- Phrase/range looping from arbitrary word spans where word timings exist.
+- Phrase/range looping from arbitrary word spans where word timings exist. **Partially implemented:** `toggleLoopRange`/`clearLoopRange` and `applyLoopTolerance` now support an arbitrary `{ startMs, endMs }` loop range on the player state; the video `timeupdate` handler uses it. UI controls to set a range from selected word spans remain future work.
 - Clip/audio snippet generation only from owned local media and with cache cleanup.
 
 ### B7 — Subtitle ingest robustness and alignment tooling

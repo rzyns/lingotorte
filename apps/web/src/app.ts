@@ -1053,7 +1053,7 @@ function renderVideoStage(model: AppModel): HTMLElement {
       scrollCueIntoView(cue.id);
     }
     updateOverlay(stage, model, cue);
-    const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue);
+    const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue, model.player.loopRange);
     if (loopJump !== null) {
       video.currentTime = loopJump / 1000;
     }

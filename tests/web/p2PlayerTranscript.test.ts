@@ -7,6 +7,8 @@ import {
   activeCueAtTime,
   projectPlayerState,
   applyLoopTolerance,
+  toggleLoopRange,
+  clearLoopRange,
   previousCue,
   nextCue,
   clampPlaybackRate,
@@ -293,6 +295,29 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(applyLoopTolerance(1101, cue, true)).toBe(0);
     expect(applyLoopTolerance(-101, cue, true)).toBe(0);
     expect(applyLoopTolerance(1500, cue, false)).toBeNull();
+  });
+
+  it('toggleLoopRange sets and clears an arbitrary phrase range on the player', () => {
+    const model = createAppModel();
+    expect(model.player.loopRange).toBeNull();
+    toggleLoopRange(model, 2000, 4000);
+    expect(model.player.loopRange).toEqual({ startMs: 2000, endMs: 4000 });
+    toggleLoopRange(model, 2000, 4000);
+    expect(model.player.loopRange).toBeNull();
+    toggleLoopRange(model, 1000, 3000);
+    expect(model.player.loopRange).toEqual({ startMs: 1000, endMs: 3000 });
+    clearLoopRange(model);
+    expect(model.player.loopRange).toBeNull();
+  });
+
+  it('applyLoopTolerance loops within a phrase range when loopRange is set', () => {
+    const cue = { id: 'c1', startMs: 0, endMs: 5000, text: 'one', normalizedText: 'one', textSha256: sha256Placeholder, cueIndex: 0, trackId: 't1', createdAt: '2026-01-01T00:00:00.000Z' };
+    const loopRange = { startMs: 2000, endMs: 4000 };
+    expect(applyLoopTolerance(3000, cue, false, loopRange)).toBeNull();
+    expect(applyLoopTolerance(4000, cue, false, loopRange)).toBeNull();
+    expect(applyLoopTolerance(4101, cue, false, loopRange)).toBe(2000);
+    expect(applyLoopTolerance(1899, cue, false, loopRange)).toBe(2000);
+    expect(applyLoopTolerance(3000, cue, true, null)).toBeNull();
   });
 
   it('activeCueAtTime returns correct cue within tolerance boundaries', () => {

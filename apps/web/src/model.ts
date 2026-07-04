@@ -52,6 +52,7 @@ export function createAppModel(): AppModel {
       isPlaying: false,
       playbackRate: 1,
       loopCue: false,
+      loopRange: null,
       activeCueId: null,
     },
     currentMedia: null,
@@ -295,6 +296,19 @@ export function toggleLoopCue(model: AppModel): void {
   model.player.loopCue = !model.player.loopCue;
 }
 
+export function toggleLoopRange(model: AppModel, startMs: number, endMs: number): void {
+  const current = model.player.loopRange;
+  if (current !== null && current.startMs === startMs && current.endMs === endMs) {
+    model.player.loopRange = null;
+  } else {
+    model.player.loopRange = { startMs, endMs };
+  }
+}
+
+export function clearLoopRange(model: AppModel): void {
+  model.player.loopRange = null;
+}
+
 export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | undefined, nativeCues: readonly Cue[]): string | undefined {
   if (!nativeTrack) return undefined;
   // Find the best native cue overlapping the target cue. A tolerance is useful
@@ -341,7 +355,15 @@ export function projectPlayerState(
   };
 }
 
-export function applyLoopTolerance(videoCurrentMs: number, currentCue: Cue | null, loopEnabled: boolean): number | null {
+export function applyLoopTolerance(videoCurrentMs: number, currentCue: Cue | null, loopEnabled: boolean, loopRange: { startMs: number; endMs: number } | null = null): number | null {
+  if (loopRange !== null) {
+    const isPastRange = videoCurrentMs > loopRange.endMs + CUE_SYNC_TOLERANCE_MS;
+    const isBeforeRange = videoCurrentMs < loopRange.startMs - CUE_SYNC_TOLERANCE_MS;
+    if (isPastRange || isBeforeRange) {
+      return loopRange.startMs;
+    }
+    return null;
+  }
   if (!loopEnabled || !currentCue) return null;
   const isPastCue = videoCurrentMs > currentCue.endMs + CUE_SYNC_TOLERANCE_MS;
   const isBeforeCue = videoCurrentMs < currentCue.startMs - CUE_SYNC_TOLERANCE_MS;

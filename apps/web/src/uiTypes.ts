@@ -14,6 +14,7 @@ export type PlayerState = {
   isPlaying: boolean;
   playbackRate: number;
   loopCue: boolean;
+  loopRange: { startMs: number; endMs: number } | null;
   activeCueId: string | null;
   lastTokenPreview?: string;
 };
