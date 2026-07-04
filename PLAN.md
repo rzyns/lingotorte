@@ -149,11 +149,11 @@ Scope/status:
 
 Goal: turn the manifest preview/download into an intentional local backup/export product.
 
-Scope:
+Scope/status:
 
-- User-chosen export/download/write path story.
+- User-chosen export/download/write path story. **Partially implemented:** the existing browser download button is supplemented by a **Save export to chosen file** button when the browser exposes `showSaveFilePicker`, using the File System Access API to write to a user-chosen file.
 - Metadata-only backup first; optional media-copy backup only behind explicit opt-in.
-- Restore conflict UX, full replace vs merge/update decision, and readback/integrity verification.
+- Restore conflict UX, full replace vs merge/update decision, and readback/integrity verification. **Partially implemented:** the File System Access save path reads back the saved file and verifies it matches the written manifest before reporting success.
 - Preserve privacy warnings for cue text, notes, media refs, review history, and optional media copies.
 - Keep AnkiConnect/cloud sync out of scope unless separately authorized.
 

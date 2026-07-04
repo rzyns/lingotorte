@@ -99,6 +99,7 @@ export function createAppModel(): AppModel {
       acknowledgedWarnings: [],
       confirmOverwrite: false,
       lastExport: null,
+      lastSaveVerified: null,
     },
     localService: {
       baseUrl: DEFAULT_LOCAL_SERVICE_BASE_URL,
@@ -1984,6 +1985,7 @@ export function exportLearnerState(model: AppModel): { manifest: import('@lingot
     warningCount: manifest.privacyWarnings.length,
   };
   model.exportImport.lastError = null;
+  model.exportImport.lastSaveVerified = null;
   return { manifest, fileName, manifestJson };
 }
 

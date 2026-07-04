@@ -30,6 +30,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
   afterEach(() => {
     delete (globalThis as { showOpenFilePicker?: unknown }).showOpenFilePicker;
+    delete (globalThis as { showSaveFilePicker?: unknown }).showSaveFilePicker;
     dom.window.close();
   });
 
@@ -363,5 +364,51 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const model = createAppModel();
     expect(model.providerPolicy.onlineProvidersEnabled).toBe(false);
     expect(model.adapters.dictionary?.adapterId).toContain('unavailable');
+  });
+
+  it('offers a File System Access save-file picker for export when supported and verifies writeback integrity', async () => {
+    const model = createAppModel();
+    model.view = 'export-import';
+    const createObjectURL = vi.fn(() => 'blob:export-download');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    let savedText: string | null = null;
+    const writable = {
+      write: vi.fn(async (data: unknown) => {
+        savedText = typeof data === 'string' ? data : String(data);
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const handle = {
+      createWritable: vi.fn(async () => writable),
+      getFile: vi.fn(async () => new dom.window.File([savedText ?? ''], 'lingotorte-export.json', { type: 'application/json' })),
+    };
+    const showSaveFilePicker = vi.fn(async () => handle);
+    Object.defineProperty(globalThis, 'showSaveFilePicker', { configurable: true, value: showSaveFilePicker });
+
+    rerenderApp(model);
+    const generateBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
+    expect(generateBtn).toBeTruthy();
+    generateBtn!.click();
+    rerenderApp(model);
+
+    const saveBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save export to chosen file');
+    expect(saveBtn).toBeTruthy();
+    saveBtn!.click();
+    for (let i = 0; i < 10 && !model.exportImport.lastError && model.exportImport.lastExport !== null && !savedText; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    rerenderApp(model);
+
+    expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+    expect(handle.createWritable).toHaveBeenCalledTimes(1);
+    expect(writable.write).toHaveBeenCalledTimes(1);
+    expect(writable.close).toHaveBeenCalledTimes(1);
+    expect(savedText).not.toBeNull();
+    expect(savedText).toContain('"schemaVersion"');
+    expect(model.exportImport.lastError).toBeNull();
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Verified');
   });
 });

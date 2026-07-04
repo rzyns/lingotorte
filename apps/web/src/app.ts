@@ -86,6 +86,21 @@ type BrowserFilePickerGlobal = typeof globalThis & Readonly<{
   showOpenFilePicker?: (options?: unknown) => Promise<BrowserFileHandleLike[]>;
 }>;
 
+type BrowserFileWritableLike = {
+  write(data: string): Promise<void>;
+  close(): Promise<void>;
+};
+
+type BrowserFileSaveHandleLike = Readonly<{
+  name: string;
+  createWritable(): Promise<BrowserFileWritableLike>;
+  getFile(): Promise<File>;
+}>;
+
+type BrowserFileSavePickerGlobal = typeof globalThis & Readonly<{
+  showSaveFilePicker?: (options?: unknown) => Promise<BrowserFileSaveHandleLike>;
+}>;
+
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tagName = target.tagName.toLowerCase();
@@ -458,6 +473,59 @@ function renderExportImportView(model: AppModel): HTMLElement {
       downloadTextFile(model.exportImport.lastExport!.fileName, model.exportImport.lastExport!.manifestJson);
     });
     exportGroup.appendChild(downloadBtn);
+
+    const showSaveFilePicker = (globalThis as BrowserFileSavePickerGlobal).showSaveFilePicker;
+    if (typeof showSaveFilePicker === 'function') {
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn-secondary';
+      saveBtn.textContent = 'Save export to chosen file';
+      saveBtn.setAttribute('aria-label', 'Save learner export JSON through a browser File System Access save picker with readback verification');
+      saveBtn.addEventListener('click', () => {
+        const manifestJson = model.exportImport.lastExport!.manifestJson;
+        const fileName = model.exportImport.lastExport!.fileName;
+        void showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'Lingotorte export JSON',
+              accept: { 'application/json': ['.json'] },
+            },
+          ],
+        })
+          .then(async (handle) => {
+            const writable = await handle.createWritable();
+            try {
+              await writable.write(manifestJson);
+            } finally {
+              await writable.close();
+            }
+            const savedFile = await handle.getFile();
+            const savedText = await savedFile.text();
+            if (savedText !== manifestJson) {
+              throw new Error('Export file readback did not match the written manifest.');
+            }
+            model.exportImport.lastSaveVerified = {
+              fileName: savedFile.name,
+              verifiedAt: new Date().toISOString(),
+            };
+            model.exportImport.lastError = null;
+            rerenderApp(model);
+          })
+          .catch((err: unknown) => {
+            setExportImportError(model, err instanceof Error ? err.message : String(err));
+            rerenderApp(model);
+          });
+      });
+      exportGroup.appendChild(saveBtn);
+    }
+
+    if (model.exportImport.lastSaveVerified) {
+      const verifyBanner = document.createElement('div');
+      verifyBanner.className = 'status-banner success export-verified';
+      verifyBanner.setAttribute('role', 'status');
+      verifyBanner.textContent = `Verified: ${model.exportImport.lastSaveVerified.fileName} saved and readback matched at ${model.exportImport.lastSaveVerified.verifiedAt}`;
+      exportGroup.appendChild(verifyBanner);
+    }
   }
 
   section.appendChild(exportGroup);
