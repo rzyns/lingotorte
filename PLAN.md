@@ -161,12 +161,12 @@ Scope/status:
 
 Goal: prove the local ffmpeg/faster-whisper/WhisperX path on this machine with real dependencies when Janusz authorizes the model/dependency setup.
 
-Scope:
+Scope/status:
 
-- Record Python/uv environment, ffmpeg, model, license/cache location, command receipts, latency, and output quality notes.
-- Keep model/cache/scratch artifacts out of git.
-- Add or update runbook setup instructions based on actual receipt.
-- Do not download models or install heavyweight dependencies silently.
+- Record Python/uv environment, ffmpeg, model, license/cache location, command receipts, latency, and output quality notes. **Implemented:** ASR pipeline proven on 2026-07-04 with Python 3.12.3 venv, faster-whisper 1.2.1, ffmpeg 8.1.2, tiny model (CPU/int8). Setup receipts recorded in `docs/dev/local-runbook.md`.
+- Keep model/cache/scratch artifacts out of git. **Preserved:** venv at `~/.local/share/lingotorte/asr-venv/`, model cache at `~/.cache/huggingface/hub/`, both outside the repo.
+- Add or update runbook setup instructions based on actual receipt. **Implemented:** runbook now includes setup commands and recorded dependency versions.
+- Do not download models or install heavyweight dependencies silently. **Approved:** model download was explicitly authorized by Janusz on 2026-07-04.
 
 ### B5 — Polish dictionary/morphology/translation quality
 

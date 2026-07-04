@@ -207,6 +207,31 @@ python3 scripts/faster_whisper_transcribe.py --audio /absolute/path/audio.wav --
 python3 scripts/whisperx_align.py --audio /absolute/path/audio.wav --transcript-json /absolute/path/transcript-segments.json --language pl --device cpu
 ```
 
+### B4 ASR dependency proof (recorded 2026-07-04)
+
+The local ASR pipeline has been proven on this machine with the following setup:
+
+- **Python:** 3.12.3 in a dedicated venv at `~/.local/share/lingotorte/asr-venv/`
+- **faster-whisper:** 1.2.1, installed via `uv pip install faster-whisper`
+- **ffmpeg:** 8.1.2 (via Linuxbrew)
+- **Model:** `tiny` (default proof model), CPU device, int8 compute type. Also available in cache: `base`, `large-v3`
+- **Model cache location:** `~/.cache/huggingface/hub/` (HuggingFace Hub default)
+- **Status:** ASR pipeline functional — model loads, transcription executes, word timestamps supported. The synthetic fixture webm is silence-only so no segments are produced from it; real owned media is needed for quality assessment.
+
+Setup commands:
+
+```bash
+# Create ASR venv and install faster-whisper
+uv venv ~/.local/share/lingotorte/asr-venv --python 3.12
+source ~/.local/share/lingotorte/asr-venv/bin/activate
+uv pip install faster-whisper
+
+# Run transcription (after activating venv)
+python3 scripts/faster_whisper_transcribe.py --audio /absolute/path/audio.wav --language pl --model tiny --device cpu --compute-type int8 --word-timestamps
+```
+
+Model/cache/scratch artifacts are kept out of git. The venv and model cache live under `~/.local/share/lingotorte/` and `~/.cache/huggingface/` respectively.
+
 Cloud STT remains an explicit per-run decision because it sends local audio/media to ElevenLabs. Keep API keys out of logs, fixtures, commits, and screenshots.
 
 ## Known V1/V4 limitations
