@@ -740,6 +740,54 @@ export async function importBrowserLocalFileHandles(
     ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
   };
   await importBrowserLocalFiles(model, importInput);
+  await persistBrowserMediaHandle(input.mediaHandle);
+}
+
+const HANDLE_STORE_KEY = 'current-media-handle';
+
+async function getHandleStore(): Promise<{ get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void> } | null> {
+  const store = (globalThis as { lingotorteHandleStore?: { open: () => Promise<unknown> } }).lingotorteHandleStore;
+  if (!store) return null;
+  try {
+    const db = await store.open();
+    return db as { get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void> };
+  } catch {
+    return null;
+  }
+}
+
+async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise<void> {
+  const store = await getHandleStore();
+  if (!store) return;
+  try {
+    await store.put(handle, HANDLE_STORE_KEY);
+  } catch {
+    // IndexedDB may not support storing handles in all environments
+  }
+}
+
+export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolean> {
+  const store = await getHandleStore();
+  if (!store) return false;
+  try {
+    const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike & { requestPermission?: (opts: { mode: string }) => Promise<string> } | undefined;
+    if (!handle) return false;
+    if (typeof handle.requestPermission === 'function') {
+      const permission = await handle.requestPermission({ mode: 'read' });
+      if (permission !== 'granted') return false;
+    }
+    const file = await handle.getFile();
+    if (typeof URL.createObjectURL !== 'function') return false;
+    const objectUrl = URL.createObjectURL(file);
+    model.browserLocalMedia = {
+      objectUrl,
+      sourceLabel: `browser-file-handle:${handle.name}`,
+      handleName: handle.name,
+    };
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export type TranscriptSegmentDraft = Readonly<{

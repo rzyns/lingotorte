@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -229,6 +229,68 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(app.textContent).toContain('relinked-clip.webm');
     const relinkButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Relink media');
     expect(relinkButton).toBeTruthy();
+  });
+
+  it('persists and restores a browser file handle through IndexedDB on reload', async () => {
+    const model = createAppModel();
+    const createObjectURL = vi.fn(() => 'blob:restored-handle-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const mediaFile = new dom.window.File([new Uint8Array([7, 6, 5])], 'persisted-clip.webm', { type: 'video/webm' });
+    const mediaHandle = { name: 'persisted-clip.webm', getFile: vi.fn(async () => mediaFile), requestPermission: vi.fn(async () => 'granted') };
+    const showOpenFilePicker = vi.fn(async () => [mediaHandle]);
+    Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: showOpenFilePicker });
+
+    // Mock IndexedDB handle store (flat get/put interface)
+    const idbStore = new Map<string, unknown>();
+    const mockHandleStore = {
+      open: vi.fn(async () => ({
+        get: vi.fn(async (key: string) => idbStore.get(key)),
+        put: vi.fn(async (value: unknown, key: string) => { idbStore.set(key, value); }),
+      })),
+    };
+    Object.defineProperty(globalThis, 'lingotorteHandleStore', { configurable: true, value: mockHandleStore });
+
+    model.view = 'library';
+    rerenderApp(model);
+    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
+    expect(persistentButton).toBeTruthy();
+    persistentButton!.click();
+    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    rerenderApp(model);
+
+    expect(model.currentMedia?.originalPath).toBe('browser-file-handle:persisted-clip.webm');
+    expect(model.browserLocalMedia.handleName).toBe('persisted-clip.webm');
+
+    // Simulate reload: create fresh model, hydrate from stored handle
+    const restoredModel = createAppModel();
+    const asset = makeMediaAsset({
+      title: 'persisted-clip',
+      originalPath: 'browser-file-handle:persisted-clip.webm',
+      contentSha256: 'sha256:abc123',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 3,
+      privacyLabel: 'owned',
+    });
+    restoredModel.store.putMediaAsset(asset);
+    restoredModel.currentMedia = asset;
+    restoredModel.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:persisted-clip.webm', handleName: 'persisted-clip.webm' };
+    restoredModel.view = 'player';
+
+    // Call the restore function
+    await restoreBrowserMediaHandle(restoredModel);
+    rerenderApp(restoredModel);
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(mediaHandle.requestPermission).toHaveBeenCalledWith({ mode: 'read' });
+    expect(mediaHandle.getFile).toHaveBeenCalledTimes(2); // once on import, once on restore
+    expect(createObjectURL).toHaveBeenCalledTimes(2); // once on import, once on restore
+    expect(restoredModel.browserLocalMedia.objectUrl).toBe('blob:restored-handle-video');
+    expect(video?.src).toBe('blob:restored-handle-video');
   });
 
   it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {
