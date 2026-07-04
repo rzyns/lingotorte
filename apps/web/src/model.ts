@@ -55,6 +55,11 @@ export function createAppModel(): AppModel {
       activeCueId: null,
     },
     currentMedia: null,
+    browserLocalMedia: {
+      objectUrl: null,
+      sourceLabel: null,
+      handleName: null,
+    },
     targetTrackId: null,
     nativeTrackId: null,
     cues: [],
@@ -166,6 +171,7 @@ function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreS
   const hydrated = model.store.replaceSnapshot(snapshot);
   const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
   model.currentMedia = media;
+  model.browserLocalMedia = { objectUrl: null, sourceLabel: null, handleName: null };
   if (!media) {
     model.targetTrackId = null;
     model.nativeTrackId = null;
@@ -532,6 +538,21 @@ export type BrowserLocalFileImportInput = Readonly<{
   nativeSubtitleFile?: File | null;
   targetLanguage?: string;
   nativeLanguage?: string;
+  mediaSourceLabel?: string;
+  mediaHandleName?: string | null;
+}>;
+
+export type BrowserFileHandleLike = Readonly<{
+  name: string;
+  getFile(): Promise<File>;
+}>;
+
+export type BrowserLocalFileHandleImportInput = Readonly<{
+  mediaHandle: BrowserFileHandleLike;
+  targetSubtitleHandle?: BrowserFileHandleLike | null;
+  nativeSubtitleHandle?: BrowserFileHandleLike | null;
+  targetLanguage?: string;
+  nativeLanguage?: string;
 }>;
 
 function titleFromFileName(fileName: string): string {
@@ -546,9 +567,15 @@ function containerFromFile(file: File): string {
 
 function revokeCurrentMediaObjectUrl(model: AppModel): void {
   const currentPath = model.currentMedia?.originalPath;
-  if (currentPath?.startsWith('blob:')) {
-    URL.revokeObjectURL(currentPath);
+  const objectUrl = model.browserLocalMedia.objectUrl ?? (currentPath?.startsWith('blob:') ? currentPath : null);
+  if (objectUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(objectUrl);
   }
+  model.browserLocalMedia = { objectUrl: null, sourceLabel: null, handleName: null };
+}
+
+export function mediaPlaybackUrl(model: AppModel): string {
+  return model.browserLocalMedia.objectUrl ?? model.currentMedia?.originalPath ?? '';
 }
 
 export async function importBrowserLocalFiles(model: AppModel, input: BrowserLocalFileImportInput): Promise<void> {
@@ -560,9 +587,10 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
   try {
     const targetText = input.targetSubtitleFile ? await input.targetSubtitleFile.text() : null;
     const nativeText = input.nativeSubtitleFile ? await input.nativeSubtitleFile.text() : null;
+    const mediaSourceLabel = input.mediaSourceLabel ?? objectUrl;
     const asset = makeMediaAsset({
       title: titleFromFileName(input.mediaFile.name),
-      originalPath: objectUrl,
+      originalPath: mediaSourceLabel,
       contentSha256: await sha256Bytes(mediaBytes),
       durationMs: 1000,
       container: containerFromFile(input.mediaFile),
@@ -609,6 +637,11 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
     }
 
     model.currentMedia = assetWithDuration;
+    model.browserLocalMedia = {
+      objectUrl,
+      sourceLabel: mediaSourceLabel,
+      handleName: input.mediaHandleName ?? null,
+    };
     model.targetTrackId = targetParsed?.track.id ?? null;
     model.nativeTrackId = nativeParsed?.track.id ?? null;
     model.cues = targetParsed ? model.store.listCuesForTrack(targetParsed.track.id) : [];
@@ -621,6 +654,25 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
     URL.revokeObjectURL(objectUrl);
     throw err;
   }
+}
+
+export async function importBrowserLocalFileHandles(
+  model: AppModel,
+  input: BrowserLocalFileHandleImportInput,
+): Promise<void> {
+  const mediaFile = await input.mediaHandle.getFile();
+  const targetSubtitleFile = input.targetSubtitleHandle ? await input.targetSubtitleHandle.getFile() : null;
+  const nativeSubtitleFile = input.nativeSubtitleHandle ? await input.nativeSubtitleHandle.getFile() : null;
+  const importInput: BrowserLocalFileImportInput = {
+    mediaFile,
+    targetSubtitleFile,
+    nativeSubtitleFile,
+    mediaSourceLabel: `browser-file-handle:${input.mediaHandle.name}`,
+    mediaHandleName: input.mediaHandle.name,
+    ...(input.targetLanguage === undefined ? {} : { targetLanguage: input.targetLanguage }),
+    ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
+  };
+  await importBrowserLocalFiles(model, importInput);
 }
 
 export type TranscriptSegmentDraft = Readonly<{

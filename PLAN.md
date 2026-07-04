@@ -109,8 +109,8 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
 
 These work today as local prototype/product slices, but are not the final daily-driver shape:
 
-- SQLite persistence is still snapshot-centered, but it now has a forward-only migration ledger and typed projections for all current `LocalStore` entity groups; it is not yet a fully authoritative append-only replay/conflict/export system.
-- Browser `blob:` media handles are session-scoped; after restart, saved metadata can persist but playback/local ASR may require reselecting the owned media file or pasting an absolute local path.
+- SQLite persistence stays snapshot-compatible and now has a forward-only migration ledger, typed projections for all current `LocalStore` entity groups, and authoritative append-only replay tables for review/import events; broader conflict/export replay remains future work.
+- Browser local media import now has a File System Access API path when supported: the app records a stable `browser-file-handle:<name>` media source label and uses a transient `blob:` URL only for playback. Plain file-input imports still use session-scoped `blob:` URLs, and fully restoring browser-granted handles after restart remains future B2 follow-up.
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
 - Practice is basic and local; richer game-like practice/progress views remain future work.
 - Polish language support is heuristic/local; richer dictionary/morphology/translation/explanation quality remains future work.
@@ -128,7 +128,7 @@ Scope/status:
 
 - Forward-only migration ledger. **Implemented:** `schema_migration` applies versioned checksummed migrations through v5.
 - Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented for current `LocalStore` state:** rebuildable projections now cover `media_asset`, `media_file_observation`, `subtitle_track`, `cue`, `transcript_word_timing`, `saved_item`, `saved_occurrence`, `review_card`, `review_card_state`, `review_event`, `practice_attempt`, `import_job`, and `import_job_event`. **Remaining:** export-job/provider-policy projections when those become first-class local store entities.
-- Append-only review/import/provider/export events where useful. **Partially implemented:** review/import events have typed tables, but the current write path still rebuilds projections from the compatibility snapshot. Making these tables the authoritative append-only replay source is a separate storage-design decision.
+- Append-only review/import/provider/export events where useful. **Implemented for current event streams:** `review_event` and `import_job_event` are authoritative append-only replay tables. Compatibility snapshot writes append new events idempotently, reject conflicting rewrites for existing event IDs, and replay these tables back into loaded snapshots. **Remaining:** provider/export event streams when those become first-class local store entities and broader conflict-repair UX.
 - Round-trip tests from empty DB and at least one migration test. **Implemented:** targeted tests cover empty-DB migration ledger plus media/transcript/learner/review/practice/import projections.
 - Clear source-missing/broken-media behavior without silently deleting learner history. **Implemented storage guard:** missing-media observations can persist while saved learner anchors remain queryable even when the media asset projection is unavailable. UI/repair affordances continue under B2.
 
@@ -138,12 +138,12 @@ Not in scope without fresh approval: cloud sync or destructive data cleanup.
 
 Goal: make restart/reload behavior feel like a local app rather than a browser object-URL prototype.
 
-Scope:
+Scope/status:
 
-- Decide whether the next step is user-chosen persistent file handles, a native/Tauri/desktop bridge, or a better local-service absolute-path workflow.
-- Preserve privacy: no implicit media copies, no protected-stream capture, no browser credential/cookie paths.
-- Improve UI affordances for reselecting or relinking owned local media after restart.
-- Keep local-service ASR path explicit about absolute local paths.
+- Decide whether the next step is user-chosen persistent file handles, a native/Tauri/desktop bridge, or a better local-service absolute-path workflow. **Selected/first slice implemented:** browser File System Access handles first, when the browser exposes `showOpenFilePicker`.
+- Preserve privacy: no implicit media copies, no protected-stream capture, no browser credential/cookie paths. **Preserved:** the handle path calls the browser picker, reads only the selected owned file, and does not upload/copy media.
+- Improve UI affordances for reselecting or relinking owned local media after restart. **Partially implemented:** Library exposes **Import persistent media handle** when supported, storing `browser-file-handle:<name>` as the durable media source label while keeping playback on a transient object URL. Persisting/revalidating the actual browser-granted handle across browser restarts remains a B2 follow-up.
+- Keep local-service ASR path explicit about absolute local paths. **Still required:** browser handle/object URLs do not replace the explicit absolute-path input for local-service ASR.
 
 ### B3 — Backup/export/restore polish
 
@@ -281,8 +281,8 @@ Current known state:
 - Loopback service supports health/status/state/jobs/cancel/cleanup, local ASR, ElevenLabs Scribe behind gates, and public YouTube caption reads behind gates.
 - Transcript lifecycle has draft/correction/approval, split/merge, word timing edits, source comparison, immutable corrected versions, and approved-track learner-save gate.
 - Subtitle overlay is windowed and clickable; overlay words save lexeme occurrences through the approved source-backed path.
-- SQLite remains snapshot-compatible, now with forward-only migrations and typed projections for current LocalStore entities; the remaining storage design question is whether/when append-only event tables become authoritative replay sources instead of rebuildable projections.
-- Browser blob media handles remain session-scoped and may need reselecting after restart.
+- SQLite remains snapshot-compatible, now with forward-only migrations, typed projections for current LocalStore entities, and authoritative append-only replay for review/import events.
+- Browser File System Access media handles are the selected B2 direction and have a first UI/import slice: supported browsers can import through a persistent handle label, while actual handle permission persistence/revalidation across restart remains future work.
 - Export/import works as browser JSON manifest download/paste+merge, not full backup/restore.
 - Polish analysis is useful but heuristic/local.
 - Provider calls, model downloads, sync, AnkiConnect, microphone recording, and public actions remain gated.

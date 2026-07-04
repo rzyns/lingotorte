@@ -42,6 +42,11 @@ export type AppModel = {
   adapters: ReturnType<typeof import('@lingotorte/language').resolveLocalAdapters>;
   player: PlayerState;
   currentMedia: import('@lingotorte/domain').MediaAsset | null;
+  browserLocalMedia: {
+    objectUrl: string | null;
+    sourceLabel: string | null;
+    handleName: string | null;
+  };
   targetTrackId: string | null;
   nativeTrackId: string | null;
   cues: Cue[];

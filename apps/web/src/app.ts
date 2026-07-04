@@ -8,6 +8,7 @@ import {
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
   importBrowserLocalFiles,
+  importBrowserLocalFileHandles,
   listReviewBuckets,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
@@ -57,6 +58,7 @@ import {
   makeLocalServiceElevenLabsScribeProvider,
   makeLocalServiceYouTubeCaptionProvider,
   makeFakeYouTubeCaptionProvider,
+  mediaPlaybackUrl,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -72,6 +74,15 @@ export function renderApp(model: AppModel): HTMLElement {
 let keyboardShortcutsDocument: Document | null = null;
 let keyboardShortcutsModel: AppModel | null = null;
 let keyboardShortcutsHandler: ((event: KeyboardEvent) => void) | null = null;
+
+type BrowserFileHandleLike = Readonly<{
+  name: string;
+  getFile(): Promise<File>;
+}>;
+
+type BrowserFilePickerGlobal = typeof globalThis & Readonly<{
+  showOpenFilePicker?: (options?: unknown) => Promise<BrowserFileHandleLike[]>;
+}>;
 
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -945,7 +956,7 @@ function renderVideoStage(model: AppModel): HTMLElement {
   video.setAttribute('preload', 'metadata');
   video.setAttribute('role', 'img');
   video.setAttribute('aria-label', model.currentMedia.title);
-  video.src = model.currentMedia.originalPath;
+  video.src = mediaPlaybackUrl(model);
   video.playbackRate = model.player.playbackRate;
   video.addEventListener('timeupdate', () => {
     const timeMs = Math.round(video.currentTime * 1000);
@@ -2311,6 +2322,49 @@ function renderLibraryView(model: AppModel): HTMLElement {
   const localImportActions = document.createElement('div');
   localImportActions.className = 'local-import-actions';
   localImportActions.appendChild(localImportBtn);
+
+  const showOpenFilePicker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
+  if (typeof showOpenFilePicker === 'function') {
+    const persistentImportBtn = document.createElement('button');
+    persistentImportBtn.className = 'btn-secondary';
+    persistentImportBtn.textContent = 'Import persistent media handle';
+    persistentImportBtn.setAttribute('aria-label', 'Import media through a browser persistent file handle');
+    persistentImportBtn.addEventListener('click', () => {
+      void showOpenFilePicker({
+        multiple: false,
+        types: [
+          {
+            description: 'Owned media files',
+            accept: {
+              'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
+              'audio/*': ['.mp3', '.m4a', '.wav'],
+            },
+          },
+        ],
+      })
+        .then((handles) => {
+          const mediaHandle = handles[0];
+          if (!mediaHandle) {
+            model.importError = 'No media handle was selected.';
+            rerenderApp(model);
+            return;
+          }
+          return importBrowserLocalFileHandles(model, { mediaHandle });
+        })
+        .then(() => {
+          if (!model.importError) {
+            setView(model, 'player');
+            model.importError = null;
+          }
+          rerenderApp(model);
+        })
+        .catch((err: unknown) => {
+          model.importError = err instanceof Error ? err.message : String(err);
+          rerenderApp(model);
+        });
+    });
+    localImportActions.appendChild(persistentImportBtn);
+  }
   localImportGroup.appendChild(localImportActions);
   form.appendChild(localImportGroup);
   form.appendChild(renderTranscriptLifecyclePanel(model));

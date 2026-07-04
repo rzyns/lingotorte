@@ -390,4 +390,196 @@ describe('durable local persistence', () => {
     expect(persistence.listImportJobEvents()).toEqual([importJobEvent]);
     persistence.close();
   });
+
+  it('replays review events from the authoritative append-only event table', () => {
+    const store = populatedStore();
+    const snapshot = store.snapshot();
+    const savedItem = Object.values(snapshot.savedItems)[0]!;
+    const savedOccurrence = Object.values(snapshot.savedOccurrences)[0]!;
+    const card = makeReviewCard({
+      savedItemId: savedItem.id,
+      savedOccurrenceId: savedOccurrence.id,
+      cardType: 'recognition',
+      promptTemplate: 'What does the source segment mean?',
+    });
+    const event = makeReviewEvent({
+      cardId: card.id,
+      reviewedAt: '2026-07-04T04:00:00.000Z',
+      rating: 'good',
+      previousStateJson: '{"state":"learning"}',
+      nextStateJson: '{"state":"review"}',
+    });
+    store.putReviewCard(card);
+    store.addReviewEvent(event);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:01:00.000Z');
+    persistence.saveSnapshot({ ...store.snapshot(), reviewEvents: [] }, '2026-07-04T04:02:00.000Z');
+
+    expect(persistence.listReviewEvents()).toEqual([event]);
+    expect(persistence.loadSnapshot().reviewEvents).toEqual([event]);
+    persistence.close();
+  });
+
+  it('treats duplicate review event snapshot writes as idempotent appends', () => {
+    const store = populatedStore();
+    const snapshot = store.snapshot();
+    const savedItem = Object.values(snapshot.savedItems)[0]!;
+    const savedOccurrence = Object.values(snapshot.savedOccurrences)[0]!;
+    const card = makeReviewCard({
+      savedItemId: savedItem.id,
+      savedOccurrenceId: savedOccurrence.id,
+      cardType: 'recognition',
+      promptTemplate: 'What does the source segment mean?',
+    });
+    const event = makeReviewEvent({
+      cardId: card.id,
+      reviewedAt: '2026-07-04T04:10:00.000Z',
+      rating: 'easy',
+      previousStateJson: '{"state":"review"}',
+      nextStateJson: '{"state":"review"}',
+    });
+    store.putReviewCard(card);
+    store.addReviewEvent(event);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:11:00.000Z');
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:12:00.000Z');
+
+    expect(persistence.listReviewEvents()).toEqual([event]);
+    persistence.close();
+  });
+
+  it('rejects attempts to rewrite an existing append-only review event', () => {
+    const store = populatedStore();
+    const snapshot = store.snapshot();
+    const savedItem = Object.values(snapshot.savedItems)[0]!;
+    const savedOccurrence = Object.values(snapshot.savedOccurrences)[0]!;
+    const card = makeReviewCard({
+      savedItemId: savedItem.id,
+      savedOccurrenceId: savedOccurrence.id,
+      cardType: 'recognition',
+      promptTemplate: 'What does the source segment mean?',
+    });
+    const event = makeReviewEvent({
+      cardId: card.id,
+      reviewedAt: '2026-07-04T04:20:00.000Z',
+      rating: 'good',
+      previousStateJson: '{"state":"learning"}',
+      nextStateJson: '{"state":"review"}',
+    });
+    store.putReviewCard(card);
+    store.addReviewEvent(event);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:21:00.000Z');
+
+    expect(() =>
+      persistence.saveSnapshot(
+        {
+          ...store.snapshot(),
+          reviewEvents: [{ ...event, rating: 'again' }],
+        },
+        '2026-07-04T04:22:00.000Z',
+      ),
+    ).toThrow(/append-only review event/);
+    expect(persistence.listReviewEvents()).toEqual([event]);
+    persistence.close();
+  });
+
+  it('replays import job events from the authoritative append-only event table', () => {
+    const store = populatedStore();
+    const importJob = {
+      id: 'import-job-authoritative-1',
+      status: 'completed' as const,
+      sourceKind: 'transcript' as const,
+      startedAt: '2026-07-04T04:30:00.000Z',
+      completedAt: '2026-07-04T04:31:00.000Z',
+      inputManifestJson: '{"schemaVersion":"test.import.v1"}',
+    };
+    const importJobEvent = {
+      id: 'import-job-event-authoritative-1',
+      jobId: importJob.id,
+      level: 'info' as const,
+      message: 'Imported transcript projection fixture',
+      createdAt: '2026-07-04T04:31:00.000Z',
+      dataJson: '{"cueCount":1}',
+    };
+    store.putImportJob(importJob);
+    store.addImportJobEvent(importJobEvent);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:32:00.000Z');
+    persistence.saveSnapshot({ ...store.snapshot(), importJobEvents: [] }, '2026-07-04T04:33:00.000Z');
+
+    expect(persistence.listImportJobEvents()).toEqual([importJobEvent]);
+    expect(persistence.loadSnapshot().importJobEvents).toEqual([importJobEvent]);
+    persistence.close();
+  });
+
+  it('treats duplicate import job event snapshot writes as idempotent appends', () => {
+    const store = populatedStore();
+    const importJob = {
+      id: 'import-job-idempotent-1',
+      status: 'completed' as const,
+      sourceKind: 'transcript' as const,
+      startedAt: '2026-07-04T04:40:00.000Z',
+      completedAt: '2026-07-04T04:41:00.000Z',
+      inputManifestJson: '{"schemaVersion":"test.import.v1"}',
+    };
+    const importJobEvent = {
+      id: 'import-job-event-idempotent-1',
+      jobId: importJob.id,
+      level: 'warn' as const,
+      message: 'Imported with warnings',
+      createdAt: '2026-07-04T04:41:00.000Z',
+      dataJson: '{"warningCount":1}',
+    };
+    store.putImportJob(importJob);
+    store.addImportJobEvent(importJobEvent);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:42:00.000Z');
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:43:00.000Z');
+
+    expect(persistence.listImportJobEvents()).toEqual([importJobEvent]);
+    persistence.close();
+  });
+
+  it('rejects attempts to rewrite an existing append-only import job event', () => {
+    const store = populatedStore();
+    const importJob = {
+      id: 'import-job-rewrite-1',
+      status: 'completed' as const,
+      sourceKind: 'transcript' as const,
+      startedAt: '2026-07-04T04:50:00.000Z',
+      completedAt: '2026-07-04T04:51:00.000Z',
+      inputManifestJson: '{"schemaVersion":"test.import.v1"}',
+    };
+    const importJobEvent = {
+      id: 'import-job-event-rewrite-1',
+      jobId: importJob.id,
+      level: 'info' as const,
+      message: 'Imported transcript projection fixture',
+      createdAt: '2026-07-04T04:51:00.000Z',
+      dataJson: '{"cueCount":1}',
+    };
+    store.putImportJob(importJob);
+    store.addImportJobEvent(importJobEvent);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:52:00.000Z');
+
+    expect(() =>
+      persistence.saveSnapshot(
+        {
+          ...store.snapshot(),
+          importJobEvents: [{ ...importJobEvent, level: 'error', message: 'Rewritten event' }],
+        },
+        '2026-07-04T04:53:00.000Z',
+      ),
+    ).toThrow(/append-only import job event/);
+    expect(persistence.listImportJobEvents()).toEqual([importJobEvent]);
+    persistence.close();
+  });
 });

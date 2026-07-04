@@ -484,6 +484,62 @@ function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
 
+function reviewEventFromRow(row: ReviewEventRow): ReviewEvent {
+  const event: ReviewEvent = {
+    id: row.id,
+    cardId: row.card_id,
+    reviewedAt: row.reviewed_at,
+    rating: row.rating as Rating,
+    previousStateJson: row.previous_state_json,
+    nextStateJson: row.next_state_json,
+    createdAt: row.created_at,
+  };
+  return {
+    ...event,
+    ...(row.response_ms === null ? {} : { responseMs: row.response_ms }),
+    ...(row.device_id === null ? {} : { deviceId: row.device_id }),
+  };
+}
+
+function sameReviewEventPayload(a: ReviewEvent, b: ReviewEvent): boolean {
+  return (
+    a.id === b.id &&
+    a.cardId === b.cardId &&
+    a.reviewedAt === b.reviewedAt &&
+    a.rating === b.rating &&
+    (a.responseMs ?? null) === (b.responseMs ?? null) &&
+    a.previousStateJson === b.previousStateJson &&
+    a.nextStateJson === b.nextStateJson &&
+    (a.deviceId ?? null) === (b.deviceId ?? null) &&
+    a.createdAt === b.createdAt
+  );
+}
+
+function importJobEventFromRow(row: ImportJobEventRow): ImportJobEvent {
+  const event: ImportJobEvent = {
+    id: row.id,
+    jobId: row.job_id,
+    level: row.level as ImportJobEvent['level'],
+    message: row.message,
+    createdAt: row.created_at,
+  };
+  return {
+    ...event,
+    ...(row.data_json === null ? {} : { dataJson: row.data_json }),
+  };
+}
+
+function sameImportJobEventPayload(a: ImportJobEvent, b: ImportJobEvent): boolean {
+  return (
+    a.id === b.id &&
+    a.jobId === b.jobId &&
+    a.level === b.level &&
+    a.message === b.message &&
+    a.createdAt === b.createdAt &&
+    (a.dataJson ?? null) === (b.dataJson ?? null)
+  );
+}
+
 const MIGRATIONS: readonly MigrationDefinition[] = [
   {
     version: 1,
@@ -857,22 +913,7 @@ export class SqliteLocalPersistence {
         ORDER BY reviewed_at ASC, created_at ASC, id ASC
       `)
       .all() as ReviewEventRow[];
-    return rows.map((row) => {
-      const event: ReviewEvent = {
-        id: row.id,
-        cardId: row.card_id,
-        reviewedAt: row.reviewed_at,
-        rating: row.rating as Rating,
-        previousStateJson: row.previous_state_json,
-        nextStateJson: row.next_state_json,
-        createdAt: row.created_at,
-      };
-      return {
-        ...event,
-        ...(row.response_ms === null ? {} : { responseMs: row.response_ms }),
-        ...(row.device_id === null ? {} : { deviceId: row.device_id }),
-      };
-    });
+    return rows.map(reviewEventFromRow);
   }
 
   listPracticeAttempts(): readonly PracticeAttempt[] {
@@ -938,19 +979,7 @@ export class SqliteLocalPersistence {
         ORDER BY created_at ASC, id ASC
       `)
       .all() as ImportJobEventRow[];
-    return rows.map((row) => {
-      const event: ImportJobEvent = {
-        id: row.id,
-        jobId: row.job_id,
-        level: row.level as ImportJobEvent['level'],
-        message: row.message,
-        createdAt: row.created_at,
-      };
-      return {
-        ...event,
-        ...(row.data_json === null ? {} : { dataJson: row.data_json }),
-      };
-    });
+    return rows.map(importJobEventFromRow);
   }
 
   private saveMediaAssetProjection(snapshot: LocalStoreSnapshot): void {
@@ -1130,10 +1159,8 @@ export class SqliteLocalPersistence {
   }
 
   private saveReviewPracticeJobProjections(snapshot: LocalStoreSnapshot): void {
-    this.db.prepare('DELETE FROM import_job_event').run();
     this.db.prepare('DELETE FROM import_job').run();
     this.db.prepare('DELETE FROM practice_attempt').run();
-    this.db.prepare('DELETE FROM review_event').run();
     this.db.prepare('DELETE FROM review_card_state').run();
     this.db.prepare('DELETE FROM review_card').run();
 
@@ -1180,6 +1207,13 @@ export class SqliteLocalPersistence {
       );
     }
 
+    const selectReviewEvent = this.db.prepare(`
+      SELECT id, card_id, reviewed_at, rating, response_ms,
+             previous_state_json, next_state_json, device_id, created_at
+      FROM review_event
+      WHERE id = ?
+      LIMIT 1
+    `);
     const insertReviewEvent = this.db.prepare(`
       INSERT INTO review_event (
         id, card_id, reviewed_at, rating, response_ms,
@@ -1187,6 +1221,13 @@ export class SqliteLocalPersistence {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const event of snapshot.reviewEvents) {
+      const existing = selectReviewEvent.get(event.id) as ReviewEventRow | undefined;
+      if (existing !== undefined) {
+        if (!sameReviewEventPayload(reviewEventFromRow(existing), event)) {
+          throw new Error(`Cannot rewrite append-only review event ${event.id}.`);
+        }
+        continue;
+      }
       insertReviewEvent.run(
         event.id,
         event.cardId,
@@ -1241,12 +1282,25 @@ export class SqliteLocalPersistence {
       );
     }
 
+    const selectImportJobEvent = this.db.prepare(`
+      SELECT id, job_id, level, message, created_at, data_json
+      FROM import_job_event
+      WHERE id = ?
+      LIMIT 1
+    `);
     const insertImportJobEvent = this.db.prepare(`
       INSERT INTO import_job_event (
         id, job_id, level, message, created_at, data_json
       ) VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const event of snapshot.importJobEvents) {
+      const existing = selectImportJobEvent.get(event.id) as ImportJobEventRow | undefined;
+      if (existing !== undefined) {
+        if (!sameImportJobEventPayload(importJobEventFromRow(existing), event)) {
+          throw new Error(`Cannot rewrite append-only import job event ${event.id}.`);
+        }
+        continue;
+      }
       insertImportJobEvent.run(
         event.id,
         event.jobId,
@@ -1276,8 +1330,12 @@ export class SqliteLocalPersistence {
     const row = this.db
       .prepare('SELECT snapshot_json FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
       .get(SNAPSHOT_KEY) as SnapshotRow | undefined;
-    if (!row) return createEmptyLocalStoreSnapshot();
-    return normalizeLocalStoreSnapshot(JSON.parse(row.snapshot_json));
+    const snapshot = row ? normalizeLocalStoreSnapshot(JSON.parse(row.snapshot_json)) : createEmptyLocalStoreSnapshot();
+    return {
+      ...snapshot,
+      reviewEvents: [...this.listReviewEvents()],
+      importJobEvents: [...this.listImportJobEvents()],
+    };
   }
 
   saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString()): void {

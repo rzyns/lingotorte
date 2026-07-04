@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, saveSentenceFromCue } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -28,6 +28,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   afterEach(() => {
+    delete (globalThis as { showOpenFilePicker?: unknown }).showOpenFilePicker;
     dom.window.close();
   });
 
@@ -141,6 +142,63 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.cues).toHaveLength(2);
     expect(app.textContent).toContain('To jest własny plik.');
     expect(app.textContent).toContain('This is my own file.');
+  });
+
+  it('imports browser persistent file handles with a stable source label and transient playback URL', async () => {
+    const model = createAppModel();
+    const createObjectURL = vi.fn(() => 'blob:persistent-handle-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const mediaFile = new dom.window.File([new Uint8Array([9, 8, 7])], 'persistent-clip.webm', { type: 'video/webm' });
+    const targetSrt = new dom.window.File([
+      '1\n00:00:00,000 --> 00:00:01,000\nStały uchwyt pliku.\n',
+    ], 'persistent-clip.pl.srt', { type: 'application/x-subrip' });
+    const mediaHandle = { name: 'persistent-clip.webm', getFile: vi.fn(async () => mediaFile) };
+    const targetSubtitleHandle = { name: 'persistent-clip.pl.srt', getFile: vi.fn(async () => targetSrt) };
+
+    await importBrowserLocalFileHandles(model, { mediaHandle, targetSubtitleHandle });
+    rerenderApp(model);
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(mediaHandle.getFile).toHaveBeenCalledTimes(1);
+    expect(targetSubtitleHandle.getFile).toHaveBeenCalledTimes(1);
+    expect(createObjectURL).toHaveBeenCalledWith(mediaFile);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(model.currentMedia?.title).toBe('persistent-clip');
+    expect(model.currentMedia?.originalPath).toBe('browser-file-handle:persistent-clip.webm');
+    expect(video?.src).toBe('blob:persistent-handle-video');
+    expect(document.getElementById('app')?.textContent).toContain('Stały uchwyt pliku.');
+  });
+
+  it('offers a browser persistent media-handle picker in the Library when supported', async () => {
+    const model = createAppModel();
+    model.view = 'library';
+    const createObjectURL = vi.fn(() => 'blob:persistent-picker-video');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const mediaFile = new dom.window.File([new Uint8Array([3, 2, 1])], 'picker-clip.webm', { type: 'video/webm' });
+    const mediaHandle = { name: 'picker-clip.webm', getFile: vi.fn(async () => mediaFile) };
+    const showOpenFilePicker = vi.fn(async () => [mediaHandle]);
+    Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: showOpenFilePicker });
+
+    rerenderApp(model);
+    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
+    expect(persistentButton).toBeTruthy();
+    persistentButton!.click();
+    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    rerenderApp(model);
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    expect(showOpenFilePicker).toHaveBeenCalledTimes(1);
+    expect(mediaHandle.getFile).toHaveBeenCalledTimes(1);
+    expect(model.importError).toBeNull();
+    expect(model.currentMedia?.originalPath).toBe('browser-file-handle:picker-clip.webm');
+    expect(video?.src).toBe('blob:persistent-picker-video');
+    expect(document.getElementById('app')?.textContent).toContain('No transcript loaded yet');
   });
 
   it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {

@@ -67,7 +67,7 @@ npm run dev -- --host 127.0.0.1
 Default service behavior:
 
 - binds only to `127.0.0.1:5174` unless loopback env vars override it;
-- stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot plus forward-only `schema_migration` ledger and rebuildable typed projections for current media/transcript/learner/review/practice/import-job state;
+- stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot-compatible store plus forward-only `schema_migration` ledger, rebuildable typed projections for current media/transcript/learner/review/practice/import-job state, and authoritative append-only replay tables for review/import events;
 - keeps scratch/model-cache directories under `$HOME/.local/share/lingotorte/`;
 - redacts local filesystem paths from `/api/status` and startup receipts;
 - reports persistence status, including applied migration metadata, without exposing the database path;
@@ -164,7 +164,7 @@ Use WSL Edge DevTools when available. Regular browser tooling is an acceptable f
 14. Open **Settings**, verify provider/sync/Anki/ASR states remain disabled, connect to the loopback local service if it is running, and save state once to verify the SQLite service path.
 15. Inspect console and network requests after navigation and interactions.
 
-For a local-file smoke, return to **Library**, choose an owned `.mp4`/`.webm`/`.mkv`/`.mov`/audio media file, optionally choose a target `.srt`, optionally choose a native `.srt`, then click **Import local media**. Verify the player uses a `blob:` media URL without uploading anything. If a target subtitle was selected, verify the transcript shows the selected target cue text and the optional native cue text is displayed when provided. If no target subtitle was selected, verify the media still imports, the transcript panel says no transcript is loaded yet, and **Generate local ASR draft** remains available from **Library → Transcript lifecycle** after connecting the loopback service / providing an absolute media path as needed.
+For a local-file smoke, return to **Library**, choose an owned `.mp4`/`.webm`/`.mkv`/`.mov`/audio media file, optionally choose a target `.srt`, optionally choose a native `.srt`, then click **Import local media**. Verify the player uses a `blob:` media URL without uploading anything. If the browser exposes the File System Access API, also verify **Import persistent media handle** opens the browser picker, imports the selected owned media, records a `browser-file-handle:<name>` media source label, and still uses only a transient `blob:` URL for playback. If a target subtitle was selected, verify the transcript shows the selected target cue text and the optional native cue text is displayed when provided. If no target subtitle was selected, verify the media still imports, the transcript panel says no transcript is loaded yet, and **Generate local ASR draft** remains available from **Library → Transcript lifecycle** after connecting the loopback service / providing an absolute media path as needed.
 
 Acceptable network traffic during dev smoke is limited to loopback/local dev-server reads, `data:`/`blob:` URLs, and Vite internals. Public-internet writes, provider calls, external account mutations, or runtime requests to an external host are V1 blockers unless Janusz has explicitly approved that exact opt-in path.
 
@@ -212,7 +212,7 @@ Cloud STT remains an explicit per-run decision because it sends local audio/medi
 ## Known V1/V4 limitations
 
 - The app is a local browser/Vite baseline, not a packaged desktop/mobile product.
-- Browser local-file imports persist learner/transcript metadata through the local service, but browser `blob:` media handles themselves are session-scoped; if a durable snapshot is reloaded after restart, reselect the owned local media file before playback until a user-chosen file-handle/native packaging workflow exists. For local-service ASR, paste the owned media's absolute local path into **Local service ASR media path** whenever the current browser media handle is only a `blob:` URL.
+- Browser local-file imports persist learner/transcript metadata through the local service. Plain file-input imports still use session-scoped `blob:` media URLs. Supported browsers also offer **Import persistent media handle**, which stores a stable `browser-file-handle:<name>` source label and uses a transient object URL for playback; persisting/revalidating the actual browser-granted handle across restart remains future work. For local-service ASR, paste the owned media's absolute local path into **Local service ASR media path** whenever the current browser media reference is a `blob:` URL or browser handle label rather than a service-readable absolute path.
 - Export currently generates and previews a local learner-state manifest and file path; it does not write a manifest file to disk.
 - Restore currently merges/upserts records from the manifest into existing local learner state; it does not clear unrelated local records or provide a full replace mode.
 - The export path remains a placeholder until a user-chosen local export/download workflow is designed.
