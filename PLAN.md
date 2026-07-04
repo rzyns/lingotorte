@@ -183,10 +183,10 @@ Scope:
 
 Goal: improve the learner product loop after saved/review basics.
 
-Scope:
+Scope/status:
 
 - Richer local practice modes: meaning quiz, match/context/audio recall, sentence builder, and better prompt/reveal feedback.
-- Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear.
+- Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear. **Partially implemented:** the study cockpit status rail now shows `N saved • N due • N reviews • N practice` counts derived from local store state via `learnerProgress(model, asOf)`.
 - Phrase/range looping from arbitrary word spans where word timings exist.
 - Clip/audio snippet generation only from owned local media and with cache cleanup.
 

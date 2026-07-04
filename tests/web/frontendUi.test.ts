@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -364,6 +364,30 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const model = createAppModel();
     expect(model.providerPolicy.onlineProvidersEnabled).toBe(false);
     expect(model.adapters.dictionary?.adapterId).toContain('unavailable');
+  });
+
+  it('shows learner progress counts in the study cockpit status rail', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    const firstCue = model.cues[0]!;
+    await saveSentenceFromCue(model, firstCue);
+
+    const progress = learnerProgress(model, new Date('2026-07-04T09:00:00.000Z'));
+    expect(progress.savedItems).toBe(1);
+    expect(progress.reviewCards).toBe(0);
+    expect(progress.dueCards).toBe(0);
+    expect(progress.totalReviews).toBe(0);
+    expect(progress.practiceAttempts).toBe(0);
+
+    model.view = 'player';
+    rerenderApp(model);
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('1 saved');
   });
 
   it('offers a File System Access save-file picker for export when supported and verifies writeback integrity', async () => {

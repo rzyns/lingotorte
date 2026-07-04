@@ -1883,6 +1883,25 @@ export function projectReviewBucketCounts(model: AppModel, asOf: Date): Record<'
   };
 }
 
+export type LearnerProgress = Readonly<{
+  savedItems: number;
+  reviewCards: number;
+  dueCards: number;
+  totalReviews: number;
+  practiceAttempts: number;
+}>;
+
+export function learnerProgress(model: AppModel, asOf: Date): LearnerProgress {
+  const snapshot = model.store.snapshot();
+  const savedItems = Object.keys(snapshot.savedItems).length;
+  const reviewCards = Object.keys(snapshot.reviewCards).length;
+  const totalReviews = snapshot.reviewEvents.length;
+  const practiceAttempts = snapshot.practiceAttempts.length;
+  const bucketCounts = projectReviewBucketCounts(model, asOf);
+  const dueCards = bucketCounts.newCards + bucketCounts.learning + bucketCounts.review + bucketCounts.relearning;
+  return { savedItems, reviewCards, dueCards, totalReviews, practiceAttempts };
+}
+
 export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence } | null {
   const buckets = listReviewBuckets(model, asOf);
   const candidates = [...buckets.newCards, ...buckets.learning, ...buckets.relearning, ...buckets.review];

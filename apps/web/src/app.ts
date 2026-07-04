@@ -61,6 +61,7 @@ import {
   mediaPlaybackUrl,
   needsMediaRelink,
   handleNameFromMedia,
+  learnerProgress,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -826,6 +827,16 @@ function renderStudyStatusRail(model: AppModel): HTMLElement {
 
   const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
   rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
+
+  const progress = learnerProgress(model, new Date());
+  const progressParts: string[] = [];
+  if (progress.savedItems > 0) progressParts.push(`${progress.savedItems} saved`);
+  if (progress.dueCards > 0) progressParts.push(`${progress.dueCards} due`);
+  if (progress.totalReviews > 0) progressParts.push(`${progress.totalReviews} reviews`);
+  if (progress.practiceAttempts > 0) progressParts.push(`${progress.practiceAttempts} practice`);
+  if (progressParts.length > 0) {
+    rail.appendChild(renderStatusToken(progressParts.join(' • '), 'neutral'));
+  }
   return rail;
 }
 
