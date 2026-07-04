@@ -59,6 +59,8 @@ import {
   makeLocalServiceYouTubeCaptionProvider,
   makeFakeYouTubeCaptionProvider,
   mediaPlaybackUrl,
+  needsMediaRelink,
+  handleNameFromMedia,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -951,6 +953,11 @@ function renderVideoStage(model: AppModel): HTMLElement {
     return stage;
   }
 
+  if (needsMediaRelink(model)) {
+    stage.appendChild(renderRelinkPlaceholder(model));
+    return stage;
+  }
+
   const video = document.createElement('video');
   video.setAttribute('controls', '');
   video.setAttribute('preload', 'metadata');
@@ -1047,6 +1054,80 @@ function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
       });
   });
   actions.append(libraryBtn, fixtureBtn);
+  placeholder.append(icon, heading, body, actions);
+  return placeholder;
+}
+
+function renderRelinkPlaceholder(model: AppModel): HTMLElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'video-placeholder video-placeholder-relink';
+
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🔗';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Relink media';
+  const handleName = handleNameFromMedia(model);
+  const body = document.createElement('p');
+  body.textContent = handleName
+    ? `The browser-granted file handle for "${handleName}" is not available. Relink the owned media file to resume playback.`
+    : 'The browser-granted file handle is not available. Relink the owned media file to resume playback.';
+
+  const actions = document.createElement('div');
+  actions.className = 'empty-video-actions';
+  const relinkBtn = document.createElement('button');
+  relinkBtn.className = 'btn-primary';
+  relinkBtn.type = 'button';
+  relinkBtn.textContent = 'Relink media';
+  relinkBtn.setAttribute('aria-label', 'Relink the browser file handle for the current media');
+  relinkBtn.addEventListener('click', () => {
+    const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
+    if (typeof picker !== 'function') {
+      model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
+      rerenderApp(model);
+      return;
+    }
+    void picker({
+      multiple: false,
+      types: [
+        {
+          description: 'Owned media files',
+          accept: {
+            'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
+            'audio/*': ['.mp3', '.m4a', '.wav'],
+          },
+        },
+      ],
+    })
+      .then((handles) => {
+        const mediaHandle = handles[0];
+        if (!mediaHandle) {
+          model.importError = 'No media handle was selected.';
+          rerenderApp(model);
+          return;
+        }
+        return importBrowserLocalFileHandles(model, { mediaHandle });
+      })
+      .then(() => {
+        if (!model.importError) {
+          model.importError = null;
+        }
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  const libraryBtn = document.createElement('button');
+  libraryBtn.className = 'btn-secondary';
+  libraryBtn.type = 'button';
+  libraryBtn.textContent = 'Go to Library';
+  libraryBtn.addEventListener('click', () => {
+    setView(model, 'library');
+    rerenderApp(model);
+  });
+  actions.append(relinkBtn, libraryBtn);
   placeholder.append(icon, heading, body, actions);
   return placeholder;
 }

@@ -578,6 +578,22 @@ export function mediaPlaybackUrl(model: AppModel): string {
   return model.browserLocalMedia.objectUrl ?? model.currentMedia?.originalPath ?? '';
 }
 
+export function needsMediaRelink(model: AppModel): boolean {
+  if (!model.currentMedia) return false;
+  const path = model.currentMedia.originalPath;
+  if (!path.startsWith('browser-file-handle:')) return false;
+  return model.browserLocalMedia.objectUrl === null;
+}
+
+const HANDLE_LABEL_PREFIX = 'browser-file-handle:';
+
+export function handleNameFromMedia(model: AppModel): string | null {
+  if (!model.currentMedia) return null;
+  const path = model.currentMedia.originalPath;
+  if (!path.startsWith(HANDLE_LABEL_PREFIX)) return null;
+  return path.slice(HANDLE_LABEL_PREFIX.length);
+}
+
 export async function importBrowserLocalFiles(model: AppModel, input: BrowserLocalFileImportInput): Promise<void> {
   if (typeof URL.createObjectURL !== 'function') {
     throw new TypeError('Browser local media import requires URL.createObjectURL support.');

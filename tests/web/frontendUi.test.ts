@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue } from '../../apps/web/src/model';
+import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -199,6 +200,34 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.currentMedia?.originalPath).toBe('browser-file-handle:picker-clip.webm');
     expect(video?.src).toBe('blob:persistent-picker-video');
     expect(document.getElementById('app')?.textContent).toContain('No transcript loaded yet');
+  });
+
+  it('shows a relink prompt when a hydrated handle-sourced media has no active object URL', () => {
+    const model = createAppModel();
+    const store = model.store;
+    const asset = makeMediaAsset({
+      title: 'relinked-clip',
+      originalPath: 'browser-file-handle:relinked-clip.webm',
+      contentSha256: 'sha256:deadbeef',
+      durationMs: 5000,
+      container: 'video/webm',
+      sizeBytes: 1024,
+      privacyLabel: 'owned',
+    });
+    store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:relinked-clip.webm', handleName: 'relinked-clip.webm' };
+    model.view = 'player';
+
+    rerenderApp(model);
+
+    const video = document.querySelector('video') as HTMLVideoElement | null;
+    const app = document.getElementById('app')!;
+    expect(video).toBeNull();
+    expect(app.textContent).toContain('Relink media');
+    expect(app.textContent).toContain('relinked-clip.webm');
+    const relinkButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Relink media');
+    expect(relinkButton).toBeTruthy();
   });
 
   it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {
