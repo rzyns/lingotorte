@@ -1,0 +1,76 @@
+{
+	"name": "@rzyns/morfeusz-ts",
+	"version": "1.0.4",
+	"description": "TypeScript port of Morfeusz 2 - Polish morphological analyzer",
+	"type": "module",
+	"scripts": {
+		"build": "tsc --project tsconfig.build.json",
+		"clean": "rm -rf build dist",
+		"format": "prettier --write .",
+		"lint": "eslint",
+		"prepublishOnly": "pnpm run build",
+		"test": "vitest run",
+		"changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
+		"changelog:preview": "conventional-changelog -p angular -r 1",
+		"prepare": "husky",
+		"typecheck": "tsc --noEmit",
+		"version": "bumpp --commit --tag --push"
+	},
+	"keywords": [
+		"morfeusz",
+		"morfeusz2",
+		"polish",
+		"nlp",
+		"morphology",
+		"analyzer",
+		"typescript",
+		"bindings"
+	],
+	"license": "BSD-2-Clause",
+	"publishConfig": {
+		"registry": "https://npm.pkg.github.com"
+	},
+	"dependencies": {},
+	"devDependencies": {
+		"@commitlint/cli": "^19.5.0",
+		"@commitlint/config-conventional": "^19.5.0",
+		"@commitlint/types": "^20.0.0",
+		"@eslint/js": "^9.39.1",
+		"@eslint/json": "^0.14.0",
+		"@semantic-release/changelog": "^6.0.0",
+		"@semantic-release/git": "^10.0.1",
+		"@semantic-release/github": "^9.0.6",
+		"@semantic-release/npm": "^11.0.0",
+		"@types/node": "^24.0.0",
+		"conventional-changelog-cli": "^4.1.0",
+		"eslint": "^9.39.1",
+		"eslint-config-prettier": "^10.1.8",
+		"husky": "^9.1.0",
+		"jiti": "^2.6.1",
+		"node-gyp": "^10.0.0",
+		"prettier": "^3.7.3",
+		"semantic-release": "^23.0.0",
+		"typescript": "^5.3.0",
+		"typescript-eslint": "^8.48.0",
+		"vitest": "^4.0.14",
+		"bumpp": "^10.4.1"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"packageManager": "pnpm@10.24.0",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist",
+		"docs",
+		"README.md",
+		"CHANGELOG.md"
+	]
+}

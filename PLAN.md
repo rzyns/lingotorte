@@ -172,12 +172,12 @@ Scope:
 
 Goal: move beyond heuristic Polish analysis for serious daily study.
 
-Scope:
+Scope/status:
 
-- Evaluate local/offline dictionary and morphology sources with license/provenance checks.
-- Return typed available/unavailable/error states, not loose provider blobs.
+- Evaluate local/offline dictionary and morphology sources with license/provenance checks. **Implemented:** `morfeusz-ts` (BSD-2-Clause, owned by `rzyns` org, TypeScript port of Morfeusz2 with SGJP dictionary) is vendored under `vendor/morfeusz-ts/`. The `makeMorfeuszMorphologyAdapter()` adapter maps Morfeusz POS tags and morphological features to Universal Dependencies tags. `resolveLocalAdapters` uses the Morfeusz adapter for `pl` in Node.js environments (where the `.dict` file is accessible) and falls back to the heuristic adapter in the browser.
+- Return typed available/unavailable/error states, not loose provider blobs. **Preserved:** the Morfeusz adapter returns the same typed `MorphologyOutput` with lemma, UPOS, morph features, confidence, and alternatives.
 - Preserve online translation/LLM explanation as disabled-by-default opt-in gates.
-- Add fixtures/tests for Polish samples and clear warnings for low-confidence analysis.
+- Add fixtures/tests for Polish samples and clear warnings for low-confidence analysis. **Implemented:** test in `tests/core/p3Adapters.test.ts` verifies real SGJP analyses for "Cześć", "lokalny", and "test" against the Morfeusz adapter.
 
 ### B6 — Practice and progress polish
 

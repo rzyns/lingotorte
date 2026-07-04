@@ -4,6 +4,7 @@ import {
   makeDisabledMorphologyAdapter,
   makeFixtureDictionaryAdapter,
   makeLocalPolishMorphologyAdapter,
+  makeMorfeuszMorphologyAdapter,
   makeUnavailableDictionaryAdapter,
   makeWhitespaceTokenizer,
   polishFixtureDictionary,
@@ -196,5 +197,42 @@ describe('P3 adapter no-network enforcement', () => {
 
     expect(networkAttempts).toHaveLength(0);
     expect(value.analyses[0]).toMatchObject({ lemma: 'lokalny', upos: 'ADJ' });
+  });
+
+  it('Morfeusz-backed Polish morphology returns real lemma/POS/morph from the SGJP dictionary', async () => {
+    const tokenizer = makeWhitespaceTokenizer('pl');
+    const morphology = makeMorfeuszMorphologyAdapter();
+    const text = 'Cześć, to jest lokalny test.';
+    const tokenized = await tokenizer.tokenize({
+      language: 'pl',
+      cueId: sampleCue.id,
+      text,
+      preserveCharOffsets: true,
+    });
+    const result = await morphology.analyze({ language: 'pl', cueId: sampleCue.id, text, tokens: tokenized.tokens });
+
+    expect(result.run.adapterKind).toBe('pos-morph');
+    expect(result.run.privacyMode).toBe('local');
+    const bySurface = new Map(tokenized.tokens.map((token, index) => [token.normalizedSurface, result.analyses[index]!]));
+
+    // Cześć -> lemma "cześć", noun or interjection
+    const czesc = bySurface.get('cześć');
+    expect(czesc).toBeTruthy();
+    expect(czesc!.lemma).toMatch(/^cześć/);
+    expect(['NOUN', 'INTJ']).toContain(czesc!.upos);
+
+    // lokalny -> lemma "lokalny", adjective
+    const lokalny = bySurface.get('lokalny');
+    expect(lokalny).toMatchObject({ upos: 'ADJ' });
+    expect(lokalny!.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Degree', value: 'Pos' }),
+    ]));
+
+    // test -> lemma "test", noun
+    const test = bySurface.get('test');
+    expect(test).toMatchObject({ upos: 'NOUN' });
+    expect(test!.confidence.kind).not.toBe('unavailable');
+
+    expect(result.warnings).toHaveLength(0);
   });
 });

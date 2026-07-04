@@ -6,6 +6,7 @@ coverage/
 .DS_Store
 .worktrees/
 .understand-anything/
+vendor/morfeusz-ts/morfeusz2/dict/
 .env
 .env.*
 !.env.example

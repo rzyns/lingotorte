@@ -224,6 +224,190 @@ export function makeLocalPolishMorphologyAdapter(): MorphologyAdapter {
   };
 }
 
+const morfeuszPosMap: Record<string, string> = {
+  subst: 'NOUN',
+  ger: 'NOUN',
+  depr: 'NOUN',
+  adj: 'ADJ',
+  adja: 'ADJ',
+  adjp: 'ADJ',
+  adv: 'ADV',
+  advp: 'ADV',
+  advs: 'ADV',
+  num: 'NUM',
+  numcol: 'NUM',
+  ppron: 'PRON',
+  ppron12: 'PRON',
+  ppron3: 'PRON',
+  pron: 'PRON',
+  siebie: 'PRON',
+  fin: 'VERB',
+  bedzie: 'VERB',
+  aglt: 'VERB',
+  praet: 'VERB',
+  pact: 'VERB',
+  pant: 'VERB',
+  imps: 'VERB',
+  imperson: 'VERB',
+  inf: 'VERB',
+  pcon: 'VERB',
+  ppas: 'VERB',
+  pred: 'ADV',
+  prep: 'ADP',
+  postp: 'ADP',
+  conj: 'CCONJ',
+  comp: 'SCONJ',
+  interj: 'INTJ',
+  interp: 'PUNCT',
+  brev: 'X',
+  burk: 'X',
+  ign: 'X',
+  qub: 'PART',
+  xxx: 'X',
+};
+
+const morfeuszFeatureMap: Record<string, { key: string; value: string }> = {
+  sg: { key: 'Number', value: 'Sing' },
+  pl: { key: 'Number', value: 'Plur' },
+  nom: { key: 'Case', value: 'Nom' },
+  gen: { key: 'Case', value: 'Gen' },
+  dat: { key: 'Case', value: 'Dat' },
+  acc: { key: 'Case', value: 'Acc' },
+  inst: { key: 'Case', value: 'Ins' },
+  loc: { key: 'Case', value: 'Loc' },
+  voc: { key: 'Case', value: 'Voc' },
+  m1: { key: 'Gender', value: 'Masc' },
+  m2: { key: 'Gender', value: 'Masc' },
+  m3: { key: 'Gender', value: 'Masc' },
+  f: { key: 'Gender', value: 'Fem' },
+  n: { key: 'Gender', value: 'Neut' },
+  pos: { key: 'Degree', value: 'Pos' },
+  comp: { key: 'Degree', value: 'Comp' },
+  sup: { key: 'Degree', value: 'Sup' },
+  imper: { key: 'Mood', value: 'Imp' },
+  ind: { key: 'Mood', value: 'Ind' },
+  cond: { key: 'Mood', value: 'Cnd' },
+  pres: { key: 'Tense', value: 'Pres' },
+  fut: { key: 'Tense', value: 'Fut' },
+  past: { key: 'Tense', value: 'Past' },
+  1: { key: 'Person', value: '1' },
+  2: { key: 'Person', value: '2' },
+  3: { key: 'Person', value: '3' },
+  perf: { key: 'Aspect', value: 'Perf' },
+  impef: { key: 'Aspect', value: 'Imp' },
+  aff: { key: 'Polarity', value: 'Pos' },
+  neg: { key: 'Polarity', value: 'Neg' },
+};
+
+function mapMorfeuszTag(tag: string): { upos: string; morph: { key: string; value: string; source: 'universal-dependencies' | 'language-specific' }[] } {
+  const parts = tag.split(':');
+  const posPart = parts[0] ?? '';
+  const upos = morfeuszPosMap[posPart] ?? 'X';
+  const morph: { key: string; value: string; source: 'universal-dependencies' | 'language-specific' }[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    const feature = morfeuszFeatureMap[parts[i]!];
+    if (feature) {
+      morph.push({ ...feature, source: 'language-specific' });
+    }
+  }
+  return { upos, morph };
+}
+
+let morfeuszInstance: unknown = null;
+let morfeuszLoadPromise: Promise<void> | null = null;
+
+async function getMorfeuszInstance(): Promise<unknown> {
+  if (morfeuszInstance) return morfeuszInstance;
+  if (morfeuszLoadPromise) {
+    await morfeuszLoadPromise;
+    return morfeuszInstance;
+  }
+  morfeuszLoadPromise = (async () => {
+    const { MorfeuszImpl, MorfeuszUsage } = await import('@rzyns/morfeusz-ts');
+    const m = new MorfeuszImpl('sgjp', MorfeuszUsage.ANALYSE_ONLY);
+    await m.load();
+    m.preferMatchingCase();
+    morfeuszInstance = m;
+  })();
+  await morfeuszLoadPromise;
+  return morfeuszInstance;
+}
+
+export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
+  const adapterId = 'lingotorte.morfeusz-morphology';
+  const adapterVersion = '0.0.0-p9';
+  return {
+    adapterId,
+    adapterVersion,
+    privacyMode: 'local',
+    async analyze(input: MorphologyInput): Promise<MorphologyOutput> {
+      if (input.language !== 'pl') {
+        throw new TypeError(`${adapterId} does not support language ${input.language}`);
+      }
+      const m = await getMorfeuszInstance() as {
+        analyseToArray: (text: string) => Array<{ orth: string; lemma: string; tag: string }>;
+      };
+
+      const analyses: MorphologyOutput['analyses'] = input.tokens.map((token) => {
+        if (token.tokenKind === 'punctuation' || token.tokenKind === 'symbol') {
+          return {
+            tokenIndex: token.tokenIndex,
+            lemma: token.normalizedSurface,
+            upos: token.tokenKind === 'punctuation' ? 'PUNCT' : 'SYM',
+            morph: [],
+            confidence: confidenceProbable(0.99),
+            alternatives: [],
+          };
+        }
+        if (token.tokenKind === 'number') {
+          return {
+            tokenIndex: token.tokenIndex,
+            lemma: token.normalizedSurface,
+            upos: 'NUM',
+            morph: [{ key: 'NumType', value: 'Card', source: 'universal-dependencies' as const }],
+            confidence: confidenceProbable(0.95),
+            alternatives: [],
+          };
+        }
+        const results = m.analyseToArray(token.surface);
+        if (results.length === 0) {
+          return {
+            tokenIndex: token.tokenIndex,
+            lemma: token.normalizedSurface,
+            upos: 'X',
+            morph: [],
+            confidence: confidenceProbable(0.3),
+            alternatives: [{ lemma: token.normalizedSurface, upos: 'X', note: 'No Morfeusz analysis' }],
+          };
+        }
+        const first = results[0]!;
+        const { upos, morph } = mapMorfeuszTag(first.tag);
+        const lemma = first.lemma.split(':')[0] ?? first.lemma;
+        return {
+          tokenIndex: token.tokenIndex,
+          lemma,
+          upos,
+          morph,
+          confidence: confidenceProbable(0.92),
+          alternatives: results.slice(1, 4).map((r) => {
+            const mapped = mapMorfeuszTag(r.tag);
+            return {
+              lemma: r.lemma.split(':')[0] ?? r.lemma,
+              upos: mapped.upos,
+              note: r.tag,
+            };
+          }),
+        };
+      });
+      return {
+        run: makeAdapterRunRef('pos-morph', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
+        analyses,
+        warnings: [],
+      };
+    },
+  };
+}
+
 export function makeUnavailableDictionaryAdapter(): DictionaryAdapter {
   const adapterId = 'lingotorte.unavailable-dictionary';
   const adapterVersion = '0.0.0-p3';
@@ -339,9 +523,14 @@ export function resolveLocalAdapters(
   fixtureDictionary?: FixtureDictionaryData,
 ): LanguageAdapters {
   assertProvidersDisabled(policy);
+  const useMorfeusz = language === 'pl' && typeof process !== 'undefined' && process.versions?.node;
   return {
     tokenizer: makeWhitespaceTokenizer(language),
-    morphology: language === 'pl' ? makeLocalPolishMorphologyAdapter() : makeDisabledMorphologyAdapter(),
+    morphology: useMorfeusz
+      ? makeMorfeuszMorphologyAdapter()
+      : language === 'pl'
+        ? makeLocalPolishMorphologyAdapter()
+        : makeDisabledMorphologyAdapter(),
     dictionary: fixtureDictionary ? makeFixtureDictionaryAdapter(fixtureDictionary) : makeUnavailableDictionaryAdapter(),
   };
 }

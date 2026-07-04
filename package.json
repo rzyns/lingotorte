@@ -41,6 +41,7 @@
     "vitest": "4.1.9"
   },
   "dependencies": {
+    "@rzyns/morfeusz-ts": "file:vendor/morfeusz-ts",
     "ts-fsrs": "^5.4.0"
   }
 }
