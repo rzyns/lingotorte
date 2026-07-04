@@ -42,6 +42,7 @@ import {
   confirmRestore,
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
+  setExportImportConfirmReplace,
   setExportImportError,
   connectLocalService,
   saveModelToLocalService,
@@ -649,11 +650,28 @@ function renderExportImportView(model: AppModel): HTMLElement {
       overwriteCheckbox.checked = model.exportImport.confirmOverwrite;
       overwriteCheckbox.addEventListener('change', () => {
         setExportImportConfirmOverwrite(model, overwriteCheckbox.checked);
+        if (overwriteCheckbox.checked) setExportImportConfirmReplace(model, false);
         rerenderApp(model);
       });
       overwriteLabel.appendChild(overwriteCheckbox);
       overwriteLabel.append(' I confirm this restore will merge/update imported records into my current local learner state.');
       previewPanel.appendChild(overwriteLabel);
+
+      const replaceLabel = document.createElement('label');
+      replaceLabel.htmlFor = 'restore-confirm-replace';
+      const replaceCheckbox = document.createElement('input');
+      replaceCheckbox.type = 'checkbox';
+      replaceCheckbox.id = 'restore-confirm-replace';
+      replaceCheckbox.name = 'restore-confirm-replace';
+      replaceCheckbox.checked = model.exportImport.confirmReplace;
+      replaceCheckbox.addEventListener('change', () => {
+        setExportImportConfirmReplace(model, replaceCheckbox.checked);
+        if (replaceCheckbox.checked) setExportImportConfirmOverwrite(model, false);
+        rerenderApp(model);
+      });
+      replaceLabel.appendChild(replaceCheckbox);
+      replaceLabel.append(' Replace all: clear existing local learner state before importing (destructive).');
+      previewPanel.appendChild(replaceLabel);
     } else {
       const confirmLabel = document.createElement('label');
       confirmLabel.htmlFor = 'restore-confirm';
@@ -674,7 +692,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const allWarningsAcknowledged = model.exportImport.preview.warnings.every((w) =>
       model.exportImport.acknowledgedWarnings.includes(w.kind),
     );
-    const canRestore = allWarningsAcknowledged && model.exportImport.confirmOverwrite;
+    const canRestore = allWarningsAcknowledged && (model.exportImport.confirmOverwrite || model.exportImport.confirmReplace);
 
     const restoreBtn = document.createElement('button');
     restoreBtn.className = 'btn-primary';

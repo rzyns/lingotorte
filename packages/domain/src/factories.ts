@@ -195,7 +195,7 @@ export function makeExportIntegrity(
 }
 
 export function makeRestoreConfirmation(
-  input: Pick<import('./coreTypes').RestoreConfirmation, 'confirmedAt' | 'confirmOverwrite' | 'acknowledgedWarnings'>,
+  input: Pick<import('./coreTypes').RestoreConfirmation, 'confirmedAt' | 'confirmOverwrite' | 'confirmReplace' | 'acknowledgedWarnings'>,
 ): import('./coreTypes').RestoreConfirmation {
   return { ...input };
 }

@@ -87,6 +87,7 @@ export type AppModel = {
     lastError: string | null;
     acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
     confirmOverwrite: boolean;
+    confirmReplace: boolean;
     lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number } | null;
     lastSaveVerified: { fileName: string; verifiedAt: string } | null;
   };

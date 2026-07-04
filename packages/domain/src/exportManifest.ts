@@ -649,6 +649,7 @@ export function requireRestoreConfirmation(value: unknown): RestoreConfirmation 
   return {
     confirmedAt: requireString(record, 'confirmedAt'),
     confirmOverwrite: requireBoolean(record, 'confirmOverwrite'),
+    confirmReplace: requireBoolean(record, 'confirmReplace'),
     acknowledgedWarnings: requireArray(record, 'acknowledgedWarnings').map((w) =>
       requireStringInSet(w, 'acknowledgedWarning', [
         'learner-state-contains-timestamps',

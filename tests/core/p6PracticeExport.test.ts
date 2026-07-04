@@ -241,6 +241,7 @@ describe('P6 export/restore manifest', () => {
     const confirmation = {
       confirmedAt: new Date().toISOString(),
       confirmOverwrite: true,
+      confirmReplace: false,
       acknowledgedWarnings: preview.warnings.map((w) => w.kind),
     };
     restoreService.restore(manifest, confirmation);
@@ -289,6 +290,7 @@ describe('P6 export/restore manifest', () => {
     restoreService.restore(manifest, {
       confirmedAt: new Date().toISOString(),
       confirmOverwrite: true,
+      confirmReplace: false,
       acknowledgedWarnings: preview.warnings.map((w) => w.kind),
     });
 
@@ -380,6 +382,7 @@ describe('P6 export/restore manifest', () => {
       restoreService.restore(manifest, {
         confirmedAt: new Date().toISOString(),
         confirmOverwrite: false,
+        confirmReplace: false,
         acknowledgedWarnings: [],
       }),
     ).toThrow(/merge\/update/);
@@ -407,6 +410,7 @@ describe('P6 export/restore manifest', () => {
       restoreService.restore(manifest, {
         confirmedAt: new Date().toISOString(),
         confirmOverwrite: true,
+      confirmReplace: false,
         acknowledgedWarnings: [],
       }),
     ).toThrow(/not acknowledged/);

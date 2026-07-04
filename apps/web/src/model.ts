@@ -100,6 +100,7 @@ export function createAppModel(): AppModel {
       lastError: null,
       acknowledgedWarnings: [],
       confirmOverwrite: false,
+      confirmReplace: false,
       lastExport: null,
       lastSaveVerified: null,
     },
@@ -2135,6 +2136,7 @@ export function previewRestoreManifest(model: AppModel, manifestJson: string): i
   model.exportImport.lastError = null;
   model.exportImport.acknowledgedWarnings = [];
   model.exportImport.confirmOverwrite = false;
+  model.exportImport.confirmReplace = false;
   return preview;
 }
 
@@ -2147,6 +2149,7 @@ export function confirmRestore(model: AppModel): void {
   const confirmation = RestoreService.requireConfirmation({
     confirmedAt: new Date().toISOString(),
     confirmOverwrite: model.exportImport.confirmOverwrite,
+    confirmReplace: model.exportImport.confirmReplace,
     acknowledgedWarnings: model.exportImport.acknowledgedWarnings,
   });
   model.restoreService.restore(manifest, confirmation);
@@ -2155,6 +2158,7 @@ export function confirmRestore(model: AppModel): void {
   model.exportImport.lastError = null;
   model.exportImport.acknowledgedWarnings = [];
   model.exportImport.confirmOverwrite = false;
+  model.exportImport.confirmReplace = false;
   model.exportImport.lastExport = null;
   persistIfLocalServiceAutosaveEnabled(model);
 }
@@ -2171,6 +2175,10 @@ export function setExportImportAcknowledgedWarning(model: AppModel, kind: import
 
 export function setExportImportConfirmOverwrite(model: AppModel, value: boolean): void {
   model.exportImport.confirmOverwrite = value;
+}
+
+export function setExportImportConfirmReplace(model: AppModel, value: boolean): void {
+  model.exportImport.confirmReplace = value;
 }
 
 export function setExportImportError(model: AppModel, error: string | null): void {

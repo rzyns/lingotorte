@@ -273,4 +273,30 @@ export class LocalStore {
   listImportJobEvents(jobId: UUID): ImportJobEvent[] {
     return this.state.importJobEvents.filter((e) => e.jobId === jobId);
   }
+
+  removeSavedItem(id: UUID): void {
+    delete this.state.savedItems[id];
+  }
+
+  removeSavedOccurrence(id: UUID): void {
+    delete this.state.savedOccurrences[id];
+  }
+
+  removeReviewCard(id: UUID): void {
+    delete this.state.reviewCards[id];
+  }
+
+  removeReviewCardState(id: UUID): void {
+    delete this.state.reviewCardStates[id];
+  }
+
+  removeReviewEvent(id: UUID): void {
+    const index = this.state.reviewEvents.findIndex((e) => e.id === id);
+    if (index >= 0) this.state.reviewEvents.splice(index, 1);
+  }
+
+  removePracticeAttempt(id: UUID): void {
+    const index = this.state.practiceAttempts.findIndex((a) => a.id === id);
+    if (index >= 0) this.state.practiceAttempts.splice(index, 1);
+  }
 }

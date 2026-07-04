@@ -97,18 +97,28 @@ export class RestoreService {
   }
 
   restore(manifest: LearnerExportManifest, confirmation: RestoreConfirmation): LocalStoreSnapshot {
-    if (!confirmation.confirmOverwrite) {
-      throw new TypeError('Restore refused: merge/update confirmation not supplied');
+    if (!confirmation.confirmOverwrite && !confirmation.confirmReplace) {
+      throw new TypeError('Restore refused: merge/update or replace confirmation not supplied');
     }
     const preview = this.preview(manifest);
-    if (preview.overwriteConfirmationRequired && !confirmation.confirmOverwrite) {
-      throw new TypeError('Restore refused: local data exists and merge/update was not confirmed');
+    if (preview.overwriteConfirmationRequired && !confirmation.confirmOverwrite && !confirmation.confirmReplace) {
+      throw new TypeError('Restore refused: local data exists and merge/update or replace was not confirmed');
     }
     const acknowledged = new Set(confirmation.acknowledgedWarnings);
     for (const warning of preview.warnings) {
       if (!acknowledged.has(warning.kind)) {
         throw new TypeError(`Restore refused: warning ${warning.kind} not acknowledged`);
       }
+    }
+
+    if (confirmation.confirmReplace) {
+      const current = this.store.snapshot();
+      for (const id of Object.keys(current.savedItems)) this.store.removeSavedItem(id);
+      for (const id of Object.keys(current.savedOccurrences)) this.store.removeSavedOccurrence(id);
+      for (const id of Object.keys(current.reviewCards)) this.store.removeReviewCard(id);
+      for (const id of Object.keys(current.reviewCardStates)) this.store.removeReviewCardState(id);
+      for (const id of Object.keys(current.reviewEvents)) this.store.removeReviewEvent(id);
+      for (const id of Object.keys(current.practiceAttempts)) this.store.removePracticeAttempt(id);
     }
 
     for (const item of manifest.content.savedItems) {

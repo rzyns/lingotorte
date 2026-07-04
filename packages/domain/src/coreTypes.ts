@@ -406,6 +406,7 @@ export type RestorePreviewLocalState = Readonly<{
 export type RestoreConfirmation = Readonly<{
   confirmedAt: ISODateTime;
   confirmOverwrite: boolean;
+  confirmReplace: boolean;
   acknowledgedWarnings: readonly PrivacyWarningKind[];
 }>;
 
