@@ -350,6 +350,70 @@ function renderPracticeView(model: AppModel): HTMLElement {
       choiceGroup.appendChild(choiceBtn);
     }
     section.appendChild(choiceGroup);
+  } else if (model.practice.mode === 'audio-recall') {
+    const audioGroup = document.createElement('div');
+    audioGroup.className = 'practice-audio-recall';
+
+    const prompt = document.createElement('p');
+    prompt.className = 'practice-audio-prompt';
+    prompt.textContent = 'Dyktafon — mów teraz:';
+    prompt.setAttribute('aria-live', 'polite');
+    audioGroup.appendChild(prompt);
+
+    const recordBtn = document.createElement('button');
+    recordBtn.className = 'btn-primary record-btn';
+    recordBtn.type = 'button';
+    recordBtn.dataset.testid = 'record-btn';
+    recordBtn.setAttribute('aria-label', 'Record your answer');
+    const micIcon = document.createElement('span');
+    micIcon.textContent = '🎤';
+    recordBtn.appendChild(micIcon);
+    recordBtn.appendChild(document.createTextNode(' Nagrywaj'));
+
+    let mediaStream: MediaStream | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let recognition: any = null;
+
+    recordBtn.addEventListener('click', async () => {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const sr = (window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+        if (!sr) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        recognition = new (sr as new (...args: unknown[]) => any)();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'pl-PL';
+        recognition.onresult = (event: { results: Array<Array<{ transcript: string; confidence: number }>> }) => {
+          const transcript = event.results[0]?.[0]?.transcript ?? '';
+          setPracticePendingAnswer(model, transcript);
+          rerenderApp(model);
+        };
+        recognition.onerror = () => {
+          mediaStream?.getTracks().forEach((t) => t.stop());
+          rerenderApp(model);
+        };
+        recognition.onend = () => {
+          mediaStream?.getTracks().forEach((t) => t.stop());
+          rerenderApp(model);
+        };
+        recognition.start();
+        rerenderApp(model);
+      } catch {
+        mediaStream?.getTracks().forEach((t) => t.stop());
+      }
+    });
+
+    audioGroup.appendChild(recordBtn);
+
+    if (model.practice.pendingAnswer) {
+      const transcriptDiv = document.createElement('div');
+      transcriptDiv.className = 'practice-transcript-preview';
+      transcriptDiv.textContent = `Rozpoznano: "${model.practice.pendingAnswer}"`;
+      audioGroup.appendChild(transcriptDiv);
+    }
+
+    section.appendChild(audioGroup);
   } else if (typedEnabled) {
     const answerGroup = document.createElement('div');
     answerGroup.className = 'practice-answer';
