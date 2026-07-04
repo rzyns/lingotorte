@@ -194,9 +194,9 @@ Scope/status:
 
 Goal: broaden local subtitle/transcript input beyond the current SRT/JSON-centered path.
 
-Scope:
+Scope/status:
 
-- VTT and ASS parsing or well-scoped dependency adoption after provenance review.
+- VTT and ASS parsing or well-scoped dependency adoption after provenance review. **Partially implemented:** VTT parsing is now supported both server-side (`parseVtt` in `packages/subtitles/src/import.ts` wired into `importSubtitle`) and browser-side (`parseBrowserSrtText` detects VTT by file extension or `WEBVTT` header and uses dot-separated timestamps with optional cue index and optional hours).
 - Embedded subtitle extraction via local ffmpeg/ffprobe where safe.
 - Offset/alignment editor and target/native alignment confidence UI.
 - Preserve draft/correction/approval semantics for generated/imported tracks.

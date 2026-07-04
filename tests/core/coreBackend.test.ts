@@ -8,6 +8,7 @@ import { defaultProviderPolicy } from '../../packages/domain/src/providerPolicy'
 
 const fixtureMediaPath = 'fixtures/media/synthetic-polish-dialogue.webm';
 const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
+const targetVttPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.vtt';
 const transcriptPath = 'fixtures/transcripts/synthetic-polish-dialogue.transcript.json';
 
 describe('core local storage and import pipeline', () => {
@@ -69,6 +70,18 @@ describe('core local storage and import pipeline', () => {
     expect(parsed.track.format).toBe('json');
     const firstCue = parsed.cues[0]!;
     expect(firstCue.text).toBe('Cześć, to jest lokalny test.');
+  });
+
+  it('imports VTT subtitles with WEBVTT header and dot-separated timestamps', async () => {
+    const parsed = await importSubtitle({ mediaId: 'm1', language: 'pl', role: 'target', path: targetVttPath });
+    expect(parsed.track.format).toBe('vtt');
+    expect(parsed.cues).toHaveLength(2);
+    expect(parsed.cues[0]!.text).toBe('Cześć, to jest lokalny test.');
+    expect(parsed.cues[0]!.startMs).toBe(0);
+    expect(parsed.cues[0]!.endMs).toBe(1000);
+    expect(parsed.cues[1]!.text).toBe('We study from our own subtitles.');
+    expect(parsed.cues[1]!.startMs).toBe(1000);
+    expect(parsed.cues[1]!.endMs).toBe(2000);
   });
 
   it('round-trips saved occurrence with full source context', async () => {

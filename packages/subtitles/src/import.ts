@@ -16,6 +16,7 @@ export type ImportSubtitleInput = Readonly<{
 }>;
 
 const srtTimestampPattern = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/;
+const vttTimestampPattern = /^(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})$/;
 
 function parseSrtTimestamp(value: string): number {
   const match = srtTimestampPattern.exec(value);
@@ -23,6 +24,23 @@ function parseSrtTimestamp(value: string): number {
     throw new TypeError(`Invalid SRT timestamp: ${value}`);
   }
   const hours = match[1]!;
+  const minutes = match[2]!;
+  const seconds = match[3]!;
+  const millis = match[4]!;
+  return (
+    Number.parseInt(hours, 10) * 3_600_000 +
+    Number.parseInt(minutes, 10) * 60_000 +
+    Number.parseInt(seconds, 10) * 1_000 +
+    Number.parseInt(millis, 10)
+  );
+}
+
+function parseVttTimestamp(value: string): number {
+  const match = vttTimestampPattern.exec(value);
+  if (!match) {
+    throw new TypeError(`Invalid VTT timestamp: ${value}`);
+  }
+  const hours = match[1] ?? '0';
   const minutes = match[2]!;
   const seconds = match[3]!;
   const millis = match[4]!;
@@ -125,11 +143,108 @@ export async function parseSrt(path: string, mediaId: string, language: string, 
   return { track, cues };
 }
 
+function splitVttBlocks(text: string): string[] {
+  const normalized = text.replace(/\r\n?/g, '\n').trim();
+  if (!normalized.startsWith('WEBVTT')) {
+    throw new TypeError('VTT file must start with WEBVTT header');
+  }
+  const body = normalized.slice('WEBVTT'.length).trim();
+  return body
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+}
+
+function parseVttBlock(block: string, index: number): Omit<Cue, 'id' | 'trackId' | 'createdAt'> {
+  const lines = block.split('\n').map((line) => line.trim());
+  let lineIndex = 0;
+  let cueIndex = index;
+
+  const firstLine = lines[0] ?? '';
+  if (/^\d+$/.test(firstLine)) {
+    cueIndex = Number.parseInt(firstLine, 10);
+    lineIndex = 1;
+  }
+
+  const timingLine = lines[lineIndex] ?? '';
+  const timingMatch = /^(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})\s*-->\s*(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})/.exec(timingLine);
+  if (!timingMatch) {
+    throw new TypeError(`VTT block ${index} has invalid timing line: ${timingLine}`);
+  }
+  const timingParts = timingMatch[0]!.split(/\s*-->\s*/);
+  const startMs = parseVttTimestamp(timingParts[0]!);
+  const endMs = parseVttTimestamp(timingParts[1]!);
+  if (endMs <= startMs) {
+    throw new TypeError(`VTT block ${index} end time must be after start time`);
+  }
+
+  const rawText = lines.slice(lineIndex + 1).join('\n');
+  const text = normalizeCueText(rawText);
+  if (text.length === 0) {
+    throw new TypeError(`VTT block ${index} has empty cue text`);
+  }
+  return {
+    cueIndex,
+    startMs,
+    endMs,
+    text,
+    normalizedText: text.toLowerCase(),
+    textSha256: `sha256:0000000000000000000000000000000000000000000000000000000000000000` as const,
+  };
+}
+
+export async function parseVtt(path: string, mediaId: string, language: string, role: 'target' | 'native' | 'other', isActive = true): Promise<ParsedSubtitle> {
+  const { text, sha256 } = await readLocalSubtitle(path);
+  const format: SubtitleFormat = 'vtt';
+  const track = makeSubtitleTrack({
+    mediaId,
+    language,
+    role,
+    format,
+    sourceKind: sourceKindFromPath(path),
+    sourcePath: path,
+    contentSha256: sha256,
+    isActive,
+  });
+
+  const blocks = splitVttBlocks(text);
+  const cueDtos = blocks.map((block, index) => parseVttBlock(block, index));
+  const cues: Cue[] = [];
+  for (const dto of cueDtos) {
+    const textSha256 = await sha256Text(dto.text);
+    cues.push(
+      makeCue({
+        trackId: track.id,
+        cueIndex: dto.cueIndex,
+        startMs: dto.startMs,
+        endMs: dto.endMs,
+        text: dto.text,
+        normalizedText: dto.normalizedText,
+        textSha256,
+      }),
+    );
+  }
+
+  for (let i = 1; i < cues.length; i++) {
+    const prev = cues[i - 1]!;
+    const curr = cues[i]!;
+    if (curr.startMs < prev.endMs) {
+      throw new TypeError(
+        `VTT cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
+      );
+    }
+  }
+
+  return { track, cues };
+}
+
 export async function importSubtitle(input: ImportSubtitleInput): Promise<ParsedSubtitle> {
   const format = inferSubtitleFormat(input.path);
   switch (format) {
     case 'srt':
       return parseSrt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true);
+    case 'vtt':
+      return parseVtt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true);
     case 'json':
       return importTranscriptJson(input);
     default:

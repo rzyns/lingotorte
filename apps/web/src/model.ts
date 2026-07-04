@@ -13,6 +13,7 @@ import type {
   ReviewCard,
   LookupOutput,
   SubtitleTrack,
+  SubtitleFormat,
   ReviewCardState,
   Rating,
   Sha256Digest,
@@ -419,6 +420,21 @@ function parseBrowserSrtTimestamp(value: string): number {
   );
 }
 
+const browserVttTimestampPattern = /^(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})$/;
+
+function parseBrowserVttTimestamp(value: string): number {
+  const match = browserVttTimestampPattern.exec(value);
+  if (!match) {
+    throw new TypeError(`Invalid VTT timestamp: ${value}`);
+  }
+  return (
+    Number.parseInt(match[1] ?? '0', 10) * 3_600_000 +
+    Number.parseInt(match[2]!, 10) * 60_000 +
+    Number.parseInt(match[3]!, 10) * 1_000 +
+    Number.parseInt(match[4]!, 10)
+  );
+}
+
 async function parseBrowserSrtText(input: {
   mediaId: string;
   language: string;
@@ -428,20 +444,24 @@ async function parseBrowserSrtText(input: {
   isActive?: boolean;
   sourceKind?: SourceKind;
 }): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
+  const isVtt = input.path.toLowerCase().endsWith('.vtt') || input.text.trim().startsWith('WEBVTT');
+  const format: SubtitleFormat = isVtt ? 'vtt' : 'srt';
   const track = makeSubtitleTrack({
     mediaId: input.mediaId,
     language: input.language,
     role: input.role,
-    format: 'srt',
+    format,
     sourceKind: input.sourceKind ?? 'synthetic',
     sourcePath: input.path,
     contentSha256: await sha256BrowserText(input.text),
     isActive: input.isActive ?? true,
   });
 
-  const blocks = input.text
-    .replace(/\r\n?/g, '\n')
-    .trim()
+  const normalizedText = input.text.replace(/\r\n?/g, '\n').trim();
+  const body = isVtt && normalizedText.startsWith('WEBVTT')
+    ? normalizedText.slice('WEBVTT'.length).trim()
+    : normalizedText;
+  const blocks = body
     .split(/\n\s*\n/)
     .map((block) => block.trim())
     .filter((block) => block.length > 0);
@@ -449,24 +469,32 @@ async function parseBrowserSrtText(input: {
   for (let index = 0; index < blocks.length; index++) {
     const block = blocks[index]!;
     const lines = block.split('\n').map((line) => line.trim());
+    let lineIndex = 0;
+    let cueIndex = index;
     const firstLine = lines[0] ?? '';
-    if (!/^\d+$/.test(firstLine)) {
+    if (/^\d+$/.test(firstLine)) {
+      cueIndex = Number.parseInt(firstLine, 10);
+      lineIndex = 1;
+    } else if (!isVtt) {
       throw new TypeError(`SRT block ${index} missing numeric cue id`);
     }
-    const cueIndex = Number.parseInt(firstLine, 10);
-    const timingLine = lines[1] ?? '';
-    const timingMatch = /^(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/.exec(timingLine);
+    const timingLine = lines[lineIndex] ?? '';
+    const timestampPattern = isVtt
+      ? /^(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})\s*-->\s*(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})/
+      : /^(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/;
+    const timingMatch = timestampPattern.exec(timingLine);
     if (!timingMatch) {
-      throw new TypeError(`SRT block ${cueIndex} has invalid timing line: ${timingLine}`);
+      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} has invalid timing line: ${timingLine}`);
     }
-    const startMs = parseBrowserSrtTimestamp(timingMatch[1]!);
-    const endMs = parseBrowserSrtTimestamp(timingMatch[2]!);
+    const timingParts = timingMatch[0]!.split(/\s*-->\s*/);
+    const startMs = isVtt ? parseBrowserVttTimestamp(timingParts[0]!) : parseBrowserSrtTimestamp(timingParts[0]!);
+    const endMs = isVtt ? parseBrowserVttTimestamp(timingParts[1]!) : parseBrowserSrtTimestamp(timingParts[1]!);
     if (endMs <= startMs) {
-      throw new TypeError(`SRT block ${cueIndex} end time must be after start time`);
+      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} end time must be after start time`);
     }
-    const text = normalizeBrowserCueText(lines.slice(2).join('\n'));
+    const text = normalizeBrowserCueText(lines.slice(lineIndex + 1).join('\n'));
     if (text.length === 0) {
-      throw new TypeError(`SRT block ${cueIndex} has empty cue text`);
+      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} has empty cue text`);
     }
     cues.push(
       makeCue({
