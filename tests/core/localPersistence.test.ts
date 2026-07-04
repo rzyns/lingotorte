@@ -83,4 +83,70 @@ describe('durable local persistence', () => {
     expect(persistence.loadSnapshot()).toEqual(createEmptyLocalStoreSnapshot());
     persistence.close();
   });
+
+  it('applies an auditable forward-only migration ledger to an empty SQLite database', () => {
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    expect(persistence.status()).toMatchObject({
+      schemaVersion: 2,
+      hasSnapshot: false,
+      appliedMigrations: [
+        {
+          version: 1,
+          name: 'create_snapshot_store',
+          result: 'applied',
+        },
+        {
+          version: 2,
+          name: 'create_media_asset_projection',
+          result: 'applied',
+        },
+      ],
+    });
+    expect(persistence.listMigrations()).toEqual([
+      expect.objectContaining({
+        version: 1,
+        name: 'create_snapshot_store',
+        result: 'applied',
+        checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+      expect.objectContaining({
+        version: 2,
+        name: 'create_media_asset_projection',
+        result: 'applied',
+        checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    ]);
+    persistence.close();
+  });
+
+  it('maintains a typed media asset projection from the latest saved snapshot', () => {
+    const store = populatedStore();
+    const media = Object.values(store.snapshot().mediaAssets)[0]!;
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T02:40:00.000Z');
+
+    expect(persistence.listMediaAssets()).toEqual([
+      {
+        id: media.id,
+        title: media.title,
+        originalPath: media.originalPath,
+        contentSha256: media.contentSha256,
+        durationMs: media.durationMs,
+        container: media.container,
+        sizeBytes: media.sizeBytes,
+        importedAt: media.importedAt,
+        lastSeenAt: media.lastSeenAt,
+        privacyLabel: media.privacyLabel,
+      },
+    ]);
+
+    persistence.saveSnapshot(createEmptyLocalStoreSnapshot(), '2026-07-04T02:41:00.000Z');
+
+    expect(persistence.listMediaAssets()).toEqual([]);
+    persistence.close();
+  });
 });

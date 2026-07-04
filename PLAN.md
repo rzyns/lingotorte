@@ -2,9 +2,9 @@
 
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
-Last reconciled: 2026-06-23.
-Current branch posture at reconciliation: `main...origin/main [ahead 1]`.
-Known unrelated local dirt at reconciliation: `.gitignore` modified and `.understand-anything/` untracked; leave those out of Lingotorte plan/status commits unless Janusz separately scopes them.
+Last reconciled: 2026-07-03.
+Current branch posture at reconciliation: `main...origin/main` before this B1 slice.
+Known unrelated local dirt at reconciliation: `.understand-anything/` untracked generated artifacts; leave those out of Lingotorte plan/status commits unless Janusz separately scopes them.
 
 Recent relevant commits:
 
@@ -24,11 +24,11 @@ Recent relevant commits:
 | `docs/dev/local-runbook.md` | Current local runbook, one-command/systemd local start, local-service/ASR/public-caption smoke checklist, and known limitations. |
 | `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline and deferred cleanup ledger. Some details are older, but the limitation/deferred tables remain useful. |
 | `docs/plan/v3-transcript-generation-correction-plan.md` | Governing transcript-generation/correction design lane. Many slices are now implemented; use this for semantics and gates, not status. |
-| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite only, so this remains backlog evidence. |
+| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite plus a forward-only migration ledger and initial `media_asset` projection, so this remains backlog evidence for the rest of B1. |
 | `docs/review/safety-privacy-boundary-review.md` | Binding safety/privacy/legal boundary. Not historical. Preserve these gates. |
 | `docs/planning/` | Historical parent planning/reference bundle. Use for rationale, acceptance criteria, and backlog seeds only after checking current code/docs. |
 | `docs/final/` | Historical final fan-in bundle from the original planning mission. Use for synthesis/background, not current status. |
-| `packages/storage/src/localStore.ts` and `packages/storage/src/sqliteLocalPersistence.ts` | Typed in-memory store plus SQLite snapshot persistence adapter used by the loopback service. |
+| `packages/storage/src/localStore.ts` and `packages/storage/src/sqliteLocalPersistence.ts` | Typed in-memory store plus SQLite snapshot persistence adapter, migration ledger, and initial typed `media_asset` projection used by the loopback service. |
 | `apps/local-service/src/server.ts` | Loopback service for health/status, SQLite state save/load, scratch cleanup, job create/status/cancel, local ASR, ElevenLabs, and gated public YouTube caption jobs. |
 | `packages/local-transcription/src/index.ts` | Node-side ffmpeg/faster-whisper/WhisperX/ElevenLabs adapter seams. |
 | `scripts/faster_whisper_transcribe.py` | Dependency-lazy faster-whisper CLI entrypoint. |
@@ -74,7 +74,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
   - browser JSON export/import with privacy warnings and merge/update restore preview.
 - Loopback local service supports:
   - health/status endpoints;
-  - SQLite snapshot save/load;
+  - SQLite snapshot save/load with a forward-only `schema_migration` ledger and initial typed `media_asset` projection;
   - scratch cleanup;
   - job create/status/cancel;
   - local transcription jobs;
@@ -109,7 +109,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
 
 These work today as local prototype/product slices, but are not the final daily-driver shape:
 
-- SQLite persistence is a snapshot store, not the granular schema/migration/audit/conflict model in the architecture docs.
+- SQLite persistence is still snapshot-centered, but it now has a forward-only migration ledger and an initial typed `media_asset` projection; it is not yet the full granular schema/audit/conflict model in the architecture docs.
 - Browser `blob:` media handles are session-scoped; after restart, saved metadata can persist but playback/local ASR may require reselecting the owned media file or pasting an absolute local path.
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
 - Practice is basic and local; richer game-like practice/progress views remain future work.
@@ -126,10 +126,10 @@ Goal: replace/augment snapshot SQLite with typed durable tables, migrations, and
 
 Scope:
 
-- Forward-only migration ledger.
-- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata.
+- Forward-only migration ledger. **Implemented first slice:** `schema_migration` applies versioned checksummed migrations for the snapshot store and initial `media_asset` projection.
+- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented first slice:** rebuildable `media_asset` projection from the latest typed snapshot; remaining tables/projections are still backlog.
 - Append-only review/import/provider/export events where useful.
-- Round-trip tests from empty DB and at least one migration test.
+- Round-trip tests from empty DB and at least one migration test. **Implemented first slice:** targeted tests cover empty-DB migration ledger, snapshot round-trip, and media projection rebuild.
 - Clear source-missing/broken-media behavior without silently deleting learner history.
 
 Not in scope without fresh approval: cloud sync or destructive data cleanup.
