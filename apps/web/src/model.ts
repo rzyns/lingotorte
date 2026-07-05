@@ -407,6 +407,205 @@ function normalizeBrowserCueText(text: string): string {
 }
 
 const srtTimestampPattern = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/;
+const assTimestampPattern = /^(\d{1,2}):(\d{2}):(\d{2})\.(\d{2})$/;
+
+function parseBrowserAssTimestamp(value: string): number {
+  const match = assTimestampPattern.exec(value);
+  if (!match) {
+    throw new TypeError(`Invalid ASS/SSA timestamp: ${value}`);
+  }
+  return (
+    Number.parseInt(match[1]!, 10) * 3_600_000 +
+    Number.parseInt(match[2]!, 10) * 60_000 +
+    Number.parseInt(match[3]!, 10) * 1_000 +
+    Number.parseInt(match[4]!, 10) * 10
+  );
+}
+
+function stripBrowserAssOverrideTags(text: string): string {
+  return text.replace(/\{[^}]*\}/g, '');
+}
+
+function stripBrowserAssLineBreaks(text: string): string {
+  return text.replace(/\\[Nn]/g, ' ').replace(/\\h/g, ' ');
+}
+
+function parseBrowserAssText(raw: string): string {
+  return normalizeBrowserCueText(stripBrowserAssLineBreaks(stripBrowserAssOverrideTags(raw)));
+}
+
+type BrowserAssSection = Readonly<{
+  name: string;
+  lines: string[];
+}>;
+
+function splitBrowserAssSections(text: string): BrowserAssSection[] {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const sections: BrowserAssSection[] = [];
+  let current: BrowserAssSection | null = null;
+  for (const rawLine of normalized.split('\n')) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    if (sectionMatch) {
+      if (current) sections.push(current);
+      current = { name: sectionMatch[1]!, lines: [] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current) sections.push(current);
+  return sections;
+}
+
+function parseBrowserAssDialogueLine(line: string, formatHeader: string, index: number): { cueIndex: number; startMs: number; endMs: number; text: string; normalizedText: string } | null {
+  const headerMatch = /^Format:\s*(.+)$/i.exec(formatHeader);
+  if (!headerMatch) throw new TypeError('ASS/SSA [Events] section missing Format header');
+  const fieldNames = headerMatch[1]!.split(',').map((f) => f.trim().toLowerCase());
+  const startIndex = fieldNames.indexOf('start');
+  const endIndex = fieldNames.indexOf('end');
+  const textIndex = fieldNames.indexOf('text');
+  if (startIndex < 0 || endIndex < 0 || textIndex < 0) {
+    throw new TypeError('ASS/SSA Events Format must include Start, End, and Text fields');
+  }
+  const dialogueMatch = /^Dialogue:\s*/i.exec(line);
+  if (!dialogueMatch) return null;
+  const rawFields = line.slice(dialogueMatch[0].length).split(',');
+  if (rawFields.length < fieldNames.length) {
+    throw new TypeError(`ASS/SSA Dialogue line ${index + 1} has too few fields`);
+  }
+  const startMs = parseBrowserAssTimestamp(rawFields[startIndex]!.trim());
+  const endMs = parseBrowserAssTimestamp(rawFields[endIndex]!.trim());
+  if (endMs <= startMs) {
+    throw new TypeError(`ASS/SSA cue ${index + 1} end time must be after start time`);
+  }
+  const rawText = rawFields.slice(textIndex).join(',').trim();
+  const text = parseBrowserAssText(rawText);
+  if (text.length === 0) {
+    throw new TypeError(`ASS/SSA cue ${index + 1} has empty cue text after stripping tags`);
+  }
+  return { cueIndex: index + 1, startMs, endMs, text, normalizedText: text.toLowerCase() };
+}
+
+export function validateBrowserCueOrdering(cues: readonly Cue[]): void {
+  for (let i = 1; i < cues.length; i++) {
+    const prev = cues[i - 1]!;
+    const curr = cues[i]!;
+    if (curr.startMs < prev.endMs) {
+      throw new TypeError(
+        `Cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
+      );
+    }
+  }
+}
+
+export function applyTrackOffsetMs(cues: readonly Cue[], offsetMs: number): Cue[] {
+  if (!Number.isFinite(offsetMs)) {
+    throw new TypeError('Track offset must be a finite number of milliseconds.');
+  }
+  if (offsetMs === 0) return cues.map((cue) => ({ ...cue }));
+  const shifted: Cue[] = cues.map((cue) => {
+    const shiftedStart = Math.max(0, cue.startMs + offsetMs);
+    const shiftedEnd = Math.max(shiftedStart + 1, cue.endMs + offsetMs);
+    return {
+      ...cue,
+      startMs: shiftedStart,
+      endMs: shiftedEnd,
+    };
+  });
+  // Preserve strict monotonic ordering: each cue must start at or after the previous cue ends.
+  for (let i = 1; i < shifted.length; i++) {
+    const prev = shifted[i - 1]!;
+    const curr = shifted[i]!;
+    if (curr.startMs < prev.endMs) {
+      const startMs = prev.endMs;
+      shifted[i] = {
+        ...curr,
+        startMs,
+        endMs: Math.max(startMs + 1, curr.endMs),
+      };
+    }
+  }
+  return shifted;
+}
+
+export async function createOffsetCorrectedTranscriptVersion(
+  model: AppModel,
+  trackId: string,
+  offsetMs: number,
+): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
+  const parent = model.store.getSubtitleTrack(trackId);
+  if (!parent) throw new TypeError(`Cannot apply offset to missing transcript track ${trackId}`);
+  const parentCues = model.store.listCuesForTrack(trackId);
+  if (parentCues.length === 0) throw new TypeError('Cannot apply offset to transcript track with no cues.');
+
+  const shiftedCues = applyTrackOffsetMs(parentCues, offsetMs);
+  const segments = shiftedCues.map((cue) => ({ startMs: cue.startMs, endMs: cue.endMs, text: cue.text }));
+  const result = await createStructuralCorrectedTranscriptVersion(model, trackId, segments, 0);
+  // Preserve the parent's lifecycle status (draft/correcting/approved) instead of defaulting to 'correcting'.
+  const status: SubtitleTrack['transcriptStatus'] = parent.transcriptStatus === 'approved' ? 'approved' : parent.transcriptStatus;
+  const offsetTrack: SubtitleTrack = {
+    ...result.track,
+    transcriptStatus: status,
+    provenance: {
+      ...result.track.provenance,
+      warningFlags: [...result.track.provenance.warningFlags, 'timingUnverified'],
+    },
+  };
+  model.store.putSubtitleTrack(offsetTrack);
+  persistIfLocalServiceAutosaveEnabled(model);
+  return { track: offsetTrack, cues: result.cues };
+}
+
+async function parseBrowserAssTextBody(input: {
+  mediaId: string;
+  language: string;
+  role: 'target' | 'native' | 'other';
+  path: string;
+  text: string;
+  isActive?: boolean;
+  sourceKind?: SourceKind;
+}): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
+  const track = makeSubtitleTrack({
+    mediaId: input.mediaId,
+    language: input.language,
+    role: input.role,
+    format: 'ass',
+    sourceKind: input.sourceKind ?? 'synthetic',
+    sourcePath: input.path,
+    contentSha256: await sha256BrowserText(input.text),
+    isActive: input.isActive ?? true,
+  });
+  const sections = splitBrowserAssSections(input.text);
+  if (sections.length === 0) throw new TypeError('ASS/SSA file has no sections');
+  const events = sections.find((s) => s.name.toLowerCase() === 'events');
+  if (!events) throw new TypeError('ASS/SSA file missing [Events] section');
+  const formatHeader = events.lines.find((line) => /^Format:/i.test(line));
+  if (!formatHeader) throw new TypeError('ASS/SSA [Events] section missing Format header');
+  const cueDtos: { cueIndex: number; startMs: number; endMs: number; text: string; normalizedText: string }[] = [];
+  for (const line of events.lines) {
+    if (!/^Dialogue:/i.test(line)) continue;
+    const cue = parseBrowserAssDialogueLine(line, formatHeader, cueDtos.length);
+    if (cue) cueDtos.push(cue);
+  }
+  if (cueDtos.length === 0) throw new TypeError('ASS/SSA file has no Dialogue lines');
+  const cues: Cue[] = [];
+  for (const dto of cueDtos) {
+    cues.push(
+      makeCue({
+        trackId: track.id,
+        cueIndex: dto.cueIndex,
+        startMs: dto.startMs,
+        endMs: dto.endMs,
+        text: dto.text,
+        normalizedText: dto.normalizedText,
+        textSha256: await sha256BrowserText(dto.text),
+      }),
+    );
+  }
+  return { track, cues };
+}
+
 
 function parseBrowserSrtTimestamp(value: string): number {
   const match = srtTimestampPattern.exec(value);
@@ -445,8 +644,14 @@ async function parseBrowserSrtText(input: {
   isActive?: boolean;
   sourceKind?: SourceKind;
 }): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
-  const isVtt = input.path.toLowerCase().endsWith('.vtt') || input.text.trim().startsWith('WEBVTT');
-  const format: SubtitleFormat = isVtt ? 'vtt' : 'srt';
+  const isAss = input.path.toLowerCase().endsWith('.ass') || input.path.toLowerCase().endsWith('.ssa');
+  const isVtt = !isAss && (input.path.toLowerCase().endsWith('.vtt') || input.text.trim().startsWith('WEBVTT'));
+  const format: SubtitleFormat = isAss ? 'ass' : isVtt ? 'vtt' : 'srt';
+
+  if (isAss) {
+    return parseBrowserAssTextBody(input);
+  }
+
   const track = makeSubtitleTrack({
     mediaId: input.mediaId,
     language: input.language,
@@ -511,13 +716,7 @@ async function parseBrowserSrtText(input: {
   }
 
   for (let i = 1; i < cues.length; i++) {
-    const prev = cues[i - 1]!;
-    const curr = cues[i]!;
-    if (curr.startMs < prev.endMs) {
-      throw new TypeError(
-        `SRT cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
-      );
-    }
+    validateBrowserCueOrdering(cues.slice(i - 1, i + 1));
   }
 
   return { track, cues };

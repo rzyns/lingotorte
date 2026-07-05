@@ -4,7 +4,9 @@ import { formatDueAt, formatTimeMs } from './uiTypes';
 import {
   activeCueAtTime,
   applyLoopTolerance,
+  applyTrackOffsetMs,
   clearSelection,
+  createOffsetCorrectedTranscriptVersion,
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
   importBrowserLocalFiles,
@@ -2233,6 +2235,70 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   trackMeta.setAttribute('role', 'status');
   trackMeta.textContent = `Current transcript: ${targetTrack.transcriptStatus} • ${targetTrack.transcriptSourceKind} • warnings: ${targetTrack.provenance.warningFlags.join(', ') || 'none'}`;
   panel.appendChild(trackMeta);
+
+  if (targetTrack.transcriptStatus !== 'approved') {
+    const offsetGroup = document.createElement('div');
+    offsetGroup.className = 'track-offset-editor';
+    const offsetLabel = document.createElement('label');
+    offsetLabel.htmlFor = 'track-offset-ms';
+    offsetLabel.textContent = 'Apply offset to all cues (ms)';
+    const offsetInput = document.createElement('input');
+    offsetInput.id = 'track-offset-ms';
+    offsetInput.name = 'track-offset-ms';
+    offsetInput.type = 'number';
+    offsetInput.min = '-3600000';
+    offsetInput.max = '3600000';
+    offsetInput.step = '10';
+    offsetInput.value = '0';
+    offsetLabel.appendChild(offsetInput);
+
+    const offsetPreview = document.createElement('div');
+    offsetPreview.className = 'offset-preview meta';
+    function updateOffsetPreview() {
+      const offsetMs = Number(offsetInput.value);
+      if (!Number.isFinite(offsetMs) || offsetMs === 0) {
+        offsetPreview.textContent = 'No offset selected.';
+        return;
+      }
+      const firstCue = model.cues[0];
+      const lastCue = model.cues[model.cues.length - 1];
+      if (!firstCue || !lastCue) {
+        offsetPreview.textContent = 'No cues to preview.';
+        return;
+      }
+      const shifted = applyTrackOffsetMs([firstCue, lastCue], offsetMs);
+      offsetPreview.textContent = `Preview: cue 1 ${formatTimeMs(firstCue.startMs)} → ${formatTimeMs(shifted[0]!.startMs)}, cue ${lastCue.cueIndex} ${formatTimeMs(lastCue.endMs)} → ${formatTimeMs(shifted[1]!.endMs)}`;
+    }
+    updateOffsetPreview();
+    offsetInput.addEventListener('input', updateOffsetPreview);
+
+    const applyOffsetBtn = document.createElement('button');
+    applyOffsetBtn.className = 'btn-secondary';
+    applyOffsetBtn.textContent = 'Apply offset to all cues';
+    applyOffsetBtn.addEventListener('click', () => {
+      const offsetMs = Number(offsetInput.value);
+      if (!Number.isFinite(offsetMs) || offsetMs === 0) {
+        model.importError = 'Select a non-zero offset before applying.';
+        rerenderApp(model);
+        return;
+      }
+      void createOffsetCorrectedTranscriptVersion(model, targetTrack.id, offsetMs)
+        .then(() => {
+          model.transcriptLifecycle.pendingCueEdits = {};
+          model.transcriptLifecycle.pendingCueTimingEdits = {};
+          model.transcriptLifecycle.pendingWordTimingEdits = {};
+          model.transcriptLifecycle.lastMessage = `Applied ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms offset to all cues`;
+          model.importError = null;
+          rerenderApp(model);
+        })
+        .catch((err: unknown) => {
+          model.importError = err instanceof Error ? err.message : String(err);
+          rerenderApp(model);
+        });
+    });
+    offsetGroup.append(offsetLabel, offsetPreview, applyOffsetBtn);
+    panel.appendChild(offsetGroup);
+  }
 
   if (targetTrack.transcriptStatus !== 'approved') {
     const correctionGroup = document.createElement('div');
