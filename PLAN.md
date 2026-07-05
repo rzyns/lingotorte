@@ -113,9 +113,9 @@ These work today as local prototype/product slices, but are not the final daily-
 - SQLite persistence stays snapshot-compatible and now has a forward-only migration ledger, typed projections for all current `LocalStore` entity groups, and authoritative append-only replay tables for review/import events; broader conflict/export replay remains future work.
 - Browser local media import now has a File System Access API path when supported: the app records a stable `browser-file-handle:<name>` media source label and uses a transient `blob:` URL only for playback. Plain file-input imports still use session-scoped `blob:` URLs, and fully restoring browser-granted handles after restart remains future B2 follow-up.
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
-- Practice is basic and local; richer game-like practice/progress views remain future work.
-- Polish language support is heuristic/local; richer dictionary/morphology/translation/explanation quality remains future work.
-- Subtitle import is still centered on SRT/JSON/local browser inputs; VTT/ASS/embedded subtitle robustness and offset tooling remain future work.
+- Practice is basic and local; richer game-like practice/progress views remain future work. Multiple-choice and sentence-builder practice modes are implemented, and study streak/totals are derived from persisted local review/practice events.
+- Polish language support uses `morfeusz-ts` (SGJP-backed) in Node.js with typed `Confidence` (probable/possible/unavailable) and ambiguity/low-confidence warnings, falling back to the heuristic adapter in the browser; richer translation/explanation quality remains future work.
+- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions; embedded subtitle extraction via ffmpeg/ffprobe remains future work.
 
 ## Current short backlog
 
@@ -176,9 +176,9 @@ Goal: move beyond heuristic Polish analysis for serious daily study.
 Scope/status:
 
 - Evaluate local/offline dictionary and morphology sources with license/provenance checks. **Implemented:** `morfeusz-ts` (BSD-2-Clause, owned by `rzyns` org, TypeScript port of Morfeusz2 with SGJP dictionary) is vendored under `vendor/morfeusz-ts/`. The `makeMorfeuszMorphologyAdapter()` adapter maps Morfeusz POS tags and morphological features to Universal Dependencies tags. `resolveLocalAdapters` uses the Morfeusz adapter for `pl` in Node.js environments (where the `.dict` file is accessible) and falls back to the heuristic adapter in the browser.
-- Return typed available/unavailable/error states, not loose provider blobs. **Preserved:** the Morfeusz adapter returns the same typed `MorphologyOutput` with lemma, UPOS, morph features, confidence, and alternatives.
+- Return typed available/unavailable/error states, not loose provider blobs. **Implemented:** the `Confidence` type now carries a `kind` discriminator (`unavailable` | `probable` | `possible`) and a numeric `value`; the Morfeusz adapter populates `confidence` for punctuation/symbol/number/unknown/analyzed tokens. Unknown tokens fall back to `confidencePossible(0.3)` with a warning; POS-ambiguous analyses use `confidencePossible(0.55)`, expose alternative interpretations, and emit an ambiguity warning. Analyzed tokens receive `confidenceProbable` with values ≥0.9.
 - Preserve online translation/LLM explanation as disabled-by-default opt-in gates.
-- Add fixtures/tests for Polish samples and clear warnings for low-confidence analysis. **Implemented:** test in `tests/core/p3Adapters.test.ts` verifies real SGJP analyses for "Cześć", "lokalny", and "test" against the Morfeusz adapter.
+- Add fixtures/tests for Polish samples and clear warnings for low-confidence analysis. **Implemented:** tests in `tests/core/p3Adapters.test.ts` verify real SGJP analyses for "Cześć", "lokalny", and "test" against the Morfeusz adapter, plus six edge-case tests covering inflected verb (mówiłam), inflected noun (książkami), compound word (samochód), proper noun (Warszawa), unknown token (xyzabc), and multi-interpretation word (ma).
 
 ### B6 — Practice and progress polish
 
@@ -186,9 +186,9 @@ Goal: improve the learner product loop after saved/review basics.
 
 Scope/status:
 
-- Richer local practice modes: meaning quiz, match/context/audio recall, sentence builder, and better prompt/reveal feedback. **Partially implemented:** `multiple-choice` practice mode now renders answer choice buttons generated from saved items and cue text as distractors; selecting the correct answer submits the attempt through the same practice service path.
-- Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear. **Partially implemented:** the study cockpit status rail now shows `N saved • N due • N reviews • N practice` counts derived from local store state via `learnerProgress(model, asOf)`.
-- Phrase/range looping from arbitrary word spans where word timings exist. **Partially implemented:** `toggleLoopRange`/`clearLoopRange` and `applyLoopTolerance` now support an arbitrary `{ startMs, endMs }` loop range on the player state; the video `timeupdate` handler uses it. UI controls to set a range from selected word spans remain future work.
+- Richer local practice modes: meaning quiz, match/context/audio recall, sentence builder, and better prompt/reveal feedback. **Partially implemented:** `multiple-choice` practice mode now renders answer choice buttons generated from saved items and cue text as distractors; selecting the correct answer submits the attempt through the same practice service path. A sentence-builder practice mode (`prepareSentenceBuilderForCue`/`setSentenceBuilderTokens`/`submitSentenceBuilderAttempt`) scrambles cue tokens for reorder-and-submit practice.
+- Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear. **Implemented:** the study cockpit status rail shows `N saved • N due • N reviews • N practice` counts derived from local store state via `learnerProgress(model, asOf)`, plus a streak/study-time widget derived from persisted `reviewEvents` and `practiceAttempts` via `studyMetrics(model, asOf)` → `computeStudyMetricsFromEvents` (streakDays, totalStudyTimeMs, todayStudyTimeMs, lastStudyDate). The streak is recomputed from persisted events on every read rather than from transient counters.
+- Phrase/range looping from arbitrary word spans where word timings exist. **Implemented:** `toggleLoopRange`/`clearLoopRange` and `applyLoopTolerance` now support an arbitrary `{ startMs, endMs }` loop range on the player state; the video `timeupdate` handler uses it. The UI exposes word-span selection → `activeLoopRangeForSelection` to drive loop ranges from the transcript word spans.
 - Clip/audio snippet generation only from owned local media and with cache cleanup.
 
 ### B7 — Subtitle ingest robustness and alignment tooling
@@ -197,10 +197,10 @@ Goal: broaden local subtitle/transcript input beyond the current SRT/JSON-center
 
 Scope/status:
 
-- VTT and ASS parsing or well-scoped dependency adoption after provenance review. **Partially implemented:** VTT parsing is now supported both server-side (`parseVtt` in `packages/subtitles/src/import.ts` wired into `importSubtitle`) and browser-side (`parseBrowserSrtText` detects VTT by file extension or `WEBVTT` header and uses dot-separated timestamps with optional cue index and optional hours).
+- VTT and ASS parsing or well-scoped dependency adoption after provenance review. **Implemented:** VTT parsing is now supported both server-side (`parseVtt` in `packages/subtitles/src/import.ts` wired into `importSubtitle`) and browser-side (`parseBrowserSrtText` detects VTT by file extension or `WEBVTT` header and uses dot-separated timestamps with optional cue index and optional hours). ASS/SSA parsing (`parseAss`) produces a typed `SubtitleTrack` with cues; ASS override tags and line breaks are stripped before cue normalization, and style/position fields are not persisted.
 - Embedded subtitle extraction via local ffmpeg/ffprobe where safe.
-- Offset/alignment editor and target/native alignment confidence UI.
-- Preserve draft/correction/approval semantics for generated/imported tracks.
+- Offset/alignment editor and target/native alignment confidence UI. **Implemented:** the player UI exposes a numeric millisecond offset editor (`applyTrackOffsetMs` + `createOffsetCorrectedTranscriptVersion`) that applies a finite offset to every cue with zero clamp, ordering preservation, parent transcript status preservation, and a `timingUnverified` marker on the new transcript version.
+- Preserve draft/correction/approval semantics for generated/imported tracks. **Preserved:** offset application creates a new transcript version while preserving the parent's `transcriptStatus`; draft status is preserved through ASS/SSA import.
 
 ### B8 — Optional future gated lanes
 
@@ -221,8 +221,8 @@ These remain planned/reference ideas, not current default work:
 | WS2 — loopback local service boundary | Implemented baseline: health/status/state/jobs/cancel/cleanup, loopback-only, redacted status. | Maintain safety tests as service grows. |
 | WS3 — real transcription job integration | Implemented service/UI seams for local ASR, ElevenLabs, and public captions. | B4 for real local dependency proof; live ElevenLabs only by explicit consent. |
 | WS4 — transcript correction editor MVP | Implemented baseline: correction, split/merge, word timing edits, source comparison, immutable corrected versions, approval gate. | Polish UX as issues arise; preserve approved-track gate. |
-| WS5 — word-timing-powered learner UX | Mostly implemented for timed words, click-to-seek/save anchors, and overlay click-to-vocab. | B6 for arbitrary phrase/range looping and deeper practice integration. |
-| WS6 — Polish/local language adapter quality | Partially implemented with heuristic local morphology. | B5. |
+| WS5 — word-timing-powered learner UX | Implemented for timed words, click-to-seek/save anchors, overlay click-to-vocab, arbitrary word-span loop ranges, and persisted-event study streak/totals. | B6 remaining: clip/audio snippet generation from owned local media. |
+| WS6 — Polish/local language adapter quality | Implemented: `morfeusz-ts` (SGJP-backed) with typed `Confidence` (probable/possible/unavailable), ambiguity/low-confidence warnings, and edge-case tests; heuristic fallback retained for the browser. | B5 remaining: translation/LLM explanation remains a disabled-by-default opt-in gate. |
 | WS7 — live YouTube caption read path | Implemented as gated public-caption metadata read; no media download. | Keep explicit public-read/service gate; no auto-download. |
 | WS8 — packaging, backup/restore, live acceptance | Partially implemented: one-command local start, systemd units, browser export/import, local smokes. | B2, B3, B4, plus future packaging only if warranted. |
 
@@ -285,7 +285,8 @@ Current known state:
 - SQLite remains snapshot-compatible, now with forward-only migrations, typed projections for current LocalStore entities, and authoritative append-only replay for review/import events.
 - Browser File System Access media handles are the selected B2 direction and have a first UI/import slice: supported browsers can import through a persistent handle label, while actual handle permission persistence/revalidation across restart remains future work.
 - Export/import works as browser JSON manifest download/paste+merge, not full backup/restore.
-- Polish analysis is useful but heuristic/local.
+- Polish analysis uses `morfeusz-ts` (SGJP-backed) in Node.js with typed `Confidence` and ambiguity/low-confidence warnings, falling back to the heuristic adapter in the browser.
+- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions.
 - Provider calls, model downloads, sync, AnkiConnect, microphone recording, and public actions remain gated.
 
 Hard boundaries:

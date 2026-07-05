@@ -1,15 +1,30 @@
 # PLAN status — Lingotorte
 
-Updated: `2026-07-04T15:14:00Z`
+Updated: `2026-07-05T01:12:00Z`
 
-Status: **B1 (granular storage/migrations/auditability) is complete.** All other slices (B2–B8) remain outstanding. P6 audio-recall practice mode is implemented and committed. The repo is 14 commits ahead of `origin/main`.
+Status: **Swarm v1 (B5 + B7 + B2/B3/B6 frontend) merged to main.** B1 (granular storage/migrations/auditability) is complete. P6 audio-recall practice mode is implemented and committed. The repo is 20 commits ahead of `origin/main` after the three-way merge.
 
 ## Current scope and repository state
 
 - Workspace/repo: `/home/openclaw/workspace/lingotorte`
-- Git HEAD: `243b18d` (`docs: update PLAN.md reconciliation date and recent commits`)
-- Branch: `main`, ahead of `origin/main` by 14 commits (including `66657b8` audio-recall P6 feature)
+- Git HEAD: `5b844f9` (`Merge lingotorte/swarm-b2b3b6-frontend: B2+B3+B6 frontend + review repair (t_d218dec9, t_96877100)`)
+- Branch: `main`, ahead of `origin/main` by 20 commits (including the three swarm-v1 merge commits and `66657b8` audio-recall P6 feature)
 - Worktree: clean
+
+## Swarm v1 — three-branch merge + synthesis
+
+Three reviewed implementation lanes were merged into `main` via `--no-ff` merge commits, with two merge conflicts resolved during the B2/B3/B6 frontend merge (the B5 and B7 merges were conflict-free):
+
+- `878176a` Merge `lingotorte/swarm-b5-morphology` (review t_5db9253b: PASS @ `bb86dac`)
+- `55b6808` Merge `lingotorte/swarm-b7-subtitles` (review t_0945ff1f: PASS @ `36b8ced`)
+- `5b844f9` Merge `lingotorte/swarm-b2b3b6-frontend` (review t_d218dec9 BLOCK → repair t_96877100 PASS @ `f96fd73`)
+
+Conflict resolution (preserving functionality from both sides):
+
+- `apps/web/src/app.ts` imports — union of B7's `applyTrackOffsetMs` and frontend's `clearLoopRange`. Both exports exist in `model.ts` and are used in `app.ts`.
+- `tests/core/p3Adapters.test.ts` — took HEAD (B5). B5's new edge-case `describe` block plus B5's explicit Cześć-ambiguity assertions subsume the frontend's defensive lenient change to the older `expect(result.warnings).toHaveLength(0)` line.
+
+Full validation passed on the merged result (see "Validation commands run" below). No push to `origin/main` was performed (local merge only, per task non-authorizations).
 
 ## Fable 5 Review — B1 remaining item scoped
 
@@ -34,28 +49,34 @@ Status: **B1 (granular storage/migrations/auditability) is complete.** All other
 | Slice | Goal | Status | Notes |
 | --- | --- | --- | --- |
 | B1 | Granular storage, migrations, auditability | **Complete** | Forward-only migration ledger through v5; typed projections for all current LocalStore entities; append-only review_event/import_job_event replay tables; empty-DB and migration tests; missing-media guard. Remaining: export-job/provider-policy projections gated on future entity creation. |
-| B2 | Durable media handle / File System Access persistence | Not started | Browser File System Access handle persistence across restarts. First slice partially done: handle-based import UI, transient object-URL playback, relink prompt on permission loss. Full handle revalidation after restart still outstanding. |
-| B3 | Backup/export/restore polish | Not started | File System Access save path, replace vs. merge UX, integrity verification, metadata-only default, privacy warnings. |
+| B2 | Durable media handle / File System Access persistence | Partially done | Browser File System Access handle persistence across restarts. First slice partially done: handle-based import UI, transient object-URL playback, relink prompt on permission loss. Full handle revalidation after restart still outstanding. |
+| B3 | Backup/export/restore polish | Partially done | File System Access save path, replace vs. merge UX, integrity verification, metadata-only default, privacy warnings. |
 | B4 | Local ASR dependency/model proof | Not started | Python 3.12.3 venv, faster-whisper 1.2.1, ffmpeg 8.1.2, tiny model (CPU/int8) proven on 2026-07-04. Full dependency receipts and runbook setup recorded in `docs/dev/local-runbook.md`. Real-word-speed proof on owned media still outstanding. |
-| B5 | Polish dictionary/morphology/translation quality | Not started | `morfeusz-ts` (BSD-2-Clause) vendored under `vendor/morfeusz-ts/`; `makeMorfeuszMorphologyAdapter()` wired into `resolveLocalAdapters`; test in `tests/core/p3Adapters.test.ts` verifies real SGJP analyses for "Cześć", "lokalny", "test". Real daily-study quality still outstanding. |
-| B6 | Practice and progress polish | Partially done | Multiple-choice practice mode with distractor generation. Audio-recall practice mode implemented (P6 commit `66657b8`). Study cockpit status rail shows due/saved/review/practice counts. Arbitrary phrase/range looping controls exist but UI not wired to word-span selection. |
-| B7 | Subtitle ingest robustness and alignment tooling | Partially done | VTT parsing supported both server-side and browser-side. ASS parsing, embedded subtitle extraction, offset/alignment editor still outstanding. |
+| B5 | Polish dictionary/morphology/translation quality | **Mostly complete (swarm v1)** | `morfeusz-ts` (BSD-2-Clause) vendored under `vendor/morfeusz-ts/`; `makeMorfeuszMorphologyAdapter()` wired into `resolveLocalAdapters`. Typed `Confidence` (probable/possible/unavailable) with values; unknown tokens → `confidencePossible(0.3)` + warning; POS-ambiguous → `confidencePossible(0.55)` + alternatives + ambiguity warning. Six new edge-case tests plus existing SGJP analyses. Translation/LLM explanation remains disabled-by-default opt-in. |
+| B6 | Practice and progress polish | **Partially complete (swarm v1)** | Multiple-choice and sentence-builder practice modes implemented. Study cockpit shows saved/due/reviews/practice counts plus a streak/study-time widget derived from persisted `reviewEvents`/`practiceAttempts` via `studyMetrics()` → `computeStudyMetricsFromEvents` (recomputed on every read). Arbitrary word-span loop ranges wired through `toggleLoopRange`/`clearLoopRange` + `activeLoopRangeForSelection`. Clip/audio snippet generation still outstanding. |
+| B7 | Subtitle ingest robustness and alignment tooling | **Mostly complete (swarm v1)** | VTT parsing (server + browser) plus ASS/SSA parsing (`parseAss`) with override-tag stripping and non-persisted style/position fields. Millisecond offset editor (`applyTrackOffsetMs` + `createOffsetCorrectedTranscriptVersion`) applies finite offset with zero clamp, ordering preservation, parent status preservation, and `timingUnverified` marker. Embedded subtitle extraction via ffmpeg/ffprobe still outstanding. |
 | B8 | Optional future gated lanes | Future | Anki export, pronunciation/shadowing, cloud sync, desktop/PWA packaging — all future, gated on separate approval. |
 
 ## Recent commits (from this session)
 
 | Commit | Message |
 | --- | --- |
+| `5b844f9` | Merge lingotorte/swarm-b2b3b6-frontend: B2+B3+B6 frontend + review repair (t_d218dec9, t_96877100) |
+| `55b6808` | Merge lingotorte/swarm-b7-subtitles: B7 ASS/SSA subtitle robustness + offset correction (t_0945ff1f) |
+| `878176a` | Merge lingotorte/swarm-b5-morphology: B5 typed Confidence + Morfeusz ambiguity marking (t_5db9253b) |
+| `f96fd73` | fix(frontend): B2+B3+B6 review blockers — vendor morfeusz build, persisted streak, clean packaging |
+| `36b8ced` | B7: ASS/SSA parsing, offset/alignment editor, draft/correction preservation |
+| `bb86dac` | feat(language): morfeusz morphology confidence/ambiguity warnings and edge-case tests |
 | `66657b8` | feat(p6): audio-recall practice mode — P6 learner state, recording UI, submit flow |
 | `243b18d` | docs: update PLAN.md reconciliation date and recent commits |
 
 ## Validation commands run
 
-- `npm test -- --run` — **24 passed, 176 passed | 4 skipped** (4 skipped are audio-recall tests requiring jsdom environment)
-- `npm run typecheck` — **0 errors**
-- `npm run test:no-network` — **2 passed, 5 passed** (provider-disabled no-network harness)
+- `npm run typecheck` — **passed** (0 errors)
+- `npm test -- --run` — **25 files passed; 192 passed, 4 skipped** (4 skipped are audio-recall tests requiring jsdom environment)
+- `npm run test:no-network` — **2 files, 5 passed** (provider-disabled no-network harness)
 - `npm run scan:privacy` — **ok: true, scannedFiles: 42**
-- `python3 validate_final_bundle.py` — **errors: [], required_count: 16, manifest_count: 16**
+- `python3 validate_final_bundle.py` — **errors: [], required_count: 16, manifest_count: 16** (last run pre-merge)
 - `git diff --check` — clean
 
 ## Audio-recall skip note
@@ -66,11 +87,12 @@ Status: **B1 (granular storage/migrations/auditability) is complete.** All other
 
 Shortest ready path through the backlog:
 
-1. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state, keep explicit absolute-path ASR input as separate concern.
-2. **B3** — Export/restore polish: File System Access save path with integrity verification, replace-vs-merge confirmation checkboxes, metadata-only default.
-3. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification.
+1. **B1 follow-up — `export_job` projection (migration v6)** — Fable 5-scoped 10-column mutable projection; no FKs, no append-only event stream yet. Already designed, just needs implementation.
+2. **B1 follow-up — `provider_policy` projection (migration v7)** — Fable 5-scoped 8-column mutable projection; env-only credentials, default-disabled.
+3. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state.
+4. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification.
 
-B5 (morfeusz-ts quality), B6 (richer practice modes), B7 (VTT/ASS/offset editor) are all valid parallel tracks but have more open design questions.
+B5 (translation/LLM gate), B6 (clip generation), B7 (embedded extraction), and B8 (future gated lanes) remain valid but have more open design questions or are explicitly future.
 
 ## Non-actions preserved
 
@@ -78,3 +100,4 @@ B5 (morfeusz-ts quality), B6 (richer practice modes), B7 (VTT/ASS/offset editor)
 - Providers remain disabled by default; no-network tests cover disabled state.
 - Live provider calls, model downloads, AnkiConnect, cloud sync, microphone recording, and public sharing remain gated on explicit separate authorization.
 - `.understand-anything/` untracked generated artifacts were not touched.
+- No push to `origin/main` was performed; the swarm-v1 merge is local-only.
