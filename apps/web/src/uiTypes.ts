@@ -1,8 +1,10 @@
 import type {
   Cue,
+  LearnerExportManifest,
   SavedItem,
   SavedOccurrence,
   SavedOccurrenceSourceContext,
+  Sha256Digest,
   SubtitleTrack,
 } from '@lingotorte/domain';
 
@@ -102,7 +104,17 @@ export type AppModel = {
     acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
     confirmOverwrite: boolean;
     confirmReplace: boolean;
-    lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number; manifestIntegrityVerified: boolean } | null;
+    lastExport: {
+      fileName: string;
+      manifestJson: string;
+      schemaVersion: LearnerExportManifest['schemaVersion'];
+      applicationVersion: string;
+      exportedAt: string;
+      recordCount: number;
+      warningCount: number;
+      rootHash: Sha256Digest;
+      manifestIntegrityVerified: boolean;
+    } | null;
     lastSaveVerified: { fileName: string; verifiedAt: string } | null;
   };
   localService: {

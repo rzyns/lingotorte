@@ -50,6 +50,7 @@ import {
   exportLearnerState,
   previewRestoreManifest,
   confirmRestore,
+  clearRestorePreview,
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
   setExportImportConfirmReplace,
@@ -118,6 +119,28 @@ type BrowserFileSaveHandleLike = Readonly<{
 type BrowserFileSavePickerGlobal = typeof globalThis & Readonly<{
   showSaveFilePicker?: (options?: unknown) => Promise<BrowserFileSaveHandleLike>;
 }>;
+
+function appendDefinitionRow(list: HTMLDListElement, term: string, value: string): void {
+  const dt = document.createElement('dt');
+  dt.textContent = term;
+  const dd = document.createElement('dd');
+  dd.textContent = value;
+  list.append(dt, dd);
+}
+
+function shortHash(hash: string): string {
+  const digest = hash.startsWith('sha256:') ? hash.slice('sha256:'.length) : hash;
+  return digest.length > 16 ? `${digest.slice(0, 12)}…${digest.slice(-8)}` : hash;
+}
+
+function readPreviewManifest(model: AppModel): LearnerExportManifest | null {
+  if (!model.exportImport.manifestJson) return null;
+  try {
+    return JSON.parse(model.exportImport.manifestJson) as LearnerExportManifest;
+  } catch {
+    return null;
+  }
+}
 
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -626,7 +649,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
   section.appendChild(h2);
 
   const intro = document.createElement('p');
-  intro.textContent = 'All export and import operations are local-only. The export file is unencrypted and contains local media paths.';
+  intro.textContent = 'Metadata backup v1 is local-only JSON: it includes learner state, cue text, notes, timestamps, review/practice history, content hashes, and media references, but it does not copy media files or contact cloud providers.';
   section.appendChild(intro);
 
   const exportGroup = document.createElement('div');
@@ -654,8 +677,21 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const summary = document.createElement('div');
     summary.className = 'status-banner success export-summary';
     summary.setAttribute('role', 'status');
-    summary.textContent = `Export ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • ${model.exportImport.lastExport.manifestIntegrityVerified ? 'manifest integrity verified' : 'manifest integrity warning'} • destination: downloaded via your browser`;
+    summary.textContent = `Metadata backup v1 ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • ${model.exportImport.lastExport.manifestIntegrityVerified ? 'manifest integrity verified' : 'manifest integrity warning'} • no media files copied`;
     exportGroup.appendChild(summary);
+
+    const exportMetadata = document.createElement('dl');
+    exportMetadata.className = 'export-metadata';
+    appendDefinitionRow(exportMetadata, 'Schema', model.exportImport.lastExport.schemaVersion);
+    appendDefinitionRow(exportMetadata, 'App version', model.exportImport.lastExport.applicationVersion);
+    appendDefinitionRow(exportMetadata, 'Exported at', model.exportImport.lastExport.exportedAt);
+    appendDefinitionRow(exportMetadata, 'Integrity root hash', shortHash(model.exportImport.lastExport.rootHash));
+    exportGroup.appendChild(exportMetadata);
+
+    const exportNote = document.createElement('p');
+    exportNote.className = 'meta';
+    exportNote.textContent = 'Download or choose a file explicitly. File System Access saves are verified by readback; browser downloads are not read back by Lingotorte.';
+    exportGroup.appendChild(exportNote);
 
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'btn-secondary';
@@ -715,7 +751,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
       const verifyBanner = document.createElement('div');
       verifyBanner.className = 'status-banner success export-verified';
       verifyBanner.setAttribute('role', 'status');
-      verifyBanner.textContent = `Verified: ${model.exportImport.lastSaveVerified.fileName} saved and readback matched at ${model.exportImport.lastSaveVerified.verifiedAt}`;
+      verifyBanner.textContent = `Verified: ${model.exportImport.lastSaveVerified.fileName} saved and readback matched at ${model.exportImport.lastSaveVerified.verifiedAt}. This verifies the JSON backup file only; media files remain referenced, not copied.`;
       exportGroup.appendChild(verifyBanner);
     }
   }
@@ -748,6 +784,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
       previewRestoreManifest(model, importTextarea.value);
       setExportImportError(model, null);
     } catch (err: unknown) {
+      clearRestorePreview(model);
       setExportImportError(model, err instanceof Error ? err.message : String(err));
     }
     rerenderApp(model);
@@ -755,6 +792,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
   importGroup.appendChild(previewBtn);
 
   if (model.exportImport.preview) {
+    const previewManifest = readPreviewManifest(model);
     const previewPanel = document.createElement('div');
     previewPanel.className = 'restore-preview';
     previewPanel.setAttribute('role', 'region');
@@ -763,6 +801,22 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const previewHeading = document.createElement('h3');
     previewHeading.textContent = 'Restore preview';
     previewPanel.appendChild(previewHeading);
+
+    if (previewManifest) {
+      const restoreMetadata = document.createElement('dl');
+      restoreMetadata.className = 'restore-metadata';
+      appendDefinitionRow(restoreMetadata, 'Schema', previewManifest.schemaVersion);
+      appendDefinitionRow(restoreMetadata, 'App version', previewManifest.applicationVersion);
+      appendDefinitionRow(restoreMetadata, 'Exported at', previewManifest.exportedAt);
+      appendDefinitionRow(restoreMetadata, 'Integrity records', String(previewManifest.integrity.recordCount));
+      appendDefinitionRow(restoreMetadata, 'Integrity root hash', shortHash(previewManifest.integrity.rootHash));
+      previewPanel.appendChild(restoreMetadata);
+    }
+
+    const modeNote = document.createElement('p');
+    modeNote.className = 'meta';
+    modeNote.textContent = 'Metadata-only restore preview: no media files are copied or restored. Existing media references may need relinking after import.';
+    previewPanel.appendChild(modeNote);
 
     const counts = model.exportImport.preview.counts;
     const countsList = document.createElement('ul');
@@ -786,15 +840,14 @@ function renderExportImportView(model: AppModel): HTMLElement {
     integrity.className = 'status-banner success';
     integrity.setAttribute('role', 'status');
     integrity.dataset.testid = 'restore-integrity';
-    try {
-      const manifest = JSON.parse(model.exportImport.manifestJson ?? '{}') as unknown as LearnerExportManifest;
-      const verified = verifyExportIntegrity(manifest);
+    if (previewManifest) {
+      const verified = verifyExportIntegrity(previewManifest);
       integrity.textContent = verified
-        ? `Integrity verified: ${manifest.integrity.recordCount} records, root hash matches.`
+        ? `Integrity verified: ${previewManifest.integrity.recordCount} records, root hash matches.`
         : 'Integrity warning: recomputed hash does not match manifest. The file may have been altered.';
       integrity.className = verified ? 'status-banner success' : 'status-banner error';
       integrity.dataset.integrityVerified = String(verified);
-    } catch {
+    } else {
       integrity.textContent = 'Integrity check unavailable: manifest JSON is not valid.';
       integrity.className = 'status-banner error';
       integrity.dataset.integrityVerified = 'false';
@@ -808,7 +861,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
       const conflictNote = document.createElement('p');
       conflictNote.className = 'meta';
-      conflictNote.textContent = 'Local learner state already exists. Choose exactly one option below.';
+      conflictNote.textContent = 'Local learner state already exists. Merge/update preserves unrelated local records; replace all clears current learner metadata before import.';
       previewPanel.appendChild(conflictNote);
 
       const overwriteLabel = document.createElement('label');
@@ -840,7 +893,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
       replaceLabel.appendChild(replaceCheckbox);
-      replaceLabel.append(' Replace all: clear existing local learner state before importing (destructive).');
+      replaceLabel.append(' Replace all: clear existing local learner metadata before importing (destructive; use only when intentionally restoring this backup).');
       previewPanel.appendChild(replaceLabel);
 
       const conflictError = document.createElement('p');

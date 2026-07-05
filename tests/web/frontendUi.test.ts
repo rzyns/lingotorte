@@ -544,6 +544,56 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(app.textContent).toContain('1 saved');
   });
 
+  it('surfaces metadata-only export and restore schema/integrity copy without stale preview state', () => {
+    const model = createAppModel();
+    model.view = 'export-import';
+    rerenderApp(model);
+
+    const generateBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
+    expect(generateBtn).toBeTruthy();
+    generateBtn!.click();
+
+    let app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Metadata backup v1 ready');
+    expect(app.textContent).toContain('no media files copied');
+    expect(app.textContent).toContain('Schema');
+    expect(app.textContent).toContain('lingotorte.learner-export.v1');
+    expect(app.textContent).toContain('App version');
+    expect(app.textContent).toContain(model.exportImport.lastExport!.applicationVersion);
+    expect(app.textContent).toContain('Integrity root hash');
+    expect(app.textContent).toContain('browser downloads are not read back');
+    expect(app.textContent).not.toContain('Verified:');
+
+    const manifestJson = model.exportImport.lastExport!.manifestJson;
+    const importTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    expect(importTextarea).toBeTruthy();
+    importTextarea!.value = manifestJson;
+    const previewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    expect(previewBtn).toBeTruthy();
+    previewBtn!.click();
+
+    app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Restore preview');
+    expect(app.textContent).toContain('Metadata-only restore preview');
+    expect(app.textContent).toContain('no media files are copied or restored');
+    expect(app.textContent).toContain('Integrity records');
+    expect(app.textContent).toContain('Integrity verified');
+
+    const badTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    expect(badTextarea).toBeTruthy();
+    badTextarea!.value = '{"schemaVersion":"unsupported.v2"}';
+    const badPreviewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    expect(badPreviewBtn).toBeTruthy();
+    badPreviewBtn!.click();
+
+    app = document.getElementById('app')!;
+    expect(app.textContent).not.toContain('Restore preview');
+    expect(app.textContent).toContain('Unsupported learner export schema version');
+    expect(model.exportImport.preview).toBeNull();
+    expect(model.exportImport.confirmOverwrite).toBe(false);
+    expect(model.exportImport.confirmReplace).toBe(false);
+  });
+
   it('offers a File System Access save-file picker for export when supported and verifies writeback integrity', async () => {
     const model = createAppModel();
     model.view = 'export-import';
@@ -588,5 +638,6 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.exportImport.lastError).toBeNull();
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Verified');
+    expect(app.textContent).toContain('JSON backup file only');
   });
 });

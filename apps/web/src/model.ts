@@ -2556,14 +2556,27 @@ export function exportLearnerState(model: AppModel): { manifest: import('@lingot
   model.exportImport.lastExport = {
     fileName,
     manifestJson,
+    schemaVersion: manifest.schemaVersion,
+    applicationVersion: manifest.applicationVersion,
+    exportedAt: manifest.exportedAt,
     recordCount: manifest.integrity.recordCount,
     warningCount: manifest.privacyWarnings.length,
+    rootHash: manifest.integrity.rootHash,
     manifestIntegrityVerified: verified,
   };
   model.exportImport.lastError = null;
   // lastSaveVerified is reserved exclusively for actual File System Access
   // write+readback success; do not set it here based on manifest integrity alone.
+  model.exportImport.lastSaveVerified = null;
   return { manifest, fileName, manifestJson, verified };
+}
+
+export function clearRestorePreview(model: AppModel): void {
+  model.exportImport.manifestJson = null;
+  model.exportImport.preview = null;
+  model.exportImport.acknowledgedWarnings = [];
+  model.exportImport.confirmOverwrite = false;
+  model.exportImport.confirmReplace = false;
 }
 
 export function verifyExportIntegrity(manifest: import('@lingotorte/domain').LearnerExportManifest): boolean {

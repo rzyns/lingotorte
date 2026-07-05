@@ -202,10 +202,12 @@ describe('P6 frontend export / import local learner state', () => {
     renderExportImport(model);
 
     const app = document.getElementById('app')!;
-    expect(app.textContent).toContain('Export ready:');
+    expect(app.textContent).toContain('Metadata backup v1 ready:');
     expect(app.textContent).toContain('records');
     expect(app.textContent).toContain('privacy');
-    expect(app.textContent).toContain('downloaded via your browser');
+    expect(app.textContent).toContain('manifest integrity verified');
+    expect(app.textContent).toContain('no media files copied');
+    expect(app.textContent).toContain('browser downloads are not read back by Lingotorte');
     expect(app.textContent).toMatch(/lingotorte-learner-state-\d{8}-\d{6}\.json/);
     expect(app.textContent).not.toContain('/tmp/lingotorte');
     const downloadBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Download export JSON');
