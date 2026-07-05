@@ -11,6 +11,7 @@ import {
   setPracticeMode,
   setExportImportAcknowledgedWarning,
   setExportImportConfirmOverwrite,
+  setExportImportConfirmReplace,
   previewRestoreManifest,
 } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
@@ -253,7 +254,7 @@ describe('P6 frontend export / import local learner state', () => {
     }
   });
 
-  it('previews a valid manifest and shows counts and warnings', async () => {
+  it('previews a valid manifest and shows counts, integrity pass/fail, and warnings', async () => {
     const { value: { model } } = await createPracticeModel();
     const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
     const manifestJson = JSON.stringify(manifest);
@@ -274,6 +275,9 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toContain('Restore preview');
     expect(app.textContent).toContain('Restore now');
     expect(app.textContent).toContain('savedItems:');
+    const integrity = document.querySelector('[data-testid="restore-integrity"]') as HTMLElement | null;
+    expect(integrity?.dataset.integrityVerified).toBe('true');
+    expect(integrity?.textContent).toContain('Integrity verified');
   });
 
   it('shows added, updated, and skipped-identical restore operations before mutating state', async () => {
@@ -291,6 +295,28 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toContain('savedItems: 0 added, 1 updated, 0 skipped identical');
     expect(app.textContent).toContain(importedItem.displayText);
     expect(app.textContent).toContain('updated');
+  });
+
+  it('shows integrity failure when the manifest JSON has been tampered with', async () => {
+    const { value: { model } } = await createPracticeModel();
+    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifestJson = JSON.stringify(manifest);
+    const tampered = manifestJson.replace('lingotorte.learner-export.v1', 'lingotorte.learner-export.v99');
+
+    const clean = createAppModel();
+    renderExportImport(clean);
+
+    const textarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    textarea!.value = tampered;
+    const previewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    previewBtn!.click();
+    // The tampered schema fails manifest validation, so the UI renders an error banner rather than the preview panel.
+    renderExportImport(clean);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toMatch(/unsupported|schema|integrity|invalid|error|warning/i);
+    const integrity = document.querySelector('[data-testid="restore-integrity"]') as HTMLElement | null;
+    expect(integrity).toBeNull();
   });
 
   it('refuses restore without acknowledging privacy warnings', async () => {
@@ -328,7 +354,7 @@ describe('P6 frontend export / import local learner state', () => {
     dirtyPreviewBtn!.click();
     renderExportImport(model);
     expect(document.getElementById('app')!.textContent).not.toContain('overwrite');
-    expect(document.getElementById('app')!.textContent).toContain('merge/update');
+    expect(document.getElementById('app')!.textContent).toContain('Merge/update');
 
     const clean = createAppModel();
     renderExportImport(clean);
@@ -348,6 +374,12 @@ describe('P6 frontend export / import local learner state', () => {
     }
     setExportImportConfirmOverwrite(clean, true);
     renderExportImport(clean);
+
+    // Demonstrate Replace-all toggle: turn it on and ensure merge/update is cleared.
+    setExportImportConfirmReplace(clean, true);
+    renderExportImport(clean);
+    expect(clean.exportImport.confirmReplace).toBe(true);
+    expect(clean.exportImport.confirmOverwrite).toBe(false);
 
     const restoreBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Restore now');
     expect(restoreBtn).toBeTruthy();
@@ -386,6 +418,41 @@ describe('P6 frontend export / import local learner state', () => {
     renderPractice(model);
 
     expect(app.textContent).toContain('pass');
+  });
+
+  it('scrambles sentence-builder tokens, lets user reorder, and submits a correct attempt', async () => {
+    const { value: { model, firstCue, card } } = await createPracticeModel();
+    setPracticeMode(model, 'sentence-builder');
+    renderPractice(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Sentence builder');
+
+    const pool = Array.from(document.querySelectorAll('.sentence-builder-token--pool'));
+    expect(pool.length).toBeGreaterThan(0);
+    // Place all pool tokens in order using the expected sentence text.
+    const expectedTokens = firstCue.text.split(/\s+/).filter(Boolean);
+    for (const expectedToken of expectedTokens) {
+      const tokenBtn = pool.find((b) => b.textContent === expectedToken) as HTMLButtonElement | undefined;
+      expect(tokenBtn).toBeTruthy();
+      tokenBtn!.click();
+      renderPractice(model);
+      pool.length = 0;
+      pool.push(...document.querySelectorAll('.sentence-builder-token--pool'));
+    }
+
+    const ordered = Array.from(document.querySelectorAll('.sentence-builder-token--ordered'));
+    expect(ordered.map((b) => b.textContent)).toEqual(expectedTokens);
+
+    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Submit attempt');
+    submitBtn!.click();
+    renderPractice(model);
+
+    expect(app.textContent).toContain('pass');
+    const attempts = model.store.listPracticeAttemptsForCard(card.id);
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts[attempts.length - 1]!.result).toBe('pass');
+    expect(attempts[attempts.length - 1]!.mode).toBe('sentence-builder');
   });
 
   // NOTE: audio-recall tests require a proper browser/jsdom environment where

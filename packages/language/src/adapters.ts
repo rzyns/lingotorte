@@ -1,4 +1,6 @@
 import {
+  confidenceCertain,
+  confidencePossible,
   confidenceProbable,
   makeAdapterRunRef,
   type LookupInput,
@@ -355,7 +357,7 @@ export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
             lemma: token.normalizedSurface,
             upos: token.tokenKind === 'punctuation' ? 'PUNCT' : 'SYM',
             morph: [],
-            confidence: confidenceProbable(0.99),
+            confidence: confidenceCertain(0.99),
             alternatives: [],
           };
         }
@@ -365,7 +367,7 @@ export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
             lemma: token.normalizedSurface,
             upos: 'NUM',
             morph: [{ key: 'NumType', value: 'Card', source: 'universal-dependencies' as const }],
-            confidence: confidenceProbable(0.95),
+            confidence: confidenceCertain(0.95),
             alternatives: [],
           };
         }
@@ -376,33 +378,51 @@ export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
             lemma: token.normalizedSurface,
             upos: 'X',
             morph: [],
-            confidence: confidenceProbable(0.3),
+            confidence: confidencePossible(0.3),
             alternatives: [{ lemma: token.normalizedSurface, upos: 'X', note: 'No Morfeusz analysis' }],
           };
         }
         const first = results[0]!;
         const { upos, morph } = mapMorfeuszTag(first.tag);
         const lemma = first.lemma.split(':')[0] ?? first.lemma;
+        const alternatives = results.slice(1, 4).map((r) => {
+          const mapped = mapMorfeuszTag(r.tag);
+          return {
+            lemma: r.lemma.split(':')[0] ?? r.lemma,
+            upos: mapped.upos,
+            note: r.tag,
+          };
+        });
+        const ambiguous = alternatives.length > 0 && alternatives.some((alt) => alt.upos !== upos);
+        const confidence = upos === 'X'
+          ? confidencePossible(0.35)
+          : ambiguous
+            ? confidencePossible(0.55)
+            : alternatives.length > 0
+              ? confidenceProbable(0.72)
+              : confidenceProbable(0.92);
         return {
           tokenIndex: token.tokenIndex,
           lemma,
           upos,
           morph,
-          confidence: confidenceProbable(0.92),
-          alternatives: results.slice(1, 4).map((r) => {
-            const mapped = mapMorfeuszTag(r.tag);
-            return {
-              lemma: r.lemma.split(':')[0] ?? r.lemma,
-              upos: mapped.upos,
-              note: r.tag,
-            };
-          }),
+          confidence,
+          alternatives,
         };
       });
+      const warnings: string[] = [];
+      const ambiguousCount = analyses.filter((a) => a.confidence.kind === 'possible' && a.alternatives.length > 0).length;
+      const unknownCount = analyses.filter((a) => a.upos === 'X').length;
+      if (ambiguousCount > 0) {
+        warnings.push(`${ambiguousCount} token(s) have ambiguous Morfeusz analyses; verify selected lemma/POS`);
+      }
+      if (unknownCount > 0) {
+        warnings.push(`${unknownCount} token(s) received no usable Morfeusz tag; heuristic fallback may be wrong`);
+      }
       return {
         run: makeAdapterRunRef('pos-morph', adapterId, adapterVersion, await inputHash(input.text, input.cueId), 'local'),
         analyses,
-        warnings: [],
+        warnings,
       };
     },
   };

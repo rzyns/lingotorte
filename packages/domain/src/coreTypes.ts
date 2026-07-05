@@ -49,7 +49,7 @@ export type ProviderKind = 'dictionary' | 'translation' | 'llm' | 'asr' | 'pronu
 export type SavedItemKind = 'lexeme' | 'phrase' | 'sentence';
 export type CardType = 'recognition' | 'production';
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
-export type PracticeMode = 'typed-input' | 'multiple-choice' | 'audio-recall' | 'speaking';
+export type PracticeMode = 'typed-input' | 'multiple-choice' | 'audio-recall' | 'speaking' | 'sentence-builder';
 export type PracticeResult = 'pass' | 'fail' | 'pass-with-hesitation' | 'skipped' | 'abandoned';
 export type TranscriptWordTimingSourceKind = 'provider-word-timing' | 'forced-alignment' | 'manual-edit';
 
@@ -440,6 +440,10 @@ export function confidenceUnavailable(): Confidence {
 
 export function confidenceProbable(value: number): Confidence {
   return { kind: 'probable', value };
+}
+
+export function confidencePossible(value: number): Confidence {
+  return { kind: 'possible', value };
 }
 
 export function confidenceCertain(value: number): Confidence {

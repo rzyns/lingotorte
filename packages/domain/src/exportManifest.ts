@@ -34,7 +34,7 @@ import type {
 import { validateSavedOccurrenceSourceContext } from './sourceContext';
 
 const CURRENT_SCHEMA_VERSION = 'lingotorte.learner-export.v1' as const;
-const PRACTICE_MODES: PracticeAttempt['mode'][] = ['typed-input', 'multiple-choice', 'audio-recall', 'speaking'];
+const PRACTICE_MODES: PracticeAttempt['mode'][] = ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'];
 const PRACTICE_RESULTS: PracticeAttempt['result'][] = ['pass', 'fail', 'pass-with-hesitation', 'skipped', 'abandoned'];
 const CARD_TYPES: ReviewCard['cardType'][] = ['recognition', 'production'];
 const RATINGS: ReviewEvent['rating'][] = ['again', 'hard', 'good', 'easy'];
@@ -415,6 +415,11 @@ function validateIntegrity(value: unknown): ExportIntegrity {
     rootHash: requireSha256(record, 'rootHash'),
     recordCount: requireNonNegativeInteger(record, 'recordCount'),
   };
+}
+
+export function verifyExportIntegrity(manifest: LearnerExportManifest): boolean {
+  const recomputed = computeExportIntegrity(manifest.content);
+  return recomputed.rootHash === manifest.integrity.rootHash && recomputed.recordCount === manifest.integrity.recordCount;
 }
 
 export function buildLearnerExportContent(input: {

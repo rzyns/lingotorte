@@ -328,6 +328,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(activeCueAtTime(cues, 0)?.id).toBe('c1');
     expect(activeCueAtTime(cues, 999)?.id).toBe('c1');
     expect(activeCueAtTime(cues, 1000)?.id).toBe('c2');
+    expect(activeCueAtTime(cues, 1050)?.id).toBe('c2');
     expect(activeCueAtTime(cues, 2500)).toBeNull();
   });
 
@@ -374,6 +375,86 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     ) as HTMLElement | null;
     expect(loopBtnAfter).toBeTruthy();
     expect(loopBtnAfter?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('sets loop range from selected word span via Loop range button', async () => {
+    const { value: model } = await withNoNetwork(async () => {
+      const m = createAppModel();
+      await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
+      rerenderApp(m);
+      return m;
+    });
+    const cue = model.cues[0]!;
+    model.selection = {
+      kind: 'phrase',
+      text: 'Cześć,',
+      cueId: cue.id,
+      tokenStart: 0,
+      tokenEnd: 1,
+      charStart: 0,
+      charEnd: 6,
+    };
+    model.player.activeCueId = cue.id;
+    rerenderApp(model);
+
+    const loopRangeBtn = document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement | null;
+    expect(loopRangeBtn).toBeTruthy();
+    expect(loopRangeBtn?.textContent).toBe('Loop range off');
+    loopRangeBtn?.click();
+    expect(model.player.loopRange).not.toBeNull();
+    rerenderApp(model);
+    const loopRangeBtnAfter = document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement | null;
+    expect(loopRangeBtnAfter?.textContent).toBe('Loop range on');
+    expect(loopRangeBtnAfter?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('study status rail shows streak, today, and total study time after review or practice', async () => {
+    const { value: model } = await withNoNetwork(async () => {
+      const m = createAppModel();
+      await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
+      rerenderApp(m);
+      return m;
+    });
+
+    const rail = document.querySelector('[aria-label="Study status"]') as HTMLElement | null;
+    expect(rail).toBeTruthy();
+    expect(rail?.dataset.streakDays).toBe('0');
+    expect(rail?.dataset.todayStudyTime).toBe('0s');
+    expect(rail?.dataset.totalStudyTime).toBe('0s');
+    expect(rail?.textContent).toContain('Start a streak');
+
+    // Simulate continuing a streak from yesterday by adding a persisted review event today.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayIso = yesterday.toISOString().slice(0, 10);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    // Seed an event for yesterday so the persisted-event recomputation sees a 1-day streak.
+    model.store.addReviewEvent({
+      id: 'event-yesterday',
+      cardId: 'card-1',
+      reviewedAt: `${yesterdayIso}T12:00:00.000Z`,
+      rating: 'good',
+      previousStateJson: '{}',
+      nextStateJson: '{}',
+      createdAt: `${yesterdayIso}T12:00:00.000Z`,
+    } as import('../../packages/domain/src/coreTypes').ReviewEvent);
+    // Add an event for today.
+    model.store.addReviewEvent({
+      id: 'event-today',
+      cardId: 'card-1',
+      reviewedAt: `${todayIso}T12:00:00.000Z`,
+      rating: 'good',
+      previousStateJson: '{}',
+      nextStateJson: '{}',
+      createdAt: `${todayIso}T12:00:00.000Z`,
+    } as import('../../packages/domain/src/coreTypes').ReviewEvent);
+    rerenderApp(model);
+
+    const railAfter = document.querySelector('[aria-label="Study status"]') as HTMLElement | null;
+    expect(railAfter?.dataset.streakDays).toBe('2');
+    expect(railAfter?.dataset.todayStudyTime).toBe('45s');
+    expect(railAfter?.dataset.totalStudyTime).toBe('1m 30s');
+    expect(railAfter?.textContent).toContain('2 day streak');
   });
 
   it('transcript rows display source context for visible provenance', async () => {

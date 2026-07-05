@@ -1,9 +1,12 @@
 import type { AppModel, ViewName } from './uiTypes';
-import type { Cue, SavedItem } from '@lingotorte/domain';
+import type { Cue, SavedItem, LearnerExportManifest } from '@lingotorte/domain';
+import { verifyExportIntegrity } from '@lingotorte/domain';
 import { formatDueAt, formatTimeMs } from './uiTypes';
 import {
   activeCueAtTime,
+  activeLoopRangeForSelection,
   applyLoopTolerance,
+  clearLoopRange,
   clearSelection,
   createReviewCardForSavedItem,
   importFixtureMediaAndSubtitles,
@@ -23,6 +26,7 @@ import {
   saveLexemeFromCue,
   seekToCue,
   seekToTime,
+  setLoopRange,
   setPlaybackRate,
   setPendingMeaning,
   setPendingNotes,
@@ -31,12 +35,16 @@ import {
   setView,
   submitReviewRating,
   toggleLoopCue,
+  toggleLoopRange,
   togglePlay,
   toggleReviewReveal,
   tokenizeCueText,
   setPracticeMode,
   setPracticePendingAnswer,
   submitPracticeAttempt,
+  prepareSentenceBuilderForCue,
+  setSentenceBuilderTokens,
+  submitSentenceBuilderAttempt,
   exportLearnerState,
   previewRestoreManifest,
   confirmRestore,
@@ -64,6 +72,8 @@ import {
   handleNameFromMedia,
   learnerProgress,
   generateMultipleChoices,
+  studyMetrics,
+  formatCompactDurationMs,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -310,6 +320,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   const modes: { value: import('./uiTypes').PracticeMode; label: string }[] = [
     { value: 'typed-input', label: 'Typed input' },
     { value: 'multiple-choice', label: 'Multiple choice' },
+    { value: 'sentence-builder', label: 'Sentence builder' },
     { value: 'audio-recall', label: 'Audio recall' },
     { value: 'speaking', label: 'Speaking' },
   ];
@@ -414,6 +425,87 @@ function renderPracticeView(model: AppModel): HTMLElement {
     }
 
     section.appendChild(audioGroup);
+  } else if (model.practice.mode === 'sentence-builder') {
+    const currentCue = model.store.getCue(active.occurrence.cueId);
+    const expectedText = currentCue ? currentCue.text : active.savedItem.displayText;
+    if (model.practice.sentenceBuilder.poolTokens.length === 0 && model.practice.sentenceBuilder.orderedTokens.length === 0 && expectedText.trim().length > 0) {
+      const initial = prepareSentenceBuilderForCue(expectedText);
+      setSentenceBuilderTokens(model, initial.poolTokens, initial.orderedTokens);
+    }
+    const pool = model.practice.sentenceBuilder.poolTokens;
+    const ordered = model.practice.sentenceBuilder.orderedTokens;
+
+    const builderGroup = document.createElement('div');
+    builderGroup.className = 'sentence-builder';
+    builderGroup.setAttribute('role', 'region');
+    builderGroup.setAttribute('aria-label', 'Sentence builder');
+
+    const answerArea = document.createElement('div');
+    answerArea.className = 'sentence-builder-answer';
+    answerArea.setAttribute('aria-label', 'Your sentence');
+    if (ordered.length === 0) {
+      answerArea.textContent = 'Tap words in order to build the sentence.';
+      answerArea.classList.add('sentence-builder-placeholder');
+    } else {
+      for (let i = 0; i < ordered.length; i++) {
+        const token = ordered[i]!;
+        const tokenBtn = document.createElement('button');
+        tokenBtn.type = 'button';
+        tokenBtn.className = 'sentence-builder-token sentence-builder-token--ordered';
+        tokenBtn.textContent = token;
+        tokenBtn.setAttribute('aria-label', `Remove ${token} from position ${i + 1}`);
+        tokenBtn.addEventListener('click', () => {
+          const nextOrdered = ordered.filter((_, index) => index !== i);
+          const nextPool = [...pool, token];
+          setSentenceBuilderTokens(model, nextPool, nextOrdered);
+          rerenderApp(model);
+        });
+        answerArea.appendChild(tokenBtn);
+      }
+    }
+    builderGroup.appendChild(answerArea);
+
+    const poolArea = document.createElement('div');
+    poolArea.className = 'sentence-builder-pool';
+    poolArea.setAttribute('role', 'group');
+    poolArea.setAttribute('aria-label', 'Available words');
+    if (pool.length === 0) {
+      const emptyPool = document.createElement('span');
+      emptyPool.className = 'meta';
+      emptyPool.textContent = 'All words placed.';
+      poolArea.appendChild(emptyPool);
+    } else {
+      for (let i = 0; i < pool.length; i++) {
+        const token = pool[i]!;
+        const tokenBtn = document.createElement('button');
+        tokenBtn.type = 'button';
+        tokenBtn.className = 'sentence-builder-token sentence-builder-token--pool';
+        tokenBtn.textContent = token;
+        tokenBtn.setAttribute('aria-label', `Add ${token}`);
+        tokenBtn.addEventListener('click', () => {
+          const nextOrdered = [...ordered, token];
+          const nextPool = pool.filter((_, index) => index !== i);
+          setSentenceBuilderTokens(model, nextPool, nextOrdered);
+          rerenderApp(model);
+        });
+        poolArea.appendChild(tokenBtn);
+      }
+    }
+    builderGroup.appendChild(poolArea);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'btn-secondary';
+    resetBtn.textContent = 'Reset sentence';
+    resetBtn.setAttribute('aria-label', 'Reset sentence builder');
+    resetBtn.addEventListener('click', () => {
+      const initial = prepareSentenceBuilderForCue(expectedText);
+      setSentenceBuilderTokens(model, initial.poolTokens, initial.orderedTokens);
+      rerenderApp(model);
+    });
+    builderGroup.appendChild(resetBtn);
+
+    section.appendChild(builderGroup);
   } else if (typedEnabled) {
     const answerGroup = document.createElement('div');
     answerGroup.className = 'practice-answer';
@@ -472,12 +564,20 @@ function renderPracticeView(model: AppModel): HTMLElement {
   submitBtn.className = 'btn-primary';
   submitBtn.textContent = 'Submit attempt';
   submitBtn.setAttribute('aria-label', 'Submit practice attempt');
-  submitBtn.addEventListener('click', () => {
-    submitPracticeAttempt(model, model.practice.pendingAnswer, model.review.bucketAsOf);
-    rerenderApp(model);
-  });
-  controls.appendChild(submitBtn);
   section.appendChild(controls);
+
+  if (model.practice.mode === 'sentence-builder') {
+    submitBtn.addEventListener('click', () => {
+      submitSentenceBuilderAttempt(model, model.practice.sentenceBuilder.orderedTokens, model.review.bucketAsOf);
+      rerenderApp(model);
+    });
+  } else {
+    submitBtn.addEventListener('click', () => {
+      submitPracticeAttempt(model, model.practice.pendingAnswer, model.review.bucketAsOf);
+      rerenderApp(model);
+    });
+  }
+  controls.appendChild(submitBtn);
 
   const context = document.createElement('div');
   context.className = 'review-context';
@@ -670,12 +770,96 @@ function renderExportImportView(model: AppModel): HTMLElement {
     previewPanel.appendChild(renderRestoreOperationPreview(model.exportImport.preview));
 
     const safe = document.createElement('p');
-    safe.className = model.exportImport.preview.safeToRestore ? 'status-banner success' : 'status-banner error';
+    safe.className = model.exportImport.preview.safeToRestore ? 'status-banner success' : 'status-banner warning';
     safe.setAttribute('role', 'status');
     safe.textContent = model.exportImport.preview.safeToRestore
       ? 'Safe to restore: local learner state is empty.'
-      : 'Local learner state exists. Restore will merge/update imported records into current data.';
+      : 'Local learner state exists. Resolve the conflict below before restoring.';
     previewPanel.appendChild(safe);
+
+    const integrity = document.createElement('p');
+    integrity.className = 'status-banner success';
+    integrity.setAttribute('role', 'status');
+    integrity.dataset.testid = 'restore-integrity';
+    try {
+      const manifest = JSON.parse(model.exportImport.manifestJson ?? '{}') as unknown as LearnerExportManifest;
+      const verified = verifyExportIntegrity(manifest);
+      integrity.textContent = verified
+        ? `Integrity verified: ${manifest.integrity.recordCount} records, root hash matches.`
+        : 'Integrity warning: recomputed hash does not match manifest. The file may have been altered.';
+      integrity.className = verified ? 'status-banner success' : 'status-banner error';
+      integrity.dataset.integrityVerified = String(verified);
+    } catch {
+      integrity.textContent = 'Integrity check unavailable: manifest JSON is not valid.';
+      integrity.className = 'status-banner error';
+      integrity.dataset.integrityVerified = 'false';
+    }
+    previewPanel.appendChild(integrity);
+
+    if (model.exportImport.preview.overwriteConfirmationRequired) {
+      const conflictHeading = document.createElement('h4');
+      conflictHeading.textContent = 'Resolve restore conflict';
+      previewPanel.appendChild(conflictHeading);
+
+      const conflictNote = document.createElement('p');
+      conflictNote.className = 'meta';
+      conflictNote.textContent = 'Local learner state already exists. Choose exactly one option below.';
+      previewPanel.appendChild(conflictNote);
+
+      const overwriteLabel = document.createElement('label');
+      overwriteLabel.htmlFor = 'restore-confirm-overwrite';
+      const overwriteCheckbox = document.createElement('input');
+      overwriteCheckbox.type = 'checkbox';
+      overwriteCheckbox.id = 'restore-confirm-overwrite';
+      overwriteCheckbox.name = 'restore-confirm-overwrite';
+      overwriteCheckbox.checked = model.exportImport.confirmOverwrite;
+      overwriteCheckbox.addEventListener('change', () => {
+        setExportImportConfirmOverwrite(model, overwriteCheckbox.checked);
+        if (overwriteCheckbox.checked) setExportImportConfirmReplace(model, false);
+        rerenderApp(model);
+      });
+      overwriteLabel.appendChild(overwriteCheckbox);
+      overwriteLabel.append(' Merge/update: import adds new records and updates changed records in my current local learner state.');
+      previewPanel.appendChild(overwriteLabel);
+
+      const replaceLabel = document.createElement('label');
+      replaceLabel.htmlFor = 'restore-confirm-replace';
+      const replaceCheckbox = document.createElement('input');
+      replaceCheckbox.type = 'checkbox';
+      replaceCheckbox.id = 'restore-confirm-replace';
+      replaceCheckbox.name = 'restore-confirm-replace';
+      replaceCheckbox.checked = model.exportImport.confirmReplace;
+      replaceCheckbox.addEventListener('change', () => {
+        setExportImportConfirmReplace(model, replaceCheckbox.checked);
+        if (replaceCheckbox.checked) setExportImportConfirmOverwrite(model, false);
+        rerenderApp(model);
+      });
+      replaceLabel.appendChild(replaceCheckbox);
+      replaceLabel.append(' Replace all: clear existing local learner state before importing (destructive).');
+      previewPanel.appendChild(replaceLabel);
+
+      const conflictError = document.createElement('p');
+      conflictError.className = 'status-banner error';
+      conflictError.setAttribute('role', 'status');
+      conflictError.textContent = 'Restore requires one of the options above to be selected.';
+      conflictError.style.display = model.exportImport.confirmOverwrite || model.exportImport.confirmReplace ? 'none' : 'block';
+      previewPanel.appendChild(conflictError);
+    } else {
+      const confirmLabel = document.createElement('label');
+      confirmLabel.htmlFor = 'restore-confirm';
+      const confirmCheckbox = document.createElement('input');
+      confirmCheckbox.type = 'checkbox';
+      confirmCheckbox.id = 'restore-confirm';
+      confirmCheckbox.name = 'restore-confirm';
+      confirmCheckbox.checked = model.exportImport.confirmOverwrite;
+      confirmCheckbox.addEventListener('change', () => {
+        setExportImportConfirmOverwrite(model, confirmCheckbox.checked);
+        rerenderApp(model);
+      });
+      confirmLabel.appendChild(confirmCheckbox);
+      confirmLabel.append(' I confirm this restore.');
+      previewPanel.appendChild(confirmLabel);
+    }
 
     const warningHeading = document.createElement('h4');
     warningHeading.textContent = 'Privacy warnings';
@@ -703,55 +887,6 @@ function renderExportImportView(model: AppModel): HTMLElement {
       warningList.appendChild(li);
     }
     previewPanel.appendChild(warningList);
-
-    if (model.exportImport.preview.overwriteConfirmationRequired) {
-      const overwriteLabel = document.createElement('label');
-      overwriteLabel.htmlFor = 'restore-confirm-overwrite';
-      const overwriteCheckbox = document.createElement('input');
-      overwriteCheckbox.type = 'checkbox';
-      overwriteCheckbox.id = 'restore-confirm-overwrite';
-      overwriteCheckbox.name = 'restore-confirm-overwrite';
-      overwriteCheckbox.checked = model.exportImport.confirmOverwrite;
-      overwriteCheckbox.addEventListener('change', () => {
-        setExportImportConfirmOverwrite(model, overwriteCheckbox.checked);
-        if (overwriteCheckbox.checked) setExportImportConfirmReplace(model, false);
-        rerenderApp(model);
-      });
-      overwriteLabel.appendChild(overwriteCheckbox);
-      overwriteLabel.append(' I confirm this restore will merge/update imported records into my current local learner state.');
-      previewPanel.appendChild(overwriteLabel);
-
-      const replaceLabel = document.createElement('label');
-      replaceLabel.htmlFor = 'restore-confirm-replace';
-      const replaceCheckbox = document.createElement('input');
-      replaceCheckbox.type = 'checkbox';
-      replaceCheckbox.id = 'restore-confirm-replace';
-      replaceCheckbox.name = 'restore-confirm-replace';
-      replaceCheckbox.checked = model.exportImport.confirmReplace;
-      replaceCheckbox.addEventListener('change', () => {
-        setExportImportConfirmReplace(model, replaceCheckbox.checked);
-        if (replaceCheckbox.checked) setExportImportConfirmOverwrite(model, false);
-        rerenderApp(model);
-      });
-      replaceLabel.appendChild(replaceCheckbox);
-      replaceLabel.append(' Replace all: clear existing local learner state before importing (destructive).');
-      previewPanel.appendChild(replaceLabel);
-    } else {
-      const confirmLabel = document.createElement('label');
-      confirmLabel.htmlFor = 'restore-confirm';
-      const confirmCheckbox = document.createElement('input');
-      confirmCheckbox.type = 'checkbox';
-      confirmCheckbox.id = 'restore-confirm';
-      confirmCheckbox.name = 'restore-confirm';
-      confirmCheckbox.checked = model.exportImport.confirmOverwrite;
-      confirmCheckbox.addEventListener('change', () => {
-        setExportImportConfirmOverwrite(model, confirmCheckbox.checked);
-        rerenderApp(model);
-      });
-      confirmLabel.appendChild(confirmCheckbox);
-      confirmLabel.append(' I confirm this restore.');
-      previewPanel.appendChild(confirmLabel);
-    }
 
     const allWarningsAcknowledged = model.exportImport.preview.warnings.every((w) =>
       model.exportImport.acknowledgedWarnings.includes(w.kind),
@@ -940,6 +1075,17 @@ function renderStudyStatusRail(model: AppModel): HTMLElement {
   if (progressParts.length > 0) {
     rail.appendChild(renderStatusToken(progressParts.join(' • '), 'neutral'));
   }
+
+  const metrics = studyMetrics(model);
+  const today = formatCompactDurationMs(metrics.todayStudyTimeMs);
+  const total = formatCompactDurationMs(metrics.totalStudyTimeMs);
+  const streakText = metrics.streakDays > 0 ? `🔥 ${metrics.streakDays} day streak` : '🔥 Start a streak';
+  rail.appendChild(renderStatusToken(streakText, 'neutral'));
+  rail.appendChild(renderStatusToken(`today ${today} • total ${total}`, 'neutral'));
+  rail.dataset.streakDays = String(metrics.streakDays);
+  rail.dataset.todayStudyTime = today;
+  rail.dataset.totalStudyTime = total;
+
   return rail;
 }
 
@@ -1476,6 +1622,17 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
       }
       rerenderApp(model);
     });
+    button.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      if (!canSaveFromTargetTrack) return;
+      const range = activeLoopRangeForSelection(model, cue, word.charStart, word.charEnd);
+      if (range) {
+        toggleLoopRange(model, range.startMs, range.endMs);
+      } else {
+        toggleLoopRange(model, cue.startMs, cue.endMs);
+      }
+      rerenderApp(model);
+    });
     target.appendChild(button);
     cursor = word.charEnd;
   }
@@ -1592,6 +1749,48 @@ function renderPlayerControls(model: AppModel): HTMLElement {
   });
   controls.appendChild(loopBtn);
 
+  const loopRangeBtn = document.createElement('button');
+  const currentCue = currentKeyboardCue(model);
+  const loopRangeActive = Boolean(model.player.loopRange && currentCue);
+  loopRangeBtn.textContent = loopRangeActive ? 'Loop range on' : 'Loop range off';
+  loopRangeBtn.setAttribute('aria-label', loopRangeActive ? 'Clear word-span loop range' : 'Set word-span loop range for selected words');
+  loopRangeBtn.setAttribute('aria-pressed', String(loopRangeActive));
+  loopRangeBtn.disabled = !currentCue;
+  loopRangeBtn.dataset.testid = 'loop-range-btn';
+  loopRangeBtn.addEventListener('click', () => {
+    if (!currentCue) return;
+    const cue = currentCue;
+    if (model.player.loopRange) {
+      clearLoopRange(model);
+    } else {
+      const selected = model.selection;
+      if (selected && selected.cueId === cue.id) {
+        const range = activeLoopRangeForSelection(model, cue, selected.charStart, selected.charEnd);
+        if (range) {
+          setLoopRange(model, range.startMs, range.endMs);
+        } else {
+          setLoopRange(model, cue.startMs, cue.endMs);
+        }
+      } else {
+        setLoopRange(model, cue.startMs, cue.endMs);
+      }
+    }
+    rerenderApp(model);
+  });
+  controls.appendChild(loopRangeBtn);
+
+  const loopRangeHelp = document.createElement('span');
+  loopRangeHelp.className = 'meta loop-range-help';
+  loopRangeHelp.setAttribute('aria-live', 'polite');
+  if (model.player.loopRange && currentCue) {
+    loopRangeHelp.textContent = `Looping ${formatTimeMs(model.player.loopRange.startMs)}–${formatTimeMs(model.player.loopRange.endMs)}`;
+  } else if (model.selection && currentCue && model.selection.cueId === currentCue.id) {
+    loopRangeHelp.textContent = 'Click “Loop range off” to loop the selected span.';
+  } else {
+    loopRangeHelp.textContent = 'Select a word/phrase in the transcript, then click “Loop range off” to loop that span.';
+  }
+  controls.appendChild(loopRangeHelp);
+
   const speedLabel = document.createElement('label');
   speedLabel.textContent = 'Speed';
   speedLabel.htmlFor = 'playback-speed';
@@ -1689,6 +1888,16 @@ function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
         charEnd: word.charEnd,
       };
       seekRenderedVideoToMs(word.startMs);
+      rerenderApp(model);
+    });
+    button.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      const range = activeLoopRangeForSelection(model, cue, word.charStart, word.charEnd);
+      if (range) {
+        toggleLoopRange(model, range.startMs, range.endMs);
+      } else {
+        toggleLoopRange(model, cue.startMs, cue.endMs);
+      }
       rerenderApp(model);
     });
     target.appendChild(button);

@@ -2,7 +2,7 @@ import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/s
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
-import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
+import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type {
@@ -93,6 +93,16 @@ export function createAppModel(): AppModel {
       pendingAnswer: '',
       lastAttemptResult: null,
       typedAttemptsEnabled: true,
+      sentenceBuilder: {
+        orderedTokens: [],
+        poolTokens: [],
+      },
+    },
+    studyMetrics: {
+      totalStudyTimeMs: 0,
+      todayStudyTimeMs: 0,
+      streakDays: 0,
+      lastStudyDate: null,
     },
     exportImport: {
       manifestJson: null,
@@ -307,8 +317,27 @@ export function toggleLoopRange(model: AppModel, startMs: number, endMs: number)
   }
 }
 
+export function setLoopRange(model: AppModel, startMs: number, endMs: number): void {
+  model.player.loopRange = { startMs, endMs };
+}
+
 export function clearLoopRange(model: AppModel): void {
   model.player.loopRange = null;
+}
+
+export function activeLoopRangeForSelection(
+  model: AppModel,
+  cue: Cue,
+  charStart: number,
+  charEnd: number,
+): { startMs: number; endMs: number } | null {
+  const words = model.store.listTranscriptWordTimingsForCue(cue.id);
+  const overlapping = words.filter((w) => w.charStart < charEnd && w.charEnd > charStart);
+  if (overlapping.length === 0) return null;
+  return {
+    startMs: Math.min(...overlapping.map((w) => w.startMs)),
+    endMs: Math.max(...overlapping.map((w) => w.endMs)),
+  };
 }
 
 export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | undefined, nativeCues: readonly Cue[]): string | undefined {
@@ -2009,6 +2038,7 @@ export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard
 
 export function submitReviewRating(model: AppModel, cardId: string, rating: Rating, reviewedAt: Date): ReviewCardState {
   const { state } = model.reviewService.submitReview(cardId, rating, reviewedAt);
+  recordStudyActivity(model, 60_000);
   persistIfLocalServiceAutosaveEnabled(model);
   return state;
 }
@@ -2066,6 +2096,7 @@ export function submitPracticeAttempt(model: AppModel, answer: string, reviewedA
   model.practice.lastAttemptResult = { result, correct: result === 'pass' || result === 'pass-with-hesitation' };
   model.practice.pendingAnswer = '';
   model.review.activeCardId = null;
+  recordStudyActivity(model, 45_000);
   persistIfLocalServiceAutosaveEnabled(model);
   return attempt;
 }
@@ -2102,6 +2133,127 @@ export function clearPracticeLastResult(model: AppModel): void {
   model.practice.lastAttemptResult = null;
 }
 
+export function sentenceTokensForCue(cueText: string): string[] {
+  return cueText.split(/\s+/).filter((token) => token.length > 0);
+}
+
+export function prepareSentenceBuilderForCue(cueText: string): { poolTokens: string[]; orderedTokens: string[] } {
+  const tokens = sentenceTokensForCue(cueText);
+  const poolTokens = [...tokens].sort(() => Math.random() - 0.5);
+  return { poolTokens, orderedTokens: [] };
+}
+
+export function submitSentenceBuilderAttempt(
+  model: AppModel,
+  orderedTokens: readonly string[],
+  reviewedAt: Date,
+): import('@lingotorte/domain').PracticeAttempt {
+  const active = pickNextDueCard(model, model.review.bucketAsOf);
+  if (!active) throw new TypeError('No active card for sentence builder attempt');
+  const currentCue = model.store.getCue(active.occurrence.cueId);
+  const expectedText = currentCue ? currentCue.text : active.savedItem.displayText;
+  const joined = orderedTokens.join(' ');
+  const normalizedJoined = joined.replace(/\s+/g, ' ').trim().toLowerCase();
+  const normalizedExpected = expectedText.replace(/\s+/g, ' ').trim().toLowerCase();
+  const exact = normalizedJoined === normalizedExpected;
+  const result: import('@lingotorte/domain').PracticeResult = exact ? 'pass' : 'fail';
+  const responseMs = 0;
+  const { attempt } = model.practiceService.submitAttempt({
+    cardId: active.card.id,
+    mode: 'sentence-builder',
+    result,
+    ...(joined.length > 0 ? { givenAnswer: joined } : {}),
+    expectedAnswer: expectedText,
+    responseMs,
+    sourceContext: active.occurrence.sourceContext,
+    reviewedAt: reviewedAt.toISOString(),
+    updateFsrs: true,
+  });
+  model.practice.lastAttemptResult = { result, correct: exact };
+  model.practice.pendingAnswer = '';
+  model.practice.sentenceBuilder.orderedTokens = [];
+  model.review.activeCardId = null;
+  recordStudyActivity(model, 45_000);
+  persistIfLocalServiceAutosaveEnabled(model);
+  return attempt;
+}
+
+export function setSentenceBuilderTokens(model: AppModel, poolTokens: string[], orderedTokens: string[]): void {
+  model.practice.sentenceBuilder.poolTokens = poolTokens;
+  model.practice.sentenceBuilder.orderedTokens = orderedTokens;
+}
+
+function computeStudyMetricsFromEvents(events: readonly { reviewedAt: string }[], asOf: Date): {
+  totalStudyTimeMs: number;
+  todayStudyTimeMs: number;
+  streakDays: number;
+  lastStudyDate: string | null;
+} {
+  // Deterministic daily study time estimate: 45 seconds per event.
+  const studyTimePerEventMs = 45_000;
+  const todayIso = asOf.toISOString().slice(0, 10);
+  const uniqueDates = new Set(events.map((e) => e.reviewedAt.slice(0, 10)));
+  const sortedDates = [...uniqueDates].sort();
+  const lastStudyDate = sortedDates[sortedDates.length - 1] ?? null;
+
+  let streakDays = 0;
+  if (lastStudyDate !== null) {
+    const lastDate = new Date(lastStudyDate);
+    const diffMs = new Date(todayIso).valueOf() - lastDate.valueOf();
+    const diffDays = Math.round(diffMs / 86_400_000);
+    if (diffDays === 0 || diffDays === 1) {
+      streakDays = 1;
+      for (let i = sortedDates.length - 2; i >= 0; i--) {
+        const current = new Date(sortedDates[i]!);
+        const next = new Date(sortedDates[i + 1]!);
+        if (Math.round((next.valueOf() - current.valueOf()) / 86_400_000) === 1) {
+          streakDays += 1;
+        } else {
+          break;
+        }
+      }
+    } else {
+      streakDays = 0;
+    }
+  }
+
+  const totalStudyTimeMs = events.length * studyTimePerEventMs;
+  const todayStudyTimeMs = events.filter((e) => e.reviewedAt.slice(0, 10) === todayIso).length * studyTimePerEventMs;
+
+  return { totalStudyTimeMs, todayStudyTimeMs, streakDays, lastStudyDate };
+}
+
+export function recordStudyActivity(model: AppModel, timeSpentMs: number): void {
+  // Kept only as a compatibility no-op; the study metrics widget now derives
+  // all values from persisted review/practice events via studyMetrics().
+  void timeSpentMs;
+  void model;
+}
+
+export function studyMetrics(model: AppModel, asOf = new Date()): Readonly<{
+  totalStudyTimeMs: number;
+  todayStudyTimeMs: number;
+  streakDays: number;
+  lastStudyDate: string | null;
+}> {
+  const snapshot = model.store.snapshot();
+  const events: { reviewedAt: string }[] = [
+    ...snapshot.reviewEvents,
+    ...snapshot.practiceAttempts,
+  ];
+  return computeStudyMetricsFromEvents(events, asOf);
+}
+
+export function formatCompactDurationMs(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 function makeBrowserExportFileName(exportedAt: string): string {
   const date = new Date(exportedAt);
   if (Number.isNaN(date.valueOf())) {
@@ -2112,10 +2264,12 @@ function makeBrowserExportFileName(exportedAt: string): string {
   return `lingotorte-learner-state-${timestamp}.json`;
 }
 
-export function exportLearnerState(model: AppModel): { manifest: import('@lingotorte/domain').LearnerExportManifest; fileName: string; manifestJson: string } {
+export function exportLearnerState(model: AppModel): { manifest: import('@lingotorte/domain').LearnerExportManifest; fileName: string; manifestJson: string; verified: boolean } {
   const manifest = model.exportService.buildManifest();
   const fileName = makeBrowserExportFileName(manifest.exportedAt);
   const manifestJson = JSON.stringify(manifest, null, 2);
+  const recompute = computeExportIntegrity(manifest.content);
+  const verified = recompute.rootHash === manifest.integrity.rootHash && recompute.recordCount === manifest.integrity.recordCount;
   model.exportImport.lastExport = {
     fileName,
     manifestJson,
@@ -2123,8 +2277,13 @@ export function exportLearnerState(model: AppModel): { manifest: import('@lingot
     warningCount: manifest.privacyWarnings.length,
   };
   model.exportImport.lastError = null;
-  model.exportImport.lastSaveVerified = null;
-  return { manifest, fileName, manifestJson };
+  model.exportImport.lastSaveVerified = verified ? { fileName, verifiedAt: new Date().toISOString() } : null;
+  return { manifest, fileName, manifestJson, verified };
+}
+
+export function verifyExportIntegrity(manifest: import('@lingotorte/domain').LearnerExportManifest): boolean {
+  const recompute = computeExportIntegrity(manifest.content);
+  return recompute.rootHash === manifest.integrity.rootHash && recompute.recordCount === manifest.integrity.recordCount;
 }
 
 export function previewRestoreManifest(model: AppModel, manifestJson: string): import('@lingotorte/domain').RestorePreview {
@@ -2175,10 +2334,12 @@ export function setExportImportAcknowledgedWarning(model: AppModel, kind: import
 
 export function setExportImportConfirmOverwrite(model: AppModel, value: boolean): void {
   model.exportImport.confirmOverwrite = value;
+  if (value) model.exportImport.confirmReplace = false;
 }
 
 export function setExportImportConfirmReplace(model: AppModel, value: boolean): void {
   model.exportImport.confirmReplace = value;
+  if (value) model.exportImport.confirmOverwrite = false;
 }
 
 export function setExportImportError(model: AppModel, error: string | null): void {
