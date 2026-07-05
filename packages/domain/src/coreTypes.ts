@@ -442,6 +442,10 @@ export function confidenceProbable(value: number): Confidence {
   return { kind: 'probable', value };
 }
 
+export function confidencePossible(value: number): Confidence {
+  return { kind: 'possible', value };
+}
+
 export function confidenceCertain(value: number): Confidence {
   return { kind: 'certain', value };
 }

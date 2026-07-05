@@ -215,11 +215,14 @@ describe('P3 adapter no-network enforcement', () => {
     expect(result.run.privacyMode).toBe('local');
     const bySurface = new Map(tokenized.tokens.map((token, index) => [token.normalizedSurface, result.analyses[index]!]));
 
-    // Cześć -> lemma "cześć", noun or interjection
+    // Cześć is ambiguous (noun vs interjection) and must be flagged.
     const czesc = bySurface.get('cześć');
     expect(czesc).toBeTruthy();
     expect(czesc!.lemma).toMatch(/^cześć/);
     expect(['NOUN', 'INTJ']).toContain(czesc!.upos);
+    expect(czesc!.confidence.kind).toBe('possible');
+    expect(czesc!.alternatives.length).toBeGreaterThan(0);
+    expect(result.warnings.some((w) => /ambiguous/i.test(w))).toBe(true);
 
     // lokalny -> lemma "lokalny", adjective
     const lokalny = bySurface.get('lokalny');
@@ -232,7 +235,90 @@ describe('P3 adapter no-network enforcement', () => {
     const test = bySurface.get('test');
     expect(test).toMatchObject({ upos: 'NOUN' });
     expect(test!.confidence.kind).not.toBe('unavailable');
+  });
+});
 
-    expect(result.warnings).toHaveLength(0);
+describe('Morfeusz Polish morphology edge cases', () => {
+  async function analyzeWord(surface: string) {
+    const tokenizer = makeWhitespaceTokenizer('pl');
+    const morphology = makeMorfeuszMorphologyAdapter();
+    const tokenized = await tokenizer.tokenize({
+      language: 'pl',
+      cueId: 'cue-edge',
+      text: surface,
+      preserveCharOffsets: true,
+    });
+    const result = await morphology.analyze({
+      language: 'pl',
+      cueId: 'cue-edge',
+      text: surface,
+      tokens: tokenized.tokens,
+    });
+    return { tokenized, result };
+  }
+
+  it('inflected verb form resolves to base lemma and preserves UD-style morph features', async () => {
+    const { result } = await analyzeWord('mówiłam');
+    const analysis = result.analyses[0]!;
+    expect(analysis.lemma).toBe('mówić');
+    expect(analysis.upos).toBe('VERB');
+    expect(analysis.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Number', value: 'Sing' }),
+      expect.objectContaining({ key: 'Gender', value: 'Fem' }),
+    ]));
+    expect(analysis.confidence.kind).toBe('probable');
+  });
+
+  it('inflected noun form resolves to singular nominative lemma', async () => {
+    const { result } = await analyzeWord('książkami');
+    const analysis = result.analyses[0]!;
+    expect(analysis.lemma).toBe('książka');
+    expect(analysis.upos).toBe('NOUN');
+    expect(analysis.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Case', value: 'Ins' }),
+      expect.objectContaining({ key: 'Number', value: 'Plur' }),
+      expect.objectContaining({ key: 'Gender', value: 'Fem' }),
+    ]));
+    expect(analysis.confidence.kind).toBe('probable');
+  });
+
+  it('compound word returns a single coherent lemma', async () => {
+    const { result } = await analyzeWord('samochód');
+    const analysis = result.analyses[0]!;
+    expect(analysis.lemma).toBe('samochód');
+    expect(analysis.upos).toBe('NOUN');
+    expect(analysis.confidence.kind).toBe('probable');
+    expect(analysis.confidence.value).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('proper noun keeps nominative lemma and is tagged as noun', async () => {
+    const { tokenized, result } = await analyzeWord('Warszawa');
+    expect(tokenized.tokens[0]!.normalizedSurface).toBe('warszawa');
+    const analysis = result.analyses[0]!;
+    expect(analysis.lemma).toBe('warszawa');
+    expect(analysis.upos).toBe('NOUN');
+    expect(analysis.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Case', value: 'Nom' }),
+      expect.objectContaining({ key: 'Number', value: 'Sing' }),
+    ]));
+  });
+
+  it('unknown token falls back to surface lemma with low confidence and warning', async () => {
+    const { result } = await analyzeWord('xyzabc');
+    const analysis = result.analyses[0]!;
+    expect(analysis.lemma).toBe('xyzabc');
+    expect(analysis.upos).toBe('X');
+    expect(analysis.confidence.kind).toBe('possible');
+    expect(analysis.confidence.value).toBeLessThan(0.5);
+    expect(result.warnings.some((w) => /no usable Morfeusz tag/i.test(w))).toBe(true);
+  });
+
+  it('multi-interpretation word exposes alternative POS and lowered confidence', async () => {
+    const { result } = await analyzeWord('ma');
+    const analysis = result.analyses[0]!;
+    expect(analysis.alternatives.length).toBeGreaterThan(0);
+    expect(analysis.alternatives.some((alt) => alt.upos !== analysis.upos)).toBe(true);
+    expect(analysis.confidence.kind).toBe('possible');
+    expect(result.warnings.some((w) => /ambiguous/i.test(w))).toBe(true);
   });
 });
