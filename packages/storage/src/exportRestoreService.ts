@@ -97,6 +97,9 @@ export class RestoreService {
   }
 
   restore(manifest: LearnerExportManifest, confirmation: RestoreConfirmation): LocalStoreSnapshot {
+    if (confirmation.confirmOverwrite && confirmation.confirmReplace) {
+      throw new TypeError('Restore refused: merge/update and replace-all are mutually exclusive; choose exactly one');
+    }
     if (!confirmation.confirmOverwrite && !confirmation.confirmReplace) {
       throw new TypeError('Restore refused: merge/update or replace confirmation not supplied');
     }

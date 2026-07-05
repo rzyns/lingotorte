@@ -2558,9 +2558,11 @@ export function exportLearnerState(model: AppModel): { manifest: import('@lingot
     manifestJson,
     recordCount: manifest.integrity.recordCount,
     warningCount: manifest.privacyWarnings.length,
+    manifestIntegrityVerified: verified,
   };
   model.exportImport.lastError = null;
-  model.exportImport.lastSaveVerified = verified ? { fileName, verifiedAt: new Date().toISOString() } : null;
+  // lastSaveVerified is reserved exclusively for actual File System Access
+  // write+readback success; do not set it here based on manifest integrity alone.
   return { manifest, fileName, manifestJson, verified };
 }
 

@@ -654,7 +654,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const summary = document.createElement('div');
     summary.className = 'status-banner success export-summary';
     summary.setAttribute('role', 'status');
-    summary.textContent = `Export ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • destination: downloaded via your browser`;
+    summary.textContent = `Export ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • ${model.exportImport.lastExport.manifestIntegrityVerified ? 'manifest integrity verified' : 'manifest integrity warning'} • destination: downloaded via your browser`;
     exportGroup.appendChild(summary);
 
     const downloadBtn = document.createElement('button');

@@ -102,7 +102,7 @@ export type AppModel = {
     acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
     confirmOverwrite: boolean;
     confirmReplace: boolean;
-    lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number } | null;
+    lastExport: { fileName: string; manifestJson: string; recordCount: number; warningCount: number; manifestIntegrityVerified: boolean } | null;
     lastSaveVerified: { fileName: string; verifiedAt: string } | null;
   };
   localService: {

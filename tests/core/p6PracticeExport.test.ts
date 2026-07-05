@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LocalStore, SavedOccurrenceService, PracticeService, ExportService, RestoreService } from '../../packages/storage/src';
 import { makeMediaAsset, validateSavedOccurrenceSourceContext } from '../../packages/domain/src';
+import { verifyExportIntegrity, buildRestorePreview } from '../../packages/domain/src';
 import { sha256File } from '../../packages/storage/src/mediaHelpers';
 import { parseSrt } from '../../packages/subtitles/src/import';
 import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
@@ -425,5 +426,124 @@ describe('P6 export/restore manifest', () => {
 
     serialized.schemaVersion = 'unsupported.v2';
     expect(() => RestoreService.validateManifest(serialized)).toThrow(/schema version/);
+  });
+});
+
+describe('B3 metadata backup/restore polish', () => {
+  it('Replace-all clears existing local learner state before importing manifest records', async () => {
+    const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
+    const cue = cues[0]!;
+    const sourceContext = sourceContextForCue(asset, track, cue, 0, 1, 0, 5);
+    const saved = savedService.saveSelection({
+      kind: 'lexeme',
+      language: 'pl',
+      displayText: 'cześć',
+      mediaId: asset.id,
+      cueId: cue.id,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      sourceContext,
+    });
+    reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+
+    // Target store seeded with a DIFFERENT pre-existing record that must be cleared by Replace-all.
+    const target = await setupFixtureStore();
+    const existingCue = target.cues[1]!;
+    const existingContext = sourceContextForCue(target.asset, target.track, existingCue, 1, 2, 7, 9);
+    const existing = target.savedService.saveSelection({
+      kind: 'sentence',
+      language: 'pl',
+      displayText: 'pre-existing local sentence',
+      mediaId: target.asset.id,
+      cueId: existingCue.id,
+      startMs: existingCue.startMs,
+      endMs: existingCue.endMs,
+      sourceContext: existingContext,
+    });
+    const restoreService = new RestoreService(target.store);
+    const preview = restoreService.preview(manifest);
+    expect(preview.overwriteConfirmationRequired).toBe(true);
+
+    restoreService.restore(manifest, {
+      confirmedAt: new Date().toISOString(),
+      confirmOverwrite: false,
+      confirmReplace: true,
+      acknowledgedWarnings: preview.warnings.map((w) => w.kind),
+    });
+
+    const restored = target.store.snapshot();
+    // The pre-existing local record is gone (cleared by Replace-all).
+    expect(restored.savedItems[existing.item.id]).toBeUndefined();
+    // Only the imported manifest records remain.
+    expect(Object.keys(restored.savedItems)).toEqual([saved.item.id]);
+    expect(Object.keys(restored.savedOccurrences)).toEqual([saved.occurrence.id]);
+  });
+
+  it('rejects restore when both confirmOverwrite and confirmReplace are true (mutually exclusive)', async () => {
+    const { exportService } = await setupFixtureStore();
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const restoreService = new RestoreService(new LocalStore());
+    expect(() =>
+      restoreService.restore(manifest, {
+        confirmedAt: new Date().toISOString(),
+        confirmOverwrite: true,
+        confirmReplace: true,
+        acknowledgedWarnings: [],
+      }),
+    ).toThrow(/mutually exclusive/);
+  });
+
+  it('detects manifest tampering: altered recordCount fails integrity verification', async () => {
+    const { exportService } = await setupFixtureStore();
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    expect(verifyExportIntegrity(manifest)).toBe(true);
+
+    const tampered = {
+      ...manifest,
+      integrity: { ...manifest.integrity, recordCount: manifest.integrity.recordCount + 1 },
+    };
+    expect(verifyExportIntegrity(tampered)).toBe(false);
+
+    const tamperedHash = {
+      ...manifest,
+      integrity: { ...manifest.integrity, rootHash: 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const },
+    };
+    expect(verifyExportIntegrity(tamperedHash)).toBe(false);
+  });
+
+  it('restore preview is a dry run and does not mutate local state', async () => {
+    const { savedService, reviewService, exportService, asset, track, cues } = await setupFixtureStore();
+    const cue = cues[0]!;
+    const sourceContext = sourceContextForCue(asset, track, cue, 0, 1, 0, 5);
+    const saved = savedService.saveSelection({
+      kind: 'lexeme',
+      language: 'pl',
+      displayText: 'cześć',
+      mediaId: asset.id,
+      cueId: cue.id,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      sourceContext,
+    });
+    reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+
+    const target = new LocalStore();
+    const before = target.snapshot();
+    const localState = {
+      savedItems: before.savedItems,
+      savedOccurrences: before.savedOccurrences,
+      reviewCards: before.reviewCards,
+      reviewCardStates: before.reviewCardStates,
+      reviewEvents: before.reviewEvents,
+      practiceAttempts: before.practiceAttempts,
+    };
+    const preview = buildRestorePreview(manifest, localState);
+    const after = target.snapshot();
+
+    expect(after).toEqual(before);
+    expect(preview.counts.savedItems).toBe(manifest.content.savedItems.length);
+    expect(preview.operations.savedItems.added).toBe(manifest.content.savedItems.length);
   });
 });
