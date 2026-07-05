@@ -318,57 +318,26 @@ function mapMorfeuszTag(tag: string): { upos: string; morph: { key: string; valu
 type MorfeuszAnalysis = { orth: string; lemma: string; tag: string };
 type MorfeuszRuntime = { analyseToArray: (text: string) => MorfeuszAnalysis[] };
 
-const bundledMorfeuszSmokeLexicon: Record<string, readonly MorfeuszAnalysis[]> = {
-  cześć: [
-    { orth: 'cześć', lemma: 'cześć', tag: 'subst:sg:nom:f' },
-    { orth: 'cześć', lemma: 'cześć', tag: 'interj' },
-  ],
-  to: [{ orth: 'to', lemma: 'to', tag: 'pron:sg:nom:n' }],
-  jest: [{ orth: 'jest', lemma: 'być', tag: 'fin:sg:3:pres:impef' }],
-  lokalny: [{ orth: 'lokalny', lemma: 'lokalny', tag: 'adj:sg:nom:m3:pos' }],
-  test: [{ orth: 'test', lemma: 'test', tag: 'subst:sg:nom:m3' }],
-  mówiłam: [{ orth: 'mówiłam', lemma: 'mówić', tag: 'praet:sg:f:impef' }],
-  książkami: [{ orth: 'książkami', lemma: 'książka', tag: 'subst:pl:inst:f' }],
-  samochód: [{ orth: 'samochód', lemma: 'samochód', tag: 'subst:sg:nom:m3' }],
-  warszawa: [{ orth: 'Warszawa', lemma: 'warszawa', tag: 'subst:sg:nom:f' }],
-  ma: [
-    { orth: 'ma', lemma: 'mieć', tag: 'fin:sg:3:pres:impef' },
-    { orth: 'ma', lemma: 'mój', tag: 'adj:sg:nom:f:pos' },
-  ],
-};
-
-function makeBundledMorfeuszSmokeInstance(): MorfeuszRuntime {
-  return {
-    analyseToArray(text: string): MorfeuszAnalysis[] {
-      return [...(bundledMorfeuszSmokeLexicon[text.toLocaleLowerCase('pl')] ?? [])];
-    },
-  };
-}
-
 let morfeuszInstance: MorfeuszRuntime | null = null;
-let morfeuszLoadPromise: Promise<void> | null = null;
+let morfeuszLoadPromise: Promise<MorfeuszRuntime> | null = null;
 
 async function getMorfeuszInstance(): Promise<MorfeuszRuntime> {
   if (morfeuszInstance) return morfeuszInstance;
-  if (morfeuszLoadPromise) {
-    await morfeuszLoadPromise;
-    morfeuszInstance ??= makeBundledMorfeuszSmokeInstance();
-    return morfeuszInstance;
-  }
-  morfeuszLoadPromise = (async () => {
-    try {
+  if (!morfeuszLoadPromise) {
+    morfeuszLoadPromise = (async (): Promise<MorfeuszRuntime> => {
       const { MorfeuszImpl, MorfeuszUsage } = await import(/* @vite-ignore */ '@rzyns/morfeusz-ts');
       const m = new MorfeuszImpl('sgjp', MorfeuszUsage.ANALYSE_ONLY);
       await m.load();
       m.preferMatchingCase();
       morfeuszInstance = m;
-    } catch {
-      morfeuszInstance = makeBundledMorfeuszSmokeInstance();
-    }
-  })();
-  await morfeuszLoadPromise;
-  morfeuszInstance ??= makeBundledMorfeuszSmokeInstance();
-  return morfeuszInstance;
+      return m;
+    })().catch((err: unknown) => {
+      morfeuszLoadPromise = null;
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(`Morfeusz SGJP analyzer unavailable; vendored @rzyns/morfeusz-ts dist and morfeusz2/dict/sgjp-a.dict are required. Cause: ${cause}`);
+    });
+  }
+  return morfeuszLoadPromise;
 }
 
 export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {

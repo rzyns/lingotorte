@@ -236,6 +236,29 @@ describe('P3 adapter no-network enforcement', () => {
     expect(test).toMatchObject({ upos: 'NOUN' });
     expect(test!.confidence.kind).not.toBe('unavailable');
   });
+
+  it('Morfeusz-backed Polish morphology analyzes SGJP words outside the smoke fixture', async () => {
+    const tokenizer = makeWhitespaceTokenizer('pl');
+    const morphology = makeMorfeuszMorphologyAdapter();
+    const text = 'Kobieta czyta.';
+    const tokenized = await tokenizer.tokenize({
+      language: 'pl',
+      cueId: sampleCue.id,
+      text,
+      preserveCharOffsets: true,
+    });
+    const result = await morphology.analyze({ language: 'pl', cueId: sampleCue.id, text, tokens: tokenized.tokens });
+    const bySurface = new Map(tokenized.tokens.map((token, index) => [token.normalizedSurface, result.analyses[index]!]));
+
+    const kobieta = bySurface.get('kobieta');
+    expect(kobieta).toMatchObject({ lemma: 'kobieta', upos: 'NOUN' });
+    expect(kobieta!.morph).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'Case', value: 'Nom' }),
+      expect.objectContaining({ key: 'Number', value: 'Sing' }),
+      expect.objectContaining({ key: 'Gender', value: 'Fem' }),
+    ]));
+    expect(kobieta!.confidence.kind).toBe('probable');
+  });
 });
 
 describe('Morfeusz Polish morphology edge cases', () => {

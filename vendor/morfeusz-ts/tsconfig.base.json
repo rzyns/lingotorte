@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "nodenext",
+		"lib": [
+			"ES2024",
+			"DOM"
+		],
+		"declaration": true,
+		"declarationMap": true,
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"moduleResolution": "nodenext",
+		"resolveJsonModule": true,
+		"allowSyntheticDefaultImports": true,
+		"sourceMap": true,
+		"isolatedDeclarations": true,
+		"verbatimModuleSyntax": true,
+		"types": [
+			"node"
+		]
+	}
+}
