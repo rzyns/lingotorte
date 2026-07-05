@@ -1,15 +1,16 @@
 # PLAN status — Lingotorte
 
-Updated: `2026-07-05T18:01:48Z`
+Updated: `2026-07-05T19:08:23Z`
 
-Status: **Swarm v1 (B5 + B7 + B2/B3/B6 frontend) merged to main.** B1 `export_job` projection/migration v6 and `provider_policy` projection/migration v7 are implemented locally as mutable projections. P6 audio-recall practice mode is implemented and committed. The repo was 9 commits ahead of `origin/main` at the start of this `provider_policy` follow-up slice; check live git for the exact current HEAD after this status file's commit.
+Status: **Swarm v1 (B5 + B7 + B2/B3/B6 frontend) merged to main; autonomous decision record added.** B1 `export_job` projection/migration v6 and `provider_policy` projection/migration v7 are implemented locally as mutable projections. P6 audio-recall practice mode is implemented and committed. `DECISIONS.md` is now tracked and records the current human decisions for autonomous local development boundaries; check live git for the exact current HEAD after this status file's commit.
 
 ## Current scope and repository state
 
 - Workspace/repo: `/home/openclaw/workspace/lingotorte`
 - Git base before this B1 `provider_policy` follow-up: `be3d01e` (`docs: refresh export and media limitation notes`)
-- Branch at B1 `provider_policy` follow-up start: `main`, ahead of `origin/main` by 9 commits
-- Worktree at B1 `provider_policy` follow-up start: clean except unrelated untracked `DECISIONS.md`; this file is updated as part of the B1 `provider_policy` slice, so exact current cleanliness should be checked with `git status --short`
+- Branch at DECISIONS wiring start: `main` at `311162c`, ahead of `origin/main` by 11 commits
+- Worktree at DECISIONS wiring start: clean; exact current cleanliness should be checked with `git status --short`
+- Current autonomous decision record: `DECISIONS.md` (tracked as of `311162c`) supplements `PLAN.md` and `docs/review/safety-privacy-boundary-review.md` for provider authority, B2 path semantics, B3 backup posture, B4 benchmark optionality, B6 snippet semantics, and B8/future gates.
 
 ## Swarm v1 — three-branch merge + synthesis
 
@@ -69,6 +70,7 @@ Full validation passed on the merged result (see "Validation commands run" below
 | `bb86dac` | feat(language): morfeusz morphology confidence/ambiguity warnings and edge-case tests |
 | `66657b8` | feat(p6): audio-recall practice mode — P6 learner state, recording UI, submit flow |
 | `243b18d` | docs: update PLAN.md reconciliation date and recent commits |
+| `311162c` | Document Lingotorte autonomous decisions |
 
 ## Validation commands run
 
@@ -89,16 +91,16 @@ Full validation passed on the merged result (see "Validation commands run" below
 
 Shortest ready path through the backlog:
 
-1. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state.
-2. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification.
-3. **B3** — Backup/export/restore polish beyond the current metadata-only manifest save/restore path, especially conflict review/rollback and any explicitly approved media-copy backup behavior.
+1. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state. `DECISIONS.md` keeps browser handles for playback/relink identity while local-service jobs still require explicit absolute owned local media paths.
+2. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification. `DECISIONS.md` makes this optional/non-blocking unless an exact owned media path or explicit approved local selection rule is available.
+3. **B3** — Backup/export/restore polish beyond the current metadata-only manifest save/restore path, especially conflict review/rollback. `DECISIONS.md` keeps media-copy backup deferred behind explicit opt-in and forbids destructive Replace-all tests against Janusz's real learner state without fresh exact approval.
 
-B5 (translation/LLM gate), B6 (clip generation), B7 (embedded extraction), and B8 (future gated lanes) remain valid but have more open design questions or are explicitly future.
+B5 (translation/LLM gate), B6 (source-media clip generation), B7 (embedded extraction), and B8 (future gated lanes) remain valid. `DECISIONS.md` clarifies that B6 snippets are owned source-media snippets, not provider/TTS audio by implication.
 
 ## Non-actions preserved
 
 - No public-facing writes, push/release/deploy/public exposure, DRM/circumvention, private/account-gated media access, automatic online media download, Lingopie proprietary content/API use, raw secret/provider request logging, or generated cache/model/media artifacts in git.
 - Providers remain disabled by default; no-network tests cover disabled state.
-- Live provider calls, model downloads, AnkiConnect, cloud sync, microphone recording, and public sharing remain gated on explicit separate authorization.
-- `DECISIONS.md` untracked local artifact was not touched.
+- Live provider calls outside the narrow `DECISIONS.md` allow-list, model downloads outside already-approved/local-gated setup, AnkiConnect, cloud sync, microphone recording, and public sharing remain gated on explicit separate authorization.
+- `DECISIONS.md` is tracked and should be read before autonomous worker launch.
 - No push to `origin/main` was performed; the swarm-v1 merge and B1 follow-up commits remain local-only.

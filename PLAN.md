@@ -3,8 +3,8 @@
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
 Last reconciled: 2026-07-05.
-Current branch posture at B1 `provider_policy` implementation start: `main` at `be3d01e`, ahead of `origin/main` by 9 commits; exact current HEAD should be checked live with `git rev-parse --short HEAD` because this status file is committed with the slice it describes.
-Known unrelated local dirt at reconciliation: `DECISIONS.md` is untracked; leave it out of Lingotorte plan/status commits unless Janusz separately scopes it.
+Current branch posture at DECISIONS wiring start: `main` at `311162c`, ahead of `origin/main` by 11 commits; exact current HEAD should be checked live with `git rev-parse --short HEAD` because this status file is committed with the slice it describes.
+Decision record: `DECISIONS.md` is now a tracked implementation-facing human-decision record for autonomous development boundaries and resolved backlog choices. Read it alongside this plan before launching `/goal` or worker tasks.
 
 Recent relevant commits:
 
@@ -21,6 +21,7 @@ Recent relevant commits:
 | Artifact | Current role |
 |---|---|
 | `PLAN.md` | Current routing/status artifact and short backlog. Treat this as the first stop for what remains. |
+| `DECISIONS.md` | Current human-decision record for autonomous development boundaries and resolved backlog choices. Use it to interpret provider authority, B2 path semantics, B3 backup posture, B4 benchmark optionality, B6 snippet semantics, and B8/future gates. |
 | `README.md` | Current quick start, local transcription package summary, public-caption/local-service boundaries, and reading order. |
 | `docs/dev/local-runbook.md` | Current local runbook, one-command/systemd local start, local-service/ASR/public-caption smoke checklist, and known limitations. |
 | `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline and deferred cleanup ledger. Some details are older, but the limitation/deferred tables remain useful. |
@@ -43,7 +44,7 @@ The older `docs/planning/` and `docs/final/` artifacts were written before the c
 1. Do not treat their future-tense milestone lists as current status.
 2. Check `PLAN.md`, `README.md`, `docs/dev/local-runbook.md`, recent commits, and targeted code/tests before marking an item unfinished.
 3. Treat `docs/review/safety-privacy-boundary-review.md` and the safety sections copied into planning docs as still binding.
-4. Treat provider enablement, downloads, sync, AnkiConnect, deployment, push/release, public sharing, and live Lingopie inspection as separate human-gated actions, not implied by any plan text.
+4. Treat `DECISIONS.md` as the current explicit allow/block list for autonomous local work. Provider enablement, downloads, sync, AnkiConnect, deployment, push/release, public sharing, and live Lingopie inspection remain separate human-gated actions unless `DECISIONS.md` names a narrow allowed path.
 
 ## Current-state snapshot
 
@@ -141,7 +142,7 @@ Goal: make restart/reload behavior feel like a local app rather than a browser o
 
 Scope/status:
 
-- Decide whether the next step is user-chosen persistent file handles, a native/Tauri/desktop bridge, or a better local-service absolute-path workflow. **Selected/first slice implemented:** browser File System Access handles first, when the browser exposes `showOpenFilePicker`.
+- Decide whether the next step is user-chosen persistent file handles, a native/Tauri/desktop bridge, or a better local-service absolute-path workflow. **Resolved in `DECISIONS.md` as a split model:** browser File System Access handles for playback/relink identity, and local-service absolute paths for ASR/ffmpeg/ffprobe/snippets/extraction. **Selected/first slice implemented:** browser File System Access handles first, when the browser exposes `showOpenFilePicker`.
 - Preserve privacy: no implicit media copies, no protected-stream capture, no browser credential/cookie paths. **Preserved:** the handle path calls the browser picker, reads only the selected owned file, and does not upload/copy media.
 - Improve UI affordances for reselecting or relinking owned local media after restart. **Partially implemented:** Library exposes **Import persistent media handle** when supported, storing `browser-file-handle:<name>` as the durable media source label while keeping playback on a transient object URL. The player shows a **Relink media** prompt when a hydrated handle-sourced media has no active object URL. The handle is persisted in IndexedDB and `restoreBrowserMediaHandle()` re-validates permission and recreates the object URL on reload; the relink prompt remains as fallback when permission is denied or the handle is gone.
 - Keep local-service ASR path explicit about absolute local paths. **Still required:** browser handle/object URLs do not replace the explicit absolute-path input for local-service ASR.
@@ -153,8 +154,8 @@ Goal: turn the manifest preview/download into an intentional local backup/export
 Scope/status:
 
 - User-chosen export/download/write path story. **Partially implemented:** the existing browser download button is supplemented by a **Save export to chosen file** button when the browser exposes `showSaveFilePicker`, using the File System Access API to write to a user-chosen file.
-- Metadata-only backup first; optional media-copy backup only behind explicit opt-in.
-- Restore conflict UX, full replace vs merge/update decision, and readback/integrity verification. **Partially implemented:** the File System Access save path reads back the saved file and verifies it matches the written manifest before reporting success. The restore UI now offers both **merge/update** (existing default) and **Replace all** (destructive: clears all existing local learner state before importing) confirmation checkboxes, mutually exclusive.
+- Metadata-only backup first, per `DECISIONS.md`; optional media-copy backup only behind explicit opt-in.
+- Restore conflict UX, full replace vs merge/update decision, and readback/integrity verification. **Partially implemented:** the File System Access save path reads back the saved file and verifies it matches the written manifest before reporting success. The restore UI now offers both **merge/update** (existing default) and **Replace all** (destructive: clears all existing local learner state before importing) confirmation checkboxes, mutually exclusive. Autonomous tests must use isolated/temp stores or synthetic fixtures; do not run destructive **Replace all** flows against Janusz's real learner state without fresh exact approval.
 - Preserve privacy warnings for cue text, notes, media refs, review history, and optional media copies.
 - Keep AnkiConnect/cloud sync out of scope unless separately authorized.
 
@@ -168,6 +169,7 @@ Scope/status:
 - Keep model/cache/scratch artifacts out of git. **Preserved:** venv at `~/.local/share/lingotorte/asr-venv/`, model cache at `~/.cache/huggingface/hub/`, both outside the repo.
 - Add or update runbook setup instructions based on actual receipt. **Implemented:** runbook now includes setup commands and recorded dependency versions.
 - Do not download models or install heavyweight dependencies silently. **Approved:** model download was explicitly authorized by Janusz on 2026-07-04.
+- Real owned-media quality benchmarking is optional/non-blocking for unrelated backlog slices. Run it only when an exact owned media path or explicit approved local selection rule is provided; otherwise maintain the harness/runbook and report the live benchmark as skipped.
 
 ### B5 — Polish dictionary/morphology/translation quality
 
@@ -189,7 +191,7 @@ Scope/status:
 - Richer local practice modes: meaning quiz, match/context/audio recall, sentence builder, and better prompt/reveal feedback. **Partially implemented:** `multiple-choice` practice mode now renders answer choice buttons generated from saved items and cue text as distractors; selecting the correct answer submits the attempt through the same practice service path. A sentence-builder practice mode (`prepareSentenceBuilderForCue`/`setSentenceBuilderTokens`/`submitSentenceBuilderAttempt`) scrambles cue tokens for reorder-and-submit practice.
 - Progress widgets derived from local events: due count, saved count, attempt history, and optional streak/study-time once semantics are clear. **Implemented:** the study cockpit status rail shows `N saved • N due • N reviews • N practice` counts derived from local store state via `learnerProgress(model, asOf)`, plus a streak/study-time widget derived from persisted `reviewEvents` and `practiceAttempts` via `studyMetrics(model, asOf)` → `computeStudyMetricsFromEvents` (streakDays, totalStudyTimeMs, todayStudyTimeMs, lastStudyDate). The streak is recomputed from persisted events on every read rather than from transient counters.
 - Phrase/range looping from arbitrary word spans where word timings exist. **Implemented:** `toggleLoopRange`/`clearLoopRange` and `applyLoopTolerance` now support an arbitrary `{ startMs, endMs }` loop range on the player state; the video `timeupdate` handler uses it. The UI exposes word-span selection → `activeLoopRangeForSelection` to drive loop ranges from the transcript word spans.
-- Clip/audio snippet generation only from owned local media and with cache cleanup.
+- Clip/audio snippet generation means source-media snippets from owned local media, with cache cleanup. Do not route B6 snippets through ElevenLabs/TTS by implication; provider-generated TTS snippets are a separate future opt-in lane per `DECISIONS.md`.
 
 ### B7 — Subtitle ingest robustness and alignment tooling
 
@@ -237,7 +239,7 @@ This plan and the older planning docs do **not** authorize:
 - private/account-gated YouTube or other media access without an exact separate source/credential approval;
 - Lingopie proprietary media/subtitles/screenshots/private API payloads/account data;
 - committing secrets, raw provider request bodies, model caches, generated media/audio/transcript scratch artifacts, or private local absolute paths in default exports;
-- live provider calls, model downloads, AnkiConnect, cloud sync, microphone recording, or public sharing without explicit fresh authorization for the exact action.
+- live provider calls outside the narrow `DECISIONS.md` allow-list, model downloads outside already-approved/local-gated setup, AnkiConnect, cloud sync, microphone recording, or public sharing without explicit fresh authorization for the exact action.
 
 ## Validation gates for docs/status changes
 
@@ -262,7 +264,7 @@ python3 validate_final_bundle.py
 git diff --check
 ```
 
-Also run local service health/browser smoke for UI/service changes, and live local ASR or provider smokes only when the dependency/provider gate has been explicitly authorized.
+Also run local service health/browser smoke for UI/service changes, and live local ASR or provider smokes only when the dependency/provider gate has been explicitly authorized by `DECISIONS.md` or a fresh exact task instruction.
 
 ## Current copy-paste `/goal` prompt
 
@@ -271,7 +273,7 @@ Complete the next approved Lingotorte backlog slice from PLAN.md.
 
 Workspace/repo: /home/openclaw/workspace/lingotorte
 Primary plan artifact: PLAN.md
-Current source docs: README.md, docs/dev/local-runbook.md, docs/dev/v1-local-acceptance.md, docs/review/safety-privacy-boundary-review.md, docs/architecture/data-model-and-storage.md, docs/plan/v3-transcript-generation-correction-plan.md.
+Current source docs: DECISIONS.md, README.md, docs/dev/local-runbook.md, docs/dev/v1-local-acceptance.md, docs/review/safety-privacy-boundary-review.md, docs/architecture/data-model-and-storage.md, docs/plan/v3-transcript-generation-correction-plan.md.
 Historical/reference planning docs: docs/planning/ and docs/final/. Use them for rationale/backlog evidence, but verify current code/docs before treating a listed item as unfinished.
 
 Objective:
@@ -287,12 +289,13 @@ Current known state:
 - Export/import works as browser JSON manifest download/paste+merge, not full backup/restore.
 - Polish analysis uses `morfeusz-ts` (SGJP-backed) in Node.js with typed `Confidence` and ambiguity/low-confidence warnings, falling back to the heuristic adapter in the browser.
 - Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions.
-- Provider calls, model downloads, sync, AnkiConnect, microphone recording, and public actions remain gated.
+- DECISIONS.md resolves autonomous local-development boundaries: B2 uses browser handles plus local-service absolute paths, B3 is metadata-backup-first, B4 owned-media quality benchmarking is optional/non-blocking without an approved clip, B6 snippets are source-media snippets rather than TTS/provider audio, and future Anki/microphone/sync/packaging lanes remain gated.
+- Provider calls, model downloads, sync, AnkiConnect, microphone recording, and public actions remain gated except for the narrow ElevenLabs Scribe and public YouTube caption-read paths explicitly allowed by DECISIONS.md.
 
 Hard boundaries:
 - No public-facing writes, push/release/deploy/public exposure, DRM/circumvention, private/account-gated media access, automatic online media download, Lingopie proprietary content/API use, raw secret/provider request logging, or generated cache/model/media artifacts in git.
 - Keep providers disabled by default and covered by no-network tests.
-- Treat live provider calls/model downloads/microphone/sync/AnkiConnect as separate explicit approvals.
+- Treat live provider calls/model downloads/microphone/sync/AnkiConnect as separate explicit approvals unless DECISIONS.md names a narrow allowed local-development path.
 
 Completion contract:
 Implement only the approved slice, run focused and relevant full validation, update docs if behavior/status changes, create exact-scope local commits, and report commands/results, remaining blockers, and preserved non-authorizations.
