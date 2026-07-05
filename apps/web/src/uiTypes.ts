@@ -80,6 +80,16 @@ export type AppModel = {
     pendingAnswer: string;
     lastAttemptResult: { result: PracticeResult; correct: boolean } | null;
     typedAttemptsEnabled: boolean;
+    sentenceBuilder: {
+      orderedTokens: string[];
+      poolTokens: string[];
+    };
+  };
+  studyMetrics: {
+    totalStudyTimeMs: number;
+    todayStudyTimeMs: number;
+    streakDays: number;
+    lastStudyDate: string | null;
   };
   exportImport: {
     manifestJson: string | null;
