@@ -101,7 +101,7 @@ describe('durable local persistence', () => {
     const persistence = SqliteLocalPersistence.open(':memory:');
 
     expect(persistence.status()).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       hasSnapshot: false,
       appliedMigrations: [
         {
@@ -127,6 +127,11 @@ describe('durable local persistence', () => {
         {
           version: 5,
           name: 'create_review_practice_job_projections',
+          result: 'applied',
+        },
+        {
+          version: 6,
+          name: 'create_export_job_projection',
           result: 'applied',
         },
       ],
@@ -163,6 +168,13 @@ describe('durable local persistence', () => {
       expect.objectContaining({
         version: 5,
         name: 'create_review_practice_job_projections',
+        result: 'applied',
+        checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+      expect.objectContaining({
+        version: 6,
+        name: 'create_export_job_projection',
         result: 'applied',
         checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
         appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
@@ -388,6 +400,34 @@ describe('durable local persistence', () => {
     expect(persistence.listPracticeAttempts()).toEqual([attempt]);
     expect(persistence.listImportJobs()).toEqual([importJob]);
     expect(persistence.listImportJobEvents()).toEqual([importJobEvent]);
+    persistence.close();
+  });
+
+  it('maintains export job projections from learner export state', () => {
+    const store = populatedStore();
+    const exportJob = {
+      id: 'export-job-1',
+      kind: 'learner-json-manifest' as const,
+      status: 'completed' as const,
+      startedAt: '2026-07-04T05:00:00.000Z',
+      completedAt: '2026-07-04T05:00:02.000Z',
+      destinationKind: 'browser-download' as const,
+      destinationLabel: 'lingotorte-learner-state-20260704-050002.json',
+      manifestSha256: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as const,
+      contentSummaryJson: '{"schemaVersion":"lingotorte.export-job-summary.v1","recordCount":6,"warningCount":3}',
+    };
+    store.putExportJob(exportJob);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T05:01:00.000Z');
+
+    expect(persistence.listExportJobs()).toEqual([exportJob]);
+    expect(persistence.loadSnapshot().exportJobs).toEqual({ [exportJob.id]: exportJob });
+
+    persistence.saveSnapshot(createEmptyLocalStoreSnapshot(), '2026-07-04T05:02:00.000Z');
+
+    expect(persistence.listExportJobs()).toEqual([]);
+    expect(persistence.loadSnapshot().exportJobs).toEqual({});
     persistence.close();
   });
 

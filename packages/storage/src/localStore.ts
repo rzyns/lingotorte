@@ -1,5 +1,6 @@
 import type {
   Cue,
+  ExportJob,
   ImportJob,
   ImportJobEvent,
   MediaAsset,
@@ -30,6 +31,7 @@ export type LocalStoreSnapshot = Readonly<{
   reviewCardStates: Record<UUID, ReviewCardState>;
   reviewEvents: ReviewEvent[];
   practiceAttempts: PracticeAttempt[];
+  exportJobs: Record<UUID, ExportJob>;
   importJobs: Record<UUID, ImportJob>;
   importJobEvents: ImportJobEvent[];
 }>;
@@ -47,6 +49,7 @@ export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
     reviewCardStates: {},
     reviewEvents: [],
     practiceAttempts: [],
+    exportJobs: {},
     importJobs: {},
     importJobEvents: [],
   };
@@ -65,6 +68,7 @@ function cloneSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
     reviewCardStates: { ...snapshot.reviewCardStates },
     reviewEvents: [...snapshot.reviewEvents],
     practiceAttempts: [...snapshot.practiceAttempts],
+    exportJobs: { ...snapshot.exportJobs },
     importJobs: { ...snapshot.importJobs },
     importJobEvents: [...snapshot.importJobEvents],
   };
@@ -96,6 +100,7 @@ export function normalizeLocalStoreSnapshot(value: unknown): LocalStoreSnapshot 
     reviewCardStates: recordOrEmpty<ReviewCardState>(value.reviewCardStates),
     reviewEvents: arrayOrEmpty<ReviewEvent>(value.reviewEvents),
     practiceAttempts: arrayOrEmpty<PracticeAttempt>(value.practiceAttempts),
+    exportJobs: recordOrEmpty<ExportJob>(value.exportJobs),
     importJobs: recordOrEmpty<ImportJob>(value.importJobs),
     importJobEvents: arrayOrEmpty<ImportJobEvent>(value.importJobEvents),
   };
@@ -254,6 +259,19 @@ export class LocalStore {
 
   listPracticeAttemptsForCard(cardId: UUID): PracticeAttempt[] {
     return this.state.practiceAttempts.filter((a) => a.cardId === cardId);
+  }
+
+  putExportJob(job: ExportJob): LocalStoreSnapshot {
+    this.state.exportJobs[job.id] = job;
+    return this.clone();
+  }
+
+  getExportJob(id: UUID): ExportJob | undefined {
+    return this.state.exportJobs[id];
+  }
+
+  listExportJobs(): ExportJob[] {
+    return Object.values(this.state.exportJobs);
   }
 
   putImportJob(job: ImportJob): LocalStoreSnapshot {

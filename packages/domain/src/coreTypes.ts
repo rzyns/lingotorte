@@ -52,6 +52,9 @@ export type Rating = 'again' | 'hard' | 'good' | 'easy';
 export type PracticeMode = 'typed-input' | 'multiple-choice' | 'audio-recall' | 'speaking' | 'sentence-builder';
 export type PracticeResult = 'pass' | 'fail' | 'pass-with-hesitation' | 'skipped' | 'abandoned';
 export type TranscriptWordTimingSourceKind = 'provider-word-timing' | 'forced-alignment' | 'manual-edit';
+export type ExportJobKind = 'learner-json-manifest';
+export type ExportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type ExportDestinationKind = 'browser-download' | 'file-system-access';
 
 export type TimeRangeMs = Readonly<{
   start: number;
@@ -341,6 +344,19 @@ export type ExportIntegrity = Readonly<{
   algorithm: 'sha256-per-record';
   rootHash: Sha256Digest;
   recordCount: number;
+}>;
+
+export type ExportJob = Readonly<{
+  id: UUID;
+  kind: ExportJobKind;
+  status: ExportJobStatus;
+  startedAt: ISODateTime;
+  completedAt?: ISODateTime;
+  destinationKind: ExportDestinationKind;
+  destinationLabel: string;
+  manifestSha256: Sha256Digest;
+  contentSummaryJson: string;
+  errorCode?: string;
 }>;
 
 export type RestorePreview = Readonly<{

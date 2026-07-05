@@ -2,8 +2,8 @@
 
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
-Last reconciled: 2026-07-04.
-Current branch posture at reconciliation: `main...origin/main` before this B1 slice; `66657b8` audio-recall P6 feature added after reconciliation.
+Last reconciled: 2026-07-05.
+Current branch posture at B1 `export_job` implementation start: `main` at `7a35115`, ahead of `origin/main` by 7 commits; exact current HEAD should be checked live with `git rev-parse --short HEAD` because this status file is committed with the slice it describes.
 Known unrelated local dirt at reconciliation: `.understand-anything/` untracked generated artifacts; leave those out of Lingotorte plan/status commits unless Janusz separately scopes them.
 
 Recent relevant commits:
@@ -25,7 +25,7 @@ Recent relevant commits:
 | `docs/dev/local-runbook.md` | Current local runbook, one-command/systemd local start, local-service/ASR/public-caption smoke checklist, and known limitations. |
 | `docs/dev/v1-local-acceptance.md` | V1 acceptance baseline and deferred cleanup ledger. Some details are older, but the limitation/deferred tables remain useful. |
 | `docs/plan/v3-transcript-generation-correction-plan.md` | Governing transcript-generation/correction design lane. Many slices are now implemented; use this for semantics and gates, not status. |
-| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite plus a forward-only migration ledger and typed projections for current `LocalStore` media, transcript, learner, review, practice, and import-job state; the doc remains backlog evidence for authoritative append-only replay/export metadata and future entities. |
+| `docs/architecture/data-model-and-storage.md` | Target granular SQLite/data/audit/export model. Current implementation has snapshot SQLite plus a forward-only migration ledger and typed projections for current `LocalStore` media, transcript, learner, review, practice, import-job, and export-job state; the doc remains backlog evidence for authoritative append-only replay/export metadata and future entities. |
 | `docs/review/safety-privacy-boundary-review.md` | Binding safety/privacy/legal boundary. Not historical. Preserve these gates. |
 | `docs/planning/` | Historical parent planning/reference bundle. Use for rationale, acceptance criteria, and backlog seeds only after checking current code/docs. |
 | `docs/final/` | Historical final fan-in bundle from the original planning mission. Use for synthesis/background, not current status. |
@@ -75,7 +75,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
   - browser JSON export/import with privacy warnings and merge/update restore preview.
 - Loopback local service supports:
   - health/status endpoints;
-  - SQLite snapshot save/load with a forward-only `schema_migration` ledger and typed projections for current media, subtitle track/cue, word timing, media observation, saved item/occurrence, review, practice, and import job/event state;
+  - SQLite snapshot save/load with a forward-only `schema_migration` ledger and typed projections for current media, subtitle track/cue, word timing, media observation, saved item/occurrence, review, practice, import job/event, and export job state;
   - scratch cleanup;
   - job create/status/cancel;
   - local transcription jobs;
@@ -110,7 +110,7 @@ Lingotorte is locally runnable and test-backed for the core private/local study 
 
 These work today as local prototype/product slices, but are not the final daily-driver shape:
 
-- SQLite persistence stays snapshot-compatible and now has a forward-only migration ledger, typed projections for all current `LocalStore` entity groups, and authoritative append-only replay tables for review/import events; broader conflict/export replay remains future work.
+- SQLite persistence stays snapshot-compatible and now has a forward-only migration ledger through v6, typed projections for all current `LocalStore` entity groups including `export_job`, and authoritative append-only replay tables for review/import events; broader conflict/export replay remains future work.
 - Browser local media import now has a File System Access API path when supported: the app records a stable `browser-file-handle:<name>` media source label and uses a transient `blob:` URL only for playback. Plain file-input imports still use session-scoped `blob:` URLs, and fully restoring browser-granted handles after restart remains future B2 follow-up.
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
 - Practice is basic and local; richer game-like practice/progress views remain future work. Multiple-choice and sentence-builder practice modes are implemented, and study streak/totals are derived from persisted local review/practice events.
@@ -127,10 +127,10 @@ Goal: replace/augment snapshot SQLite with typed durable tables, migrations, and
 
 Scope/status:
 
-- Forward-only migration ledger. **Implemented:** `schema_migration` applies versioned checksummed migrations through v5.
-- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented for current `LocalStore` state:** rebuildable projections now cover `media_asset`, `media_file_observation`, `subtitle_track`, `cue`, `transcript_word_timing`, `saved_item`, `saved_occurrence`, `review_card`, `review_card_state`, `review_event`, `practice_attempt`, `import_job`, and `import_job_event`. **Scoped as next steps (Fable 5 review, session `7a1a6e11`, 2026-07-04):** `export_job` first (v6), then `provider_policy` (v7). See `.claude/fable-review-B1-export-provider-policy.md` for full scoping. **Next migration:** `create_export_job_projection` — single `export_job` table (id, kind, status, started_at, completed_at, destination_kind, destination_label [filename only], manifest_sha256, content_summary_json, error_code), mutable projection, no foreign keys, no append-only event stream until async export is needed.
+- Forward-only migration ledger. **Implemented:** `schema_migration` applies versioned checksummed migrations through v6.
+- Durable tables/projections for media, subtitle tracks/cues, word timings, saved items, saved occurrences, review cards/states/events, practice attempts, provider/job/export metadata. **Implemented for current `LocalStore` state:** rebuildable projections now cover `media_asset`, `media_file_observation`, `subtitle_track`, `cue`, `transcript_word_timing`, `saved_item`, `saved_occurrence`, `review_card`, `review_card_state`, `review_event`, `practice_attempt`, `import_job`, `import_job_event`, and `export_job`. **Implemented in v6:** `create_export_job_projection` — single 10-column `export_job` mutable projection (id, kind, status, started_at, completed_at, destination_kind, destination_label [filename only], manifest_sha256, content_summary_json, error_code), no foreign keys, no append-only event stream until async export is needed. **Next scoped step (Fable 5 review, session `7a1a6e11`, 2026-07-04):** `provider_policy` (v7). See `.claude/fable-review-B1-export-provider-policy.md` for full scoping.
 - Append-only review/import/provider/export events where useful. **Implemented for current event streams:** `review_event` and `import_job_event` are authoritative append-only replay tables. Compatibility snapshot writes append new events idempotently, reject conflicting rewrites for existing event IDs, and replay these tables back into loaded snapshots. **Remaining:** `export_job_event` stream (defer until async multi-step export is needed, e.g. media-copy backup); `provider_policy_event` audit trail (defer).
-- Round-trip tests from empty DB and at least one migration test. **Implemented:** targeted tests cover empty-DB migration ledger plus media/transcript/learner/review/practice/import projections.
+- Round-trip tests from empty DB and at least one migration test. **Implemented:** targeted tests cover empty-DB migration ledger plus media/transcript/learner/review/practice/import/export-job projections.
 - Clear source-missing/broken-media behavior without silently deleting learner history. **Implemented storage guard:** missing-media observations can persist while saved learner anchors remain queryable even when the media asset projection is unavailable. UI/repair affordances continue under B2.
 
 Not in scope without fresh approval: cloud sync or destructive data cleanup.

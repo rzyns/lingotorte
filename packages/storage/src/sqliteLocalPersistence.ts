@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   CardType,
   Cue,
+  ExportJob,
   ImportJob,
   ImportJobEvent,
   MediaAsset,
@@ -31,7 +32,7 @@ import type {
 } from '@lingotorte/domain';
 import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 const SNAPSHOT_KEY = 'default';
 
 const CREATE_SNAPSHOT_STORE_SQL = `
@@ -266,6 +267,25 @@ const CREATE_REVIEW_PRACTICE_JOB_PROJECTIONS_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+const CREATE_EXPORT_JOB_PROJECTION_SQL = `
+  CREATE TABLE IF NOT EXISTS export_job (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('learner-json-manifest')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    destination_kind TEXT NOT NULL CHECK (destination_kind IN ('browser-download', 'file-system-access')),
+    destination_label TEXT NOT NULL,
+    manifest_sha256 TEXT NOT NULL,
+    content_summary_json TEXT NOT NULL,
+    error_code TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_export_job_status_started ON export_job(status, started_at);
+  INSERT INTO lingotorte_schema (id, schema_version)
+    VALUES (1, 6)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
 type SnapshotRow = Readonly<{
   snapshot_json: string;
 }>;
@@ -446,6 +466,19 @@ type ImportJobRow = Readonly<{
   input_manifest_json: string;
 }>;
 
+type ExportJobRow = Readonly<{
+  id: string;
+  kind: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  destination_kind: string;
+  destination_label: string;
+  manifest_sha256: string;
+  content_summary_json: string;
+  error_code: string | null;
+}>;
+
 type ImportJobEventRow = Readonly<{
   id: string;
   job_id: string;
@@ -570,6 +603,12 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
     name: 'create_review_practice_job_projections',
     sql: CREATE_REVIEW_PRACTICE_JOB_PROJECTIONS_SQL,
     checksum: migrationChecksum(CREATE_REVIEW_PRACTICE_JOB_PROJECTIONS_SQL),
+  },
+  {
+    version: 6,
+    name: 'create_export_job_projection',
+    sql: CREATE_EXPORT_JOB_PROJECTION_SQL,
+    checksum: migrationChecksum(CREATE_EXPORT_JOB_PROJECTION_SQL),
   },
 ];
 
@@ -971,6 +1010,35 @@ export class SqliteLocalPersistence {
     });
   }
 
+  listExportJobs(): readonly ExportJob[] {
+    const rows = this.db
+      .prepare(`
+        SELECT id, kind, status, started_at, completed_at,
+               destination_kind, destination_label, manifest_sha256,
+               content_summary_json, error_code
+        FROM export_job
+        ORDER BY started_at ASC, id ASC
+      `)
+      .all() as ExportJobRow[];
+    return rows.map((row) => {
+      const job: ExportJob = {
+        id: row.id,
+        kind: row.kind as ExportJob['kind'],
+        status: row.status as ExportJob['status'],
+        startedAt: row.started_at,
+        destinationKind: row.destination_kind as ExportJob['destinationKind'],
+        destinationLabel: row.destination_label,
+        manifestSha256: row.manifest_sha256 as Sha256Digest,
+        contentSummaryJson: row.content_summary_json,
+      };
+      return {
+        ...job,
+        ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
+        ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+      };
+    });
+  }
+
   listImportJobEvents(): readonly ImportJobEvent[] {
     const rows = this.db
       .prepare(`
@@ -1312,6 +1380,30 @@ export class SqliteLocalPersistence {
     }
   }
 
+  private saveExportJobProjection(snapshot: LocalStoreSnapshot): void {
+    this.db.prepare('DELETE FROM export_job').run();
+    const insertExportJob = this.db.prepare(`
+      INSERT INTO export_job (
+        id, kind, status, started_at, completed_at, destination_kind,
+        destination_label, manifest_sha256, content_summary_json, error_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const job of Object.values(snapshot.exportJobs)) {
+      insertExportJob.run(
+        job.id,
+        job.kind,
+        job.status,
+        job.startedAt,
+        job.completedAt ?? null,
+        job.destinationKind,
+        job.destinationLabel,
+        job.manifestSha256,
+        job.contentSummaryJson,
+        job.errorCode ?? null,
+      );
+    }
+  }
+
   status(): SqliteLocalPersistenceStatus {
     const hasSnapshot = this.db
       .prepare('SELECT 1 FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
@@ -1356,6 +1448,7 @@ export class SqliteLocalPersistence {
       this.saveTranscriptProjections(normalized);
       this.saveLearnerSourceProjections(normalized);
       this.saveReviewPracticeJobProjections(normalized);
+      this.saveExportJobProjection(normalized);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
