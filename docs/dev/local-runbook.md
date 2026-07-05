@@ -232,6 +232,40 @@ python3 scripts/faster_whisper_transcribe.py --audio /absolute/path/audio.wav --
 
 Model/cache/scratch artifacts are kept out of git. The venv and model cache live under `~/.local/share/lingotorte/` and `~/.cache/huggingface/` respectively.
 
+### B4 safe runtime verification and benchmark gate
+
+The ASR harness can be re-verified without a private owned-media benchmark by using dependency-free CLI shape checks, fake-module/unit tests, and the synthetic fixture smoke below. The synthetic fixture is silence-only, so a zero-segment transcript is an expected harness result rather than a quality signal.
+
+Safe local checks:
+
+```bash
+python3 scripts/faster_whisper_transcribe.py --help
+python3 scripts/whisperx_align.py --help
+npm test -- --run tests/core/localTranscriptionPipeline.test.ts tests/core/localService.test.ts
+npm run test:no-network
+```
+
+Optional synthetic smoke, only when the already-approved local ASR venv and cached tiny model are present; keep HuggingFace offline flags set so this cannot silently download a model:
+
+```bash
+tmpdir=$(mktemp -d /tmp/lingotorte-b4-asr-smoke.XXXXXX)
+trap 'rm -rf "$tmpdir"' EXIT
+ffmpeg -hide_banner -y -i fixtures/media/synthetic-polish-dialogue.webm -vn -ac 1 -ar 16000 -c:a pcm_s16le "$tmpdir/synthetic.wav"
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  ~/.local/share/lingotorte/asr-venv/bin/python \
+  scripts/faster_whisper_transcribe.py \
+  --audio "$tmpdir/synthetic.wav" \
+  --language pl \
+  --model tiny \
+  --device cpu \
+  --compute-type int8 \
+  --word-timestamps
+```
+
+2026-07-05 fallback-chain receipt: `ffmpeg` 8.1.2, ASR venv Python 3.12.3, and `faster-whisper` 1.2.1 were present; `whisperx` was not installed, so WhisperX-style alignment remained covered by the dependency-lazy CLI/fake-module tests rather than a live alignment run. The offline synthetic tiny-model smoke returned `engine=faster-whisper`, `model_name=tiny`, `model_version=1.2.1`, `language=pl`, and `segments_count=0`, matching the silence-only fixture expectation. Live owned-media quality benchmarking was skipped because no exact approved owned local clip path was provided.
+
+Run the tiny/base quality benchmark only when a task provides an exact owned local media path or an explicit approved local selection rule. Record model tier, runtime vs. media duration, transcript usability, word-timing notes, and whether tiny CPU is daily-use candidate or smoke-only. Do not search Janusz media folders, download models, install heavyweight dependencies, call cloud providers, or commit media/model/cache/scratch artifacts to satisfy B4.
+
 Cloud STT remains an explicit per-run decision because it sends local audio/media to ElevenLabs. Keep API keys out of logs, fixtures, commits, and screenshots.
 
 ## Known V1/V4 limitations
