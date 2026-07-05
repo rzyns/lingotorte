@@ -78,6 +78,26 @@ Out of this batch unless a worker creates a reviewed follow-up repair card withi
 | 09 | `t_1da27ce3` | LDM1-09: final independent review of M1 batch | `principal-reviewer` | `t_f8000616` | PASS or BLOCK |
 | 10 | `t_bc700d35` | LDM1-10 HUMAN GATE: final Lingotorte M1 packet and next decision | `default` | `t_1da27ce3` | blocked `needs_input` after packet creation |
 
+## Runtime routing repair 01
+
+At 2026-07-05T15:31-04:00, the original B2 implementation card `t_bb077be2` was claimed by `frontend-eng` three times and crashed before work because that profile's configured `kimi-k2.7-code` / Ollama Cloud provider returned weekly-quota HTTP 429 errors. This is a worker-runtime capacity issue, not a Lingotorte product or safety boundary.
+
+The active chain was therefore re-routed to stable GPT-backed implementation/validation cards while preserving the original blocked specialist card as evidence. The non-authorization envelope above is unchanged.
+
+| Step | Task id | Title | Assignee | Parents | Expected terminal state |
+|---|---:|---|---|---|---|
+| 02R | `t_b5e6e6e5` | LDM1-02R: B2 durable media handle polish runtime fallback | `default` | `t_e892e455` | done with exact-scope local commit |
+| 03R | `t_f4b87e36` | LDM1-03R: review B2 runtime fallback polish | `reviewer` | `t_b5e6e6e5` | PASS or BLOCK |
+| 04R | `t_9c4ffb75` | LDM1-04R: B3 backup/export/restore polish runtime fallback | `default` | `t_f4b87e36` | done with exact-scope local commit |
+| 05R | `t_ee23d449` | LDM1-05R: review B3 runtime fallback polish | `reviewer` | `t_9c4ffb75` | PASS or BLOCK |
+| 06R | `t_98c4a0da` | LDM1-06R: B4 ASR harness/runbook runtime fallback verification | `default` | `t_ee23d449` | done with commit or no-change evidence |
+| 07R | `t_0a83503c` | LDM1-07R: review B4 runtime fallback verification | `reviewer` | `t_98c4a0da` | PASS or BLOCK |
+| 08R | `t_89bf8506` | LDM1-08R: integration validation for M1 runtime fallback chain | `default` | `t_0a83503c` | done with validation receipt |
+| 09R | `t_916b0917` | LDM1-09R: final independent review of M1 runtime fallback batch | `principal-reviewer` | `t_89bf8506` | PASS or BLOCK |
+| 10R | `t_39378871` | LDM1-10R HUMAN GATE: final Lingotorte M1 fallback packet and next decision | `default` | `t_916b0917` | blocked `needs_input` after packet creation |
+
+The final intended human gate is now `t_39378871`. The original final gate `t_bc700d35` is superseded unless the operator explicitly revives the original specialist chain.
+
 ## Review / repair policy
 
 - A reviewer `BLOCK` is not a human gate by default.
