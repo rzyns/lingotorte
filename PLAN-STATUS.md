@@ -1,15 +1,15 @@
 # PLAN status — Lingotorte
 
-Updated: `2026-07-05T16:31:46Z`
+Updated: `2026-07-05T18:01:48Z`
 
-Status: **Swarm v1 (B5 + B7 + B2/B3/B6 frontend) merged to main.** B1 `export_job` projection/migration v6 is implemented locally as a mutable projection; `provider_policy` remains the next B1 follow-up. P6 audio-recall practice mode is implemented and committed. The repo was 7 commits ahead of `origin/main` at the start of this B1 follow-up slice; check live git for the exact current HEAD after this status file's commit.
+Status: **Swarm v1 (B5 + B7 + B2/B3/B6 frontend) merged to main.** B1 `export_job` projection/migration v6 and `provider_policy` projection/migration v7 are implemented locally as mutable projections. P6 audio-recall practice mode is implemented and committed. The repo was 9 commits ahead of `origin/main` at the start of this `provider_policy` follow-up slice; check live git for the exact current HEAD after this status file's commit.
 
 ## Current scope and repository state
 
 - Workspace/repo: `/home/openclaw/workspace/lingotorte`
-- Git base before this B1 follow-up: `7a35115` (`docs(plan): update PLAN.md/PLAN-STATUS.md with swarm v1 merged slice status`)
-- Branch at B1 follow-up start: `main`, ahead of `origin/main` by 7 commits
-- Worktree at B1 follow-up start: clean; this file is updated as part of the B1 `export_job` slice, so exact current cleanliness should be checked with `git status --short`
+- Git base before this B1 `provider_policy` follow-up: `be3d01e` (`docs: refresh export and media limitation notes`)
+- Branch at B1 `provider_policy` follow-up start: `main`, ahead of `origin/main` by 9 commits
+- Worktree at B1 `provider_policy` follow-up start: clean except unrelated untracked `DECISIONS.md`; this file is updated as part of the B1 `provider_policy` slice, so exact current cleanliness should be checked with `git status --short`
 
 ## Swarm v1 — three-branch merge + synthesis
 
@@ -37,8 +37,8 @@ Full validation passed on the merged result (see "Validation commands run" below
 ### `export_job` (implemented — migration v6)
 10-column `export_job` table: `id`, `kind` ('learner-json-manifest'), `status` ('pending'|'running'|'completed'|'failed'), `started_at`, `completed_at`, `destination_kind` ('browser-download'|'file-system-access'), `destination_label` (filename only — never absolute path), `manifest_sha256`, `content_summary_json`, `error_code`. Mutable projection, no foreign keys, no append-only event stream until async export is needed. Follows B1 naming/migration/column conventions. Implemented as `create_export_job_projection` v6 with `LocalStoreSnapshot.exportJobs`, `LocalStore.putExportJob()`, SQLite `listExportJobs()`, and a focused snapshot/projection clearing test.
 
-### `provider_policy` (follow-on — migration v7)
-8-column `provider_policy` table: `id`, `provider_id` ('elevenlabs-scribe'|'youtube-caption'), `enabled` (default false — absence means disabled, never seed enabled rows), `allowed_data_classes` (JSON), `requires_confirmation` (default true — preserves two-layer gate), `first_approved_at`, `created_at`, `updated_at`. No credentials in DB; env-only pattern preserved. Mutable, not append-only.
+### `provider_policy` (implemented — migration v7)
+8-column `provider_policy` table: `id`, `provider_id` ('elevenlabs-scribe'|'youtube-caption'), `enabled` (default false — absence means disabled, never seed enabled rows), `allowed_data_classes_json` (JSON), `requires_confirmation` (default true — preserves two-layer gate), `first_approved_at`, `created_at`, `updated_at`. Implemented as `create_provider_policy_projection` v7 with `LocalStoreSnapshot.providerPolicies`, `LocalStore.putProviderPolicy()`, SQLite `listProviderPolicies()`, and a focused snapshot/projection clearing test. No credentials in DB; env-only pattern preserved. Mutable, not append-only.
 
 **Relationship:** independent — no FK between them. ElevenLabs/YouTube are import providers, not export providers.
 
@@ -48,7 +48,7 @@ Full validation passed on the merged result (see "Validation commands run" below
 
 | Slice | Goal | Status | Notes |
 | --- | --- | --- | --- |
-| B1 | Granular storage, migrations, auditability | **v6 export-job follow-up complete; v7 provider-policy next** | Forward-only migration ledger through v6; typed projections for current LocalStore entities including `export_job`; append-only review_event/import_job_event replay tables; empty-DB, migration, and projection tests; missing-media guard. Remaining scoped follow-up: `provider_policy` projection v7. |
+| B1 | Granular storage, migrations, auditability | **v6 export-job + v7 provider-policy follow-ups complete** | Forward-only migration ledger through v7; typed projections for current LocalStore entities including `export_job` and `provider_policy`; append-only review_event/import_job_event replay tables; empty-DB, migration, and projection tests; missing-media guard. Remaining deferred audit/event work: `export_job_event` only if async/media-copy export is designed, and `provider_policy_event` only if policy replay/audit becomes authoritative. |
 | B2 | Durable media handle / File System Access persistence | Partially done | Browser File System Access handle persistence across restarts. First slice partially done: handle-based import UI, transient object-URL playback, relink prompt on permission loss. Full handle revalidation after restart still outstanding. |
 | B3 | Backup/export/restore polish | Partially done | File System Access save path, replace vs. merge UX, integrity verification, metadata-only default, privacy warnings. |
 | B4 | Local ASR dependency/model proof | Not started | Python 3.12.3 venv, faster-whisper 1.2.1, ffmpeg 8.1.2, tiny model (CPU/int8) proven on 2026-07-04. Full dependency receipts and runbook setup recorded in `docs/dev/local-runbook.md`. Real-word-speed proof on owned media still outstanding. |
@@ -72,13 +72,13 @@ Full validation passed on the merged result (see "Validation commands run" below
 
 ## Validation commands run
 
-- `npm test -- --run tests/core/localPersistence.test.ts` — **15 passed** (focused RED→GREEN storage/projection test)
+- `npm test -- --run tests/core/localPersistence.test.ts` — **16 passed** (focused RED→GREEN storage/projection test)
 - `npm run typecheck` — **passed** (0 errors)
-- `npm test -- --run` — **25 files passed; 193 passed, 4 skipped** (4 skipped are audio-recall tests requiring jsdom environment)
+- `npm test -- --run` — **25 files passed; 194 passed, 4 skipped** (4 skipped are audio-recall tests requiring jsdom environment)
 - `npm run test:no-network` — **2 files, 5 passed** (provider-disabled no-network harness)
 - `npm run scan:privacy` — **ok: true, scannedFiles: 42**
 - `npm run build` — **passed** (Vite build; existing morfeusz browser externalization warnings only)
-- `python3 validate_final_bundle.py` — **errors: [], required_count: 16, manifest_count: 16, markdown_files: 1173**
+- `python3 validate_final_bundle.py` — **errors: [], required_count: 16, manifest_count: 16, markdown_files: 1174**
 - `git diff --check` — clean
 
 ## Audio-recall skip note
@@ -89,9 +89,9 @@ Full validation passed on the merged result (see "Validation commands run" below
 
 Shortest ready path through the backlog:
 
-1. **B1 follow-up — `provider_policy` projection (migration v7)** — Fable 5-scoped 8-column mutable projection; env-only credentials, default-disabled.
-2. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state.
-3. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification.
+1. **B2** — File System Access handle persistence: revalidate browser-granted handles on reload, wire relink prompt to actual permission state.
+2. **B4** — Local ASR proof on real owned media: real-word-speed measurement, latency/quality report, scratch cleanup verification.
+3. **B3** — Backup/export/restore polish beyond the current metadata-only manifest save/restore path, especially conflict review/rollback and any explicitly approved media-copy backup behavior.
 
 B5 (translation/LLM gate), B6 (clip generation), B7 (embedded extraction), and B8 (future gated lanes) remain valid but have more open design questions or are explicitly future.
 
@@ -100,5 +100,5 @@ B5 (translation/LLM gate), B6 (clip generation), B7 (embedded extraction), and B
 - No public-facing writes, push/release/deploy/public exposure, DRM/circumvention, private/account-gated media access, automatic online media download, Lingopie proprietary content/API use, raw secret/provider request logging, or generated cache/model/media artifacts in git.
 - Providers remain disabled by default; no-network tests cover disabled state.
 - Live provider calls, model downloads, AnkiConnect, cloud sync, microphone recording, and public sharing remain gated on explicit separate authorization.
-- `.understand-anything/` untracked generated artifacts were not touched.
-- No push to `origin/main` was performed; the swarm-v1 merge is local-only.
+- `DECISIONS.md` untracked local artifact was not touched.
+- No push to `origin/main` was performed; the swarm-v1 merge and B1 follow-up commits remain local-only.

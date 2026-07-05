@@ -55,6 +55,7 @@ export type TranscriptWordTimingSourceKind = 'provider-word-timing' | 'forced-al
 export type ExportJobKind = 'learner-json-manifest';
 export type ExportJobStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type ExportDestinationKind = 'browser-download' | 'file-system-access';
+export type ProviderPolicyProviderId = 'elevenlabs-scribe' | 'youtube-caption';
 
 export type TimeRangeMs = Readonly<{
   start: number;
@@ -357,6 +358,17 @@ export type ExportJob = Readonly<{
   manifestSha256: Sha256Digest;
   contentSummaryJson: string;
   errorCode?: string;
+}>;
+
+export type ProviderPolicyEntry = Readonly<{
+  id: UUID;
+  providerId: ProviderPolicyProviderId;
+  enabled: boolean;
+  allowedDataClasses: readonly string[];
+  requiresConfirmation: boolean;
+  firstApprovedAt?: ISODateTime;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
 }>;
 
 export type RestorePreview = Readonly<{

@@ -101,7 +101,7 @@ describe('durable local persistence', () => {
     const persistence = SqliteLocalPersistence.open(':memory:');
 
     expect(persistence.status()).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
       hasSnapshot: false,
       appliedMigrations: [
         {
@@ -132,6 +132,11 @@ describe('durable local persistence', () => {
         {
           version: 6,
           name: 'create_export_job_projection',
+          result: 'applied',
+        },
+        {
+          version: 7,
+          name: 'create_provider_policy_projection',
           result: 'applied',
         },
       ],
@@ -175,6 +180,13 @@ describe('durable local persistence', () => {
       expect.objectContaining({
         version: 6,
         name: 'create_export_job_projection',
+        result: 'applied',
+        checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+      expect.objectContaining({
+        version: 7,
+        name: 'create_provider_policy_projection',
         result: 'applied',
         checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
         appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
@@ -428,6 +440,33 @@ describe('durable local persistence', () => {
 
     expect(persistence.listExportJobs()).toEqual([]);
     expect(persistence.loadSnapshot().exportJobs).toEqual({});
+    persistence.close();
+  });
+
+  it('maintains provider policy projections from local provider consent state', () => {
+    const store = populatedStore();
+    const policy = {
+      id: 'provider-policy-elevenlabs-scribe',
+      providerId: 'elevenlabs-scribe' as const,
+      enabled: true,
+      allowedDataClasses: ['owned-media-audio', 'transcript-text'] as const,
+      requiresConfirmation: true,
+      firstApprovedAt: '2026-07-04T06:00:00.000Z',
+      createdAt: '2026-07-04T05:59:00.000Z',
+      updatedAt: '2026-07-04T06:01:00.000Z',
+    };
+    store.putProviderPolicy(policy);
+    const persistence = SqliteLocalPersistence.open(':memory:');
+
+    persistence.saveSnapshot(store.snapshot(), '2026-07-04T06:02:00.000Z');
+
+    expect(persistence.listProviderPolicies()).toEqual([policy]);
+    expect(persistence.loadSnapshot().providerPolicies).toEqual({ [policy.id]: policy });
+
+    persistence.saveSnapshot(createEmptyLocalStoreSnapshot(), '2026-07-04T06:03:00.000Z');
+
+    expect(persistence.listProviderPolicies()).toEqual([]);
+    expect(persistence.loadSnapshot().providerPolicies).toEqual({});
     persistence.close();
   });
 

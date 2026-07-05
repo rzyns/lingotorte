@@ -6,6 +6,7 @@ import type {
   MediaAsset,
   MediaFileObservation,
   PracticeAttempt,
+  ProviderPolicyEntry,
   ReviewCard,
   ReviewCardState,
   ReviewEvent,
@@ -32,6 +33,7 @@ export type LocalStoreSnapshot = Readonly<{
   reviewEvents: ReviewEvent[];
   practiceAttempts: PracticeAttempt[];
   exportJobs: Record<UUID, ExportJob>;
+  providerPolicies: Record<UUID, ProviderPolicyEntry>;
   importJobs: Record<UUID, ImportJob>;
   importJobEvents: ImportJobEvent[];
 }>;
@@ -50,6 +52,7 @@ export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
     reviewEvents: [],
     practiceAttempts: [],
     exportJobs: {},
+    providerPolicies: {},
     importJobs: {},
     importJobEvents: [],
   };
@@ -69,6 +72,7 @@ function cloneSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
     reviewEvents: [...snapshot.reviewEvents],
     practiceAttempts: [...snapshot.practiceAttempts],
     exportJobs: { ...snapshot.exportJobs },
+    providerPolicies: { ...snapshot.providerPolicies },
     importJobs: { ...snapshot.importJobs },
     importJobEvents: [...snapshot.importJobEvents],
   };
@@ -101,6 +105,7 @@ export function normalizeLocalStoreSnapshot(value: unknown): LocalStoreSnapshot 
     reviewEvents: arrayOrEmpty<ReviewEvent>(value.reviewEvents),
     practiceAttempts: arrayOrEmpty<PracticeAttempt>(value.practiceAttempts),
     exportJobs: recordOrEmpty<ExportJob>(value.exportJobs),
+    providerPolicies: recordOrEmpty<ProviderPolicyEntry>(value.providerPolicies),
     importJobs: recordOrEmpty<ImportJob>(value.importJobs),
     importJobEvents: arrayOrEmpty<ImportJobEvent>(value.importJobEvents),
   };
@@ -272,6 +277,19 @@ export class LocalStore {
 
   listExportJobs(): ExportJob[] {
     return Object.values(this.state.exportJobs);
+  }
+
+  putProviderPolicy(policy: ProviderPolicyEntry): LocalStoreSnapshot {
+    this.state.providerPolicies[policy.id] = policy;
+    return this.clone();
+  }
+
+  getProviderPolicy(id: UUID): ProviderPolicyEntry | undefined {
+    return this.state.providerPolicies[id];
+  }
+
+  listProviderPolicies(): ProviderPolicyEntry[] {
+    return Object.values(this.state.providerPolicies);
   }
 
   putImportJob(job: ImportJob): LocalStoreSnapshot {

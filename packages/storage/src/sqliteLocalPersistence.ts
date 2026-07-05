@@ -11,6 +11,8 @@ import type {
   PracticeAttempt,
   PracticeMode,
   PracticeResult,
+  ProviderPolicyEntry,
+  ProviderPolicyProviderId,
   Rating,
   ReviewCard,
   ReviewCardState,
@@ -32,7 +34,7 @@ import type {
 } from '@lingotorte/domain';
 import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 const SNAPSHOT_KEY = 'default';
 
 const CREATE_SNAPSHOT_STORE_SQL = `
@@ -286,6 +288,23 @@ const CREATE_EXPORT_JOB_PROJECTION_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+const CREATE_PROVIDER_POLICY_PROJECTION_SQL = `
+  CREATE TABLE IF NOT EXISTS provider_policy (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL CHECK (provider_id IN ('elevenlabs-scribe', 'youtube-caption')),
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    allowed_data_classes_json TEXT NOT NULL,
+    requires_confirmation INTEGER NOT NULL DEFAULT 1 CHECK (requires_confirmation IN (0, 1)),
+    first_approved_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_provider_policy_provider_enabled ON provider_policy(provider_id, enabled);
+  INSERT INTO lingotorte_schema (id, schema_version)
+    VALUES (1, 7)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
 type SnapshotRow = Readonly<{
   snapshot_json: string;
 }>;
@@ -479,6 +498,17 @@ type ExportJobRow = Readonly<{
   error_code: string | null;
 }>;
 
+type ProviderPolicyRow = Readonly<{
+  id: string;
+  provider_id: string;
+  enabled: number;
+  allowed_data_classes_json: string;
+  requires_confirmation: number;
+  first_approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}>;
+
 type ImportJobEventRow = Readonly<{
   id: string;
   job_id: string;
@@ -609,6 +639,12 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
     name: 'create_export_job_projection',
     sql: CREATE_EXPORT_JOB_PROJECTION_SQL,
     checksum: migrationChecksum(CREATE_EXPORT_JOB_PROJECTION_SQL),
+  },
+  {
+    version: 7,
+    name: 'create_provider_policy_projection',
+    sql: CREATE_PROVIDER_POLICY_PROJECTION_SQL,
+    checksum: migrationChecksum(CREATE_PROVIDER_POLICY_PROJECTION_SQL),
   },
 ];
 
@@ -1039,6 +1075,32 @@ export class SqliteLocalPersistence {
     });
   }
 
+  listProviderPolicies(): readonly ProviderPolicyEntry[] {
+    const rows = this.db
+      .prepare(`
+        SELECT id, provider_id, enabled, allowed_data_classes_json,
+               requires_confirmation, first_approved_at, created_at, updated_at
+        FROM provider_policy
+        ORDER BY provider_id ASC, id ASC
+      `)
+      .all() as ProviderPolicyRow[];
+    return rows.map((row) => {
+      const policy: ProviderPolicyEntry = {
+        id: row.id,
+        providerId: row.provider_id as ProviderPolicyProviderId,
+        enabled: row.enabled === 1,
+        allowedDataClasses: parseJson<readonly string[]>(row.allowed_data_classes_json),
+        requiresConfirmation: row.requires_confirmation === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+      return {
+        ...policy,
+        ...(row.first_approved_at === null ? {} : { firstApprovedAt: row.first_approved_at }),
+      };
+    });
+  }
+
   listImportJobEvents(): readonly ImportJobEvent[] {
     const rows = this.db
       .prepare(`
@@ -1404,6 +1466,28 @@ export class SqliteLocalPersistence {
     }
   }
 
+  private saveProviderPolicyProjection(snapshot: LocalStoreSnapshot): void {
+    this.db.prepare('DELETE FROM provider_policy').run();
+    const insertProviderPolicy = this.db.prepare(`
+      INSERT INTO provider_policy (
+        id, provider_id, enabled, allowed_data_classes_json,
+        requires_confirmation, first_approved_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const policy of Object.values(snapshot.providerPolicies)) {
+      insertProviderPolicy.run(
+        policy.id,
+        policy.providerId,
+        policy.enabled ? 1 : 0,
+        JSON.stringify(policy.allowedDataClasses),
+        policy.requiresConfirmation ? 1 : 0,
+        policy.firstApprovedAt ?? null,
+        policy.createdAt,
+        policy.updatedAt,
+      );
+    }
+  }
+
   status(): SqliteLocalPersistenceStatus {
     const hasSnapshot = this.db
       .prepare('SELECT 1 FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
@@ -1449,6 +1533,7 @@ export class SqliteLocalPersistence {
       this.saveLearnerSourceProjections(normalized);
       this.saveReviewPracticeJobProjections(normalized);
       this.saveExportJobProjection(normalized);
+      this.saveProviderPolicyProjection(normalized);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
