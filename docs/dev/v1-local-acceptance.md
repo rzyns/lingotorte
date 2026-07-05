@@ -65,18 +65,18 @@ That run passed `npm ci --offline --no-audit --no-fund`, `npm test`, `npm run te
 |---|---|---|
 | P5 unreachable review helper | Fixed | Removed the unused helper from the web model so future code cannot accidentally bypass `ReviewService.submitReview`. Existing review tests cover the supported path. |
 | P6 `lastAttemptResult.correct: boolean \| null` | Fixed | Tightened the UI type to `boolean` because all assignments are concrete booleans and the UI treats it as boolean. Typecheck and practice tests cover the path. |
-| P6 `ExportService.exportToFile` does not write to disk | Deferred | Real file writing/download is a product/API decision and may affect privacy, user-chosen paths, browser download semantics, and future desktop packaging. |
-| P6 hardcoded `/tmp/lingotorte` export directory | Deferred | Harmless while export is manifest-preview only; should be redesigned together with explicit user-chosen export/download behavior. |
+| P6 `ExportService.exportToFile` does not write to disk | Superseded by later File System Access slice | Supported browsers now expose **Save export to chosen file**, write the learner-state manifest via the browser File System Access API, and verify readback. Broader backup/export product decisions still remain. |
+| P6 hardcoded `/tmp/lingotorte` export directory | Superseded for browser save path | The browser save-picker path no longer depends on the old preview-only path. Future backup work still needs a destination/bundle policy for non-browser or media-copy exports. |
 | P3 `sha256Text` naming caveat | Deferred | The name/provenance distinction should be handled in a focused hash/provenance cleanup so downstream terminology remains explicit. |
 | Inherited P1 audit items | Deferred | No V1 blocker was identified; keep as future cleanup unless a new validation failure appears. |
 
 ## Known limitations
 
-- The browser UI imports the synthetic fixture through **Library → Load synthetic fixture** and supports **Library → Import local media** for owned media with or without `.srt` subtitle files. Learner/transcript metadata can persist through the loopback SQLite service; browser `blob:` media handles remain session-scoped and must be reselected after browser restart for playback.
+- The browser UI imports the synthetic fixture through **Library → Load synthetic fixture** and supports **Library → Import local media** for owned media with or without `.srt` subtitle files. Learner/transcript metadata can persist through the loopback SQLite service. Plain file-input media references remain session-scoped `blob:` URLs, while supported browsers can use **Import persistent media handle** to persist a browser file handle label and attempt permission revalidation/object-URL recreation after reload; relink remains the fallback when permission or the handle is unavailable.
 - Local transcription jobs require a durable absolute media path plus locally installed ffmpeg/Python ASR dependencies; automated tests use injected fake runners.
 - Public YouTube caption reads are metadata-only, require the visible public-read authorization plus `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, and do not download media.
-- Export creates a manifest object and preview path, not a persisted file.
-- Restore merges/upserts manifest records into existing local state; a future full replace/conflict-resolution flow remains a separate product decision.
+- Export creates a learner-state manifest and can either use browser download semantics or, in supported browsers, **Save export to chosen file** with readback verification. It remains metadata-only and does not copy media files.
+- Restore supports merge/update and a destructive **Replace all** mode; selective conflict review, rollback, and optional media-copy backup remain separate product decisions.
 - The local Vite dev server is for acceptance smoke, not a deployed service.
 - Screenshots and browser evidence should use only synthetic/local data.
 - External providers, online translation/LLM/ASR/pronunciation, AnkiConnect, cloud sync, public-internet writes, public release/sharing, live Lingopie inspection, remote setup, push/PR, and deploy/restart remain explicitly unauthorized.
