@@ -72,6 +72,7 @@ import {
   mediaPlaybackUrl,
   needsMediaRelink,
   handleNameFromMedia,
+  restoreBrowserMediaHandle,
   learnerProgress,
   generateMultipleChoices,
   studyMetrics,
@@ -95,6 +96,8 @@ let keyboardShortcutsHandler: ((event: KeyboardEvent) => void) | null = null;
 type BrowserFileHandleLike = Readonly<{
   name: string;
   getFile(): Promise<File>;
+  queryPermission?: (opts: { mode: 'read' }) => Promise<string>;
+  requestPermission?: (opts: { mode: 'read' }) => Promise<string>;
 }>;
 
 type BrowserFilePickerGlobal = typeof globalThis & Readonly<{
@@ -1400,8 +1403,12 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const handleName = handleNameFromMedia(model);
   const body = document.createElement('p');
   body.textContent = handleName
-    ? `The browser-granted file handle for "${handleName}" is not available. Relink the owned media file to resume playback.`
-    : 'The browser-granted file handle is not available. Relink the owned media file to resume playback.';
+    ? `The browser-granted file handle for "${handleName}" is not available for playback. Regrant the saved handle or choose the owned media file again.`
+    : 'The browser-granted file handle or session object URL is not available for playback. Regrant the saved handle or choose the owned media file again.';
+
+  const permission = document.createElement('p');
+  permission.className = 'meta relink-permission-state';
+  permission.textContent = `Browser permission: ${model.browserLocalMedia.permissionState}${model.browserLocalMedia.lastError ? ` — ${model.browserLocalMedia.lastError}` : ''}`;
 
   const actions = document.createElement('div');
   actions.className = 'empty-video-actions';
@@ -1409,8 +1416,27 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   relinkBtn.className = 'btn-primary';
   relinkBtn.type = 'button';
   relinkBtn.textContent = 'Relink media';
-  relinkBtn.setAttribute('aria-label', 'Relink the browser file handle for the current media');
+  relinkBtn.setAttribute('aria-label', 'Regrant the saved browser file handle for the current media');
   relinkBtn.addEventListener('click', () => {
+    void restoreBrowserMediaHandle(model)
+      .then((restored) => {
+        if (!restored) {
+          model.importError = model.browserLocalMedia.lastError ?? 'Saved browser media handle could not be restored. Choose the media again from Library.';
+        } else {
+          model.importError = null;
+        }
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  const chooseAgainBtn = document.createElement('button');
+  chooseAgainBtn.className = 'btn-secondary';
+  chooseAgainBtn.type = 'button';
+  chooseAgainBtn.textContent = 'Choose media again';
+  chooseAgainBtn.addEventListener('click', () => {
     const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
     if (typeof picker !== 'function') {
       model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
@@ -1457,8 +1483,8 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
     setView(model, 'library');
     rerenderApp(model);
   });
-  actions.append(relinkBtn, libraryBtn);
-  placeholder.append(icon, heading, body, actions);
+  actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
+  placeholder.append(icon, heading, body, permission, actions);
   return placeholder;
 }
 
@@ -2303,6 +2329,13 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   });
   localAsrPathLabel.appendChild(localAsrPathInput);
   gateControls.appendChild(localAsrPathLabel);
+  const currentMediaPath = model.currentMedia?.originalPath ?? '';
+  if (currentMediaPath.startsWith('blob:') || currentMediaPath.startsWith('browser-file-handle:')) {
+    const localAsrPathNote = document.createElement('p');
+    localAsrPathNote.className = 'gate-note local-service-media-path-note';
+    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; the loopback local service still needs an explicit absolute owned local media path for ASR, ffmpeg, ffprobe, and source-media snippets.';
+    gateControls.appendChild(localAsrPathNote);
+  }
   panel.appendChild(gateControls);
 
   const demoGateNote = document.createElement('p');

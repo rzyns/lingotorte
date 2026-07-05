@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
+import { connectLocalService, createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -31,6 +31,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   afterEach(() => {
     delete (globalThis as { showOpenFilePicker?: unknown }).showOpenFilePicker;
     delete (globalThis as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+    delete (globalThis as { lingotorteHandleStore?: unknown }).lingotorteHandleStore;
     dom.window.close();
   });
 
@@ -217,7 +218,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     });
     store.putMediaAsset(asset);
     model.currentMedia = asset;
-    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:relinked-clip.webm', handleName: 'relinked-clip.webm' };
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:relinked-clip.webm', handleName: 'relinked-clip.webm', permissionState: 'unknown', lastError: null };
     model.view = 'player';
 
     rerenderApp(model);
@@ -227,8 +228,11 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(video).toBeNull();
     expect(app.textContent).toContain('Relink media');
     expect(app.textContent).toContain('relinked-clip.webm');
+    expect(app.textContent).toContain('Browser permission: unknown');
     const relinkButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Relink media');
     expect(relinkButton).toBeTruthy();
+    const chooseAgainButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Choose media again');
+    expect(chooseAgainButton).toBeTruthy();
   });
 
   it('persists and restores a browser file handle through IndexedDB on reload', async () => {
@@ -278,7 +282,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     });
     restoredModel.store.putMediaAsset(asset);
     restoredModel.currentMedia = asset;
-    restoredModel.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:persisted-clip.webm', handleName: 'persisted-clip.webm' };
+    restoredModel.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:persisted-clip.webm', handleName: 'persisted-clip.webm', permissionState: 'unknown', lastError: null };
     restoredModel.view = 'player';
 
     // Call the restore function
@@ -290,7 +294,92 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(mediaHandle.getFile).toHaveBeenCalledTimes(2); // once on import, once on restore
     expect(createObjectURL).toHaveBeenCalledTimes(2); // once on import, once on restore
     expect(restoredModel.browserLocalMedia.objectUrl).toBe('blob:restored-handle-video');
+    expect(restoredModel.browserLocalMedia.permissionState).toBe('granted');
     expect(video?.src).toBe('blob:restored-handle-video');
+  });
+
+  it('records denied browser handle permission and explains the regrant path', async () => {
+    const model = createAppModel();
+    const mediaHandle = {
+      name: 'denied-clip.webm',
+      getFile: vi.fn(async () => new dom.window.File([new Uint8Array([1])], 'denied-clip.webm', { type: 'video/webm' })),
+      queryPermission: vi.fn(async () => 'denied'),
+      requestPermission: vi.fn(async () => 'denied'),
+    };
+    const idbStore = new Map<string, unknown>([['current-media-handle', mediaHandle]]);
+    Object.defineProperty(globalThis, 'lingotorteHandleStore', {
+      configurable: true,
+      value: { open: vi.fn(async () => ({ get: vi.fn(async (key: string) => idbStore.get(key)), put: vi.fn() })) },
+    });
+    const asset = makeMediaAsset({
+      title: 'denied-clip',
+      originalPath: 'browser-file-handle:denied-clip.webm',
+      contentSha256: 'sha256:denied',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 1,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:denied-clip.webm', handleName: 'denied-clip.webm', permissionState: 'unknown', lastError: null };
+
+    const restored = await restoreBrowserMediaHandle(model);
+    rerenderApp(model);
+
+    expect(restored).toBe(false);
+    expect(mediaHandle.getFile).not.toHaveBeenCalled();
+    expect(model.browserLocalMedia.permissionState).toBe('denied');
+    expect(document.getElementById('app')?.textContent).toContain('Browser permission: denied');
+    expect(document.getElementById('app')?.textContent).toContain('Regrant the saved handle');
+  });
+
+  it('restores a persisted browser media handle after loading local-service durable state', async () => {
+    const model = createAppModel();
+    const sourceModel = createAppModel();
+    const asset = makeMediaAsset({
+      title: 'service-clip',
+      originalPath: 'browser-file-handle:service-clip.webm',
+      contentSha256: 'sha256:service',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 1,
+      privacyLabel: 'owned',
+    });
+    sourceModel.store.putMediaAsset(asset);
+    const mediaFile = new dom.window.File([new Uint8Array([5])], 'service-clip.webm', { type: 'video/webm' });
+    const mediaHandle = { name: 'service-clip.webm', getFile: vi.fn(async () => mediaFile), queryPermission: vi.fn(async () => 'granted') };
+    const createObjectURL = vi.fn(() => 'blob:service-restored-video');
+    Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    const idbStore = new Map<string, unknown>([['current-media-handle', mediaHandle]]);
+    Object.defineProperty(globalThis, 'lingotorteHandleStore', {
+      configurable: true,
+      value: { open: vi.fn(async () => ({ get: vi.fn(async (key: string) => idbStore.get(key)), put: vi.fn() })) },
+    });
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      value: vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => url.endsWith('/api/state')
+          ? { ok: true, snapshot: sourceModel.store.snapshot() }
+          : { ok: true, status: 'ok' },
+      })),
+    });
+
+    try {
+      const result = await connectLocalService(model, 'http://127.0.0.1:5174');
+
+      expect(result.ok).toBe(true);
+      expect(model.currentMedia?.originalPath).toBe('browser-file-handle:service-clip.webm');
+      expect(model.browserLocalMedia.objectUrl).toBe('blob:service-restored-video');
+      expect(model.browserLocalMedia.permissionState).toBe('granted');
+      expect(model.localService.lastMessage).toContain('restored the browser media handle');
+      expect(mediaHandle.getFile).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).toHaveBeenCalledWith(mediaFile);
+    } finally {
+      Object.defineProperty(globalThis, 'fetch', { configurable: true, value: originalFetch });
+    }
   });
 
   it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {
@@ -331,6 +420,9 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(revokeObjectURL).not.toHaveBeenCalled();
     expect(app.textContent).toContain('No transcript loaded yet');
     expect(app.textContent).toContain('Generate local ASR draft');
+    model.view = 'library';
+    rerenderApp(model);
+    expect(document.getElementById('app')?.textContent).toContain('Browser handles and blob URLs are playback-only');
   });
 
   it('shows local subtitle parse errors and revokes the failed object URL', async () => {

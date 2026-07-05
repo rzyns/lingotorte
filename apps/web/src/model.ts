@@ -23,7 +23,7 @@ import type {
   TranscriptWarningFlag,
   TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
-import type { AppModel, PlayerState, ReviewBucketConfig } from './uiTypes';
+import type { AppModel, BrowserLocalMediaState, BrowserMediaPermissionState, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
 import browserFixtureMediaUrl from '../../../fixtures/media/synthetic-polish-dialogue.webm?url';
 import browserFixtureTargetSrt from '../../../fixtures/subtitles/synthetic-polish-dialogue.target.srt?raw';
@@ -34,6 +34,43 @@ export const MIN_PLAYBACK_RATE = 0.5;
 export const MAX_PLAYBACK_RATE = 1.5;
 export const PLAYBACK_RATE_STEP = 0.1;
 export const DEFAULT_LOCAL_SERVICE_BASE_URL = 'http://127.0.0.1:5174';
+const HANDLE_LABEL_PREFIX = 'browser-file-handle:';
+
+function emptyBrowserLocalMedia(overrides: Partial<BrowserLocalMediaState> = {}): BrowserLocalMediaState {
+  return {
+    objectUrl: null,
+    sourceLabel: null,
+    handleName: null,
+    permissionState: 'unavailable',
+    lastError: null,
+    ...overrides,
+  };
+}
+
+function handleNameFromSourceLabel(sourceLabel: string | null | undefined): string | null {
+  if (!sourceLabel?.startsWith(HANDLE_LABEL_PREFIX)) return null;
+  return sourceLabel.slice(HANDLE_LABEL_PREFIX.length);
+}
+
+function browserLocalMediaForHydratedMedia(media: MediaAsset | null): BrowserLocalMediaState {
+  const originalPath = media?.originalPath ?? null;
+  const handleName = handleNameFromSourceLabel(originalPath);
+  if (handleName) {
+    return emptyBrowserLocalMedia({
+      sourceLabel: originalPath,
+      handleName,
+      permissionState: 'unknown',
+    });
+  }
+  if (originalPath?.startsWith('blob:')) {
+    return emptyBrowserLocalMedia({
+      sourceLabel: originalPath,
+      permissionState: 'unavailable',
+      lastError: 'Session-scoped browser object URLs cannot be restored after reload. Re-import the media or use a persistent browser file handle.',
+    });
+  }
+  return emptyBrowserLocalMedia();
+}
 
 export function createAppModel(): AppModel {
   const policy = defaultProviderPolicy();
@@ -57,11 +94,7 @@ export function createAppModel(): AppModel {
       activeCueId: null,
     },
     currentMedia: null,
-    browserLocalMedia: {
-      objectUrl: null,
-      sourceLabel: null,
-      handleName: null,
-    },
+    browserLocalMedia: emptyBrowserLocalMedia(),
     targetTrackId: null,
     nativeTrackId: null,
     cues: [],
@@ -185,7 +218,7 @@ function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreS
   const hydrated = model.store.replaceSnapshot(snapshot);
   const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
   model.currentMedia = media;
-  model.browserLocalMedia = { objectUrl: null, sourceLabel: null, handleName: null };
+  model.browserLocalMedia = browserLocalMediaForHydratedMedia(media);
   if (!media) {
     model.targetTrackId = null;
     model.nativeTrackId = null;
@@ -237,7 +270,10 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const serviceSnapshot = state.snapshot as LocalStoreSnapshot;
     if (snapshotHasDurableContent(serviceSnapshot) || !snapshotHasDurableContent(model.store.snapshot())) {
       projectHydratedSnapshotIntoModel(model, serviceSnapshot);
-      model.localService.lastMessage = 'Connected to local service and loaded durable state.';
+      const restoredBrowserHandle = await restoreBrowserMediaHandle(model);
+      model.localService.lastMessage = restoredBrowserHandle
+        ? 'Connected to local service, loaded durable state, and restored the browser media handle for playback.'
+        : 'Connected to local service and loaded durable state.';
     } else {
       model.localService.lastMessage = 'Connected to empty local service; current browser state was kept until you save.';
     }
@@ -825,6 +861,8 @@ export type BrowserLocalFileImportInput = Readonly<{
 export type BrowserFileHandleLike = Readonly<{
   name: string;
   getFile(): Promise<File>;
+  queryPermission?: (opts: { mode: 'read' }) => Promise<string>;
+  requestPermission?: (opts: { mode: 'read' }) => Promise<string>;
 }>;
 
 export type BrowserLocalFileHandleImportInput = Readonly<{
@@ -851,7 +889,7 @@ function revokeCurrentMediaObjectUrl(model: AppModel): void {
   if (objectUrl?.startsWith('blob:')) {
     URL.revokeObjectURL(objectUrl);
   }
-  model.browserLocalMedia = { objectUrl: null, sourceLabel: null, handleName: null };
+  model.browserLocalMedia = emptyBrowserLocalMedia();
 }
 
 export function mediaPlaybackUrl(model: AppModel): string {
@@ -861,11 +899,9 @@ export function mediaPlaybackUrl(model: AppModel): string {
 export function needsMediaRelink(model: AppModel): boolean {
   if (!model.currentMedia) return false;
   const path = model.currentMedia.originalPath;
-  if (!path.startsWith('browser-file-handle:')) return false;
+  if (!path.startsWith(HANDLE_LABEL_PREFIX) && !path.startsWith('blob:')) return false;
   return model.browserLocalMedia.objectUrl === null;
 }
-
-const HANDLE_LABEL_PREFIX = 'browser-file-handle:';
 
 export function handleNameFromMedia(model: AppModel): string | null {
   if (!model.currentMedia) return null;
@@ -937,6 +973,8 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
       objectUrl,
       sourceLabel: mediaSourceLabel,
       handleName: input.mediaHandleName ?? null,
+      permissionState: input.mediaHandleName ? 'granted' : 'unavailable',
+      lastError: null,
     };
     model.targetTrackId = targetParsed?.track.id ?? null;
     model.nativeTrackId = nativeParsed?.track.id ?? null;
@@ -963,7 +1001,7 @@ export async function importBrowserLocalFileHandles(
     mediaFile,
     targetSubtitleFile,
     nativeSubtitleFile,
-    mediaSourceLabel: `browser-file-handle:${input.mediaHandle.name}`,
+    mediaSourceLabel: `${HANDLE_LABEL_PREFIX}${input.mediaHandle.name}`,
     mediaHandleName: input.mediaHandle.name,
     ...(input.targetLanguage === undefined ? {} : { targetLanguage: input.targetLanguage }),
     ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
@@ -973,6 +1011,25 @@ export async function importBrowserLocalFileHandles(
 }
 
 const HANDLE_STORE_KEY = 'current-media-handle';
+
+function normalizeBrowserPermissionState(value: unknown): BrowserMediaPermissionState {
+  return value === 'granted' || value === 'prompt' || value === 'denied' ? value : 'unknown';
+}
+
+async function ensureBrowserHandleReadPermission(handle: BrowserFileHandleLike): Promise<BrowserMediaPermissionState> {
+  try {
+    if (typeof handle.queryPermission === 'function') {
+      const queried = normalizeBrowserPermissionState(await handle.queryPermission({ mode: 'read' }));
+      if (queried === 'granted' || queried === 'denied') return queried;
+    }
+    if (typeof handle.requestPermission === 'function') {
+      return normalizeBrowserPermissionState(await handle.requestPermission({ mode: 'read' }));
+    }
+    return 'unknown';
+  } catch {
+    return 'error';
+  }
+}
 
 async function getHandleStore(): Promise<{ get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void> } | null> {
   const store = (globalThis as { lingotorteHandleStore?: { open: () => Promise<unknown> } }).lingotorteHandleStore;
@@ -998,23 +1055,50 @@ async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise
 export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolean> {
   const store = await getHandleStore();
   if (!store) return false;
+  const expectedHandleName = handleNameFromMedia(model);
   try {
-    const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike & { requestPermission?: (opts: { mode: string }) => Promise<string> } | undefined;
+    const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike | undefined;
     if (!handle) return false;
-    if (typeof handle.requestPermission === 'function') {
-      const permission = await handle.requestPermission({ mode: 'read' });
-      if (permission !== 'granted') return false;
+    const sourceLabel = `${HANDLE_LABEL_PREFIX}${expectedHandleName ?? handle.name}`;
+    if (expectedHandleName && handle.name !== expectedHandleName) {
+      model.browserLocalMedia = emptyBrowserLocalMedia({
+        sourceLabel,
+        handleName: expectedHandleName,
+        permissionState: 'error',
+        lastError: `Stored browser handle "${handle.name}" does not match current media "${expectedHandleName}". Choose the media again.`,
+      });
+      return false;
+    }
+    const permissionState = await ensureBrowserHandleReadPermission(handle);
+    if (permissionState !== 'granted' && permissionState !== 'unknown') {
+      model.browserLocalMedia = emptyBrowserLocalMedia({
+        sourceLabel,
+        handleName: expectedHandleName ?? handle.name,
+        permissionState,
+        lastError: permissionState === 'denied'
+          ? `Browser permission for "${expectedHandleName ?? handle.name}" was denied. Regrant the saved handle or choose the media again.`
+          : `Browser permission for "${expectedHandleName ?? handle.name}" is ${permissionState}. Regrant the saved handle or choose the media again.`,
+      });
+      return false;
     }
     const file = await handle.getFile();
     if (typeof URL.createObjectURL !== 'function') return false;
     const objectUrl = URL.createObjectURL(file);
     model.browserLocalMedia = {
       objectUrl,
-      sourceLabel: `browser-file-handle:${handle.name}`,
+      sourceLabel: `${HANDLE_LABEL_PREFIX}${handle.name}`,
       handleName: handle.name,
+      permissionState: 'granted',
+      lastError: null,
     };
     return true;
-  } catch {
+  } catch (error) {
+    model.browserLocalMedia = emptyBrowserLocalMedia({
+      sourceLabel: expectedHandleName ? `${HANDLE_LABEL_PREFIX}${expectedHandleName}` : model.browserLocalMedia.sourceLabel,
+      handleName: expectedHandleName ?? model.browserLocalMedia.handleName,
+      permissionState: 'error',
+      lastError: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

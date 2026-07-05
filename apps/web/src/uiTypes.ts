@@ -31,6 +31,14 @@ export type Selection = {
 
 export type PracticeMode = import('@lingotorte/domain').PracticeMode;
 export type PracticeResult = import('@lingotorte/domain').PracticeResult;
+export type BrowserMediaPermissionState = 'unknown' | 'granted' | 'prompt' | 'denied' | 'unavailable' | 'error';
+export type BrowserLocalMediaState = {
+  objectUrl: string | null;
+  sourceLabel: string | null;
+  handleName: string | null;
+  permissionState: BrowserMediaPermissionState;
+  lastError: string | null;
+};
 
 export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
@@ -43,11 +51,7 @@ export type AppModel = {
   adapters: ReturnType<typeof import('@lingotorte/language').resolveLocalAdapters>;
   player: PlayerState;
   currentMedia: import('@lingotorte/domain').MediaAsset | null;
-  browserLocalMedia: {
-    objectUrl: string | null;
-    sourceLabel: string | null;
-    handleName: string | null;
-  };
+  browserLocalMedia: BrowserLocalMediaState;
   targetTrackId: string | null;
   nativeTrackId: string | null;
   cues: Cue[];
