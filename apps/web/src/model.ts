@@ -1053,13 +1053,33 @@ async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise
 }
 
 export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolean> {
-  const store = await getHandleStore();
-  if (!store) return false;
   const expectedHandleName = handleNameFromMedia(model);
+  const sourceLabel = expectedHandleName ? `${HANDLE_LABEL_PREFIX}${expectedHandleName}` : model.browserLocalMedia.sourceLabel;
+  const store = await getHandleStore();
+  if (!store) {
+    if (expectedHandleName) {
+      model.browserLocalMedia = emptyBrowserLocalMedia({
+        sourceLabel,
+        handleName: expectedHandleName,
+        permissionState: 'unavailable',
+        lastError: 'Browser handle storage is unavailable. The saved media handle cannot be restored automatically. Choose the media again from Library.',
+      });
+    }
+    return false;
+  }
   try {
     const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike | undefined;
-    if (!handle) return false;
-    const sourceLabel = `${HANDLE_LABEL_PREFIX}${expectedHandleName ?? handle.name}`;
+    if (!handle) {
+      if (expectedHandleName) {
+        model.browserLocalMedia = emptyBrowserLocalMedia({
+          sourceLabel,
+          handleName: expectedHandleName,
+          permissionState: 'unknown',
+          lastError: `No saved browser handle found for "${expectedHandleName}". Regrant the saved handle or choose the media again.`,
+        });
+      }
+      return false;
+    }
     if (expectedHandleName && handle.name !== expectedHandleName) {
       model.browserLocalMedia = emptyBrowserLocalMedia({
         sourceLabel,
@@ -1082,7 +1102,15 @@ export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolea
       return false;
     }
     const file = await handle.getFile();
-    if (typeof URL.createObjectURL !== 'function') return false;
+    if (typeof URL.createObjectURL !== 'function') {
+      model.browserLocalMedia = emptyBrowserLocalMedia({
+        sourceLabel,
+        handleName: expectedHandleName ?? handle.name,
+        permissionState: 'error',
+        lastError: 'Browser object URL creation is unavailable. The media file handle was read but playback could not be initialized.',
+      });
+      return false;
+    }
     const objectUrl = URL.createObjectURL(file);
     model.browserLocalMedia = {
       objectUrl,

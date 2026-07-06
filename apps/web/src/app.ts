@@ -1463,6 +1463,10 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   permission.className = 'meta relink-permission-state';
   permission.textContent = `Browser permission: ${model.browserLocalMedia.permissionState}${model.browserLocalMedia.lastError ? ` — ${model.browserLocalMedia.lastError}` : ''}`;
 
+  const boundary = document.createElement('p');
+  boundary.className = 'meta relink-boundary-note';
+  boundary.textContent = 'Browser file handles are playback and relink identity only. For local-service ASR, ffmpeg, ffprobe, embedded subtitle extraction, and source-media snippets, provide an explicit absolute owned local media path in Library → Transcript lifecycle.';
+
   const actions = document.createElement('div');
   actions.className = 'empty-video-actions';
   const relinkBtn = document.createElement('button');
@@ -1537,7 +1541,7 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
     rerenderApp(model);
   });
   actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
-  placeholder.append(icon, heading, body, permission, actions);
+  placeholder.append(icon, heading, body, permission, boundary, actions);
   return placeholder;
 }
 

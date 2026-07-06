@@ -334,6 +334,122 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(document.getElementById('app')?.textContent).toContain('Regrant the saved handle');
   });
 
+  it('reports a clear error when the saved browser handle is missing from the store', async () => {
+    const model = createAppModel();
+    const idbStore = new Map<string, unknown>();
+    Object.defineProperty(globalThis, 'lingotorteHandleStore', {
+      configurable: true,
+      value: { open: vi.fn(async () => ({ get: vi.fn(async (key: string) => idbStore.get(key)), put: vi.fn() })) },
+    });
+    const asset = makeMediaAsset({
+      title: 'missing-handle-clip',
+      originalPath: 'browser-file-handle:missing-handle-clip.webm',
+      contentSha256: 'sha256:missing',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 1,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:missing-handle-clip.webm', handleName: 'missing-handle-clip.webm', permissionState: 'unknown', lastError: null };
+
+    const restored = await restoreBrowserMediaHandle(model);
+    rerenderApp(model);
+
+    expect(restored).toBe(false);
+    expect(model.browserLocalMedia.permissionState).toBe('unknown');
+    expect(model.browserLocalMedia.lastError).toContain('No saved browser handle found');
+    expect(model.browserLocalMedia.lastError).toContain('missing-handle-clip.webm');
+    expect(document.getElementById('app')?.textContent).toContain('Relink media');
+  });
+
+  it('reports a clear error when browser handle storage is unavailable', async () => {
+    const model = createAppModel();
+    // No lingotorteHandleStore set — simulates no IndexedDB
+    const asset = makeMediaAsset({
+      title: 'no-store-clip',
+      originalPath: 'browser-file-handle:no-store-clip.webm',
+      contentSha256: 'sha256:nostore',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 1,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:no-store-clip.webm', handleName: 'no-store-clip.webm', permissionState: 'unknown', lastError: null };
+
+    const restored = await restoreBrowserMediaHandle(model);
+    rerenderApp(model);
+
+    expect(restored).toBe(false);
+    expect(model.browserLocalMedia.permissionState).toBe('unavailable');
+    expect(model.browserLocalMedia.lastError).toContain('handle storage is unavailable');
+    expect(document.getElementById('app')?.textContent).toContain('Relink media');
+  });
+
+  it('detects a stale stored handle whose name does not match the current media', async () => {
+    const model = createAppModel();
+    const staleHandle = {
+      name: 'old-clip.webm',
+      getFile: vi.fn(async () => new dom.window.File([new Uint8Array([1])], 'old-clip.webm', { type: 'video/webm' })),
+      queryPermission: vi.fn(async () => 'granted'),
+    };
+    const idbStore = new Map<string, unknown>([['current-media-handle', staleHandle]]);
+    Object.defineProperty(globalThis, 'lingotorteHandleStore', {
+      configurable: true,
+      value: { open: vi.fn(async () => ({ get: vi.fn(async (key: string) => idbStore.get(key)), put: vi.fn() })) },
+    });
+    const asset = makeMediaAsset({
+      title: 'current-clip',
+      originalPath: 'browser-file-handle:current-clip.webm',
+      contentSha256: 'sha256:current',
+      durationMs: 1000,
+      container: 'video/webm',
+      sizeBytes: 1,
+      privacyLabel: 'owned',
+    });
+    model.store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:current-clip.webm', handleName: 'current-clip.webm', permissionState: 'unknown', lastError: null };
+
+    const restored = await restoreBrowserMediaHandle(model);
+    rerenderApp(model);
+
+    expect(restored).toBe(false);
+    expect(staleHandle.getFile).not.toHaveBeenCalled();
+    expect(model.browserLocalMedia.permissionState).toBe('error');
+    expect(model.browserLocalMedia.lastError).toContain('old-clip.webm');
+    expect(model.browserLocalMedia.lastError).toContain('current-clip.webm');
+    expect(document.getElementById('app')?.textContent).toContain('Relink media');
+  });
+
+  it('shows the local-service absolute-path boundary note in the relink placeholder', () => {
+    const model = createAppModel();
+    const store = model.store;
+    const asset = makeMediaAsset({
+      title: 'boundary-clip',
+      originalPath: 'browser-file-handle:boundary-clip.webm',
+      contentSha256: 'sha256:boundary',
+      durationMs: 5000,
+      container: 'video/webm',
+      sizeBytes: 1024,
+      privacyLabel: 'owned',
+    });
+    store.putMediaAsset(asset);
+    model.currentMedia = asset;
+    model.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:boundary-clip.webm', handleName: 'boundary-clip.webm', permissionState: 'unknown', lastError: null };
+    model.view = 'player';
+
+    rerenderApp(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Relink media');
+    expect(app.textContent).toContain('playback and relink identity only');
+    expect(app.textContent).toContain('absolute owned local media path');
+  });
+
   it('restores a persisted browser media handle after loading local-service durable state', async () => {
     const model = createAppModel();
     const sourceModel = createAppModel();
