@@ -693,7 +693,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(app.textContent).toContain('Metadata-only restore preview');
     expect(app.textContent).toContain('no media files are copied or restored');
     expect(app.textContent).toContain('Integrity records');
-    expect(app.textContent).toContain('Integrity verified');
+    expect(app.textContent).toContain('Manifest integrity verified');
 
     const badTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
     expect(badTextarea).toBeTruthy();
@@ -755,5 +755,120 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Verified');
     expect(app.textContent).toContain('JSON backup file only');
+  });
+
+  it('shows a post-restore receipt with mode, integrity, counts, and no-media note after merge restore', () => {
+    const model = createAppModel();
+    model.view = 'export-import';
+    rerenderApp(model);
+
+    // Generate an export from an empty store
+    const generateBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
+    generateBtn!.click();
+    const manifestJson = model.exportImport.lastExport!.manifestJson;
+
+    // Preview the restore (empty local state => safe to restore, no conflict)
+    const importTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    importTextarea!.value = manifestJson;
+    const previewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    previewBtn!.click();
+    rerenderApp(model);
+
+    // Acknowledge privacy warnings
+    const warningCheckboxes = document.querySelectorAll('input[name="restore-warning"]') as NodeListOf<HTMLInputElement>;
+    for (const cb of warningCheckboxes) {
+      cb.checked = true;
+      cb.dispatchEvent(new dom.window.Event('change'));
+    }
+    rerenderApp(model);
+
+    // No local data => no conflict, so a single confirm checkbox appears
+    const confirmCheckbox = document.querySelector('#restore-confirm') as HTMLInputElement | null;
+    if (confirmCheckbox) {
+      confirmCheckbox.checked = true;
+      confirmCheckbox.dispatchEvent(new dom.window.Event('change'));
+      rerenderApp(model);
+    }
+
+    const restoreBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Restore now') as HTMLButtonElement | null;
+    expect(restoreBtn).toBeTruthy();
+    expect(restoreBtn!.disabled).toBe(false);
+    restoreBtn!.click();
+    rerenderApp(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Restore complete');
+    expect(app.textContent).toContain('Mode:');
+    expect(app.textContent).toContain('Initial import');
+    expect(app.textContent).toContain('Manifest integrity verified');
+    expect(app.textContent).toContain('does not verify the browser file write');
+    expect(app.textContent).toContain('Operation counts');
+    expect(app.textContent).toContain('No media files were copied or restored');
+    expect(model.exportImport.lastRestore).not.toBeNull();
+    expect(model.exportImport.lastRestore!.mode).toBe('initial');
+    expect(model.exportImport.lastRestore!.mediaCopied).toBe(false);
+    expect(model.exportImport.preview).toBeNull();
+  });
+
+  it('shows a destructive-mode receipt after Replace-all restore with synthetic isolated state', async () => {
+    // Source model: import fixture, save a sentence, export
+    const sourceModel = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      sourceModel,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    await saveSentenceFromCue(sourceModel, sourceModel.cues[0]!);
+    sourceModel.view = 'export-import';
+    rerenderApp(sourceModel);
+    const generateBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
+    generateBtn!.click();
+    const manifestJson = sourceModel.exportImport.lastExport!.manifestJson;
+
+    // Target model: import fixture, save a DIFFERENT sentence so local state exists
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    );
+    await saveSentenceFromCue(model, model.cues[1]!);
+    model.view = 'export-import';
+    rerenderApp(model);
+
+    const importTextarea = document.querySelector('#import-manifest') as HTMLTextAreaElement | null;
+    importTextarea!.value = manifestJson;
+    const previewBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Preview restore');
+    previewBtn!.click();
+    rerenderApp(model);
+
+    // Acknowledge warnings
+    const warningCheckboxes = document.querySelectorAll('input[name="restore-warning"]') as NodeListOf<HTMLInputElement>;
+    for (const cb of warningCheckboxes) {
+      cb.checked = true;
+      cb.dispatchEvent(new dom.window.Event('change'));
+    }
+    rerenderApp(model);
+
+    // Select Replace all
+    const replaceCheckbox = document.querySelector('#restore-confirm-replace') as HTMLInputElement | null;
+    expect(replaceCheckbox).toBeTruthy();
+    replaceCheckbox!.checked = true;
+    replaceCheckbox!.dispatchEvent(new dom.window.Event('change'));
+    rerenderApp(model);
+
+    const restoreBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Restore now') as HTMLButtonElement | null;
+    expect(restoreBtn!.disabled).toBe(false);
+    restoreBtn!.click();
+    rerenderApp(model);
+
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Restore complete');
+    expect(app.textContent).toContain('Replace all (destructive');
+    expect(app.textContent).toContain('cannot be undone');
+    expect(app.textContent).toContain('No media files were copied or restored');
+    expect(model.exportImport.lastRestore!.mode).toBe('replace-all');
   });
 });

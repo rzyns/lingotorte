@@ -438,6 +438,19 @@ export type RestoreConfirmation = Readonly<{
   acknowledgedWarnings: readonly PrivacyWarningKind[];
 }>;
 
+export type RestoreMode = 'merge-update' | 'replace-all' | 'initial';
+
+export type RestoreReceipt = Readonly<{
+  restoredAt: ISODateTime;
+  mode: RestoreMode;
+  manifestIntegrityVerified: boolean;
+  manifestRecordCount: number;
+  manifestRootHash: Sha256Digest;
+  operationCounts: RestorePreviewOperations;
+  acknowledgedWarningKinds: readonly PrivacyWarningKind[];
+  mediaCopied: false;
+}>;
+
 export type ReviewEvent = Readonly<{
   id: UUID;
   cardId: UUID;

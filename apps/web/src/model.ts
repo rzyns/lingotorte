@@ -146,6 +146,7 @@ export function createAppModel(): AppModel {
       confirmReplace: false,
       lastExport: null,
       lastSaveVerified: null,
+      lastRestore: null,
     },
     localService: {
       baseUrl: DEFAULT_LOCAL_SERVICE_BASE_URL,
@@ -2605,6 +2606,7 @@ export function clearRestorePreview(model: AppModel): void {
   model.exportImport.acknowledgedWarnings = [];
   model.exportImport.confirmOverwrite = false;
   model.exportImport.confirmReplace = false;
+  model.exportImport.lastRestore = null;
 }
 
 export function verifyExportIntegrity(manifest: import('@lingotorte/domain').LearnerExportManifest): boolean {
@@ -2622,6 +2624,7 @@ export function previewRestoreManifest(model: AppModel, manifestJson: string): i
   model.exportImport.acknowledgedWarnings = [];
   model.exportImport.confirmOverwrite = false;
   model.exportImport.confirmReplace = false;
+  model.exportImport.lastRestore = null;
   return preview;
 }
 
@@ -2638,6 +2641,24 @@ export function confirmRestore(model: AppModel): void {
     acknowledgedWarnings: model.exportImport.acknowledgedWarnings,
   });
   model.restoreService.restore(manifest, confirmation);
+  const restoredAt = new Date().toISOString();
+  const recompute = computeExportIntegrity(manifest.content);
+  const manifestIntegrityVerified = recompute.rootHash === manifest.integrity.rootHash && recompute.recordCount === manifest.integrity.recordCount;
+  const mode: import('@lingotorte/domain').RestoreMode = confirmation.confirmReplace
+    ? 'replace-all'
+    : preview.overwriteConfirmationRequired
+      ? 'merge-update'
+      : 'initial';
+  model.exportImport.lastRestore = {
+    restoredAt,
+    mode,
+    manifestIntegrityVerified,
+    manifestRecordCount: manifest.integrity.recordCount,
+    manifestRootHash: manifest.integrity.rootHash,
+    operationCounts: preview.operations,
+    acknowledgedWarningKinds: [...confirmation.acknowledgedWarnings],
+    mediaCopied: false,
+  };
   model.exportImport.manifestJson = null;
   model.exportImport.preview = null;
   model.exportImport.lastError = null;

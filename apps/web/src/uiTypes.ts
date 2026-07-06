@@ -116,6 +116,7 @@ export type AppModel = {
       manifestIntegrityVerified: boolean;
     } | null;
     lastSaveVerified: { fileName: string; verifiedAt: string } | null;
+    lastRestore: import('@lingotorte/domain').RestoreReceipt | null;
   };
   localService: {
     baseUrl: string;

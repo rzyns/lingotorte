@@ -843,12 +843,12 @@ function renderExportImportView(model: AppModel): HTMLElement {
     if (previewManifest) {
       const verified = verifyExportIntegrity(previewManifest);
       integrity.textContent = verified
-        ? `Integrity verified: ${previewManifest.integrity.recordCount} records, root hash matches.`
-        : 'Integrity warning: recomputed hash does not match manifest. The file may have been altered.';
+        ? `Manifest integrity verified: ${previewManifest.integrity.recordCount} records, root hash matches. This verifies the semantic content of the manifest (sha256-per-record), not the browser file write.`
+        : 'Manifest integrity warning: recomputed hash does not match the manifest root hash. The file may have been altered. The manifest content (sha256-per-record) does not match the stored integrity hash.';
       integrity.className = verified ? 'status-banner success' : 'status-banner error';
       integrity.dataset.integrityVerified = String(verified);
     } else {
-      integrity.textContent = 'Integrity check unavailable: manifest JSON is not valid.';
+      integrity.textContent = 'Manifest integrity check unavailable: manifest JSON is not valid.';
       integrity.className = 'status-banner error';
       integrity.dataset.integrityVerified = 'false';
     }
@@ -861,7 +861,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
       const conflictNote = document.createElement('p');
       conflictNote.className = 'meta';
-      conflictNote.textContent = 'Local learner state already exists. Merge/update preserves unrelated local records; replace all clears current learner metadata before import.';
+      conflictNote.textContent = 'Local learner state already exists. Choose one of the two mutually exclusive modes below: Merge/update preserves unrelated local records and adds/updates matching records; Replace all clears all current local learner metadata (saved items, occurrences, review cards/states/events, practice attempts) before importing — this is destructive and cannot be undone.';
       previewPanel.appendChild(conflictNote);
 
       const overwriteLabel = document.createElement('label');
@@ -877,7 +877,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
       overwriteLabel.appendChild(overwriteCheckbox);
-      overwriteLabel.append(' Merge/update: import adds new records and updates changed records in my current local learner state.');
+      overwriteLabel.append(' Merge/update: add new records and update changed records in my current local learner state. Unrelated local records are preserved.');
       previewPanel.appendChild(overwriteLabel);
 
       const replaceLabel = document.createElement('label');
@@ -893,7 +893,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
       replaceLabel.appendChild(replaceCheckbox);
-      replaceLabel.append(' Replace all: clear existing local learner metadata before importing (destructive; use only when intentionally restoring this backup).');
+      replaceLabel.append(' Replace all (destructive): clear all existing local learner metadata before importing this backup. Unrelated local records are also cleared. This cannot be undone.');
       previewPanel.appendChild(replaceLabel);
 
       const conflictError = document.createElement('p');
@@ -970,6 +970,10 @@ function renderExportImportView(model: AppModel): HTMLElement {
     importGroup.appendChild(previewPanel);
   }
 
+  if (model.exportImport.lastRestore) {
+    importGroup.appendChild(renderRestoreReceipt(model.exportImport.lastRestore));
+  }
+
   if (model.exportImport.lastError) {
     const errorBanner = document.createElement('div');
     errorBanner.className = 'status-banner error';
@@ -980,6 +984,68 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
   section.appendChild(importGroup);
   return section;
+}
+
+function renderRestoreReceipt(receipt: NonNullable<AppModel['exportImport']['lastRestore']>): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'restore-receipt';
+  container.setAttribute('role', 'status');
+  container.dataset.testid = 'restore-receipt';
+
+  const heading = document.createElement('h3');
+  heading.textContent = 'Restore complete';
+  container.appendChild(heading);
+
+  const modeLabel = receipt.mode === 'replace-all'
+    ? 'Replace all (destructive: existing local learner metadata was cleared before import; this cannot be undone)'
+    : receipt.mode === 'merge-update'
+      ? 'Merge/update (unrelated local records preserved; matched records added or updated)'
+      : 'Initial import (local learner state was empty)';
+  const modePara = document.createElement('p');
+  modePara.className = 'meta';
+  modePara.textContent = `Mode: ${modeLabel}.`;
+  container.appendChild(modePara);
+
+  const integrityPara = document.createElement('p');
+  integrityPara.className = receipt.manifestIntegrityVerified ? 'status-banner success' : 'status-banner error';
+  integrityPara.dataset.testid = 'restore-receipt-integrity';
+  integrityPara.textContent = receipt.manifestIntegrityVerified
+    ? `Manifest integrity verified: ${receipt.manifestRecordCount} records, root hash matches. This verifies the semantic content of the manifest only; it does not verify the browser file write.`
+    : `Manifest integrity warning: recomputed hash does not match the manifest root hash. The imported data may have been altered.`;
+  container.appendChild(integrityPara);
+
+  const operationHeading = document.createElement('h4');
+  operationHeading.textContent = 'Operation counts';
+  container.appendChild(operationHeading);
+  const operationList = document.createElement('ul');
+  const operationRows: { key: keyof typeof receipt.operationCounts; label: string }[] = [
+    { key: 'savedItems', label: 'savedItems' },
+    { key: 'savedOccurrences', label: 'savedOccurrences' },
+    { key: 'reviewCards', label: 'reviewCards' },
+    { key: 'reviewCardStates', label: 'reviewCardStates' },
+    { key: 'reviewEvents', label: 'reviewEvents' },
+    { key: 'practiceAttempts', label: 'practiceAttempts' },
+    { key: 'sourceContexts', label: 'sourceContexts' },
+  ];
+  for (const row of operationRows) {
+    const counts = receipt.operationCounts[row.key];
+    const li = document.createElement('li');
+    li.textContent = `${row.label}: ${counts.added} added, ${counts.updated} updated, ${counts.skippedIdentical} skipped identical`;
+    operationList.appendChild(li);
+  }
+  container.appendChild(operationList);
+
+  const warningPara = document.createElement('p');
+  warningPara.className = 'meta';
+  warningPara.textContent = `Acknowledged warnings: ${receipt.acknowledgedWarningKinds.length > 0 ? receipt.acknowledgedWarningKinds.join(', ') : 'none'}.`;
+  container.appendChild(warningPara);
+
+  const mediaNote = document.createElement('p');
+  mediaNote.className = 'status-banner info';
+  mediaNote.textContent = 'No media files were copied or restored. Media references may need relinking after import.';
+  container.appendChild(mediaNote);
+
+  return container;
 }
 
 function renderRestoreOperationPreview(preview: NonNullable<AppModel['exportImport']['preview']>): HTMLElement {

@@ -279,7 +279,7 @@ describe('P6 frontend export / import local learner state', () => {
     expect(app.textContent).toContain('savedItems:');
     const integrity = document.querySelector('[data-testid="restore-integrity"]') as HTMLElement | null;
     expect(integrity?.dataset.integrityVerified).toBe('true');
-    expect(integrity?.textContent).toContain('Integrity verified');
+    expect(integrity?.textContent).toContain('Manifest integrity verified');
   });
 
   it('shows added, updated, and skipped-identical restore operations before mutating state', async () => {
