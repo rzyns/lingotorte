@@ -1,4 +1,11 @@
-import type { Cue, SubtitleTrack, SubtitleFormat } from '@lingotorte/domain';
+import type {
+  Cue,
+  SubtitleTrack,
+  SubtitleFormat,
+  TranscriptTrackStatus,
+  TranscriptSourceKind,
+  TranscriptTrackProvenance,
+} from '@lingotorte/domain';
 import { makeCue, makeSubtitleTrack } from '@lingotorte/domain';
 import { inferSubtitleFormat, normalizeCueText, readLocalSubtitle, sha256Text, sourceKindFromPath } from '@lingotorte/storage';
 
@@ -13,6 +20,22 @@ export type ImportSubtitleInput = Readonly<{
   role: 'target' | 'native' | 'other';
   path: string;
   isActive?: boolean;
+  /**
+   * Override the default transcript status. Callers importing machine-extracted
+   * text (e.g. embedded subtitle extraction) must pass 'draft' (or 'candidate')
+   * so the track enters the correction/approval gate instead of 'approved'.
+   */
+  transcriptStatus?: TranscriptTrackStatus;
+  /**
+   * Override the inferred transcript source kind for provenance.
+   */
+  transcriptSourceKind?: TranscriptSourceKind;
+  /**
+   * Explicit provenance. When omitted, makeSubtitleTrack synthesizes a minimal
+   * default (language + empty warningFlags). Callers carrying draft/imported
+   * text should pass this so warningFlags survive into the data model.
+   */
+  provenance?: TranscriptTrackProvenance;
 }>;
 
 const srtTimestampPattern = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/;
@@ -231,7 +254,16 @@ function parseSrtBlock(block: string, index: number): Omit<Cue, 'id' | 'trackId'
   };
 }
 
-export async function parseSrt(path: string, mediaId: string, language: string, role: 'target' | 'native' | 'other', isActive = true): Promise<ParsedSubtitle> {
+export type SubtitleOverrideOptions = Pick<ImportSubtitleInput, 'transcriptStatus' | 'transcriptSourceKind' | 'provenance'>;
+
+export async function parseSrt(
+  path: string,
+  mediaId: string,
+  language: string,
+  role: 'target' | 'native' | 'other',
+  isActive = true,
+  overrides?: SubtitleOverrideOptions,
+): Promise<ParsedSubtitle> {
   const { text, sha256 } = await readLocalSubtitle(path);
   const format: SubtitleFormat = inferSubtitleFormat(path);
   const track = makeSubtitleTrack({
@@ -243,6 +275,9 @@ export async function parseSrt(path: string, mediaId: string, language: string, 
     sourcePath: path,
     contentSha256: sha256,
     isActive,
+    ...(overrides?.transcriptStatus !== undefined ? { transcriptStatus: overrides.transcriptStatus } : {}),
+    ...(overrides?.transcriptSourceKind !== undefined ? { transcriptSourceKind: overrides.transcriptSourceKind } : {}),
+    ...(overrides?.provenance !== undefined ? { provenance: overrides.provenance } : {}),
   });
 
   const blocks = splitSrtBlocks(text);
@@ -316,7 +351,14 @@ function parseVttBlock(block: string, index: number): Omit<Cue, 'id' | 'trackId'
   };
 }
 
-export async function parseVtt(path: string, mediaId: string, language: string, role: 'target' | 'native' | 'other', isActive = true): Promise<ParsedSubtitle> {
+export async function parseVtt(
+  path: string,
+  mediaId: string,
+  language: string,
+  role: 'target' | 'native' | 'other',
+  isActive = true,
+  overrides?: SubtitleOverrideOptions,
+): Promise<ParsedSubtitle> {
   const { text, sha256 } = await readLocalSubtitle(path);
   const format: SubtitleFormat = 'vtt';
   const track = makeSubtitleTrack({
@@ -328,6 +370,9 @@ export async function parseVtt(path: string, mediaId: string, language: string, 
     sourcePath: path,
     contentSha256: sha256,
     isActive,
+    ...(overrides?.transcriptStatus !== undefined ? { transcriptStatus: overrides.transcriptStatus } : {}),
+    ...(overrides?.transcriptSourceKind !== undefined ? { transcriptSourceKind: overrides.transcriptSourceKind } : {}),
+    ...(overrides?.provenance !== undefined ? { provenance: overrides.provenance } : {}),
   });
 
   const blocks = splitVttBlocks(text);
@@ -365,7 +410,14 @@ function splitVttBlocks(text: string): string[] {
     .filter((block) => block.length > 0);
 }
 
-export async function parseAss(path: string, mediaId: string, language: string, role: 'target' | 'native' | 'other', isActive = true): Promise<ParsedSubtitle> {
+export async function parseAss(
+  path: string,
+  mediaId: string,
+  language: string,
+  role: 'target' | 'native' | 'other',
+  isActive = true,
+  overrides?: SubtitleOverrideOptions,
+): Promise<ParsedSubtitle> {
   const { text, sha256 } = await readLocalSubtitle(path);
   const format: SubtitleFormat = 'ass';
   const track = makeSubtitleTrack({
@@ -377,6 +429,9 @@ export async function parseAss(path: string, mediaId: string, language: string, 
     sourcePath: path,
     contentSha256: sha256,
     isActive,
+    ...(overrides?.transcriptStatus !== undefined ? { transcriptStatus: overrides.transcriptStatus } : {}),
+    ...(overrides?.transcriptSourceKind !== undefined ? { transcriptSourceKind: overrides.transcriptSourceKind } : {}),
+    ...(overrides?.provenance !== undefined ? { provenance: overrides.provenance } : {}),
   });
 
   const assCues = parseAssCues(text);
@@ -405,11 +460,11 @@ export async function importSubtitle(input: ImportSubtitleInput): Promise<Parsed
   const format = inferSubtitleFormat(input.path);
   switch (format) {
     case 'srt':
-      return parseSrt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true);
+      return parseSrt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true, input);
     case 'vtt':
-      return parseVtt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true);
+      return parseVtt(input.path, input.mediaId, input.language, input.role, input.isActive ?? true, input);
     case 'ass':
-      return parseAss(input.path, input.mediaId, input.language, input.role, input.isActive ?? true);
+      return parseAss(input.path, input.mediaId, input.language, input.role, input.isActive ?? true, input);
     case 'json':
       return importTranscriptJson(input);
     default:
@@ -463,6 +518,9 @@ export async function importTranscriptJson(input: ImportSubtitleInput): Promise<
     sourcePath: input.path,
     contentSha256: sha256,
     isActive: input.isActive ?? true,
+    ...(input.transcriptStatus !== undefined ? { transcriptStatus: input.transcriptStatus } : {}),
+    ...(input.transcriptSourceKind !== undefined ? { transcriptSourceKind: input.transcriptSourceKind } : {}),
+    ...(input.provenance !== undefined ? { provenance: input.provenance } : {}),
   });
 
   const cues: Cue[] = [];

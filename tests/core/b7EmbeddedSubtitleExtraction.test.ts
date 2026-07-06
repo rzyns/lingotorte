@@ -431,7 +431,10 @@ Druga linia dialogu.
     expect(job).toMatchObject({ status: 'completed' });
     expect(extract.effect).toBe('embedded-subtitle-extracted');
     expect(extract.outputPath).toBe('[local-scratch]'); // redacted
-    expect(track.transcriptStatus).toBe('approved'); // extracted text is authoritative, no ASR draft semantics
+    expect(track.transcriptStatus).toBe('draft'); // embedded extraction enters as draft with provenance/warningFlags
+    expect((track.provenance as Record<string, unknown>).warningFlags).toMatchObject(
+      expect.arrayContaining(['timingUnverified']),
+    );
     expect(track.format).toBe('srt');
     expect(track.cueCount).toBe(2);
 

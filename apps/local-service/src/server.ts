@@ -341,11 +341,11 @@ function youTubeCaptionPayload(value: unknown): YouTubeCaptionPayload {
   };
 }
 
-function embeddedSubtitleListPayload(value: unknown, runtime: LocalServiceRuntime): EmbeddedSubtitleListPayload {
+function embeddedSubtitleListPayload(value: unknown, _runtime: LocalServiceRuntime): EmbeddedSubtitleListPayload {
   const body = asObject(value, 'embedded subtitle list payload');
   return {
     mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
-    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', runtime.ffmpegPath ?? 'ffprobe') } : {}),
+    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', 'ffprobe') } : {}),
   };
 }
 
@@ -369,7 +369,7 @@ function embeddedSubtitleExtractPayload(value: unknown, runtime: LocalServiceRun
     outputFormat,
     language: optionalStringField(body, 'language', 'pl'),
     role,
-    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', runtime.ffmpegPath ?? 'ffprobe') } : {}),
+    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', 'ffprobe') } : {}),
     ...(body.ffmpegPath !== undefined ? { ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg') } : {}),
   };
 }
@@ -606,12 +606,20 @@ async function runEmbeddedSubtitleExtract(
   }, runner);
   // Import the extracted subtitle through the existing pipeline; result is draft/imported.
   // We use a synthetic mediaId placeholder since the service layer works with paths.
+  // Embedded extraction can produce timing drift (PGS→SRT, ASS→SRT conversions) and the
+  // text quality has not been reviewed, so the track must enter as 'draft' with warning flags
+  // rather than defaulting to 'approved' — preserving the correction/approval gate.
   const importResult = await importSubtitle({
     mediaId: `embedded-extract:${jobId}`,
     language: payload.language,
     role: payload.role,
     path: extractedPath,
     isActive: false,
+    transcriptStatus: 'draft',
+    provenance: {
+      language: payload.language,
+      warningFlags: ['timingUnverified', 'qualityUnreviewed'],
+    },
   });
   return { extract, importResult };
 }
@@ -750,6 +758,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
               role: result.importResult.track.role,
               format: result.importResult.track.format,
               transcriptStatus: result.importResult.track.transcriptStatus,
+              provenance: result.importResult.track.provenance,
               cueCount: result.importResult.cues.length,
             },
           },
