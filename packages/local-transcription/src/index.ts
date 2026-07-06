@@ -444,3 +444,194 @@ export async function alignWordsWithWhisperX(
     wordSourceKind: 'forced-alignment',
   });
 }
+
+// ---------------------------------------------------------------------------
+// Embedded subtitle track listing + extraction (B7)
+//
+// These adapters wrap `ffprobe -show_streams -print_format json` for listing
+// embedded subtitle/text streams and `ffmpeg -map 0:s:<index> -f <format>` for
+// extracting one user-selected stream to a scratch file. They require absolute
+// owned/local media paths, never touch browser blob/handle URLs, and are
+// fakeable in tests via an injected CommandRunner.
+// ---------------------------------------------------------------------------
+
+export type EmbeddedSubtitleCodec =
+  | 'subrip'
+  | 'ass'
+  | 'ssa'
+  | 'mov_text'
+  | 'webvtt'
+  | 'hdmv_pgs_subtitle'
+  | 'dvd_subtitle'
+  | 'dvb_subtitle'
+  | 'text'
+  | 'unknown';
+
+export type EmbeddedSubtitleTrack = Readonly<{
+  streamIndex: number;
+  codecName: string;
+  codecKind: EmbeddedSubtitleCodec;
+  isSupported: boolean;
+  language?: string;
+  title?: string;
+  isDefault?: boolean;
+  isForced?: boolean;
+  extractionHint?: string;
+}>;
+
+export type FfprobeSubtitleListingInput = Readonly<{
+  ffprobePath?: string;
+  mediaPath: string;
+}>;
+
+export type FfprobeSubtitleListingResult = Readonly<{
+  effect: 'embedded-subtitles-listed';
+  streamCount: number;
+  supportedCount: number;
+  tracks: readonly EmbeddedSubtitleTrack[];
+}>;
+
+const supportedSubtitleCodecs: ReadonlySet<string> = new Set([
+  'subrip',
+  'srt',
+  'ass',
+  'ssa',
+  'mov_text',
+  'webvtt',
+]);
+
+function codecKindFromName(codecName: string): EmbeddedSubtitleCodec {
+  const lower = codecName.toLowerCase();
+  if (lower === 'subrip' || lower === 'srt') return 'subrip';
+  if (lower === 'ass') return 'ass';
+  if (lower === 'ssa') return 'ssa';
+  if (lower === 'mov_text') return 'mov_text';
+  if (lower === 'webvtt') return 'webvtt';
+  if (lower === 'hdmv_pgs_subtitle') return 'hdmv_pgs_subtitle';
+  if (lower === 'dvd_subtitle') return 'dvd_subtitle';
+  if (lower === 'dvb_subtitle') return 'dvb_subtitle';
+  if (lower === 'text') return 'text';
+  return 'unknown';
+}
+
+function normalizeFfprobeStreams(payload: unknown): FfprobeSubtitleListingResult {
+  const root = asRecord(payload, 'ffprobe JSON output');
+  const streamsValue = root['streams'];
+  if (streamsValue === undefined) {
+    throw new TypeError('ffprobe JSON output is missing the streams array.');
+  }
+  const streams = asArray(streamsValue, 'ffprobe streams');
+  const tracks: EmbeddedSubtitleTrack[] = [];
+  for (const streamValue of streams) {
+    const stream = asRecord(streamValue, 'ffprobe stream');
+    const codecType = asOptionalString(stream['codec_type'], 'ffprobe stream codec_type');
+    if (codecType !== 'subtitle') continue;
+    const codecName = asString(stream['codec_name'], 'ffprobe subtitle stream codec_name');
+    const streamIndex = asNumber(stream['index'], 'ffprobe subtitle stream index');
+    if (!Number.isInteger(streamIndex) || streamIndex < 0) {
+      throw new TypeError(`ffprobe subtitle stream index must be a non-negative integer, got ${streamIndex}`);
+    }
+    const tags = stream['tags'] !== undefined ? asRecord(stream['tags'], 'ffprobe stream tags') : undefined;
+    const language = tags !== undefined ? asOptionalString(tags['language'], 'ffprobe stream language tag') : undefined;
+    const title = tags !== undefined ? asOptionalString(tags['title'], 'ffprobe stream title tag') : undefined;
+    const disposition = stream['disposition'] !== undefined ? asRecord(stream['disposition'], 'ffprobe stream disposition') : undefined;
+    const isDefault = disposition !== undefined ? asOptionalNumber(disposition['default'], 'disposition default') === 1 : false;
+    const isForced = disposition !== undefined ? asOptionalNumber(disposition['forced'], 'disposition forced') === 1 : false;
+    const codecKind = codecKindFromName(codecName);
+    const isSupported = supportedSubtitleCodecs.has(codecName.toLowerCase());
+    const extractionHint = !isSupported
+      ? `Codec '${codecName}' is not directly importable; consider extracting as SRT/VTT/ASS if supported by the container.`
+      : undefined;
+    tracks.push({
+      streamIndex,
+      codecName,
+      codecKind,
+      isSupported,
+      ...(language !== undefined ? { language } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(isDefault ? { isDefault: true } : {}),
+      ...(isForced ? { isForced: true } : {}),
+      ...(extractionHint !== undefined ? { extractionHint } : {}),
+    });
+  }
+  tracks.sort((a, b) => a.streamIndex - b.streamIndex);
+  return {
+    effect: 'embedded-subtitles-listed',
+    streamCount: tracks.length,
+    supportedCount: tracks.filter((t) => t.isSupported).length,
+    tracks,
+  };
+}
+
+export async function listEmbeddedSubtitleTracks(
+  input: FfprobeSubtitleListingInput,
+  runner: CommandRunner = nodeCommandRunner,
+): Promise<FfprobeSubtitleListingResult> {
+  const mediaPath = requireAbsolutePath(input.mediaPath, 'ffprobe media path');
+  const ffprobePath = input.ffprobePath ?? 'ffprobe';
+  const args = [
+    '-v', 'quiet',
+    '-print_format', 'json',
+    '-show_streams',
+    '-select_streams', 's',
+    mediaPath,
+  ];
+  const result = await runner(ffprobePath, args, {});
+  if (result.exitCode !== 0) {
+    throw new Error(`ffprobe subtitle listing failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  }
+  return normalizeFfprobeStreams(JSON.parse(result.stdout) as unknown);
+}
+
+export type FfmpegSubtitleExtractionInput = Readonly<{
+  ffmpegPath?: string;
+  mediaPath: string;
+  streamIndex: number;
+  outputPath: string;
+  outputFormat: 'srt' | 'vtt' | 'ass';
+}>;
+
+export type FfmpegSubtitleExtractionResult = Readonly<{
+  effect: 'embedded-subtitle-extracted';
+  outputPath: string;
+  outputFormat: 'srt' | 'vtt' | 'ass';
+  streamIndex: number;
+}>;
+
+export async function extractEmbeddedSubtitleTrack(
+  input: FfmpegSubtitleExtractionInput,
+  runner: CommandRunner = nodeCommandRunner,
+): Promise<FfmpegSubtitleExtractionResult> {
+  const mediaPath = requireAbsolutePath(input.mediaPath, 'ffmpeg subtitle extraction media path');
+  const outputPath = requireAbsolutePath(input.outputPath, 'ffmpeg subtitle extraction output path');
+  if (mediaPath === outputPath) {
+    throw new TypeError('ffmpeg subtitle extraction output path must differ from the input media path.');
+  }
+  if (!Number.isInteger(input.streamIndex) || input.streamIndex < 0) {
+    throw new TypeError(`ffmpeg subtitle extraction stream index must be a non-negative integer, got ${input.streamIndex}`);
+  }
+  const ffmpegPath = input.ffmpegPath ?? 'ffmpeg';
+  const formatFlags: Readonly<Record<typeof input.outputFormat, readonly string[]>> = {
+    srt: ['-f', 'srt'],
+    vtt: ['-f', 'webvtt'],
+    ass: ['-f', 'ass'],
+  };
+  const args = [
+    '-hide_banner',
+    '-y',
+    '-i', mediaPath,
+    '-map', `0:${input.streamIndex}`,
+    ...formatFlags[input.outputFormat],
+    outputPath,
+  ];
+  const result = await runner(ffmpegPath, args, { cwd: dirname(outputPath) });
+  if (result.exitCode !== 0) {
+    throw new Error(`ffmpeg subtitle extraction failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  }
+  return {
+    effect: 'embedded-subtitle-extracted',
+    outputPath,
+    outputFormat: input.outputFormat,
+    streamIndex: input.streamIndex,
+  };
+}

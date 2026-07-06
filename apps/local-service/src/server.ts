@@ -8,13 +8,18 @@ import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStor
 import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
+  extractEmbeddedSubtitleTrack,
+  listEmbeddedSubtitleTracks,
   nodeCommandRunner,
   transcribeWithElevenLabsScribe,
   transcribeWithFasterWhisper,
   type CommandRunner,
   type ElevenLabsHttpClient,
+  type FfmpegSubtitleExtractionResult,
+  type FfprobeSubtitleListingResult,
   type LocalAsrTranscriptionResult,
 } from '../../../packages/local-transcription/src/index.ts';
+import { importSubtitle } from '../../../packages/subtitles/src/import.ts';
 
 const SERVICE_NAME = 'lingotorte-local-service';
 const SERVICE_VERSION = '0.1.0';
@@ -32,7 +37,7 @@ export type LocalServiceConfig = Readonly<{
 }>;
 
 type LocalJobStatus = 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
-type LocalJobKind = 'waiting' | 'noop' | 'local-transcription' | 'elevenlabs-scribe' | 'youtube-caption';
+type LocalJobKind = 'waiting' | 'noop' | 'local-transcription' | 'elevenlabs-scribe' | 'youtube-caption' | 'embedded-subtitle-list' | 'embedded-subtitle-extract';
 
 type LocalJob = Readonly<{
   id: string;
@@ -131,7 +136,9 @@ function jobKind(value: unknown): LocalJobKind {
     value === 'noop' ||
     value === 'local-transcription' ||
     value === 'elevenlabs-scribe' ||
-    value === 'youtube-caption'
+    value === 'youtube-caption' ||
+    value === 'embedded-subtitle-list' ||
+    value === 'embedded-subtitle-extract'
   ) {
     return value;
   }
@@ -285,6 +292,21 @@ type YouTubeCaptionPayload = Readonly<{
   allowPublicRead: boolean;
 }>;
 
+type EmbeddedSubtitleListPayload = Readonly<{
+  mediaPath: string;
+  ffprobePath?: string;
+}>;
+
+type EmbeddedSubtitleExtractPayload = Readonly<{
+  mediaPath: string;
+  streamIndex: number;
+  outputFormat: 'srt' | 'vtt' | 'ass';
+  language: string;
+  role: 'target' | 'native' | 'other';
+  ffprobePath?: string;
+  ffmpegPath?: string;
+}>;
+
 function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime): LocalTranscriptionPayload {
   const body = asObject(value, 'local transcription payload');
   return {
@@ -319,6 +341,39 @@ function youTubeCaptionPayload(value: unknown): YouTubeCaptionPayload {
   };
 }
 
+function embeddedSubtitleListPayload(value: unknown, runtime: LocalServiceRuntime): EmbeddedSubtitleListPayload {
+  const body = asObject(value, 'embedded subtitle list payload');
+  return {
+    mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
+    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', runtime.ffmpegPath ?? 'ffprobe') } : {}),
+  };
+}
+
+function embeddedSubtitleExtractPayload(value: unknown, runtime: LocalServiceRuntime): EmbeddedSubtitleExtractPayload {
+  const body = asObject(value, 'embedded subtitle extract payload');
+  const outputFormat = body.outputFormat;
+  if (outputFormat !== 'srt' && outputFormat !== 'vtt' && outputFormat !== 'ass') {
+    throw new TypeError('outputFormat must be one of: srt, vtt, ass.');
+  }
+  const role = body.role;
+  if (role !== 'target' && role !== 'native' && role !== 'other') {
+    throw new TypeError('role must be one of: target, native, other.');
+  }
+  const streamIndex = body.streamIndex;
+  if (typeof streamIndex !== 'number' || !Number.isInteger(streamIndex) || streamIndex < 0) {
+    throw new TypeError('streamIndex must be a non-negative integer.');
+  }
+  return {
+    mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
+    streamIndex,
+    outputFormat,
+    language: optionalStringField(body, 'language', 'pl'),
+    role,
+    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', runtime.ffmpegPath ?? 'ffprobe') } : {}),
+    ...(body.ffmpegPath !== undefined ? { ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg') } : {}),
+  };
+}
+
 function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
   if (kind === 'local-transcription') {
     const record = asObject(payload, 'local transcription payload');
@@ -344,6 +399,19 @@ function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
       language: typeof record.language === 'string' ? record.language : 'pl',
       publicReadAuthorized: record.allowPublicRead === true,
       source: '[public-youtube-url]',
+    };
+  }
+  if (kind === 'embedded-subtitle-list') {
+    return { mediaPath: '[local-media-path]' };
+  }
+  if (kind === 'embedded-subtitle-extract') {
+    const record = asObject(payload, 'embedded subtitle extract payload') as Record<string, unknown>;
+    return {
+      mediaPath: '[local-media-path]',
+      streamIndex: record.streamIndex,
+      outputFormat: record.outputFormat,
+      language: typeof record.language === 'string' ? record.language : 'pl',
+      role: record.role,
     };
   }
   return undefined;
@@ -504,6 +572,50 @@ async function runYouTubeCaptionRead(payloadValue: unknown, config: LocalService
   };
 }
 
+async function runEmbeddedSubtitleList(
+  payloadValue: unknown,
+  _config: LocalServiceConfig,
+  runtime: LocalServiceRuntime,
+): Promise<FfprobeSubtitleListingResult> {
+  const payload = embeddedSubtitleListPayload(payloadValue, runtime);
+  const runner = runtime.commandRunner ?? nodeCommandRunner;
+  return listEmbeddedSubtitleTracks({
+    ...(payload.ffprobePath !== undefined ? { ffprobePath: payload.ffprobePath } : {}),
+    mediaPath: payload.mediaPath,
+  }, runner);
+}
+
+async function runEmbeddedSubtitleExtract(
+  payloadValue: unknown,
+  config: LocalServiceConfig,
+  runtime: LocalServiceRuntime,
+  jobId: string,
+): Promise<{ extract: FfmpegSubtitleExtractionResult; importResult: import('@lingotorte/subtitles/src/import').ParsedSubtitle }> {
+  const payload = embeddedSubtitleExtractPayload(payloadValue, runtime);
+  const runner = runtime.commandRunner ?? nodeCommandRunner;
+  const jobScratchDir = join(config.scratchDir, 'jobs', jobId);
+  await mkdir(jobScratchDir, { recursive: true });
+  const ext = payload.outputFormat === 'ass' ? 'ass' : payload.outputFormat === 'vtt' ? 'vtt' : 'srt';
+  const extractedPath = join(jobScratchDir, `embedded-subtitle-stream-${payload.streamIndex}.${ext}`);
+  const extract = await extractEmbeddedSubtitleTrack({
+    ...(payload.ffmpegPath !== undefined ? { ffmpegPath: payload.ffmpegPath } : {}),
+    mediaPath: payload.mediaPath,
+    streamIndex: payload.streamIndex,
+    outputPath: extractedPath,
+    outputFormat: payload.outputFormat,
+  }, runner);
+  // Import the extracted subtitle through the existing pipeline; result is draft/imported.
+  // We use a synthetic mediaId placeholder since the service layer works with paths.
+  const importResult = await importSubtitle({
+    mediaId: `embedded-extract:${jobId}`,
+    language: payload.language,
+    role: payload.role,
+    path: extractedPath,
+    isActive: false,
+  });
+  return { extract, importResult };
+}
+
 export async function startLingotorteLocalService(config: LocalServiceConfig, runtime: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
   assertLoopbackConfig(config);
   await mkdir(dirname(config.databasePath), { recursive: true });
@@ -588,6 +700,71 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     })();
   };
 
+  const finishEmbeddedSubtitleListJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Listing embedded subtitle tracks.' }));
+      try {
+        const listing = await runEmbeddedSubtitleList(queued.payload, config, runtime);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed',
+          message: 'Embedded subtitle track listing completed.',
+          result: { listing },
+        }));
+      } catch (error) {
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'failed',
+          message: redactJobFailureMessage(error, current.payload, config, runtime),
+        }));
+      }
+    })();
+  };
+
+  const finishEmbeddedSubtitleExtractJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Extracting embedded subtitle track.' }));
+      try {
+        const result = await runEmbeddedSubtitleExtract(queued.payload, config, runtime, jobId);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed',
+          message: 'Embedded subtitle track extracted and imported as draft.',
+          result: {
+            extract: {
+              effect: result.extract.effect,
+              outputPath: '[local-scratch]',
+              outputFormat: result.extract.outputFormat,
+              streamIndex: result.extract.streamIndex,
+            },
+            track: {
+              id: result.importResult.track.id,
+              language: result.importResult.track.language,
+              role: result.importResult.track.role,
+              format: result.importResult.track.format,
+              transcriptStatus: result.importResult.track.transcriptStatus,
+              cueCount: result.importResult.cues.length,
+            },
+          },
+        }));
+      } catch (error) {
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, {
+          status: 'failed',
+          message: redactJobFailureMessage(error, current.payload, config, runtime),
+        }));
+      }
+    })();
+  };
+
   const server: Server = createServer(async (request, response) => {
     try {
       if (request.method === 'OPTIONS') {
@@ -647,6 +824,8 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         if (kind === 'local-transcription') finishLocalTranscriptionJob(job.id);
         if (kind === 'elevenlabs-scribe') finishElevenLabsScribeJob(job.id);
         if (kind === 'youtube-caption') finishYouTubeCaptionJob(job.id);
+        if (kind === 'embedded-subtitle-list') finishEmbeddedSubtitleListJob(job.id);
+        if (kind === 'embedded-subtitle-extract') finishEmbeddedSubtitleExtractJob(job.id);
         sendJson(response, 201, { ok: true, job: publicJob(job) });
         return;
       }
