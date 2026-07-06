@@ -155,6 +155,7 @@ Every implementation feature that touches privacy-sensitive boundaries should in
 
 | Decision | Safe default for implementation tasks | Why it remains open |
 |---|---|---|
+| Media path ownership allowlist | Loopback-only bind + absolute-path validation; the local operator asserts ownership by explicitly providing each absolute media path. No filesystem allowlist or media-library root is enforced yet. | The app is personal/private/local software (single operator, loopback bind). All media-touching local-service endpoints (local-transcription, elevenlabs-scribe, embedded-subtitle-list/extract) inherit this same contract. A media-library allowlist/root-confinement mechanism is a cross-cutting architectural change that should be added holistically (not bolted onto the B7 seam alone) before any non-loopback or multi-user deployment is considered. Reviewed and accepted as a tracked decision for the current local-only scope. |
 | Online provider strictness | Disabled by default; ElevenLabs Scribe v2 is approved as first STT target for Janusz's configured personal deployment only. | Other online provider classes and live benchmark adapters still need explicit approval. |
 | Local STT opt-out | Future WhisperX/faster-whisper-style lane after dependency/model/hardware review. | Useful for users who do not want cloud STT, but not the first implementation target. |
 | Anki role | Export-only; no AnkiConnect mutation. | Sync/mutation changes privacy and source-of-truth semantics. |
