@@ -19,6 +19,10 @@ The fixture set is synthetic/local and contains no Lingopie media, subtitles, sc
 - A checkout of this repo.
 - The npm cache already populated if running in no-network/offline mode.
 
+### Node version pin (2026-07-19)
+
+The services run `.ts` sources directly under Node's type stripping, which is **strip-only** as of Node 26: relative imports must carry explicit `.ts` extensions and TypeScript-only runtime syntax (parameter properties, enums outside `.d.ts`, namespaces) is not allowed in the node-executed graph. An unattended linuxbrew upgrade to Node 26.5.0 broke service boot on 2026-07-19 (fixed forward in `b74327c`/`d04d63a`); the formula is now pinned with `brew pin node` (verify via `brew list --pinned`). Before unpinning/upgrading Node, run the boot smoke: load each `packages/*/src/index.ts` with plain `node -e "await import(...)"` and `node --check apps/local-service/src/server.ts`, then restart the systemd units and check `/api/health`.
+
 Do not install new packages from the network during V1 acceptance unless Janusz separately authorizes that exact package-manager network action.
 
 ## Dependency setup
