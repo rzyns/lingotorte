@@ -457,16 +457,18 @@ describe('P6 frontend export / import local learner state', () => {
     expect(attempts[attempts.length - 1]!.mode).toBe('sentence-builder');
   });
 
-  // NOTE: audio-recall tests require a proper browser/jsdom environment where
-  // navigator.mediaDevices.getUserMedia() and window.SpeechRecognition are available.
-  // In the current 'node' test environment, microphone access and speech recognition
-  // are not available, causing these tests to hang or fail.
-  // TODO(c.5): migrate vitest.config.ts to environment: 'jsdom' and add @jsdom/jsdom
-  //            to enable full DOM/BrowserAPI mocking for these tests.
-  describe.skip('audio-recall practice mode [requires jsdom environment]', () => {
-    it.skip('renders audio-recall mode with microphone button', async () => {});
-    it.skip('records audio when record button is clicked', async () => {});
-    it.skip('shows recognition result after speech is detected', async () => {});
-    it.skip('submits a practice attempt after recording and confirming', async () => {});
+  it('renders source-audio recall without microphone APIs and hides the answer before submission', async () => {
+    const { value: { model, firstCue } } = await createPracticeModel();
+    setPracticeMode(model, 'audio-recall');
+    renderPractice(model);
+    const app = document.getElementById('app')!;
+    expect(app.textContent).toContain('Owned local media path');
+    expect(app.textContent).toContain('Prepare source audio');
+    expect(app.textContent).toContain('transient local scratch');
+    expect(app.textContent).not.toContain('Nagrywaj');
+    expect(app.textContent).not.toContain('Dyktafon');
+    expect(app.textContent).not.toContain(firstCue.text);
+    expect(document.querySelector('#practice-audio-media-path')).toBeTruthy();
+    expect(document.querySelector('#practice-answer')).toBeTruthy();
   });
 });

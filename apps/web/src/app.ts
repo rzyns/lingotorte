@@ -2,6 +2,7 @@ import type { AppModel, ViewName } from './uiTypes';
 import type { Cue, SavedItem, LearnerExportManifest } from '@lingotorte/domain';
 import { verifyExportIntegrity } from '@lingotorte/domain';
 import { formatDueAt, formatTimeMs } from './uiTypes';
+import { prepareSourceAudioSnippet, releaseSourceAudioSnippet, type SourceAudioSnippetLifecycle } from './sourceAudioSnippet.ts';
 import {
   activeCueAtTime,
   activeLoopRangeForSelection,
@@ -296,6 +297,22 @@ function renderMain(model: AppModel): HTMLElement {
   return main;
 }
 
+type PracticeSnippetUiState = SourceAudioSnippetLifecycle & {
+  mediaPath: string;
+  status: 'path-required' | 'unavailable' | 'preparing' | 'ready' | 'playing' | 'failed' | 'cleaned';
+  message: string;
+};
+
+const practiceSnippetStates = new WeakMap<AppModel, PracticeSnippetUiState>();
+
+function practiceSnippetState(model: AppModel): PracticeSnippetUiState {
+  const existing = practiceSnippetStates.get(model);
+  if (existing) return existing;
+  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.' };
+  practiceSnippetStates.set(model, created);
+  return created;
+}
+
 function renderPracticeView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
   section.className = 'card practice-card';
@@ -333,7 +350,9 @@ function renderPracticeView(model: AppModel): HTMLElement {
   prompt.className = 'practice-prompt';
   prompt.setAttribute('role', 'alert');
   prompt.setAttribute('aria-live', 'polite');
-  prompt.textContent = card.promptTemplate;
+  prompt.textContent = model.practice.mode === 'audio-recall' && !model.practice.lastAttemptResult
+    ? 'Listen to the owned source cue, then type the target text.'
+    : card.promptTemplate;
   section.appendChild(prompt);
 
   const modeRow = document.createElement('div');
@@ -392,66 +411,60 @@ function renderPracticeView(model: AppModel): HTMLElement {
   } else if (model.practice.mode === 'audio-recall') {
     const audioGroup = document.createElement('div');
     audioGroup.className = 'practice-audio-recall';
-
-    const prompt = document.createElement('p');
-    prompt.className = 'practice-audio-prompt';
-    prompt.textContent = 'Dyktafon — mów teraz:';
-    prompt.setAttribute('aria-live', 'polite');
-    audioGroup.appendChild(prompt);
-
-    const recordBtn = document.createElement('button');
-    recordBtn.className = 'btn-primary record-btn';
-    recordBtn.type = 'button';
-    recordBtn.dataset.testid = 'record-btn';
-    recordBtn.setAttribute('aria-label', 'Record your answer');
-    const micIcon = document.createElement('span');
-    micIcon.textContent = '🎤';
-    recordBtn.appendChild(micIcon);
-    recordBtn.appendChild(document.createTextNode(' Nagrywaj'));
-
-    let mediaStream: MediaStream | null = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let recognition: any = null;
-
-    recordBtn.addEventListener('click', async () => {
+    const snippet = practiceSnippetState(model);
+    const pathLabel = document.createElement('label');
+    pathLabel.htmlFor = 'practice-audio-media-path';
+    pathLabel.textContent = 'Owned local media path';
+    const pathInput = document.createElement('input');
+    pathInput.id = 'practice-audio-media-path';
+    pathInput.name = 'practice-audio-media-path';
+    pathInput.type = 'text';
+    pathInput.value = snippet.mediaPath;
+    pathInput.placeholder = 'Absolute path (kept only in this session)';
+    pathInput.addEventListener('input', () => { snippet.mediaPath = pathInput.value; snippet.status = pathInput.value.trim() ? 'cleaned' : 'path-required'; });
+    pathLabel.appendChild(pathInput);
+    audioGroup.appendChild(pathLabel);
+    const prepareButton = document.createElement('button');
+    prepareButton.type = 'button';
+    prepareButton.className = 'btn-primary';
+    prepareButton.textContent = 'Prepare source audio';
+    prepareButton.disabled = model.localService.status !== 'connected' || !currentCue;
+    prepareButton.addEventListener('click', async () => {
+      if (!currentCue || !snippet.mediaPath.trim()) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+      snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
       try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        const sr = (window as unknown as Record<string, unknown>).SpeechRecognition ?? (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
-        if (!sr) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        recognition = new (sr as new (...args: unknown[]) => any)();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'pl-PL';
-        recognition.onresult = (event: { results: Array<Array<{ transcript: string; confidence: number }>> }) => {
-          const transcript = event.results[0]?.[0]?.transcript ?? '';
-          setPracticePendingAnswer(model, transcript);
-          rerenderApp(model);
-        };
-        recognition.onerror = () => {
-          mediaStream?.getTracks().forEach((t) => t.stop());
-          rerenderApp(model);
-        };
-        recognition.onend = () => {
-          mediaStream?.getTracks().forEach((t) => t.stop());
-          rerenderApp(model);
-        };
-        recognition.start();
-        rerenderApp(model);
-      } catch {
-        mediaStream?.getTracks().forEach((t) => t.stop());
+        await prepareSourceAudioSnippet({ baseUrl: model.localService.baseUrl, mediaPath: snippet.mediaPath.trim(), startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
+        snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
+      } catch (error) {
+        snippet.status = 'failed'; snippet.message = error instanceof Error ? error.message : 'Source audio preparation failed.';
       }
+      rerenderApp(model);
     });
-
-    audioGroup.appendChild(recordBtn);
-
-    if (model.practice.pendingAnswer) {
-      const transcriptDiv = document.createElement('div');
-      transcriptDiv.className = 'practice-transcript-preview';
-      transcriptDiv.textContent = `Rozpoznano: "${model.practice.pendingAnswer}"`;
-      audioGroup.appendChild(transcriptDiv);
+    audioGroup.appendChild(prepareButton);
+    if (snippet.objectUrl) {
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = snippet.objectUrl;
+      audio.addEventListener('play', () => { snippet.status = 'playing'; });
+      audioGroup.appendChild(audio);
+      const cleanButton = document.createElement('button');
+      cleanButton.type = 'button'; cleanButton.textContent = 'Clean browser audio';
+      cleanButton.addEventListener('click', () => { releaseSourceAudioSnippet(snippet); snippet.status = 'cleaned'; snippet.message = 'Transient browser audio cleaned.'; rerenderApp(model); });
+      audioGroup.appendChild(cleanButton);
     }
-
+    const status = document.createElement('p');
+    status.setAttribute('role', 'status');
+    status.textContent = model.localService.status !== 'connected' ? 'Local service unavailable or disconnected.' : snippet.message;
+    audioGroup.appendChild(status);
+    const privacy = document.createElement('p');
+    privacy.className = 'meta';
+    privacy.textContent = 'Source snippets use transient local scratch, bounded session cleanup, and are not exported.';
+    audioGroup.appendChild(privacy);
+    const answerLabel = document.createElement('label'); answerLabel.htmlFor = 'practice-answer'; answerLabel.textContent = 'Your answer';
+    const answerInput = document.createElement('input');
+    answerInput.id = 'practice-answer'; answerInput.name = 'practice-answer'; answerInput.type = 'text'; answerInput.value = model.practice.pendingAnswer;
+    answerInput.addEventListener('input', () => setPracticePendingAnswer(model, answerInput.value));
+    answerLabel.appendChild(answerInput); audioGroup.appendChild(answerLabel);
     section.appendChild(audioGroup);
   } else if (model.practice.mode === 'sentence-builder') {
     const currentCue = model.store.getCue(active.occurrence.cueId);
@@ -614,15 +627,23 @@ function renderPracticeView(model: AppModel): HTMLElement {
     time.className = 'meta';
     time.textContent = `Source: ${formatTimeMs(currentCue.startMs)} – ${formatTimeMs(currentCue.endMs)}`;
     context.appendChild(time);
-    const targetContext = document.createElement('p');
-    targetContext.className = 'review-target-context';
-    targetContext.textContent = currentCue.text;
-    context.appendChild(targetContext);
-    if (nativeText) {
-      const nativeContext = document.createElement('p');
-      nativeContext.className = 'review-native-context';
-      nativeContext.textContent = nativeText;
-      context.appendChild(nativeContext);
+    const hideAudioRecallAnswer = model.practice.mode === 'audio-recall' && !model.practice.lastAttemptResult && !model.review.revealed;
+    if (hideAudioRecallAnswer) {
+      const revealButton = document.createElement('button');
+      revealButton.type = 'button'; revealButton.className = 'btn-secondary'; revealButton.textContent = 'Reveal answer';
+      revealButton.addEventListener('click', () => { model.review.revealed = true; rerenderApp(model); });
+      context.appendChild(revealButton);
+    } else {
+      const targetContext = document.createElement('p');
+      targetContext.className = 'review-target-context';
+      targetContext.textContent = currentCue.text;
+      context.appendChild(targetContext);
+      if (nativeText) {
+        const nativeContext = document.createElement('p');
+        nativeContext.className = 'review-native-context';
+        nativeContext.textContent = nativeText;
+        context.appendChild(nativeContext);
+      }
     }
     const sourceNote = document.createElement('p');
     sourceNote.className = 'meta';

@@ -41,6 +41,26 @@ export type FfmpegAudioExtractionResult = Readonly<{
   codec: 'pcm_s16le';
 }>;
 
+export const MAX_SOURCE_AUDIO_SNIPPET_DURATION_MS = 30_000;
+
+export type SourceAudioSnippetInput = Readonly<{
+  ffmpegPath?: string;
+  inputPath: string;
+  outputPath: string;
+  startMs: number;
+  endMs: number;
+}>;
+
+export type SourceAudioSnippetResult = Readonly<{
+  effect: 'source-audio-snippet-extracted';
+  outputPath: string;
+  durationMs: number;
+  mimeType: 'audio/wav';
+  sampleRateHz: 16000;
+  channels: 1;
+  codec: 'pcm_s16le';
+}>;
+
 export type TranscriptWordTimingSourceKind = 'provider-word-timing' | 'forced-alignment' | 'manual-edit';
 
 export type LocalTranscriptWord = Readonly<{
@@ -345,6 +365,33 @@ export async function extractAudioWithFfmpeg(
     sampleRateHz: 16000,
     channels: 1,
     codec: 'pcm_s16le',
+  };
+}
+
+export async function extractSourceAudioSnippet(
+  input: SourceAudioSnippetInput,
+  runner: CommandRunner = nodeCommandRunner,
+): Promise<SourceAudioSnippetResult> {
+  const inputPath = requireAbsolutePath(input.inputPath, 'source snippet input path');
+  const outputPath = requireAbsolutePath(input.outputPath, 'source snippet output path');
+  if (inputPath === outputPath) throw new TypeError('source snippet output path must differ from the input media path.');
+  for (const [label, value] of [['startMs', input.startMs], ['endMs', input.endMs]] as const) {
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) throw new TypeError(`${label} must be a finite non-negative integer.`);
+  }
+  if (input.endMs <= input.startMs) throw new TypeError('endMs must be greater than startMs.');
+  const durationMs = input.endMs - input.startMs;
+  if (durationMs > MAX_SOURCE_AUDIO_SNIPPET_DURATION_MS) throw new TypeError('source snippet duration must not exceed 30,000 ms.');
+  const seconds = (value: number) => (value / 1000).toFixed(3);
+  const args = [
+    '-hide_banner', '-y', '-ss', seconds(input.startMs), '-i', inputPath,
+    '-t', seconds(durationMs), '-vn', '-ac', '1', '-ar', '16000',
+    '-c:a', 'pcm_s16le', '-f', 'wav', outputPath,
+  ];
+  const result = await runner(input.ffmpegPath ?? 'ffmpeg', args, { cwd: dirname(outputPath) });
+  if (result.exitCode !== 0) throw new Error(`source snippet extraction failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  return {
+    effect: 'source-audio-snippet-extracted', outputPath, durationMs,
+    mimeType: 'audio/wav', sampleRateHz: 16000, channels: 1, codec: 'pcm_s16le',
   };
 }
 

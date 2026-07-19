@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SqliteLocalPersistence } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
@@ -8,6 +8,7 @@ import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStor
 import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
+  extractSourceAudioSnippet,
   extractEmbeddedSubtitleTrack,
   listEmbeddedSubtitleTracks,
   nodeCommandRunner,
@@ -37,7 +38,7 @@ export type LocalServiceConfig = Readonly<{
 }>;
 
 type LocalJobStatus = 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
-type LocalJobKind = 'waiting' | 'noop' | 'local-transcription' | 'elevenlabs-scribe' | 'youtube-caption' | 'embedded-subtitle-list' | 'embedded-subtitle-extract';
+type LocalJobKind = 'waiting' | 'noop' | 'local-transcription' | 'elevenlabs-scribe' | 'youtube-caption' | 'embedded-subtitle-list' | 'embedded-subtitle-extract' | 'source-audio-snippet';
 
 type LocalJob = Readonly<{
   id: string;
@@ -98,7 +99,7 @@ function sendJson(response: ServerResponse, statusCode: number, value: unknown):
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
     'access-control-allow-origin': 'http://127.0.0.1:5173',
-    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'access-control-allow-headers': 'content-type',
   });
   response.end(body);
@@ -138,7 +139,8 @@ function jobKind(value: unknown): LocalJobKind {
     value === 'elevenlabs-scribe' ||
     value === 'youtube-caption' ||
     value === 'embedded-subtitle-list' ||
-    value === 'embedded-subtitle-extract'
+    value === 'embedded-subtitle-extract' ||
+    value === 'source-audio-snippet'
   ) {
     return value;
   }
@@ -307,6 +309,24 @@ type EmbeddedSubtitleExtractPayload = Readonly<{
   ffmpegPath?: string;
 }>;
 
+type SourceAudioSnippetPayload = Readonly<{
+  mediaPath: string;
+  startMs: number;
+  endMs: number;
+  ffmpegPath?: string;
+}>;
+
+function sourceAudioSnippetPayload(value: unknown, runtime: LocalServiceRuntime): SourceAudioSnippetPayload {
+  const body = asObject(value, 'source audio snippet payload');
+  const startMs = body.startMs;
+  const endMs = body.endMs;
+  if (typeof startMs !== 'number' || typeof endMs !== 'number') throw new TypeError('startMs and endMs must be numbers.');
+  return {
+    mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'), startMs, endMs,
+    ...(body.ffmpegPath !== undefined ? { ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg') } : {}),
+  };
+}
+
 function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime): LocalTranscriptionPayload {
   const body = asObject(value, 'local transcription payload');
   return {
@@ -413,6 +433,12 @@ function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
       language: typeof record.language === 'string' ? record.language : 'pl',
       role: record.role,
     };
+  }
+  if (kind === 'source-audio-snippet') {
+    const record = asObject(payload, 'source audio snippet payload');
+    const startMs = typeof record.startMs === 'number' ? record.startMs : undefined;
+    const endMs = typeof record.endMs === 'number' ? record.endMs : undefined;
+    return { mediaPath: '[local-media-path]', startMs, endMs, durationMs: startMs !== undefined && endMs !== undefined ? endMs - startMs : undefined };
   }
   return undefined;
 }
@@ -630,8 +656,56 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   await mkdir(config.scratchDir, { recursive: true });
   await mkdir(config.modelCacheDir, { recursive: true });
 
+  const snippetScratchDir = join(config.scratchDir, 'source-audio-snippets');
+  await cleanupScratchDirectory(snippetScratchDir);
+
   const persistence = SqliteLocalPersistence.open(config.databasePath);
   const jobs = new Map<string, LocalJob>();
+  const snippets = new Map<string, { path: string; lastAccess: number }>();
+  let snippetAccessCounter = 0;
+
+  const deleteSnippet = async (snippetId: string): Promise<boolean> => {
+    const entry = snippets.get(snippetId);
+    if (!entry || !pathInside(snippetScratchDir, entry.path)) return false;
+    snippets.delete(snippetId);
+    await rm(entry.path, { force: true });
+    return true;
+  };
+
+  const finishSourceAudioSnippetJob = (jobId: string): void => {
+    void (async () => {
+      const queued = jobs.get(jobId);
+      if (!queued || queued.status === 'cancelled') return;
+      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Preparing source audio snippet.' }));
+      let outputPath: string | undefined;
+      try {
+        const payload = sourceAudioSnippetPayload(queued.payload, runtime);
+        const snippetId = randomUUID();
+        outputPath = join(snippetScratchDir, `${snippetId}.wav`);
+        if (!pathInside(snippetScratchDir, outputPath)) throw new TypeError('Invalid snippet output location.');
+        const extracted = await extractSourceAudioSnippet({
+          ...(payload.ffmpegPath !== undefined ? { ffmpegPath: payload.ffmpegPath } : {}),
+          inputPath: payload.mediaPath, outputPath, startMs: payload.startMs, endMs: payload.endMs,
+        }, runtime.commandRunner ?? nodeCommandRunner);
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') { await rm(outputPath, { force: true }); return; }
+        snippets.set(snippetId, { path: outputPath, lastAccess: ++snippetAccessCounter });
+        if (snippets.size > 16) {
+          const oldest = [...snippets.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0];
+          if (oldest) await deleteSnippet(oldest[0]);
+        }
+        jobs.set(jobId, updateJob(current, {
+          status: 'completed', message: 'Source audio snippet ready.',
+          result: { snippetId, url: `/api/snippets/${snippetId}`, mimeType: extracted.mimeType, startMs: payload.startMs, endMs: payload.endMs, durationMs: extracted.durationMs },
+        }));
+      } catch (error) {
+        if (outputPath !== undefined) await rm(outputPath, { force: true });
+        const current = jobs.get(jobId);
+        if (!current || current.status === 'cancelled') return;
+        jobs.set(jobId, updateJob(current, { status: 'failed', message: redactJobFailureMessage(error, current.payload, config, runtime) }));
+      }
+    })();
+  };
 
   const finishLocalTranscriptionJob = (jobId: string): void => {
     void (async () => {
@@ -835,6 +909,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         if (kind === 'youtube-caption') finishYouTubeCaptionJob(job.id);
         if (kind === 'embedded-subtitle-list') finishEmbeddedSubtitleListJob(job.id);
         if (kind === 'embedded-subtitle-extract') finishEmbeddedSubtitleExtractJob(job.id);
+        if (kind === 'source-audio-snippet') finishSourceAudioSnippetJob(job.id);
         sendJson(response, 201, { ok: true, job: publicJob(job) });
         return;
       }
@@ -861,7 +936,25 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         return;
       }
 
+      const snippetMatch = /^\/api\/snippets\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.exec(path);
+      if (snippetMatch && request.method === 'GET') {
+        const entry = snippets.get(snippetMatch[1]!);
+        if (!entry || !pathInside(snippetScratchDir, entry.path)) { sendError(response, 404, 'Source snippet not found.'); return; }
+        entry.lastAccess = ++snippetAccessCounter;
+        const body = await readFile(entry.path);
+        response.writeHead(200, { 'content-type': 'audio/wav', 'content-length': body.byteLength, 'cache-control': 'no-store', 'access-control-allow-origin': 'http://127.0.0.1:5173' });
+        response.end(body);
+        return;
+      }
+      if (snippetMatch && request.method === 'DELETE') {
+        if (!await deleteSnippet(snippetMatch[1]!)) { sendError(response, 404, 'Source snippet not found.'); return; }
+        response.writeHead(204, { 'access-control-allow-origin': 'http://127.0.0.1:5173' });
+        response.end();
+        return;
+      }
+
       if (request.method === 'POST' && path === '/api/artifacts/cleanup') {
+        snippets.clear();
         const deletedFiles = await cleanupScratchDirectory(config.scratchDir);
         sendJson(response, 200, { ok: true, deletedFiles });
         return;
@@ -904,6 +997,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           else resolvePromise();
         });
       });
+      await Promise.all([...snippets.keys()].map(deleteSnippet));
       persistence.close();
     },
   };

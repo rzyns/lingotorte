@@ -187,6 +187,7 @@ The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Defau
 9. Optional local ASR path: start `npm run local` or `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute owned local media path in **Local service ASR media path** when the current browser media is a `blob:` URL, fixture URL, or `browser-file-handle:<name>` label, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them. Browser handles/blob URLs are playback-only; the loopback service needs a filesystem path it can read for ASR, ffmpeg/ffprobe, and source-media snippets.
 10. Optional ElevenLabs Scribe v2 path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` and `ELEVENLABS_API_KEY` set, check **I authorize sending extracted audio to ElevenLabs Scribe v2**, enter an absolute owned media path when needed, then click **Generate ElevenLabs Scribe v2 draft**. Verify the resulting track is a draft `online-asr` track with ElevenLabs provenance and provider word timings. This sends extracted local audio to ElevenLabs and is not a local/offline ASR path.
 11. Optional live public-caption path: start the service with `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true`, check the public-read authorization box, and click **Import public YouTube caption draft**. Verify the resulting track is a draft YouTube caption track. This path reads public caption metadata only; it does not download media.
+12. Practice source-audio recall: connect the loopback local service, open a due card in **Practice**, select **Audio recall**, and paste the explicit absolute path to the owned local media. **Prepare source audio** extracts exactly the saved occurrence's cue range (maximum 30 seconds) as mono 16 kHz PCM WAV. The browser fetches the complete local blob and requests immediate service deletion; superseded browser object URLs are revoked. Remaining snippets are session-only, bounded to 16 entries with LRU eviction, and removed on service startup/close or global scratch cleanup. Paths and snippet cache metadata are not persisted or exported. This mode does not use a microphone, speech recognition, TTS, providers, or online downloads.
 
 Actual media acquisition remains command-generation only. `planYtDlpMediaAcquisition()` produces a safe command plan; Lingotorte does not execute `yt-dlp`.
 
@@ -246,6 +247,7 @@ Safe local checks:
 python3 scripts/faster_whisper_transcribe.py --help
 python3 scripts/whisperx_align.py --help
 npm test -- --run tests/core/localTranscriptionPipeline.test.ts tests/core/localService.test.ts
+npm test -- --run tests/core/b6SourceMediaSnippet.test.ts tests/web/p6PracticeFrontend.test.ts
 npm run test:no-network
 ```
 
