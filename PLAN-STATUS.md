@@ -36,9 +36,10 @@ Reviewed against live git, the Kanban record, gate receipts under `docs/plan/aut
 
 ### Resumption decisions (for Janusz)
 
-1. **Merge + deploy the accepted B7 work**: fast-forward `main` to `a7e8307` and restart the two systemd units (same pattern as the 2026-07-06 deploy). Until then the deployed app lacks embedded subtitle extraction.
-2. **Push the branch update**: `origin/lingotorte/m1-daily-driver-polish` is 7 behind `a7e8307`; the accept-local receipt deliberately did not authorize this push.
+1. ~~**Merge + deploy the accepted B7 work**~~ — **DONE 2026-07-19** (authorized in chat): `main` fast-forwarded through `bad4bd9`/`b74327c`/`d04d63a`, services restarted and verified healthy. The restart exposed a latent linuxbrew Node 26.5.0 upgrade breakage (extensionless TS imports + parameter properties unsupported in strip-only mode) that would have broken *any* restart since the upgrade; fixed forward in `b74327c` + `d04d63a` with full gates green (typecheck, 231 tests, build, privacy scan). Receipt: `docs/plan/autonomous-batches/20260719T144906Z-merge-deploy-receipt-b7-node26-cowork.md`.
+2. **Push the branch update**: `origin/lingotorte/m1-daily-driver-polish` is at `28c942a`, now several commits behind; no push has been authorized since 2026-07-06.
 3. **Pick the next batch**: natural candidates — B7 browser UI wiring for embedded track listing/extraction; B6 source-media snippet generation (`DECISIONS.md` §8); B4 owned-media ASR benchmark if an exact clip or selection rule is provided (`DECISIONS.md` §5).
+4. **Ops follow-up**: consider pinning Node or adding a service boot smoke to the runbook so brew upgrades can't silently strand the services again.
 
 ---
 
