@@ -28,6 +28,23 @@ async function waitForJob(origin: string, id: string) {
   throw new Error('job timeout');
 }
 
+function gatedSnippetRunner() {
+  let releaseRunner!: () => void;
+  let markStarted!: () => void;
+  let markFinished!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseRunner = resolve; });
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const finished = new Promise<void>((resolve) => { markFinished = resolve; });
+  const runner: CommandRunner = async (_command, args) => {
+    markStarted();
+    await gate;
+    await writeFile(args.at(-1)!, 'wav');
+    markFinished();
+    return { exitCode: 0, stdout: '', stderr: '' };
+  };
+  return { runner, started, finished, releaseRunner };
+}
+
 describe('source audio snippet adapter', () => {
   it('uses an exact cue-bounded mono PCM WAV ffmpeg command', async () => {
     const calls: { command: string; args: readonly string[]; cwd?: string }[] = [];
@@ -104,6 +121,52 @@ describe('loopback snippet service', () => {
     await service.close();
     expect(await readdir(snippetsDir)).toEqual([]);
     await expect(access(join(snippetsDir, `${ids[16]}.wav`))).rejects.toThrow();
+  });
+
+  it('drains a running extraction before close returns and performs final scoped cleanup', async () => {
+    const { root, config } = await temporaryConfig();
+    const snippetsDir = join(config.scratchDir, 'source-audio-snippets');
+    const mediaPath = join(root, 'owned.mkv');
+    await writeFile(mediaPath, 'synthetic');
+    const gated = gatedSnippetRunner();
+    const service = await startLingotorteLocalService(config, { commandRunner: gated.runner });
+    const createdResponse = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) });
+    await createdResponse.json();
+    await gated.started;
+
+    const closePromise = service.close();
+    setTimeout(gated.releaseRunner, 25);
+    await closePromise;
+    await gated.finished;
+
+    expect(await readdir(snippetsDir)).toEqual([]);
+  });
+
+  it('drains a running extraction before global scratch cleanup returns', async () => {
+    const { root, config } = await temporaryConfig();
+    const mediaPath = join(root, 'owned.mkv');
+    await writeFile(mediaPath, 'synthetic');
+    const gated = gatedSnippetRunner();
+    const service = await startLingotorteLocalService(config, { commandRunner: gated.runner });
+    try {
+      const created = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) }).then((response) => response.json()) as { job: { id: string } };
+      await gated.started;
+
+      const cleanupPromise = fetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST' });
+      setTimeout(gated.releaseRunner, 25);
+      const cleanupResponse = await cleanupPromise;
+      expect(cleanupResponse.status).toBe(200);
+      await cleanupResponse.json();
+      await gated.finished;
+
+      expect(await readdir(config.scratchDir)).toEqual([]);
+      const settled = await fetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json()) as { job: Record<string, unknown> };
+      expect(settled.job).toMatchObject({ status: 'cancelled' });
+      expect(settled.job).not.toHaveProperty('result');
+      expect(JSON.stringify(settled)).not.toContain(root);
+    } finally {
+      await service.close();
+    }
   });
 });
 

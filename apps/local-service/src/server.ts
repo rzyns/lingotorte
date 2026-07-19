@@ -662,7 +662,10 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   const persistence = SqliteLocalPersistence.open(config.databasePath);
   const jobs = new Map<string, LocalJob>();
   const snippets = new Map<string, { path: string; lastAccess: number }>();
+  const inFlightSnippetJobs = new Set<Promise<void>>();
   let snippetAccessCounter = 0;
+  let snippetLifecycle: 'open' | 'cleaning' | 'closing' = 'open';
+  let artifactCleanupPromise: Promise<number> | undefined;
 
   const deleteSnippet = async (snippetId: string): Promise<boolean> => {
     const entry = snippets.get(snippetId);
@@ -672,39 +675,78 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     return true;
   };
 
-  const finishSourceAudioSnippetJob = (jobId: string): void => {
-    void (async () => {
-      const queued = jobs.get(jobId);
-      if (!queued || queued.status === 'cancelled') return;
-      jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Preparing source audio snippet.' }));
-      let outputPath: string | undefined;
-      try {
-        const payload = sourceAudioSnippetPayload(queued.payload, runtime);
-        const snippetId = randomUUID();
-        outputPath = join(snippetScratchDir, `${snippetId}.wav`);
-        if (!pathInside(snippetScratchDir, outputPath)) throw new TypeError('Invalid snippet output location.');
-        const extracted = await extractSourceAudioSnippet({
-          ...(payload.ffmpegPath !== undefined ? { ffmpegPath: payload.ffmpegPath } : {}),
-          inputPath: payload.mediaPath, outputPath, startMs: payload.startMs, endMs: payload.endMs,
-        }, runtime.commandRunner ?? nodeCommandRunner);
-        const current = jobs.get(jobId);
-        if (!current || current.status === 'cancelled') { await rm(outputPath, { force: true }); return; }
-        snippets.set(snippetId, { path: outputPath, lastAccess: ++snippetAccessCounter });
-        if (snippets.size > 16) {
-          const oldest = [...snippets.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0];
-          if (oldest) await deleteSnippet(oldest[0]);
+  const runSourceAudioSnippetJob = async (jobId: string): Promise<void> => {
+    const queued = jobs.get(jobId);
+    if (!queued || queued.status === 'cancelled') return;
+    if (snippetLifecycle !== 'open') {
+      jobs.set(jobId, updateJob(queued, { status: 'cancelled', message: 'Source snippet lifecycle cleanup is in progress.' }));
+      return;
+    }
+    jobs.set(jobId, updateJob(queued, { status: 'running', message: 'Preparing source audio snippet.' }));
+    let outputPath: string | undefined;
+    try {
+      const payload = sourceAudioSnippetPayload(queued.payload, runtime);
+      const snippetId = randomUUID();
+      outputPath = join(snippetScratchDir, `${snippetId}.wav`);
+      if (!pathInside(snippetScratchDir, outputPath)) throw new TypeError('Invalid snippet output location.');
+      const extracted = await extractSourceAudioSnippet({
+        ...(payload.ffmpegPath !== undefined ? { ffmpegPath: payload.ffmpegPath } : {}),
+        inputPath: payload.mediaPath, outputPath, startMs: payload.startMs, endMs: payload.endMs,
+      }, runtime.commandRunner ?? nodeCommandRunner);
+      const current = jobs.get(jobId);
+      if (!current || current.status === 'cancelled' || snippetLifecycle !== 'open') {
+        await rm(outputPath, { force: true });
+        if (current && current.status !== 'cancelled') {
+          jobs.set(jobId, updateJob(current, { status: 'cancelled', message: 'Source snippet lifecycle cleanup is in progress.' }));
         }
-        jobs.set(jobId, updateJob(current, {
-          status: 'completed', message: 'Source audio snippet ready.',
-          result: { snippetId, url: `/api/snippets/${snippetId}`, mimeType: extracted.mimeType, startMs: payload.startMs, endMs: payload.endMs, durationMs: extracted.durationMs },
-        }));
-      } catch (error) {
-        if (outputPath !== undefined) await rm(outputPath, { force: true });
-        const current = jobs.get(jobId);
-        if (!current || current.status === 'cancelled') return;
-        jobs.set(jobId, updateJob(current, { status: 'failed', message: redactJobFailureMessage(error, current.payload, config, runtime) }));
+        return;
+      }
+      snippets.set(snippetId, { path: outputPath, lastAccess: ++snippetAccessCounter });
+      if (snippets.size > 16) {
+        const oldest = [...snippets.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess)[0];
+        if (oldest) await deleteSnippet(oldest[0]);
+      }
+      jobs.set(jobId, updateJob(current, {
+        status: 'completed', message: 'Source audio snippet ready.',
+        result: { snippetId, url: `/api/snippets/${snippetId}`, mimeType: extracted.mimeType, startMs: payload.startMs, endMs: payload.endMs, durationMs: extracted.durationMs },
+      }));
+    } catch (error) {
+      if (outputPath !== undefined) await rm(outputPath, { force: true });
+      const current = jobs.get(jobId);
+      if (!current || current.status === 'cancelled' || snippetLifecycle !== 'open') return;
+      jobs.set(jobId, updateJob(current, { status: 'failed', message: redactJobFailureMessage(error, current.payload, config, runtime) }));
+    }
+  };
+
+  const finishSourceAudioSnippetJob = (jobId: string): void => {
+    const work = runSourceAudioSnippetJob(jobId);
+    inFlightSnippetJobs.add(work);
+    void work.then(
+      () => inFlightSnippetJobs.delete(work),
+      () => inFlightSnippetJobs.delete(work),
+    );
+  };
+
+  const drainSnippetJobs = async (): Promise<void> => {
+    while (inFlightSnippetJobs.size > 0) {
+      await Promise.allSettled([...inFlightSnippetJobs]);
+    }
+  };
+
+  const cleanupAllScratchArtifacts = (): Promise<number> => {
+    if (artifactCleanupPromise !== undefined) return artifactCleanupPromise;
+    snippetLifecycle = 'cleaning';
+    artifactCleanupPromise = (async () => {
+      try {
+        await drainSnippetJobs();
+        snippets.clear();
+        return await cleanupScratchDirectory(config.scratchDir);
+      } finally {
+        artifactCleanupPromise = undefined;
+        if (snippetLifecycle === 'cleaning') snippetLifecycle = 'open';
       }
     })();
+    return artifactCleanupPromise;
   };
 
   const finishLocalTranscriptionJob = (jobId: string): void => {
@@ -890,6 +932,10 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       if (request.method === 'POST' && path === '/api/jobs') {
         const body = objectBody(await readJsonBody(request));
         const kind = jobKind(body.kind);
+        if (kind === 'source-audio-snippet' && snippetLifecycle !== 'open') {
+          sendError(response, 409, 'Source snippet lifecycle cleanup is in progress.');
+          return;
+        }
         const now = new Date().toISOString();
         const status: LocalJobStatus = kind === 'noop' ? 'completed' : 'queued';
         const payload = body.payload ?? {};
@@ -954,8 +1000,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'POST' && path === '/api/artifacts/cleanup') {
-        snippets.clear();
-        const deletedFiles = await cleanupScratchDirectory(config.scratchDir);
+        const deletedFiles = await cleanupAllScratchArtifacts();
         sendJson(response, 200, { ok: true, deletedFiles });
         return;
       }
@@ -991,13 +1036,17 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     origin,
     config: runtimeConfig,
     async close() {
+      snippetLifecycle = 'closing';
       await new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => {
           if (error) rejectPromise(error);
           else resolvePromise();
         });
       });
-      await Promise.all([...snippets.keys()].map(deleteSnippet));
+      if (artifactCleanupPromise !== undefined) await artifactCleanupPromise;
+      await drainSnippetJobs();
+      snippets.clear();
+      await cleanupScratchDirectory(snippetScratchDir);
       persistence.close();
     },
   };
