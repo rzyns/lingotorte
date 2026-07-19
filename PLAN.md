@@ -2,12 +2,17 @@
 
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
-Last reconciled: 2026-07-05.
+Last reconciled: 2026-07-05. **Revalidated 2026-07-19:** see `PLAN-STATUS.md` ("2026-07-19 revalidation") for current ground truth — LDM4 B7 embedded subtitle extraction is implemented and accepted local-only at `a7e8307` on `lingotorte/m1-daily-driver-polish`; the primary checkout `main` is deployed at `28c942a`, 7 commits behind; no batch has been in flight since 2026-07-06.
 Current branch posture at DECISIONS wiring start: `main` at `311162c`, ahead of `origin/main` by 11 commits; exact current HEAD should be checked live with `git rev-parse --short HEAD` because this status file is committed with the slice it describes.
 Decision record: `DECISIONS.md` is now a tracked implementation-facing human-decision record for autonomous development boundaries and resolved backlog choices. Read it alongside this plan before launching `/goal` or worker tasks.
 
 Recent relevant commits:
 
+- `a7e8307 Record LDM4 B7 accept-local gate decision`
+- `3113ffa LDM4-01R: fix embedded subtitle draft semantics and ffprobePath fallback`
+- `046cec7 LDM4-01: implement B7 embedded subtitle track listing and extraction`
+- `be71520 feat(b3): post-restore receipt, merge-vs-replace clarity, integrity wording polish`
+- `c22af7e feat(b2): IndexedDB handle store + relink robustness for stale browser handles`
 - `66657b8 feat(p6): audio-recall practice mode — P6 learner state, recording UI, submit flow`
 - `acfe67b Make subtitle overlay windowed and clickable`
 - `7b17e76 Document Lingotorte systemd user services`
@@ -200,7 +205,7 @@ Goal: broaden local subtitle/transcript input beyond the current SRT/JSON-center
 Scope/status:
 
 - VTT and ASS parsing or well-scoped dependency adoption after provenance review. **Implemented:** VTT parsing is now supported both server-side (`parseVtt` in `packages/subtitles/src/import.ts` wired into `importSubtitle`) and browser-side (`parseBrowserSrtText` detects VTT by file extension or `WEBVTT` header and uses dot-separated timestamps with optional cue index and optional hours). ASS/SSA parsing (`parseAss`) produces a typed `SubtitleTrack` with cues; ASS override tags and line breaks are stripped before cue normalization, and style/position fields are not persisted.
-- Embedded subtitle extraction via local ffmpeg/ffprobe where safe.
+- Embedded subtitle extraction via local ffmpeg/ffprobe where safe. **Implemented (LDM4, accepted local-only at `a7e8307`):** local-service `ffprobe` track listing plus explicit user-selected `ffmpeg` extraction with draft/provenance semantics and `ffprobePath` fallback (`tests/core/b7EmbeddedSubtitleExtraction.test.ts`); browser UI wiring for listing/extracting embedded tracks remains outstanding.
 - Offset/alignment editor and target/native alignment confidence UI. **Implemented:** the player UI exposes a numeric millisecond offset editor (`applyTrackOffsetMs` + `createOffsetCorrectedTranscriptVersion`) that applies a finite offset to every cue with zero clamp, ordering preservation, parent transcript status preservation, and a `timingUnverified` marker on the new transcript version.
 - Preserve draft/correction/approval semantics for generated/imported tracks. **Preserved:** offset application creates a new transcript version while preserving the parent's `transcriptStatus`; draft status is preserved through ASS/SSA import.
 
@@ -285,10 +290,10 @@ Current known state:
 - Transcript lifecycle has draft/correction/approval, split/merge, word timing edits, source comparison, immutable corrected versions, and approved-track learner-save gate.
 - Subtitle overlay is windowed and clickable; overlay words save lexeme occurrences through the approved source-backed path.
 - SQLite remains snapshot-compatible, now with forward-only migrations, typed projections for current LocalStore entities, and authoritative append-only replay for review/import events.
-- Browser File System Access media handles are the selected B2 direction and have a first UI/import slice: supported browsers can import through a persistent handle label, while actual handle permission persistence/revalidation across restart remains future work.
-- Export/import works as browser JSON manifest download/paste+merge, not full backup/restore.
+- Browser File System Access media handles are implemented for B2: persistent IndexedDB-backed handle store (`browserHandleStore.ts`) wired into app startup, restart restore with permission revalidation, and clear relink error states for stale/denied/missing handles.
+- Export/import is a metadata-only manifest product (LDM3 B3): browser download plus File System Access save-with-readback, merge/update vs destructive Replace-all restore with mutually exclusive confirmations, and a post-restore receipt; media-copy backup remains a gated future design.
 - Polish analysis uses `morfeusz-ts` (SGJP-backed) in Node.js with typed `Confidence` and ambiguity/low-confidence warnings, falling back to the heuristic adapter in the browser.
-- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions.
+- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions. Embedded subtitle track listing/extraction is implemented service-side (accepted local-only at `a7e8307`); browser UI wiring is outstanding.
 - DECISIONS.md resolves autonomous local-development boundaries: B2 uses browser handles plus local-service absolute paths, B3 is metadata-backup-first, B4 owned-media quality benchmarking is optional/non-blocking without an approved clip, B6 snippets are source-media snippets rather than TTS/provider audio, and future Anki/microphone/sync/packaging lanes remain gated.
 - Provider calls, model downloads, sync, AnkiConnect, microphone recording, and public actions remain gated except for the narrow ElevenLabs Scribe and public YouTube caption-read paths explicitly allowed by DECISIONS.md.
 
