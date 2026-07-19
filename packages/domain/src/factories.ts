@@ -16,13 +16,13 @@ import {
   type SubtitleTrack,
   type TokenOccurrence,
   type TranscriptWordTiming,
-} from './coreTypes';
+} from './coreTypes.ts';
 
-export * from './coreTypes';
-export * from './guards';
-export * from './sourceContext';
-export * from './exportManifest';
-export * from './providerPolicy';
+export * from './coreTypes.ts';
+export * from './guards.ts';
+export * from './sourceContext.ts';
+export * from './exportManifest.ts';
+export * from './providerPolicy.ts';
 
 export function makeMediaAsset(
   input: Pick<MediaAsset, 'title' | 'originalPath' | 'contentSha256' | 'durationMs' | 'container' | 'sizeBytes' | 'privacyLabel'>,

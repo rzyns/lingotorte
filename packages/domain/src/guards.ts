@@ -1,4 +1,4 @@
-import type { Sha256Digest } from './types';
+import type { Sha256Digest } from './types.ts';
 
 export function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

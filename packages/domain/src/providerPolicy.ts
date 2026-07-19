@@ -1,4 +1,4 @@
-import type { DisabledLookupAdapter, DisabledLookupResult, LookupTokenInput, ProviderPolicy } from './types';
+import type { DisabledLookupAdapter, DisabledLookupResult, LookupTokenInput, ProviderPolicy } from './types.ts';
 
 export function defaultProviderPolicy(): ProviderPolicy {
   return {

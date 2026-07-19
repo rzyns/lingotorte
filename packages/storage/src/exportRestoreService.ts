@@ -14,7 +14,7 @@ import {
   type SavedOccurrenceSourceContext,
   type UUID,
 } from '@lingotorte/domain';
-import type { LocalStore, LocalStoreSnapshot } from './localStore';
+import type { LocalStore, LocalStoreSnapshot } from './localStore.ts';
 
 export type ExportLearnerStateResult = Readonly<{
   manifest: LearnerExportManifest;

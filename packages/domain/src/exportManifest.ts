@@ -9,7 +9,7 @@ import {
   requireSha256,
   requireString,
   requireStringInSet,
-} from './guards';
+} from './guards.ts';
 import type {
   ExportIntegrity,
   LearnerExportContent,
@@ -30,8 +30,8 @@ import type {
   SavedOccurrence,
   SavedOccurrenceSourceContext,
   Sha256Digest,
-} from './coreTypes';
-import { validateSavedOccurrenceSourceContext } from './sourceContext';
+} from './coreTypes.ts';
+import { validateSavedOccurrenceSourceContext } from './sourceContext.ts';
 
 const CURRENT_SCHEMA_VERSION = 'lingotorte.learner-export.v1' as const;
 const PRACTICE_MODES: PracticeAttempt['mode'][] = ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'];

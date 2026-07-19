@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { asRecord, requireArray, requireNumber, requireSha256, requireString } from './guards';
-import type { FixtureCatalog, FixtureMediaRecord, FixtureSubtitleTrack, FixtureTranscript, NegativeFixtureRecord, Sha256Digest, SourceKind, SubtitleFormat, SubtitleRole } from './types';
+import { asRecord, requireArray, requireNumber, requireSha256, requireString } from './guards.ts';
+import type { FixtureCatalog, FixtureMediaRecord, FixtureSubtitleTrack, FixtureTranscript, NegativeFixtureRecord, Sha256Digest, SourceKind, SubtitleFormat, SubtitleRole } from './types.ts';
 
 function pathFromRoot(repoRoot: URL | string, relativePath: string): string {
   const normalizedRoot = typeof repoRoot === 'string' ? new URL(`file://${repoRoot.endsWith('/') ? repoRoot : `${repoRoot}/`}`) : repoRoot;

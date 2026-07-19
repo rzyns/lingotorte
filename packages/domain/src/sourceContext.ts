@@ -1,5 +1,5 @@
-import { asRecord, requireNonNegativeInteger, requireSha256, requireString } from './guards';
-import type { SavedOccurrenceSourceContext, TranscriptTrackSourceContext, TranscriptWarningFlag } from './types';
+import { asRecord, requireNonNegativeInteger, requireSha256, requireString } from './guards.ts';
+import type { SavedOccurrenceSourceContext, TranscriptTrackSourceContext, TranscriptWarningFlag } from './types.ts';
 
 function validateRange(value: unknown, label: string, startKey: string, endKey: string): Readonly<{ start: number; end: number }> {
   const record = asRecord(value, label);

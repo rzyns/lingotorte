@@ -10,8 +10,8 @@ import {
   type UUID,
 } from '@lingotorte/domain';
 import type { LocalStore } from '@lingotorte/storage';
-import { ReviewScheduler, recomputeStateFromEvents, defaultFsrsConfig } from './scheduler';
-import type { FsrsSchedulerConfig } from './scheduler';
+import { ReviewScheduler, recomputeStateFromEvents, defaultFsrsConfig } from './scheduler.ts';
+import type { FsrsSchedulerConfig } from './scheduler.ts';
 
 export type CreateCardInput = Readonly<{
   savedItem: SavedItem;
@@ -119,4 +119,4 @@ export class ReviewService {
 }
 
 export { ReviewScheduler, recomputeStateFromEvents, defaultFsrsConfig };
-export type { FsrsSchedulerConfig } from './scheduler';
+export type { FsrsSchedulerConfig } from './scheduler.ts';

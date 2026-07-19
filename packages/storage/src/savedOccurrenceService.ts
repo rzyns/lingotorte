@@ -6,7 +6,7 @@ import {
   type SavedOccurrence,
   type UUID,
 } from '@lingotorte/domain';
-import type { LocalStore } from './localStore';
+import type { LocalStore } from './localStore.ts';
 
 export type SaveSelectionInput = Readonly<{
   kind: SavedItemKind;

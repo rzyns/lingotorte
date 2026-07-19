@@ -1,8 +1,8 @@
-export * from './coreTypes';
-export * from './factories';
-export * from './guards';
-export * from './sourceContext';
-export * from './exportManifest';
-export * from './providerPolicy';
-export { makeAdapterRunRef, makeLanguageAnalysis, makePracticeAttempt, makeLearnerExportManifest, makePrivacyWarning, makeExportIntegrity, makeRestoreConfirmation } from './factories';
-export { validateLearnerExportManifest, buildRestorePreview, computeExportIntegrity, defaultPrivacyWarnings, requireRestoreConfirmation, verifyExportIntegrity, makeExportFilePath } from './exportManifest';
+export * from './coreTypes.ts';
+export * from './factories.ts';
+export * from './guards.ts';
+export * from './sourceContext.ts';
+export * from './exportManifest.ts';
+export * from './providerPolicy.ts';
+export { makeAdapterRunRef, makeLanguageAnalysis, makePracticeAttempt, makeLearnerExportManifest, makePrivacyWarning, makeExportIntegrity, makeRestoreConfirmation } from './factories.ts';
+export { validateLearnerExportManifest, buildRestorePreview, computeExportIntegrity, defaultPrivacyWarnings, requireRestoreConfirmation, verifyExportIntegrity, makeExportFilePath } from './exportManifest.ts';

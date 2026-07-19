@@ -9,7 +9,7 @@ import {
   type SavedOccurrenceSourceContext,
   type UUID,
 } from '@lingotorte/domain';
-import type { LocalStore } from './localStore';
+import type { LocalStore } from './localStore.ts';
 
 export type SubmitPracticeAttemptInput = Readonly<{
   cardId: UUID;
