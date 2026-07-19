@@ -22,11 +22,17 @@ export type ExportLearnerStateResult = Readonly<{
 }>;
 
 export class ExportService {
-  constructor(
-    private readonly store: LocalStore,
-    private readonly applicationVersion: string,
-    private readonly deviceId?: string,
-  ) {}
+  private readonly store: LocalStore;
+
+  private readonly applicationVersion: string;
+
+  private readonly deviceId: string | undefined;
+
+  constructor(store: LocalStore, applicationVersion: string, deviceId?: string) {
+    this.store = store;
+    this.applicationVersion = applicationVersion;
+    this.deviceId = deviceId;
+  }
 
   buildManifest(): LearnerExportManifest {
     const snapshot = this.store.snapshot();
@@ -82,7 +88,11 @@ export class ExportService {
 }
 
 export class RestoreService {
-  constructor(private readonly store: LocalStore) {}
+  private readonly store: LocalStore;
+
+  constructor(store: LocalStore) {
+    this.store = store;
+  }
 
   preview(manifest: LearnerExportManifest): RestorePreview {
     const snapshot = this.store.snapshot();

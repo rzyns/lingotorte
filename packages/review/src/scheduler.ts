@@ -118,7 +118,10 @@ function stateFromCard(cardId: UUID, card: Card, fsrsVersion: string, reviewedAt
 export class ReviewScheduler {
   private readonly scheduler: ReturnType<typeof fsrs>;
 
-  constructor(private readonly config: FsrsSchedulerConfig = defaultFsrsConfig()) {
+  private readonly config: FsrsSchedulerConfig;
+
+  constructor(config: FsrsSchedulerConfig = defaultFsrsConfig()) {
+    this.config = config;
     this.scheduler = fsrs(toFsrsParameters(config));
   }
 

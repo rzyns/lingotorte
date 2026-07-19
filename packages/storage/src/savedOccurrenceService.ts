@@ -49,7 +49,11 @@ function occurrenceSourceFingerprint(occurrence: SavedOccurrence): string {
 }
 
 export class SavedOccurrenceService {
-  constructor(private readonly store: LocalStore) {}
+  private readonly store: LocalStore;
+
+  constructor(store: LocalStore) {
+    this.store = store;
+  }
 
   snapshot() {
     return this.store.snapshot();

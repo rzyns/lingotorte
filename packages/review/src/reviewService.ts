@@ -27,7 +27,14 @@ export type ReviewCardWithState = Readonly<{
 }>;
 
 export class ReviewService {
-  constructor(private readonly store: LocalStore, private readonly config: FsrsSchedulerConfig = defaultFsrsConfig()) {}
+  private readonly store: LocalStore;
+
+  private readonly config: FsrsSchedulerConfig;
+
+  constructor(store: LocalStore, config: FsrsSchedulerConfig = defaultFsrsConfig()) {
+    this.store = store;
+    this.config = config;
+  }
 
   createCard(input: CreateCardInput): ReviewCardWithState {
     const promptTemplate =

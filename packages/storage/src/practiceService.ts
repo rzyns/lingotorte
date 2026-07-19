@@ -69,7 +69,11 @@ function applyFsrsUpdate(
 }
 
 export class PracticeService {
-  constructor(private readonly store: LocalStore) {}
+  private readonly store: LocalStore;
+
+  constructor(store: LocalStore) {
+    this.store = store;
+  }
 
   submitAttempt(input: SubmitPracticeAttemptInput): PracticeAttemptWithEvent {
     const card = this.store.getReviewCard(input.cardId);
