@@ -2,12 +2,13 @@
 
 Status: current routing/status plan for taking Lingotorte from the implemented local prototype to a polished daily-driver local app for Janusz's own media. This file is the handoff entry point for future `/goal` runs; older planning bundles are design/reference sources, not current implementation status.
 
-Last reconciled: 2026-07-05. **Revalidated 2026-07-19:** see `PLAN-STATUS.md` ("2026-07-19 revalidation") for current ground truth — LDM4 B7 embedded subtitle extraction is implemented and accepted local-only at `a7e8307` on `lingotorte/m1-daily-driver-polish`; the primary checkout `main` is deployed at `28c942a`, 7 commits behind; no batch has been in flight since 2026-07-06.
+Last reconciled: 2026-07-05. **Updated 2026-07-21:** see `PLAN-STATUS.md` for current ground truth — the accepted LDM4 service capability now has local LDM7 browser wiring at `16c9bec`; independent review/QA, push, and deployment remain pending.
 Current branch posture at DECISIONS wiring start: `main` at `311162c`, ahead of `origin/main` by 11 commits; exact current HEAD should be checked live with `git rev-parse --short HEAD` because this status file is committed with the slice it describes.
 Decision record: `DECISIONS.md` is now a tracked implementation-facing human-decision record for autonomous development boundaries and resolved backlog choices. Read it alongside this plan before launching `/goal` or worker tasks.
 
 Recent relevant commits:
 
+- `16c9bec feat(b7): add embedded subtitle browser workflow`
 - `a7e8307 Record LDM4 B7 accept-local gate decision`
 - `3113ffa LDM4-01R: fix embedded subtitle draft semantics and ffprobePath fallback`
 - `046cec7 LDM4-01: implement B7 embedded subtitle track listing and extraction`
@@ -121,7 +122,7 @@ These work today as local prototype/product slices, but are not the final daily-
 - Export/import is a browser JSON manifest/download plus merge/update restore path; it is not yet a full backup/restore product.
 - Practice is basic and local; richer game-like practice/progress views remain future work. Multiple-choice and sentence-builder practice modes are implemented, and study streak/totals are derived from persisted local review/practice events.
 - Polish language support uses `morfeusz-ts` (SGJP-backed) in Node.js with typed `Confidence` (probable/possible/unavailable) and ambiguity/low-confidence warnings, falling back to the heuristic adapter in the browser; richer translation/explanation quality remains future work.
-- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions; embedded subtitle extraction via ffmpeg/ffprobe remains future work.
+- Subtitle import supports SRT, JSON, VTT, and ASS/SSA, plus a millisecond offset editor that creates `timingUnverified` corrected transcript versions. Embedded subtitle listing/extraction is implemented through the loopback service and a local browser workflow, pending independent LDM7 review/QA and any later push/deployment gate.
 
 ## Current short backlog
 
@@ -205,7 +206,7 @@ Goal: broaden local subtitle/transcript input beyond the current SRT/JSON-center
 Scope/status:
 
 - VTT and ASS parsing or well-scoped dependency adoption after provenance review. **Implemented:** VTT parsing is now supported both server-side (`parseVtt` in `packages/subtitles/src/import.ts` wired into `importSubtitle`) and browser-side (`parseBrowserSrtText` detects VTT by file extension or `WEBVTT` header and uses dot-separated timestamps with optional cue index and optional hours). ASS/SSA parsing (`parseAss`) produces a typed `SubtitleTrack` with cues; ASS override tags and line breaks are stripped before cue normalization, and style/position fields are not persisted.
-- Embedded subtitle extraction via local ffmpeg/ffprobe where safe. **Implemented (LDM4, accepted local-only at `a7e8307`):** local-service `ffprobe` track listing plus explicit user-selected `ffmpeg` extraction with draft/provenance semantics and `ffprobePath` fallback (`tests/core/b7EmbeddedSubtitleExtraction.test.ts`); browser UI wiring for listing/extracting embedded tracks remains outstanding.
+- Embedded subtitle extraction via local ffmpeg/ffprobe where safe. **Service accepted in LDM4; browser wiring implemented locally in LDM7 at `16c9bec` (review/QA pending):** the Transcript lifecycle panel requires a session-only explicit absolute owned-media path, lists typed safe metadata, never auto-selects a default track, permits only deliberate supported-track extraction, and imports normalized cues as a path-safe target draft. Correction/approval and approved-track learner-save gates remain mandatory; bitmap OCR/conversion, style persistence, role/alignment selection, path discovery/persistence, push, and deployment remain out of scope.
 - Offset/alignment editor and target/native alignment confidence UI. **Implemented:** the player UI exposes a numeric millisecond offset editor (`applyTrackOffsetMs` + `createOffsetCorrectedTranscriptVersion`) that applies a finite offset to every cue with zero clamp, ordering preservation, parent transcript status preservation, and a `timingUnverified` marker on the new transcript version.
 - Preserve draft/correction/approval semantics for generated/imported tracks. **Preserved:** offset application creates a new transcript version while preserving the parent's `transcriptStatus`; draft status is preserved through ASS/SSA import.
 

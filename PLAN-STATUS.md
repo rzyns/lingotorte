@@ -1,8 +1,16 @@
 # PLAN status — Lingotorte
 
-Updated: `2026-07-19T14:30:00Z` (revalidation pass; the previous `Updated:` header said `2026-07-05T21:33:45Z` even though body sections were last edited at `be71520` on 2026-07-06 without refreshing it)
+Updated: `2026-07-21T13:35:28Z` (LDM7 B7 browser-UI implementation; independent review/QA remain pending)
 
-Status: **LDM4 B7 embedded subtitle extraction accepted local-only at `a7e8307` on `lingotorte/m1-daily-driver-polish`; primary checkout `main` deployed at `28c942a` (7 commits behind the accepted branch tip); no batch in flight since 2026-07-06.** See the "2026-07-19 revalidation" section — it supersedes stale claims in the older sections below, which are preserved as history.
+Status: **LDM7 B7 embedded-subtitle browser UI is implemented locally at `16c9bec` on `lingotorte/m1-daily-driver-polish`; independent review and QA are pending, and this implementation has not been pushed or deployed.** The accepted LDM4 service capability remains the baseline; older dated sections below are preserved as history.
+
+## 2026-07-21 LDM7 implementation (review pending)
+
+- `16c9bec` adds a session-only explicit absolute owned-media path, fakeable loopback track listing/polling, deliberate supported-track selection, deterministic SRT/VTT/ASS extraction payloads, and strict cue-bearing draft import into the current media.
+- Imported tracks remain target-role `draft` / `user-subtitle-file` sources with opaque `embedded-subtitle:` provenance, required timing/quality warnings, normalized text/timing only, and the existing correction/approval/learner-save gate.
+- Clear path-safe states cover disconnected or unreachable service, invalid path, zero tracks, unsupported codecs, extraction failure, and malformed completed results. Automated coverage uses fake fetch/command runners; no real media, ffmpeg/ffprobe process, provider, learner state, or private path is used.
+- Limits remain deliberate: target role only; no bitmap OCR/conversion, role/alignment picker, path persistence/discovery, automatic/default extraction, style/position/karaoke persistence, or live owned-media smoke in automated validation.
+- LDM7 review (`t_4dc1a93f`), QA, final human gate, push, PR, and deployment are not yet complete or authorized by this implementation commit.
 
 ## 2026-07-19 revalidation (supersedes stale claims below)
 
@@ -16,7 +24,7 @@ Reviewed against live git, the Kanban record, gate receipts under `docs/plan/aut
    - `046cec7` LDM4-01 implementation → original review `t_eb8fe5ad` **BLOCK** → repair `3113ffa` (LDM4-01R: embedded subtitle draft semantics + `ffprobePath` fallback) → re-review `t_d89a812a` **PASS** → QA `t_16019a45` **PASS**.
    - Safety boundary review gained a B7 media-path-ownership decision row (`8061aaf`, `43afed0`).
    - Final human gate `t_53265d1e`: Janusz commented `accept` (2026-07-06T13:54Z), narrowly interpreted as **accept local only**; receipt `a7e8307` (`docs/plan/autonomous-batches/20260706T135641Z-ldm4-b7-gate-decision-accept-local-t_53265d1e.md`). No push/PR/deploy/next-batch was authorized. Bookkeeping `t_07105a53` reconciled the superseded original chain by comment.
-   - Accepted change surface: `apps/local-service/src/server.ts`, `packages/local-transcription/src/index.ts`, `packages/subtitles/src/import.ts`, new `tests/core/b7EmbeddedSubtitleExtraction.test.ts`. **No `apps/web` changes — browser UI wiring for listing/extracting embedded tracks is not yet implemented.**
+   - Accepted LDM4 change surface: `apps/local-service/src/server.ts`, `packages/local-transcription/src/index.ts`, `packages/subtitles/src/import.ts`, new `tests/core/b7EmbeddedSubtitleExtraction.test.ts`. At that historical gate there were no `apps/web` changes; LDM7 later implemented the browser wiring locally at `16c9bec` (review pending).
 3. **Nothing has happened since 2026-07-06.** No LDM5 batch was created or authorized; no Kanban gate is pending.
 
 ### Current ground truth (verified 2026-07-19)
