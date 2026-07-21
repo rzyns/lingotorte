@@ -272,6 +272,8 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 
 Run the tiny/base quality benchmark only when a task provides an exact owned local media path or an explicit approved local selection rule. Record model tier, runtime vs. media duration, transcript usability, word-timing notes, and whether tiny CPU is daily-use candidate or smoke-only. Do not search Janusz media folders, download models, install heavyweight dependencies, call cloud providers, or commit media/model/cache/scratch artifacts to satisfy B4.
 
+**2026-07-21 benchmark done.** The tiny-vs-base quality benchmark was run on an approved owned Polish clip (i7-12700KF, CPU/int8, 300 s slice): tiny ~13× realtime, base ~8.5× realtime, both faster-than-realtime; base is materially cleaner on proper nouns/numerals (mean word prob 0.876 vs 0.795). Recommendation adopted: **`base` int8 CPU is the Polish daily-use default, `tiny` the fast smoke/fallback tier**; both remain draft-only until the correction/approval pass. Full receipt with commands and transcript samples: `docs/dev/b4-asr-quality-benchmark-2026-07-21.md`.
+
 Cloud STT remains an explicit per-run decision because it sends local audio/media to ElevenLabs. Keep API keys out of logs, fixtures, commits, and screenshots.
 
 ## Known V1/V4 limitations
