@@ -426,6 +426,76 @@ describe('B6 visual source range player UI', () => {
     expect((panel.querySelector('audio') as HTMLAudioElement).src).toContain('blob:new-success');
   });
 
+  it('revokes an in-flight success when the same media ID becomes licensed', async () => {
+    let resolvePoll!: (response: Response) => void;
+    const pendingPoll = new Promise<Response>((resolve) => { resolvePoll = resolve; });
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/jobs') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ job: { id: 'same-id-success' } }), { status: 201 });
+      }
+      if (url.endsWith('/api/jobs/same-id-success')) return pendingPoll;
+      if (url.endsWith('/api/snippets/same-id-success') && init?.method !== 'DELETE') {
+        return new Response(new Blob(['wav']), { status: 200 });
+      }
+      return new Response(null, { status: 204 });
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:same-id-success');
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    setVisualSourceRange(model, 1_000, 2_000);
+    rerenderApp(model);
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/same-id-success'))).toBe(true));
+
+    model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
+    rerenderApp(model);
+    resolvePoll(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'same-id-success', url: '/api/snippets/same-id-success', mimeType: 'audio/wav' } } }), { status: 200 }));
+    await vi.waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:same-id-success'));
+
+    const panel = document.querySelector('[data-testid="source-range-panel"]')!;
+    expect(panel.textContent).toContain('owned or synthetic');
+    expect(panel.querySelector('audio')).toBeNull();
+  });
+
+  it('suppresses an in-flight failure when the same media ID becomes licensed', async () => {
+    let rejectPoll!: (error: Error) => void;
+    const pendingPoll = new Promise<Response>((_resolve, reject) => { rejectPoll = reject; });
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/jobs') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ job: { id: 'same-id-failure' } }), { status: 201 });
+      }
+      if (url.endsWith('/api/jobs/same-id-failure')) return pendingPoll;
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    setVisualSourceRange(model, 1_000, 2_000);
+    rerenderApp(model);
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/same-id-failure'))).toBe(true));
+
+    model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
+    rerenderApp(model);
+    rejectPoll(new Error('failed at /private/owned/movie.mkv'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const visible = document.querySelector('[data-testid="source-range-panel"]')?.textContent ?? '';
+    expect(visible).toContain('owned or synthetic');
+    expect(visible).not.toContain('/private/owned/movie.mkv');
+    expect(visible).not.toContain('failed at');
+  });
+
   it.each(['path', 'media'] as const)('suppresses a stale failure after %s invalidation', async (invalidation) => {
     let rejectPoll!: (error: Error) => void;
     const pendingPoll = new Promise<Response>((_resolve, reject) => { rejectPoll = reject; });

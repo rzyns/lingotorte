@@ -355,6 +355,7 @@ function sourceRangeContextKey(model: AppModel, state: SourceRangeSnippetUiState
   const range = model.player.sourceRange;
   return [
     model.currentMedia?.id ?? '',
+    hasExtractableCurrentMedia(model) ? 'extractable' : 'non-extractable',
     state.mediaPath.trim(),
     range?.startMs ?? '',
     range?.endMs ?? '',
