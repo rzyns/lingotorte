@@ -906,9 +906,16 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
               role: result.importResult.track.role,
               format: result.importResult.track.format,
               transcriptStatus: result.importResult.track.transcriptStatus,
+              transcriptSourceKind: result.importResult.track.transcriptSourceKind,
               provenance: result.importResult.track.provenance,
               cueCount: result.importResult.cues.length,
             },
+            cues: result.importResult.cues.map((cue) => ({
+              cueIndex: cue.cueIndex,
+              startMs: cue.startMs,
+              endMs: cue.endMs,
+              text: cue.text,
+            })),
           },
         }));
       } catch (error) {

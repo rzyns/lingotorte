@@ -23,7 +23,7 @@ import type {
   TranscriptWarningFlag,
   TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
-import type { AppModel, BrowserLocalMediaState, BrowserMediaPermissionState, PlayerState, ReviewBucketConfig } from './uiTypes';
+import type { AppModel, BrowserLocalMediaState, BrowserMediaPermissionState, EmbeddedSubtitleTrackState, PlayerState, ReviewBucketConfig } from './uiTypes';
 import { buildSourceContext, defaultReviewBucketConfig } from './uiTypes';
 import browserFixtureMediaUrl from '../../../fixtures/media/synthetic-polish-dialogue.webm?url';
 import browserFixtureTargetSrt from '../../../fixtures/subtitles/synthetic-polish-dialogue.target.srt?raw';
@@ -110,6 +110,16 @@ export function createAppModel(): AppModel {
       publicReadAuthorized: false,
       elevenLabsAuthorized: false,
       localAsrMediaPath: '',
+      embeddedSubtitle: {
+        mediaPath: '',
+        language: 'pl',
+        listingStatus: 'idle',
+        extractionStatus: 'idle',
+        tracks: [],
+        selectedStreamIndex: null,
+        statusMessage: null,
+        errorCode: null,
+      },
       pendingCueEdits: {},
       pendingCueTimingEdits: {},
       pendingWordTimingEdits: {},
@@ -1356,6 +1366,285 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const EMBEDDED_PATH_ERROR = 'An explicit absolute owned local media path is required. Browser blob and handle labels do not qualify.';
+const EMBEDDED_SERVICE_ERROR = 'Local service unreachable. Connect the loopback service and retry.';
+
+export type EmbeddedSubtitleJobOptions = Readonly<{
+  pollAttempts?: number;
+  pollDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}>;
+
+function embeddedMediaPath(value: string): string {
+  const path = value.trim();
+  if (!path.startsWith('/') || path === '/' || path.startsWith('//')) throw new TypeError(EMBEDDED_PATH_ERROR);
+  return path;
+}
+
+function integerField(value: unknown, label: string): number {
+  const number = numberField(value, label);
+  if (!Number.isSafeInteger(number)) throw new TypeError(`${label} must be a safe integer.`);
+  return number;
+}
+
+function booleanField(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new TypeError(`${label} must be a boolean.`);
+  return value;
+}
+
+function embeddedTrackFromJson(value: unknown, index: number): EmbeddedSubtitleTrackState {
+  const track = recordField(value, `embedded subtitle track ${index + 1}`);
+  const language = optionalStringField(track.language, 'embedded subtitle language');
+  const title = optionalStringField(track.title, 'embedded subtitle title');
+  const extractionHint = optionalStringField(track.extractionHint, 'embedded subtitle extraction hint');
+  const isDefault = track.isDefault === undefined ? undefined : booleanField(track.isDefault, 'embedded subtitle default flag');
+  const isForced = track.isForced === undefined ? undefined : booleanField(track.isForced, 'embedded subtitle forced flag');
+  return {
+    streamIndex: integerField(track.streamIndex, 'embedded subtitle stream index'),
+    codecName: stringField(track.codecName, 'embedded subtitle codec name'),
+    codecKind: stringField(track.codecKind, 'embedded subtitle codec kind'),
+    isSupported: booleanField(track.isSupported, 'embedded subtitle supported flag'),
+    ...(language !== undefined ? { language } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(isDefault !== undefined ? { isDefault } : {}),
+    ...(isForced !== undefined ? { isForced } : {}),
+    ...(extractionHint !== undefined ? { extractionHint } : {}),
+  };
+}
+
+function embeddedTracksFromJson(value: unknown): EmbeddedSubtitleTrackState[] {
+  const listing = recordField(value, 'embedded subtitle listing');
+  if (listing.effect !== 'embedded-subtitles-listed') throw new TypeError('Embedded subtitle listing effect is invalid.');
+  if (!Array.isArray(listing.tracks)) throw new TypeError('Embedded subtitle listing tracks must be an array.');
+  const tracks = listing.tracks.map(embeddedTrackFromJson);
+  if (integerField(listing.streamCount, 'embedded subtitle stream count') !== tracks.length) {
+    throw new TypeError('Embedded subtitle stream count does not match returned tracks.');
+  }
+  const supportedCount = tracks.filter((track) => track.isSupported).length;
+  if (integerField(listing.supportedCount, 'embedded subtitle supported count') !== supportedCount) {
+    throw new TypeError('Embedded subtitle supported count does not match returned tracks.');
+  }
+  return tracks;
+}
+
+function redactEmbeddedSubtitleError(value: unknown, mediaPath: string): string {
+  const raw = value instanceof Error ? value.message : String(value);
+  return mediaPath ? raw.split(mediaPath).join('[local-path]') : raw;
+}
+
+function isLoopbackConnectivityError(value: unknown): boolean {
+  const message = value instanceof Error ? value.message : String(value);
+  return /failed to fetch|fetch failed|networkerror|econnrefused|connection refused/i.test(message);
+}
+
+async function completedEmbeddedJob(
+  baseUrl: string,
+  jobId: string,
+  label: string,
+  options: EmbeddedSubtitleJobOptions,
+): Promise<Record<string, unknown>> {
+  const attempts = options.pollAttempts ?? 120;
+  const delayMs = options.pollDelayMs ?? 1000;
+  const wait = options.sleep ?? sleep;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const response = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+    const job = recordField(response.job, `local service ${label} job`);
+    const status = stringField(job.status, `local service ${label} job status`);
+    if (status === 'completed') return job;
+    if (status === 'failed' || status === 'cancelled') {
+      const reason = optionalStringField(job.message, `local service ${label} failure`) ?? `status ${status}`;
+      throw new TypeError(reason);
+    }
+    if (status !== 'queued' && status !== 'running') throw new TypeError(`Unsupported ${label} job status: ${status}`);
+    if (delayMs > 0) await wait(delayMs);
+  }
+  throw new TypeError(`${label} job did not finish before the polling deadline.`);
+}
+
+export function setEmbeddedSubtitleMediaPath(model: AppModel, value: string): void {
+  const state = model.transcriptLifecycle.embeddedSubtitle;
+  state.mediaPath = value;
+  state.listingStatus = 'idle';
+  state.extractionStatus = 'idle';
+  state.tracks = [];
+  state.selectedStreamIndex = null;
+  state.statusMessage = null;
+  state.errorCode = null;
+}
+
+export function selectEmbeddedSubtitleTrack(model: AppModel, streamIndex: number): void {
+  const state = model.transcriptLifecycle.embeddedSubtitle;
+  const selected = state.tracks.find((track) => track.streamIndex === streamIndex && track.isSupported);
+  if (!selected) throw new TypeError('Select a supported embedded subtitle track.');
+  state.selectedStreamIndex = selected.streamIndex;
+  state.language = selected.language ?? (state.language || 'pl');
+  state.extractionStatus = 'idle';
+}
+
+export async function listEmbeddedSubtitleTracksFromService(
+  model: AppModel,
+  options: EmbeddedSubtitleJobOptions = {},
+): Promise<EmbeddedSubtitleTrackState[]> {
+  const state = model.transcriptLifecycle.embeddedSubtitle;
+  state.tracks = [];
+  state.selectedStreamIndex = null;
+  state.extractionStatus = 'idle';
+  state.errorCode = null;
+  if (model.localService.status !== 'connected') {
+    state.listingStatus = 'failed';
+    state.statusMessage = EMBEDDED_SERVICE_ERROR;
+    throw new TypeError(EMBEDDED_SERVICE_ERROR);
+  }
+  let mediaPath = '';
+  try {
+    mediaPath = embeddedMediaPath(state.mediaPath);
+    state.listingStatus = 'listing';
+    state.statusMessage = 'Listing embedded subtitle tracks.';
+    const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }),
+    });
+    const createdJob = recordField(created.job, 'local service embedded subtitle listing job');
+    const jobId = stringField(createdJob.id, 'embedded subtitle listing job id');
+    const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle listing', options);
+    const result = recordField(job.result, 'embedded subtitle listing job result');
+    const tracks = embeddedTracksFromJson(result.listing);
+    state.tracks = tracks;
+    state.listingStatus = tracks.length === 0 ? 'empty' : 'ready';
+    state.statusMessage = tracks.length === 0
+      ? 'No embedded subtitle tracks found.'
+      : `${tracks.length} embedded subtitle track${tracks.length === 1 ? '' : 's'} found; select one explicitly.`;
+    return tracks;
+  } catch (error) {
+    if (state.listingStatus !== 'empty' && state.listingStatus !== 'ready') state.listingStatus = 'failed';
+    if (isLoopbackConnectivityError(error)) {
+      state.statusMessage = EMBEDDED_SERVICE_ERROR;
+      state.errorCode = 'service-unreachable';
+      throw new TypeError(EMBEDDED_SERVICE_ERROR);
+    }
+    const message = redactEmbeddedSubtitleError(error, mediaPath || state.mediaPath.trim());
+    state.statusMessage = message === EMBEDDED_PATH_ERROR ? EMBEDDED_PATH_ERROR : `Embedded subtitle listing failed. ${message}`;
+    state.errorCode = message === EMBEDDED_PATH_ERROR ? 'invalid-path' : 'listing-failed';
+    throw new TypeError(state.statusMessage);
+  }
+}
+
+function embeddedOutputFormat(track: EmbeddedSubtitleTrackState): Exclude<SubtitleFormat, 'json'> {
+  const codec = track.codecName.toLowerCase();
+  if (codec === 'ass' || codec === 'ssa') return 'ass';
+  if (codec === 'webvtt') return 'vtt';
+  if (codec === 'subrip' || codec === 'srt' || codec === 'mov_text') return 'srt';
+  throw new TypeError(`Codec '${track.codecName}' is not directly importable.`);
+}
+
+function embeddedWarningFlags(value: unknown): TranscriptWarningFlag[] {
+  if (!Array.isArray(value)) throw new TypeError('Embedded subtitle warning flags must be an array.');
+  const flags = value.map((flag) => stringField(flag, 'embedded subtitle warning flag'));
+  const allowed: readonly TranscriptWarningFlag[] = ['lowConfidence', 'timingUnverified', 'autoCaption', 'downloadRightsUnverified', 'asrDraft', 'providerCaption', 'qualityUnreviewed'];
+  if (flags.some((flag) => !allowed.includes(flag as TranscriptWarningFlag))) throw new TypeError('Embedded subtitle warning flags contain an unsupported value.');
+  if (!flags.includes('timingUnverified') || !flags.includes('qualityUnreviewed')) {
+    throw new TypeError('Embedded subtitle draft is missing required review warnings.');
+  }
+  return flags as TranscriptWarningFlag[];
+}
+
+export async function extractSelectedEmbeddedSubtitleDraft(
+  model: AppModel,
+  options: EmbeddedSubtitleJobOptions = {},
+): Promise<TranscriptImportResult> {
+  const state = model.transcriptLifecycle.embeddedSubtitle;
+  if (model.localService.status !== 'connected') {
+    state.extractionStatus = 'failed';
+    state.statusMessage = EMBEDDED_SERVICE_ERROR;
+    throw new TypeError(EMBEDDED_SERVICE_ERROR);
+  }
+  const media = model.currentMedia;
+  if (!media) throw new TypeError('Embedded subtitle draft import requires current owned local media.');
+  let mediaPath = '';
+  let completedResultReceived = false;
+  try {
+    mediaPath = embeddedMediaPath(state.mediaPath);
+    const language = state.language.trim();
+    if (!language) throw new TypeError('Embedded subtitle language is required.');
+    const selected = state.tracks.find((track) => track.streamIndex === state.selectedStreamIndex && track.isSupported);
+    if (!selected) throw new TypeError('Select a supported embedded subtitle track.');
+    const outputFormat = embeddedOutputFormat(selected);
+    state.extractionStatus = 'extracting';
+    state.statusMessage = 'Extracting selected embedded subtitle track.';
+    const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'embedded-subtitle-extract', payload: {
+        mediaPath, streamIndex: selected.streamIndex, outputFormat, language, role: 'target',
+      } }),
+    });
+    const createdJob = recordField(created.job, 'local service embedded subtitle extraction job');
+    const jobId = stringField(createdJob.id, 'embedded subtitle extraction job id');
+    const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle extraction', options);
+    completedResultReceived = true;
+    const result = recordField(job.result, 'embedded subtitle extraction job result');
+    const extract = recordField(result.extract, 'embedded subtitle extraction metadata');
+    if (extract.effect !== 'embedded-subtitle-extracted') throw new TypeError('Embedded subtitle extraction effect is invalid.');
+    if (integerField(extract.streamIndex, 'extracted subtitle stream index') !== selected.streamIndex) throw new TypeError('Extracted subtitle stream index does not match selection.');
+    if (stringField(extract.outputFormat, 'extracted subtitle format') !== outputFormat) throw new TypeError('Extracted subtitle format does not match selection.');
+    const serviceTrack = recordField(result.track, 'embedded subtitle service track');
+    if (serviceTrack.transcriptStatus !== 'draft' || serviceTrack.role !== 'target' || serviceTrack.transcriptSourceKind !== 'user-subtitle-file') {
+      throw new TypeError('Extracted subtitle track does not preserve draft target import semantics.');
+    }
+    if (stringField(serviceTrack.format, 'embedded subtitle service track format') !== outputFormat) throw new TypeError('Embedded subtitle track format does not match extraction.');
+    const provenance = recordField(serviceTrack.provenance, 'embedded subtitle service provenance');
+    const warningFlags = embeddedWarningFlags(provenance.warningFlags);
+    if (!Array.isArray(result.cues) || result.cues.length === 0) throw new TypeError('Extracted subtitle data contains no cues.');
+    const segments = result.cues.map((value, index): TranscriptSegmentDraft => {
+      const cue = recordField(value, `embedded subtitle cue ${index + 1}`);
+      if (integerField(cue.cueIndex, 'embedded subtitle cue index') !== index + 1) throw new TypeError('Embedded subtitle cue indexes must be ordered and contiguous.');
+      const startMs = integerField(cue.startMs, 'embedded subtitle cue start');
+      const endMs = integerField(cue.endMs, 'embedded subtitle cue end');
+      const text = stringField(cue.text, 'embedded subtitle cue text');
+      if (startMs < 0 || endMs <= startMs) throw new TypeError('Embedded subtitle cue timing is invalid.');
+      return { startMs, endMs, text };
+    });
+    if (integerField(serviceTrack.cueCount, 'embedded subtitle cue count') !== segments.length) throw new TypeError('Embedded subtitle cue count does not match returned cues.');
+    const imported = await putTranscriptSegments(model, {
+      media,
+      language,
+      role: 'target',
+      format: outputFormat,
+      sourcePath: `embedded-subtitle:${media.id}:stream-${selected.streamIndex}:${selected.codecName}:${outputFormat}`,
+      sourceKind: media.privacyLabel,
+      transcriptStatus: 'draft',
+      transcriptSourceKind: 'user-subtitle-file',
+      provenance: {
+        language,
+        generatedAt: new Date().toISOString(),
+        engine: 'ffmpeg-embedded-subtitle',
+        warningFlags,
+      },
+      qualityReport: qualityReportForSegments(segments, warningFlags),
+      segments,
+    });
+    state.extractionStatus = 'imported';
+    state.statusMessage = 'Embedded subtitle track imported as a draft; correct and approve it before study use.';
+    state.errorCode = null;
+    model.transcriptLifecycle.pendingCueEdits = {};
+    model.transcriptLifecycle.pendingCueTimingEdits = {};
+    model.transcriptLifecycle.pendingWordTimingEdits = {};
+    return imported;
+  } catch (error) {
+    state.extractionStatus = 'failed';
+    if (isLoopbackConnectivityError(error)) {
+      state.statusMessage = EMBEDDED_SERVICE_ERROR;
+      state.errorCode = 'service-unreachable';
+      throw new TypeError(EMBEDDED_SERVICE_ERROR);
+    }
+    const reason = redactEmbeddedSubtitleError(error, mediaPath || state.mediaPath.trim());
+    state.statusMessage = completedResultReceived
+      ? `Extracted subtitle data could not be imported as a draft. ${reason}`
+      : `Embedded subtitle extraction failed. ${reason}`;
+    state.errorCode = completedResultReceived ? 'import-validation-failed' : 'extraction-failed';
+    throw new TypeError(state.statusMessage);
+  }
+}
+
 export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServiceAsrProviderOptions = {}): LocalAsrProvider {
   let callCount = 0;
   return {
@@ -1566,6 +1855,7 @@ async function putTranscriptSegments(model: AppModel, input: {
   media: MediaAsset;
   language: string;
   role: 'target' | 'native' | 'other';
+  format?: SubtitleFormat;
   sourcePath: string;
   sourceKind: SourceKind;
   transcriptStatus: SubtitleTrack['transcriptStatus'];
@@ -1582,7 +1872,7 @@ async function putTranscriptSegments(model: AppModel, input: {
     mediaId: input.media.id,
     language: input.language,
     role: input.role,
-    format: 'json',
+    format: input.format ?? 'json',
     sourceKind: input.sourceKind,
     sourcePath: input.sourcePath,
     contentSha256: await sha256BrowserText(contentText),

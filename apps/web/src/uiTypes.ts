@@ -42,6 +42,29 @@ export type BrowserLocalMediaState = {
   lastError: string | null;
 };
 
+export type EmbeddedSubtitleTrackState = Readonly<{
+  streamIndex: number;
+  codecName: string;
+  codecKind: string;
+  isSupported: boolean;
+  language?: string;
+  title?: string;
+  isDefault?: boolean;
+  isForced?: boolean;
+  extractionHint?: string;
+}>;
+
+export type EmbeddedSubtitleLifecycleState = {
+  mediaPath: string;
+  language: string;
+  listingStatus: 'idle' | 'listing' | 'empty' | 'ready' | 'failed';
+  extractionStatus: 'idle' | 'extracting' | 'imported' | 'failed';
+  tracks: EmbeddedSubtitleTrackState[];
+  selectedStreamIndex: number | null;
+  statusMessage: string | null;
+  errorCode: string | null;
+};
+
 export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
   savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
@@ -70,6 +93,7 @@ export type AppModel = {
     publicReadAuthorized: boolean;
     elevenLabsAuthorized: boolean;
     localAsrMediaPath: string;
+    embeddedSubtitle: EmbeddedSubtitleLifecycleState;
     pendingCueEdits: Record<string, string>;
     pendingCueTimingEdits: Record<string, { startMs: number; endMs: number }>;
     pendingWordTimingEdits: Record<string, { text: string; startMs: number; endMs: number }>;

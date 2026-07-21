@@ -427,6 +427,7 @@ Druga linia dialogu.
     const result = job.result as Record<string, unknown>;
     const extract = result.extract as Record<string, unknown>;
     const track = result.track as Record<string, unknown>;
+    const cues = result.cues as Record<string, unknown>[];
 
     expect(job).toMatchObject({ status: 'completed' });
     expect(extract.effect).toBe('embedded-subtitle-extracted');
@@ -437,6 +438,14 @@ Druga linia dialogu.
     );
     expect(track.format).toBe('srt');
     expect(track.cueCount).toBe(2);
+    expect(track.transcriptSourceKind).toBe('user-subtitle-file');
+    expect(cues).toEqual([
+      { cueIndex: 1, startMs: 1000, endMs: 3500, text: 'Pierwsza linia dialogu.' },
+      { cueIndex: 2, startMs: 4000, endMs: 6000, text: 'Druga linia dialogu.' },
+    ]);
+    expect(cues[0]).not.toHaveProperty('style');
+    expect(cues[0]).not.toHaveProperty('position');
+    expect(cues[0]).not.toHaveProperty('karaoke');
 
     // ffmpeg was called
     const ffmpegCalls = calls.filter((c) => c.command === 'ffmpeg');
