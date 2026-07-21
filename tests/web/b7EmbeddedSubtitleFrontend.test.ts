@@ -2,9 +2,13 @@ import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeMediaAsset } from '@lingotorte/domain';
 import {
+  approveTranscriptTrack,
   createAppModel,
+  createCorrectedTranscriptVersion,
+  exportLearnerState,
   extractSelectedEmbeddedSubtitleDraft,
   listEmbeddedSubtitleTracksFromService,
+  setEmbeddedSubtitleMediaPath,
 } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -52,6 +56,38 @@ function button(label: string): HTMLButtonElement {
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function prepareExtractionModel(mediaPath = '/synthetic/extract-owned.mkv') {
+  const model = createAppModel();
+  model.localService.status = 'connected';
+  const media = ownedMedia();
+  model.store.putMediaAsset(media);
+  model.currentMedia = media;
+  model.transcriptLifecycle.embeddedSubtitle = {
+    mediaPath, language: 'pl', listingStatus: 'ready', extractionStatus: 'idle',
+    tracks: [{ streamIndex: 2, codecName: 'subrip', codecKind: 'subrip', isSupported: true }],
+    selectedStreamIndex: 2, statusMessage: null, errorCode: null,
+  };
+  return model;
+}
+
+function validExtractionResult(overrides: Record<string, unknown> = {}) {
+  return {
+    extract: { effect: 'embedded-subtitle-extracted', outputPath: '[local-scratch]', outputFormat: 'srt', streamIndex: 2 },
+    track: {
+      role: 'target', format: 'srt', transcriptStatus: 'draft', transcriptSourceKind: 'user-subtitle-file', cueCount: 1,
+      provenance: { warningFlags: ['timingUnverified', 'qualityUnreviewed'] },
+    },
+    cues: [{ cueIndex: 1, startMs: 1000, endMs: 2000, text: 'Syntetyczna kwestia.' }],
+    ...overrides,
+  };
 }
 
 describe('B7 embedded subtitle transcript lifecycle UI', () => {
@@ -154,6 +190,142 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     expect(tracks).toHaveLength(1);
     expect(polls).toBe(3);
     expect(waits).toEqual([7, 7]);
+  });
+
+  it('ignores an in-flight listing completion after the embedded media path changes', async () => {
+    const model = createAppModel();
+    model.localService.status = 'connected';
+    setEmbeddedSubtitleMediaPath(model, '/owned/old.mkv');
+    const pendingPoll = deferred<Response>();
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return jsonResponse({ ok: true, job: { id: 'old-list' } }, 201);
+      return pendingPoll.promise;
+    }) as typeof fetch;
+
+    const listing = listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 });
+    await waitFor(() => model.transcriptLifecycle.embeddedSubtitle.listingStatus === 'listing');
+    setEmbeddedSubtitleMediaPath(model, '/owned/new.mkv');
+    pendingPoll.resolve(jsonResponse({ ok: true, job: { status: 'completed', result: { listing: {
+      effect: 'embedded-subtitles-listed', streamCount: 1, supportedCount: 1,
+      tracks: [{ streamIndex: 7, codecName: 'subrip', codecKind: 'subrip', isSupported: true }],
+    } } } }));
+
+    await expect(listing).rejects.toThrow('Embedded subtitle operation was superseded by a media context change.');
+    expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({
+      mediaPath: '/owned/new.mkv', listingStatus: 'idle', tracks: [], selectedStreamIndex: null,
+      statusMessage: null, errorCode: null,
+    });
+  });
+
+  it.each([
+    ['failed', 'safe list failure'],
+    ['cancelled', 'status cancelled'],
+  ])('reports an explicit path-safe %s listing job state', async (status, message) => {
+    const model = createAppModel();
+    model.localService.status = 'connected';
+    setEmbeddedSubtitleMediaPath(model, '/private/list-sentinel.mkv');
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: `${status}-list` } }, 201)
+      : jsonResponse({ ok: true, job: { status, ...(status === 'failed' ? { message } : {}) } })) as typeof fetch;
+    await expect(listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 })).rejects.toThrow(message);
+    expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({ listingStatus: 'failed', errorCode: 'listing-failed' });
+    expect(model.transcriptLifecycle.embeddedSubtitle.statusMessage).not.toContain('/private/list-sentinel.mkv');
+  });
+
+  it('reports an explicit bounded polling deadline', async () => {
+    const model = createAppModel();
+    model.localService.status = 'connected';
+    setEmbeddedSubtitleMediaPath(model, '/private/deadline-sentinel.mkv');
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'deadline-list' } }, 201)
+      : jsonResponse({ ok: true, job: { status: 'running' } })) as typeof fetch;
+    await expect(listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 2, pollDelayMs: 0 })).rejects.toThrow(
+      'embedded subtitle listing job did not finish before the polling deadline.',
+    );
+    expect(model.transcriptLifecycle.embeddedSubtitle.listingStatus).toBe('failed');
+  });
+
+  it('ignores an in-flight extraction after its path and current-media context change', async () => {
+    const model = prepareExtractionModel('/owned/old.mkv');
+    const originalMediaId = model.currentMedia!.id;
+    const pendingPoll = deferred<Response>();
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'old-extract' } }, 201)
+      : pendingPoll.promise) as typeof fetch;
+    const extraction = extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 });
+    await waitFor(() => model.transcriptLifecycle.embeddedSubtitle.extractionStatus === 'extracting');
+    setEmbeddedSubtitleMediaPath(model, '/owned/new.mkv');
+    model.currentMedia = { ...ownedMedia(), id: 'media:new-context' };
+    pendingPoll.resolve(jsonResponse({ ok: true, job: { status: 'completed', result: validExtractionResult() } }));
+    await expect(extraction).rejects.toThrow('Embedded subtitle operation was superseded by a media context change.');
+    expect(model.targetTrackId).toBeNull();
+    expect(model.cues).toHaveLength(0);
+    expect(model.store.listSubtitleTracksForMedia(originalMediaId)).toHaveLength(0);
+    expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({ mediaPath: '/owned/new.mkv', extractionStatus: 'idle' });
+  });
+
+  it.each([
+    ['empty cues', { cues: [], track: { ...validExtractionResult().track, cueCount: 0 } }],
+    ['non-draft track', { track: { ...validExtractionResult().track, transcriptStatus: 'approved' } }],
+    ['stream mismatch', { extract: { ...validExtractionResult().extract, streamIndex: 9 } }],
+    ['format mismatch', { extract: { ...validExtractionResult().extract, outputFormat: 'vtt' } }],
+    ['missing warning flags', { track: { ...validExtractionResult().track, provenance: { warningFlags: ['timingUnverified'] } } }],
+  ])('fails closed for completed extraction with %s', async (_label, overrides) => {
+    const model = prepareExtractionModel();
+    const priorSnapshot = JSON.stringify(model.store.snapshot());
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'invalid-extract' } }, 201)
+      : jsonResponse({ ok: true, job: { status: 'completed', result: validExtractionResult(overrides) } })) as typeof fetch;
+    await expect(extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 })).rejects.toThrow(
+      'Extracted subtitle data could not be imported as a draft.',
+    );
+    expect(model.targetTrackId).toBeNull();
+    expect(model.cues).toHaveLength(0);
+    expect(JSON.stringify(model.store.snapshot())).toBe(priorSnapshot);
+  });
+
+  it('keeps the private path out of persistence/export and re-enables learner save only after correction and approval', async () => {
+    const privatePath = '/private/import-export-sentinel.mkv';
+    const model = prepareExtractionModel(privatePath);
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'valid-extract' } }, 201)
+      : jsonResponse({ ok: true, job: { status: 'completed', result: validExtractionResult() } })) as typeof fetch;
+    await extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 });
+    const draftId = model.targetTrackId!;
+    model.view = 'player';
+    rerenderApp(model);
+    expect(button('Save sentence').disabled).toBe(true);
+    const corrected = await createCorrectedTranscriptVersion(model, draftId, [{ cueId: model.cues[0]!.id, text: 'Poprawiona kwestia.' }]);
+    approveTranscriptTrack(model, corrected.track.id);
+    rerenderApp(model);
+    expect(button('Save sentence').disabled).toBe(false);
+    expect(JSON.stringify(model.store.snapshot())).not.toContain(privatePath);
+    expect(exportLearnerState(model).manifestJson).not.toContain(privatePath);
+  });
+
+  it('routes list and extraction requests only through the configured loopback base URL', async () => {
+    const model = prepareExtractionModel('/owned/routing.mkv');
+    model.localService.baseUrl = 'http://127.0.0.1:49174/custom/';
+    const urls: string[] = [];
+    let phase: 'list' | 'extract' = 'list';
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      if (init?.method === 'POST') return jsonResponse({ ok: true, job: { id: phase } }, 201);
+      if (phase === 'list') return jsonResponse({ ok: true, job: { status: 'completed', result: { listing: {
+        effect: 'embedded-subtitles-listed', streamCount: 1, supportedCount: 1,
+        tracks: [{ streamIndex: 2, codecName: 'subrip', codecKind: 'subrip', isSupported: true }],
+      } } } });
+      return jsonResponse({ ok: true, job: { status: 'completed', result: validExtractionResult() } });
+    }) as typeof fetch;
+    await listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 });
+    model.transcriptLifecycle.embeddedSubtitle.selectedStreamIndex = 2;
+    phase = 'extract';
+    await extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 });
+    expect(urls).toEqual([
+      'http://127.0.0.1:49174/custom/api/jobs', 'http://127.0.0.1:49174/custom/api/jobs/list',
+      'http://127.0.0.1:49174/custom/api/jobs', 'http://127.0.0.1:49174/custom/api/jobs/extract',
+    ]);
+    expect(urls.every((url) => new URL(url).hostname === '127.0.0.1')).toBe(true);
   });
 
   it('lists metadata without auto-selection, extracts an explicit supported selection, and imports a path-safe draft', async () => {

@@ -1437,6 +1437,30 @@ function isLoopbackConnectivityError(value: unknown): boolean {
   return /failed to fetch|fetch failed|networkerror|econnrefused|connection refused/i.test(message);
 }
 
+const EMBEDDED_STALE_OPERATION_ERROR = 'Embedded subtitle operation was superseded by a media context change.';
+
+class StaleEmbeddedSubtitleOperationError extends Error {
+  constructor() {
+    super(EMBEDDED_STALE_OPERATION_ERROR);
+    this.name = 'StaleEmbeddedSubtitleOperationError';
+  }
+}
+
+export function isStaleEmbeddedSubtitleOperationError(value: unknown): boolean {
+  return value instanceof StaleEmbeddedSubtitleOperationError;
+}
+
+type EmbeddedSubtitleOperationGenerations = { listing: number; extraction: number };
+const embeddedSubtitleOperationGenerations = new WeakMap<AppModel, EmbeddedSubtitleOperationGenerations>();
+
+function embeddedSubtitleGenerations(model: AppModel): EmbeddedSubtitleOperationGenerations {
+  const existing = embeddedSubtitleOperationGenerations.get(model);
+  if (existing) return existing;
+  const created = { listing: 0, extraction: 0 };
+  embeddedSubtitleOperationGenerations.set(model, created);
+  return created;
+}
+
 async function completedEmbeddedJob(
   baseUrl: string,
   jobId: string,
@@ -1463,6 +1487,9 @@ async function completedEmbeddedJob(
 
 export function setEmbeddedSubtitleMediaPath(model: AppModel, value: string): void {
   const state = model.transcriptLifecycle.embeddedSubtitle;
+  const generations = embeddedSubtitleGenerations(model);
+  generations.listing += 1;
+  generations.extraction += 1;
   state.mediaPath = value;
   state.listingStatus = 'idle';
   state.extractionStatus = 'idle';
@@ -1486,6 +1513,9 @@ export async function listEmbeddedSubtitleTracksFromService(
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<EmbeddedSubtitleTrackState[]> {
   const state = model.transcriptLifecycle.embeddedSubtitle;
+  const generations = embeddedSubtitleGenerations(model);
+  const listingGeneration = ++generations.listing;
+  generations.extraction += 1;
   state.tracks = [];
   state.selectedStreamIndex = null;
   state.extractionStatus = 'idle';
@@ -1498,6 +1528,11 @@ export async function listEmbeddedSubtitleTracksFromService(
   let mediaPath = '';
   try {
     mediaPath = embeddedMediaPath(state.mediaPath);
+    const assertCurrentContext = () => {
+      if (generations.listing !== listingGeneration || state.mediaPath.trim() !== mediaPath) {
+        throw new StaleEmbeddedSubtitleOperationError();
+      }
+    };
     state.listingStatus = 'listing';
     state.statusMessage = 'Listing embedded subtitle tracks.';
     const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
@@ -1509,6 +1544,7 @@ export async function listEmbeddedSubtitleTracksFromService(
     const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle listing', options);
     const result = recordField(job.result, 'embedded subtitle listing job result');
     const tracks = embeddedTracksFromJson(result.listing);
+    assertCurrentContext();
     state.tracks = tracks;
     state.listingStatus = tracks.length === 0 ? 'empty' : 'ready';
     state.statusMessage = tracks.length === 0
@@ -1516,6 +1552,7 @@ export async function listEmbeddedSubtitleTracksFromService(
       : `${tracks.length} embedded subtitle track${tracks.length === 1 ? '' : 's'} found; select one explicitly.`;
     return tracks;
   } catch (error) {
+    if (isStaleEmbeddedSubtitleOperationError(error)) throw error;
     if (state.listingStatus !== 'empty' && state.listingStatus !== 'ready') state.listingStatus = 'failed';
     if (isLoopbackConnectivityError(error)) {
       state.statusMessage = EMBEDDED_SERVICE_ERROR;
@@ -1553,6 +1590,8 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<TranscriptImportResult> {
   const state = model.transcriptLifecycle.embeddedSubtitle;
+  const generations = embeddedSubtitleGenerations(model);
+  const extractionGeneration = ++generations.extraction;
   if (model.localService.status !== 'connected') {
     state.extractionStatus = 'failed';
     state.statusMessage = EMBEDDED_SERVICE_ERROR;
@@ -1569,6 +1608,17 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     const selected = state.tracks.find((track) => track.streamIndex === state.selectedStreamIndex && track.isSupported);
     if (!selected) throw new TypeError('Select a supported embedded subtitle track.');
     const outputFormat = embeddedOutputFormat(selected);
+    const mediaId = media.id;
+    const selectedStreamIndex = selected.streamIndex;
+    const assertCurrentContext = () => {
+      if (state.mediaPath.trim() !== mediaPath
+        || generations.extraction !== extractionGeneration
+        || model.currentMedia?.id !== mediaId
+        || state.selectedStreamIndex !== selectedStreamIndex
+        || !state.tracks.some((track) => track.streamIndex === selectedStreamIndex && track.isSupported)) {
+        throw new StaleEmbeddedSubtitleOperationError();
+      }
+    };
     state.extractionStatus = 'extracting';
     state.statusMessage = 'Extracting selected embedded subtitle track.';
     const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
@@ -1580,6 +1630,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     const createdJob = recordField(created.job, 'local service embedded subtitle extraction job');
     const jobId = stringField(createdJob.id, 'embedded subtitle extraction job id');
     const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle extraction', options);
+    assertCurrentContext();
     completedResultReceived = true;
     const result = recordField(job.result, 'embedded subtitle extraction job result');
     const extract = recordField(result.extract, 'embedded subtitle extraction metadata');
@@ -1621,6 +1672,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
       },
       qualityReport: qualityReportForSegments(segments, warningFlags),
       segments,
+      beforeCommit: assertCurrentContext,
     });
     state.extractionStatus = 'imported';
     state.statusMessage = 'Embedded subtitle track imported as a draft; correct and approve it before study use.';
@@ -1630,6 +1682,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     model.transcriptLifecycle.pendingWordTimingEdits = {};
     return imported;
   } catch (error) {
+    if (isStaleEmbeddedSubtitleOperationError(error)) throw error;
     state.extractionStatus = 'failed';
     if (isLoopbackConnectivityError(error)) {
       state.statusMessage = EMBEDDED_SERVICE_ERROR;
@@ -1863,6 +1916,7 @@ async function putTranscriptSegments(model: AppModel, input: {
   provenance: SubtitleTrack['provenance'];
   qualityReport: TranscriptQualityReport;
   segments: readonly TranscriptSegmentDraft[];
+  beforeCommit?: () => void;
 }): Promise<TranscriptImportResult> {
   if (input.segments.length === 0) {
     throw new TypeError('Transcript candidate contains no caption segments.');
@@ -1898,6 +1952,7 @@ async function putTranscriptSegments(model: AppModel, input: {
       textSha256: await sha256BrowserText(text),
     }));
   }
+  input.beforeCommit?.();
   model.store.putMediaAsset(input.media);
   model.store.putSubtitleTrack(track);
   for (const cue of cues) model.store.putCue(cue);

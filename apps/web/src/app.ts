@@ -68,6 +68,7 @@ import {
   generateLocalAsrDraft,
   extractSelectedEmbeddedSubtitleDraft,
   importYouTubeCaptionCandidate,
+  isStaleEmbeddedSubtitleOperationError,
   listEmbeddedSubtitleTracksFromService,
   makeLocalServiceAsrProvider,
   makeLocalServiceElevenLabsScribeProvider,
@@ -2513,6 +2514,7 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((error: unknown) => {
+        if (isStaleEmbeddedSubtitleOperationError(error)) return;
         model.importError = error instanceof Error ? error.message : String(error);
         rerenderApp(model);
       });
@@ -2526,6 +2528,7 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((error: unknown) => {
+        if (isStaleEmbeddedSubtitleOperationError(error)) return;
         model.importError = error instanceof Error ? error.message : String(error);
         rerenderApp(model);
       });
