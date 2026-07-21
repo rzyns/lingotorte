@@ -1377,7 +1377,7 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
           payload: {
             mediaPath,
             language: input.language,
-            modelName: options.modelName ?? 'tiny',
+            ...(options.modelName !== undefined ? { modelName: options.modelName } : {}),
             alignWords: options.alignWords ?? true,
           },
         }),

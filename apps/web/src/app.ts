@@ -2556,7 +2556,6 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   asrBtn.addEventListener('click', () => {
     const provider = makeLocalServiceAsrProvider(model.localService.baseUrl, {
       mediaPath: model.transcriptLifecycle.localAsrMediaPath,
-      modelName: 'tiny',
       alignWords: true,
     });
     void generateLocalAsrDraft(model, provider, model.transcriptLifecycle.youtubeLanguage)

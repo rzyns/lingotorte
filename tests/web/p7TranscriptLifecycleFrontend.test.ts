@@ -1,7 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeMediaAsset } from '@lingotorte/domain';
-import { approveTranscriptTrack, createAppModel } from '../../apps/web/src/model';
+import { approveTranscriptTrack, createAppModel, makeLocalServiceAsrProvider } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -227,10 +227,10 @@ describe('P7 transcript lifecycle frontend', () => {
       payload: {
         mediaPath: ownedMedia.originalPath,
         language: 'pl',
-        modelName: 'tiny',
         alignWords: true,
       },
     });
+    expect(createBody.payload).not.toHaveProperty('modelName');
     expect(requests.map((request) => request.url)).toEqual([
       'http://127.0.0.1:5174/api/jobs',
       'http://127.0.0.1:5174/api/jobs/job-local-asr-1',
@@ -428,5 +428,39 @@ describe('P7 transcript lifecycle frontend', () => {
     expect(model.store.getSubtitleTrack(model.targetTrackId!)?.transcriptStatus).toBe('correcting');
     expect(model.store.getSubtitleTrack(model.targetTrackId!)?.provenance.parentTrackId).toBe(splitTrackId);
     expect(model.cues[0]!.text).toContain('Provider caption draft.');
+  });
+
+  it('serializes an intentional local ASR provider model override', async () => {
+    const media = makeMediaAsset({
+      title: 'Synthetic override clip',
+      originalPath: '/synthetic/override.webm',
+      contentSha256: 'sha256:2222222222222222222222222222222222222222222222222222222222222222',
+      durationMs: 1000,
+      container: 'webm',
+      sizeBytes: 100,
+      privacyLabel: 'synthetic',
+    });
+    let createBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/jobs')) {
+        createBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ ok: true, job: { id: 'override-job' } }), { status: 201 });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        job: {
+          status: 'completed',
+          result: { transcript: { engine: 'faster-whisper', modelName: 'tiny', language: 'pl', segments: [] } },
+        },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    const provider = makeLocalServiceAsrProvider('http://127.0.0.1:5174', {
+      modelName: 'tiny', pollAttempts: 1, pollDelayMs: 0,
+    });
+    await provider.transcribe({ media, language: 'pl' });
+
+    expect(createBody).toMatchObject({ payload: { modelName: 'tiny' } });
   });
 });

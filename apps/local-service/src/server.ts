@@ -25,6 +25,10 @@ import { importSubtitle } from '../../../packages/subtitles/src/import.ts';
 const SERVICE_NAME = 'lingotorte-local-service';
 const SERVICE_VERSION = '0.1.0';
 const MAX_JSON_BODY_BYTES = 5 * 1024 * 1024;
+export const ALLOWED_ASR_MODEL_NAMES = ['tiny', 'base', 'small', 'medium', 'large-v3'] as const;
+export type AsrModelName = typeof ALLOWED_ASR_MODEL_NAMES[number];
+const DEFAULT_ASR_MODEL_NAME: AsrModelName = 'base';
+const ASR_MODEL_VALIDATION_MESSAGE = `modelName must be one of: ${ALLOWED_ASR_MODEL_NAMES.join(', ')}.`;
 
 export type LocalServiceConfig = Readonly<{
   host: string;
@@ -58,7 +62,7 @@ export type LocalServiceRuntime = Readonly<{
   pythonPath?: string;
   ffmpegPath?: string;
   defaultLanguage?: string;
-  defaultModelName?: string;
+  defaultModelName?: AsrModelName;
   defaultDevice?: string;
   defaultComputeType?: string;
   fetchImpl?: typeof fetch;
@@ -160,7 +164,7 @@ function publicJob(job: LocalJob): unknown {
   };
 }
 
-function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence): unknown {
+function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName): unknown {
   return {
     ok: true,
     service: SERVICE_NAME,
@@ -171,6 +175,7 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
       databasePath: '[local-sqlite]',
       scratchDir: '[local-scratch]',
       modelCacheDir: '[local-model-cache]',
+      defaultAsrModelName,
       allowOnlineProviders: config.allowOnlineProviders,
     },
     providers: {
@@ -272,7 +277,7 @@ function redactLocalPaths(message: string, paths: readonly string[]): string {
 type LocalTranscriptionPayload = Readonly<{
   mediaPath: string;
   language: string;
-  modelName: string;
+  modelName: AsrModelName;
   alignWords: boolean;
   pythonPath: string;
   ffmpegPath: string;
@@ -327,12 +332,35 @@ function sourceAudioSnippetPayload(value: unknown, runtime: LocalServiceRuntime)
   };
 }
 
+function isAsrModelName(value: string): value is AsrModelName {
+  return (ALLOWED_ASR_MODEL_NAMES as readonly string[]).includes(value);
+}
+
+function jobAsrModelName(value: unknown, fallback: AsrModelName): AsrModelName {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !isAsrModelName(value.trim())) {
+    throw new TypeError(ASR_MODEL_VALIDATION_MESSAGE);
+  }
+  return value.trim() as AsrModelName;
+}
+
+export function resolveDefaultAsrModelName(
+  value: string | undefined,
+  warn: (message: string) => void = console.warn,
+): AsrModelName {
+  const trimmed = value?.trim();
+  if (!trimmed) return DEFAULT_ASR_MODEL_NAME;
+  if (isAsrModelName(trimmed)) return trimmed;
+  warn(`LINGOTORTE_ASR_MODEL is unsupported; using ${DEFAULT_ASR_MODEL_NAME}. Allowed values: ${ALLOWED_ASR_MODEL_NAMES.join(', ')}.`);
+  return DEFAULT_ASR_MODEL_NAME;
+}
+
 function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime): LocalTranscriptionPayload {
   const body = asObject(value, 'local transcription payload');
   return {
     mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
     language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
-    modelName: optionalStringField(body, 'modelName', runtime.defaultModelName ?? 'tiny'),
+    modelName: jobAsrModelName(body.modelName, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME),
     alignWords: optionalBooleanField(body, 'alignWords', true),
     pythonPath: optionalStringField(body, 'pythonPath', runtime.pythonPath ?? 'python3'),
     ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
@@ -399,7 +427,7 @@ function payloadSummary(kind: LocalJobKind, payload: unknown): unknown {
     const record = asObject(payload, 'local transcription payload');
     return {
       language: typeof record.language === 'string' ? record.language : 'pl',
-      modelName: typeof record.modelName === 'string' ? record.modelName : 'tiny',
+      modelName: jobAsrModelName(record.modelName, DEFAULT_ASR_MODEL_NAME),
       alignWords: record.alignWords !== false,
       mediaPath: '[local-media-path]',
     };
@@ -650,7 +678,11 @@ async function runEmbeddedSubtitleExtract(
   return { extract, importResult };
 }
 
-export async function startLingotorteLocalService(config: LocalServiceConfig, runtime: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
+export async function startLingotorteLocalService(config: LocalServiceConfig, runtimeInput: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
+  const runtime: LocalServiceRuntime = {
+    ...runtimeInput,
+    defaultModelName: runtimeInput.defaultModelName ?? DEFAULT_ASR_MODEL_NAME,
+  };
   assertLoopbackConfig(config);
   await mkdir(dirname(config.databasePath), { recursive: true });
   await mkdir(config.scratchDir, { recursive: true });
@@ -913,7 +945,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/status') {
-        sendJson(response, 200, publicStatus(config, persistence));
+        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME));
         return;
       }
 
@@ -938,7 +970,8 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         }
         const now = new Date().toISOString();
         const status: LocalJobStatus = kind === 'noop' ? 'completed' : 'queued';
-        const payload = body.payload ?? {};
+        const rawPayload = body.payload ?? {};
+        const payload = kind === 'local-transcription' ? localTranscriptionPayload(rawPayload, runtime) : rawPayload;
         const job: LocalJob = {
           id: randomUUID(),
           kind,
@@ -1068,7 +1101,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServic
 }
 
 export async function startFromCli(): Promise<void> {
-  const service = await startLingotorteLocalService(configFromEnv());
+  const defaultModelName = resolveDefaultAsrModelName(process.env.LINGOTORTE_ASR_MODEL);
+  const service = await startLingotorteLocalService(configFromEnv(), { defaultModelName });
   console.log(JSON.stringify({
     ok: true,
     service: SERVICE_NAME,
@@ -1079,6 +1113,7 @@ export async function startFromCli(): Promise<void> {
       databasePath: '[local-sqlite]',
       scratchDir: '[local-scratch]',
       modelCacheDir: '[local-model-cache]',
+      defaultAsrModelName: defaultModelName,
       allowOnlineProviders: service.config.allowOnlineProviders,
     },
     providers: {

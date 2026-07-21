@@ -4,7 +4,11 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeMediaAsset } from '../../packages/domain/src';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
-import { startLingotorteLocalService } from '../../apps/local-service/src/server';
+import {
+  ALLOWED_ASR_MODEL_NAMES,
+  resolveDefaultAsrModelName,
+  startLingotorteLocalService,
+} from '../../apps/local-service/src/server';
 import type { CommandRunner, ElevenLabsHttpClient } from '../../packages/local-transcription/src';
 
 const fingerprint = 'sha256:1111111111111111111111111111111111111111111111111111111111111111' as const;
@@ -43,6 +47,25 @@ describe('Lingotorte loopback local service', () => {
     }
   });
 
+  it('resolves the bounded ASR model setting without invoking runtime work or exposing rejected input', () => {
+    const warnings: string[] = [];
+    const warn = (message: string) => warnings.push(message);
+
+    expect(resolveDefaultAsrModelName(undefined, warn)).toBe('base');
+    expect(resolveDefaultAsrModelName('   ', warn)).toBe('base');
+    for (const modelName of ALLOWED_ASR_MODEL_NAMES) {
+      expect(resolveDefaultAsrModelName(` ${modelName} `, warn)).toBe(modelName);
+    }
+    expect(warnings).toEqual([]);
+
+    const rejected = 'private-rejected-model-sentinel';
+    expect(resolveDefaultAsrModelName(rejected, warn)).toBe('base');
+    expect(warnings).toEqual([
+      'LINGOTORTE_ASR_MODEL is unsupported; using base. Allowed values: tiny, base, small, medium, large-v3.',
+    ]);
+    expect(warnings[0]).not.toContain(rejected);
+  });
+
   it('refuses non-loopback bind hosts before opening a server', async () => {
     const { root, config } = await makeTempConfig();
     cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -67,6 +90,7 @@ describe('Lingotorte loopback local service', () => {
     expect(status.ok).toBe(true);
     expect(status.config.host).toBe('127.0.0.1');
     expect(status.config.databasePath).toBe('[local-sqlite]');
+    expect(status.config.defaultAsrModelName).toBe('base');
     expect(JSON.stringify(status)).not.toContain(root);
   });
 
@@ -324,11 +348,12 @@ describe('Lingotorte loopback local service', () => {
         return { exitCode: 0, stdout: '', stderr: '' };
       }
       if (args[0]?.endsWith('faster_whisper_transcribe.py')) {
+        const modelName = args[args.indexOf('--model') + 1]!;
         return {
           exitCode: 0,
           stdout: JSON.stringify({
             engine: 'faster-whisper',
-            model_name: 'tiny',
+            model_name: modelName,
             model_version: 'fake-fw-1',
             language: 'pl',
             segments: [{ start: 0, end: 1.4, text: 'Cześć świecie.' }],
@@ -339,7 +364,7 @@ describe('Lingotorte loopback local service', () => {
       if (args[0]?.endsWith('whisperx_align.py')) {
         const transcriptPath = args[args.indexOf('--transcript-json') + 1]!;
         const handoff = JSON.parse(await readFile(transcriptPath, 'utf-8')) as Record<string, unknown>;
-        expect(handoff).toMatchObject({ engine: 'faster-whisper', modelName: 'tiny', language: 'pl' });
+        expect(handoff).toMatchObject({ engine: 'faster-whisper', modelName: 'base', language: 'pl' });
         return {
           exitCode: 0,
           stdout: JSON.stringify({
@@ -376,7 +401,6 @@ describe('Lingotorte loopback local service', () => {
         payload: {
           mediaPath,
           language: 'pl',
-          modelName: 'tiny',
           alignWords: true,
         },
       }),
@@ -387,9 +411,11 @@ describe('Lingotorte loopback local service', () => {
     const serialized = JSON.stringify(completed);
 
     expect(completed.job).toMatchObject({ kind: 'local-transcription', status: 'completed' });
+    expect(created.job.payloadSummary).toMatchObject({ modelName: 'base' });
     expect(serialized).not.toContain(mediaPath);
     expect(serialized).not.toContain(resolve(root));
     expect(calls.map((call) => call.command)).toEqual(['ffmpeg', 'python3', 'python3']);
+    expect(calls.find((call) => call.args.includes('--model'))?.args).toEqual(expect.arrayContaining(['--model', 'base']));
     expect(jobResult.transcript).toMatchObject({
       engine: 'whisperx',
       modelName: 'whisperx-align-pl',
@@ -416,6 +442,61 @@ describe('Lingotorte loopback local service', () => {
         }],
       }],
     });
+  });
+
+  it('uses an injected service ASR default, permits tiny override, and rejects unsupported models before runner execution', async () => {
+    const { root, config } = await makeTempConfig();
+    const mediaPath = join(root, 'owned-model-selection-media.webm');
+    await writeFile(mediaPath, 'owned media bytes');
+    const calls: { command: string; args: readonly string[] }[] = [];
+    const runner: CommandRunner = async (command, args) => {
+      calls.push({ command, args });
+      if (command === 'ffmpeg') return { exitCode: 0, stdout: '', stderr: '' };
+      const modelName = args[args.indexOf('--model') + 1]!;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          engine: 'faster-whisper', model_name: modelName, language: 'pl',
+          segments: [{ start: 0, end: 1, text: 'Model test.' }],
+        }),
+        stderr: '',
+      };
+    };
+    const service = await startLingotorteLocalService(config, {
+      commandRunner: runner,
+      defaultModelName: 'small',
+    });
+    cleanups.push(async () => {
+      await service.close();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    const status = await fetch(`${service.origin}/api/status`).then((response) => response.json());
+    expect(status.config.defaultAsrModelName).toBe('small');
+
+    const create = async (payload: Record<string, unknown>) => fetch(`${service.origin}/api/jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'local-transcription', payload: { mediaPath, alignWords: false, ...payload } }),
+    });
+    const defaultCreated = await create({}).then((response) => response.json());
+    expect(defaultCreated.job.payloadSummary.modelName).toBe('small');
+    await waitForJob(service.origin, defaultCreated.job.id);
+
+    const overrideCreated = await create({ modelName: 'tiny' }).then((response) => response.json());
+    expect(overrideCreated.job.payloadSummary.modelName).toBe('tiny');
+    await waitForJob(service.origin, overrideCreated.job.id);
+    expect(calls.filter((call) => call.args.includes('--model')).map((call) => call.args[call.args.indexOf('--model') + 1])).toEqual(['small', 'tiny']);
+
+    const callCount = calls.length;
+    const rejected = 'private-invalid-model-sentinel';
+    const invalidResponse = await create({ modelName: rejected });
+    const invalid = await invalidResponse.json();
+    expect(invalidResponse.status).toBe(400);
+    expect(invalid.error).toBe('modelName must be one of: tiny, base, small, medium, large-v3.');
+    expect(JSON.stringify(invalid)).not.toContain(rejected);
+    expect(JSON.stringify(invalid)).not.toContain(mediaPath);
+    expect(calls).toHaveLength(callCount);
   });
 
   it('redacts private media paths when local transcription jobs fail', async () => {
