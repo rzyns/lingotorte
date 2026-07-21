@@ -201,4 +201,28 @@ describe('browser snippet lifecycle', () => {
     releaseSourceAudioSnippet(lifecycle, revokeObjectURL);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:first');
   });
+
+  it('fails closed when service deletion fails without promoting browser audio', async () => {
+    const createObjectURL = vi.fn().mockReturnValue('blob:must-not-exist');
+    const responses = [
+      new Response(JSON.stringify({ job: { id: 'job-delete-failure' } }), { status: 201 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
+      new Response('still present at /private/scratch/opaque.wav', { status: 500 }),
+    ];
+    const lifecycle = { objectUrl: null as string | null };
+
+    await expect(prepareSourceAudioSnippet({
+      baseUrl: 'http://127.0.0.1:5174',
+      mediaPath: '/owned/movie.mkv',
+      startMs: 1,
+      endMs: 2,
+      fetchImpl: async () => responses.shift()!,
+      createObjectURL,
+      lifecycle,
+    })).rejects.toThrow('deletion failed');
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(lifecycle.objectUrl).toBeNull();
+  });
 });

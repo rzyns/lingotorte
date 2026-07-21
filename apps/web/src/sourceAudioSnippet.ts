@@ -42,7 +42,8 @@ export async function prepareSourceAudioSnippet(input: PrepareSourceAudioSnippet
   const audioResponse = await fetchImpl(`${baseUrl}${result.url}`);
   if (!audioResponse.ok) throw new Error('Source snippet retrieval failed.');
   const blob = await audioResponse.blob();
-  await fetchImpl(`${baseUrl}${result.url}`, { method: 'DELETE' });
+  const deleteResponse = await fetchImpl(`${baseUrl}${result.url}`, { method: 'DELETE' });
+  if (!deleteResponse.ok) throw new Error('Source snippet deletion failed.');
   const objectUrl = createObjectURL(blob);
   input.lifecycle.objectUrl = objectUrl;
   return { objectUrl, mimeType: 'audio/wav' };

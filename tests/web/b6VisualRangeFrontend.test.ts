@@ -32,6 +32,12 @@ async function setupDom() {
   return dom;
 }
 
+function buttonByText(text: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll('button')).find((candidate) => candidate.textContent === text);
+  if (!(button instanceof window.HTMLButtonElement)) throw new Error(`Missing button: ${text}`);
+  return button;
+}
+
 describe('B6 visual source range model', () => {
   it('creates an ordered integer range, clamps it to media duration, and clears it', () => {
     const model = createAppModel();
@@ -78,6 +84,27 @@ describe('B6 visual source range player UI', () => {
     expect(panel?.textContent).toContain('Loop selected range');
     expect(panel?.textContent).toContain('Clear loop');
     expect(model.player.loopRange).toBeNull();
+  });
+
+  it('updates the selected interval from actual range-handle input events', async () => {
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 4_000;
+    rerenderApp(model);
+
+    let start = document.querySelector('input[aria-label="Source range start"]') as HTMLInputElement;
+    start.value = '750';
+    start.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    let end = document.querySelector('input[aria-label="Source range end"]') as HTMLInputElement;
+    end.value = '2250';
+    end.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+    expect(model.player.sourceRange).toEqual({ startMs: 750, endMs: 2_250 });
+    expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toContain('Duration 0:01.50');
+    start = document.querySelector('input[aria-label="Source range start"]') as HTMLInputElement;
+    end = document.querySelector('input[aria-label="Source range end"]') as HTMLInputElement;
+    expect(start.value).toBe('750');
+    expect(end.value).toBe('2250');
   });
 
   it('seeds only the visual range from timed transcript text and applies or clears the loop deliberately', async () => {
@@ -148,6 +175,113 @@ describe('B6 visual source range player UI', () => {
     expect(loop.disabled).toBe(false);
     expect(panel.textContent).toContain('30-second maximum');
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before fetch for licensed or missing current media', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchImpl);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    setVisualSourceRange(model, 1_000, 2_000);
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
+    rerenderApp(model);
+
+    let prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    expect(prepare.disabled).toBe(true);
+    prepare.click();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toContain('owned or synthetic');
+
+    model.currentMedia = null;
+    rerenderApp(model);
+    prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    expect(prepare.disabled).toBe(true);
+    prepare.click();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['disconnected service', 'disconnected', '/owned/movie.mkv', 'disconnected'],
+    ['blank path', 'connected', '', 'absolute owned local media path'],
+    ['relative path', 'connected', 'movie.mkv', 'absolute owned local media path'],
+    ['blob path', 'connected', 'blob:private-media', 'absolute owned local media path'],
+    ['HTTP path', 'connected', 'https://example.invalid/private.mkv', 'absolute owned local media path'],
+  ] as const)('rejects %s before fetch', async (_label, serviceStatus, configuredPath, expectedStatus) => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchImpl);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    setVisualSourceRange(model, 1_000, 2_000);
+    model.localService.status = serviceStatus;
+    model.transcriptLifecycle.localAsrMediaPath = configuredPath;
+    rerenderApp(model);
+
+    const prepare = buttonByText('Prepare source audio');
+    expect(prepare.disabled).toBe(true);
+    prepare.click();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toContain(expectedStatus);
+  });
+
+  it.each(['service request', 'extraction', 'retrieval'] as const)('shows a redacted ordinary %s failure', async (stage) => {
+    const privatePath = '/private/owned/movie.mkv';
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.method === 'POST') {
+        if (stage === 'service request') return new Response(privatePath, { status: 503 });
+        return new Response(JSON.stringify({ job: { id: 'job-failure' } }), { status: 201 });
+      }
+      if (stage === 'extraction') {
+        return new Response(JSON.stringify({ job: { status: 'failed', message: `ffmpeg failed at ${privatePath}` } }), { status: 200 });
+      }
+      if (String(input).includes('/api/jobs/')) {
+        return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 });
+      }
+      return new Response(privatePath, { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    setVisualSourceRange(model, 1_000, 2_000);
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = privatePath;
+    rerenderApp(model);
+
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toMatch(/failed/i));
+    const visible = document.querySelector('[data-testid="source-range-panel"]')?.textContent ?? '';
+    expect(visible).not.toContain(privatePath);
+    expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeNull();
+  });
+
+  it('does not promote browser audio or claim deletion when DELETE fails', async () => {
+    const responses = [
+      new Response(JSON.stringify({ job: { id: 'job-delete-failure' } }), { status: 201 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
+      new Response('/private/scratch/opaque.wav', { status: 500 }),
+    ];
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => responses.shift()!));
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:must-not-exist');
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    setVisualSourceRange(model, 1_000, 2_000);
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    rerenderApp(model);
+
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toContain('deletion failed'));
+    const panel = document.querySelector('[data-testid="source-range-panel"]')!;
+    expect(panel.textContent).not.toContain('/private/scratch/opaque.wav');
+    expect(panel.textContent).not.toContain('service scratch copy was deleted');
+    expect(panel.querySelector('audio')).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it('prepares the exact selected range, renders deliberate audio, deletes service bytes, and cleans its browser URL', async () => {
@@ -292,6 +426,45 @@ describe('B6 visual source range player UI', () => {
     expect((panel.querySelector('audio') as HTMLAudioElement).src).toContain('blob:new-success');
   });
 
+  it.each(['path', 'media'] as const)('suppresses a stale failure after %s invalidation', async (invalidation) => {
+    let rejectPoll!: (error: Error) => void;
+    const pendingPoll = new Promise<Response>((_resolve, reject) => { rejectPoll = reject; });
+    const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/jobs') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ job: { id: 'stale-failure' } }), { status: 201 });
+      }
+      if (url.endsWith('/api/jobs/stale-failure')) return pendingPoll;
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.player.durationMs = 10_000;
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    setVisualSourceRange(model, 1_000, 2_000);
+    rerenderApp(model);
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/stale-failure'))).toBe(true));
+
+    if (invalidation === 'path') {
+      const path = document.querySelector('#source-range-media-path') as HTMLInputElement;
+      path.value = '/owned/other.mkv';
+      path.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    } else {
+      model.currentMedia = null;
+      rerenderApp(model);
+    }
+    rejectPoll(new Error('failed at /private/owned/movie.mkv'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const visible = document.querySelector('[data-testid="source-range-panel"]')?.textContent ?? '';
+    expect(visible).toContain(invalidation === 'path' ? 'Media path changed' : 'current owned or synthetic');
+    expect(visible).not.toContain('/private/owned/movie.mkv');
+    expect(visible).not.toContain('failed at');
+  });
+
   it('revokes prepared audio on reprepare, path change, range change, media change, and range clear', async () => {
     let job = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
@@ -351,6 +524,66 @@ describe('B6 visual source range player UI', () => {
     const clearRange = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Clear selected range') as HTMLButtonElement;
     clearRange.click();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:lifecycle-5');
+  });
+
+  it('preserves Save occurrence source context after visual range, loop, and snippet operations', async () => {
+    const responses = [
+      new Response(JSON.stringify({ job: { id: 'job-save-context' } }), { status: 201 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
+      new Response(null, { status: 204 }),
+    ];
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => responses.shift()!));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:save-context');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    const media = model.currentMedia!;
+    const cue = model.cues[0]!;
+    model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+      trackId: cue.trackId,
+      cueId: cue.id,
+      wordIndex: 0,
+      charStart: 0,
+      charEnd: 6,
+      text: cue.text.slice(0, 6),
+      normalizedText: cue.text.slice(0, 6).toLocaleLowerCase('pl'),
+      startMs: 100,
+      endMs: 700,
+      sourceKind: 'provider-word-timing',
+      engine: 'fake-test',
+      modelName: 'fake-test',
+    }));
+    model.selection = {
+      kind: 'phrase', text: cue.text.slice(0, 6), cueId: cue.id,
+      tokenStart: 0, tokenEnd: 1, charStart: 0, charEnd: 6,
+    };
+    model.localService.status = 'connected';
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    rerenderApp(model);
+
+    buttonByText('Use transcript selection').click();
+    buttonByText('Loop selected range').click();
+    buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
+    expect(model.selection).toMatchObject({ cueId: cue.id, charStart: 0, charEnd: 6 });
+
+    buttonByText('Save occurrence').click();
+    await vi.waitFor(() => expect(Object.values(model.store.snapshot().savedOccurrences)).toHaveLength(1));
+    const occurrence = Object.values(model.store.snapshot().savedOccurrences)[0]!;
+    expect(occurrence).toMatchObject({
+      mediaId: media.id,
+      cueId: cue.id,
+      selectionText: cue.text.slice(0, 6),
+      startMs: 100,
+      endMs: 700,
+      sourceContext: {
+        mediaId: media.id,
+        cueId: cue.id,
+        timeRangeMs: { start: 100, end: 700 },
+        charSpan: { start: 0, end: 6 },
+      },
+    });
   });
 
   it('keeps visual range and snippet lifecycle out of learner snapshots and exports', async () => {

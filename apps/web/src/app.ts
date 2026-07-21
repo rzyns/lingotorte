@@ -340,6 +340,10 @@ function isAbsoluteOwnedLocalPath(value: string): boolean {
   return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\');
 }
 
+function hasExtractableCurrentMedia(model: AppModel): boolean {
+  return model.currentMedia?.privacyLabel === 'owned' || model.currentMedia?.privacyLabel === 'synthetic';
+}
+
 function preferredSourceRangeMediaPath(model: AppModel): string {
   const configured = model.transcriptLifecycle.localAsrMediaPath.trim();
   if (isAbsoluteOwnedLocalPath(configured)) return configured;
@@ -2234,15 +2238,16 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
   const selectedDurationMs = range ? range.endMs - range.startMs : 0;
   const rangeTooLong = selectedDurationMs > 30_000;
   const pathValid = isAbsoluteOwnedLocalPath(snippet.mediaPath);
+  const mediaExtractable = hasExtractableCurrentMedia(model);
   const prepare = document.createElement('button');
   prepare.type = 'button';
   prepare.className = 'btn-primary';
   prepare.textContent = 'Prepare source audio';
-  prepare.disabled = range === null || rangeTooLong || !pathValid || model.localService.status !== 'connected' || snippet.status === 'preparing';
+  prepare.disabled = range === null || rangeTooLong || !pathValid || !mediaExtractable || model.localService.status !== 'connected' || snippet.status === 'preparing';
   prepare.addEventListener('click', () => {
     const operationRange = model.player.sourceRange;
     const operationPath = snippet.mediaPath.trim();
-    if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !isAbsoluteOwnedLocalPath(operationPath) || model.localService.status !== 'connected') return;
+    if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !isAbsoluteOwnedLocalPath(operationPath) || !hasExtractableCurrentMedia(model) || model.localService.status !== 'connected') return;
     releaseSourceAudioSnippet(snippet);
     const generation = ++snippet.generation;
     const contextKey = sourceRangeContextKey(model, snippet);
@@ -2299,6 +2304,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
   else if (model.localService.status !== 'connected') status.textContent = 'Local service unavailable or disconnected.';
+  else if (!mediaExtractable) status.textContent = 'Source audio requires a current owned or synthetic media asset.';
   else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
   else if (rangeTooLong) status.textContent = `Source audio has a 30-second maximum; current duration is ${formatTimeMs(selectedDurationMs)}. This range can still be looped.`;
   else status.textContent = snippet.message;
