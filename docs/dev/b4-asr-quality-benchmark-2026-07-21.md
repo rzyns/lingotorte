@@ -43,6 +43,18 @@ Neither model is accurate enough to use un-reviewed — both still need the tran
 - **`tiny` int8 CPU is a fast smoke/fallback tier** — good for pipeline checks and low-stakes drafts, but its proper-noun/number errors make it worse for serious study.
 - Not tested here and left as future options: `small`/`medium`/`large-v3` (cached), VAD filtering, and GPU/CUDA compute. `large-v3` is already in cache if a one-off high-accuracy pass is wanted, at higher latency/RSS. Per `DECISIONS.md` §5, Janusz expects to primarily use cloud models personally, so local ASR remains a convenience/offline tier rather than the primary path.
 
+## Independent corroboration — second run (2026-07-21, Cowork)
+
+A second, independent run (different Cowork session, unaware of the first until after execution) reproduced this benchmark on the **same media** with a **longer 600 s slice** `[60 s, 660 s)`, same harness/flags (`pl`, CPU, int8, `--word-timestamps`):
+
+| Dimension | tiny | base |
+|---|---|---|
+| Wall clock for 600 s slice (incl. model load) | 59.9 s | 109.6 s |
+| Realtime factor | ~10.0× | ~5.5× |
+| Segments / words | 114 / 1397 | 104 / 1365 |
+
+The realtime factors are a bit lower than the 300 s run mainly because the fixed model-load cost is spread differently and the machine was under other load; directionally identical (both comfortably faster than realtime, base roughly half tiny's speed). Qualitative findings matched exactly — the same proper-noun/boundary errors in tiny that base fixes (e.g. tiny "William Backland" / "na czterechnokach" / "laundzie" / "Cholotyp" vs base "William Buckland" / "na czterych nogach" / "lądzie" / "Holotyp"). **Recommendation unchanged: `base` int8 CPU as the Polish daily-use default, `tiny` as the fast smoke/fallback tier.**
+
 ## Boundaries preserved
 
-Owned local media only; no download, no cloud STT, no model download (both models were already cached). Media/WAV slice/transcripts were kept in scratch (`/tmp/b4-bench`, deleted after) and are not committed. No learner state was written; this was a pure harness/quality measurement. Model cache and venv remain outside git.
+Owned local media only; no download, no cloud STT, no model download (both models were already cached). Media/WAV slice/transcripts were kept in scratch (`/tmp/b4-bench`, `~/tmp/b4-bench-qWogfTE27B8`, deleted after) and are not committed. No learner state was written; this was a pure harness/quality measurement. Model cache and venv remain outside git.
