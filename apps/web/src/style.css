@@ -479,6 +479,82 @@ textarea:focus-visible,
   width: 120px;
 }
 
+.source-range-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.source-range-panel h3,
+.source-range-panel p {
+  margin: 0;
+}
+
+.source-range-handles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.source-range-handles label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.source-range-handles input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.source-range-visual {
+  position: relative;
+  height: 0.4rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.source-range-visual-selection {
+  position: absolute;
+  inset-block: 0;
+  border-radius: inherit;
+  background: var(--accent-strong);
+}
+
+.source-range-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.source-range-panel > label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.source-range-panel > label input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.source-range-panel audio {
+  width: 100%;
+}
+
+.source-range-status {
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-raised);
+}
+
 .timeline {
   flex: 1 1 200px;
   min-width: 120px;

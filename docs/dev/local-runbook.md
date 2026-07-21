@@ -173,6 +173,21 @@ For a local-file smoke, return to **Library**, choose an owned `.mp4`/`.webm`/`.
 
 Acceptable network traffic during dev smoke is limited to loopback/local dev-server reads, `data:`/`blob:` URLs, and Vite internals. Public-internet writes, provider calls, external account mutations, or runtime requests to an external host are V1 blockers unless Janusz has explicitly approved that exact opt-in path.
 
+### B6 visual source-range and transient-snippet smoke
+
+Use only synthetic or explicitly owned local media. Do not use protected/private/proprietary media, enable an online provider, download media, or use a microphone.
+
+1. Import or relink owned/synthetic local media and target subtitles, then open **Player**.
+2. In **Source range**, move both timeline handles with a pointer and then with keyboard arrow keys. Verify the highlighted interval and visible **Start**, **End**, and **Duration** values follow the handles.
+3. Select transcript text that has word timings and click **Use transcript selection**. Verify only the visual source range changes to the word-derived interval; the learner text selection remains available for **Save occurrence**.
+4. Click **Loop selected range**, play across the end boundary, and verify playback returns to the selected start. Move a visual handle and verify the active loop does not silently change. Click **Clear loop** and verify the visual selection remains.
+5. Connect the loopback local service and enter an explicit absolute path to the same owned media. Browser handles, fixture URLs, relative paths, HTTP(S), and `blob:` URLs are playback-only and must be rejected for service extraction.
+6. Select a range of exactly 30 seconds or less, click **Prepare source audio**, and verify a native audio control appears without autoplay. Start playback deliberately, then click **Clean browser audio** and verify the control disappears. The status must state that the service scratch copy was deleted after browser retrieval.
+7. Select a 30,001 ms range. Verify **Prepare source audio** is disabled with a 30-second-maximum message while **Loop selected range** remains available.
+8. Verify clear feedback for disconnected service, missing/invalid absolute path, missing transcript word timings, and extraction/retrieval failure. Status text must not expose an absolute filesystem path.
+9. Prepare audio again, then change the range, path, or media, clear the range, or leave Player. Verify the superseded audio control disappears and the old browser object URL is released.
+10. Inspect DevTools network/storage and a generated learner export. Confirm there is no non-loopback/provider/microphone traffic and no snippet bytes, IDs, paths, object URLs, status, or audio in learner state, export, or backup data. Stop the service/session and confirm no snippet survives service cleanup.
+
 ## V3 transcript lifecycle smoke
 
 The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Default smoke uses fake/local providers and makes no external reads; the live public YouTube caption path is separate and requires both a visible browser public-read authorization and `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` on the loopback service.

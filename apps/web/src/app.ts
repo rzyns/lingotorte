@@ -2,13 +2,19 @@ import type { AppModel, ViewName } from './uiTypes';
 import type { Cue, SavedItem, LearnerExportManifest } from '@lingotorte/domain';
 import { verifyExportIntegrity } from '@lingotorte/domain';
 import { formatDueAt, formatTimeMs } from './uiTypes';
-import { prepareSourceAudioSnippet, releaseSourceAudioSnippet, type SourceAudioSnippetLifecycle } from './sourceAudioSnippet.ts';
+import {
+  prepareSourceAudioSnippet,
+  redactSourceAudioSnippetError,
+  releaseSourceAudioSnippet,
+  type SourceAudioSnippetLifecycle,
+} from './sourceAudioSnippet.ts';
 import {
   activeCueAtTime,
   activeLoopRangeForSelection,
   applyLoopTolerance,
   applyTrackOffsetMs,
   clearLoopRange,
+  clearVisualSourceRange,
   clearSelection,
   createOffsetCorrectedTranscriptVersion,
   createReviewCardForSavedItem,
@@ -31,6 +37,7 @@ import {
   seekToTime,
   setLoopRange,
   setPlaybackRate,
+  setVisualSourceRange,
   setPendingMeaning,
   setPendingNotes,
   setReviewBucketAsOf,
@@ -88,6 +95,12 @@ import {
 
 export function renderApp(model: AppModel): HTMLElement {
   installGlobalKeyboardShortcuts(model);
+  if (sourceRangeSnippetStates.has(model)) {
+    const snippet = synchronizeSourceRangeSnippet(model);
+    if (model.view !== 'player' && snippet.objectUrl) {
+      invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned after leaving Player.');
+    }
+  }
   const root = document.createElement('div');
   root.className = 'lingotorte-app';
   root.appendChild(renderHeader(model));
@@ -309,6 +322,85 @@ type PracticeSnippetUiState = SourceAudioSnippetLifecycle & {
 };
 
 const practiceSnippetStates = new WeakMap<AppModel, PracticeSnippetUiState>();
+
+type SourceRangeSnippetUiState = SourceAudioSnippetLifecycle & {
+  mediaPath: string;
+  status: 'idle' | 'path-required' | 'preparing' | 'ready' | 'failed' | 'cleaned';
+  message: string;
+  generation: number;
+  contextKey: string;
+  mediaId: string | null;
+};
+
+const sourceRangeSnippetStates = new WeakMap<AppModel, SourceRangeSnippetUiState>();
+
+function isAbsoluteOwnedLocalPath(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || /^(?:blob:|browser-file-handle:|https?:)/i.test(trimmed)) return false;
+  return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\');
+}
+
+function preferredSourceRangeMediaPath(model: AppModel): string {
+  const configured = model.transcriptLifecycle.localAsrMediaPath.trim();
+  if (isAbsoluteOwnedLocalPath(configured)) return configured;
+  const fallback = model.currentMedia?.originalPath.trim() ?? '';
+  return isAbsoluteOwnedLocalPath(fallback) ? fallback : '';
+}
+
+function sourceRangeContextKey(model: AppModel, state: SourceRangeSnippetUiState): string {
+  const range = model.player.sourceRange;
+  return [
+    model.currentMedia?.id ?? '',
+    state.mediaPath.trim(),
+    range?.startMs ?? '',
+    range?.endMs ?? '',
+  ].join('|');
+}
+
+function sourceRangeSnippetState(model: AppModel): SourceRangeSnippetUiState {
+  const existing = sourceRangeSnippetStates.get(model);
+  if (existing) return existing;
+  const mediaPath = preferredSourceRangeMediaPath(model);
+  const created: SourceRangeSnippetUiState = {
+    objectUrl: null,
+    mediaPath,
+    status: mediaPath ? 'idle' : 'path-required',
+    message: mediaPath
+      ? 'Select a range to prepare transient source audio.'
+      : 'An explicit absolute owned local media path is required.',
+    generation: 0,
+    contextKey: '',
+    mediaId: model.currentMedia?.id ?? null,
+  };
+  created.contextKey = sourceRangeContextKey(model, created);
+  sourceRangeSnippetStates.set(model, created);
+  return created;
+}
+
+function invalidateSourceRangeSnippet(model: AppModel, message: string): SourceRangeSnippetUiState {
+  const state = sourceRangeSnippetState(model);
+  state.generation += 1;
+  releaseSourceAudioSnippet(state);
+  state.status = state.mediaPath.trim() ? 'idle' : 'path-required';
+  state.message = message;
+  state.contextKey = sourceRangeContextKey(model, state);
+  return state;
+}
+
+function synchronizeSourceRangeSnippet(model: AppModel): SourceRangeSnippetUiState {
+  const state = sourceRangeSnippetState(model);
+  const mediaId = model.currentMedia?.id ?? null;
+  if (state.mediaId !== mediaId) {
+    state.mediaId = mediaId;
+    clearVisualSourceRange(model);
+    return invalidateSourceRangeSnippet(model, 'Media changed; select a new source range.');
+  }
+  const contextKey = sourceRangeContextKey(model, state);
+  if (state.contextKey !== contextKey) {
+    return invalidateSourceRangeSnippet(model, 'Range or media path changed; prepare fresh source audio.');
+  }
+  return state;
+}
 
 function practiceSnippetState(model: AppModel): PracticeSnippetUiState {
   const existing = practiceSnippetStates.get(model);
@@ -1407,6 +1499,7 @@ function renderPlayerView(model: AppModel): HTMLElement {
   left.appendChild(renderSourceContextRow(model));
   left.appendChild(renderVideoStage(model));
   left.appendChild(renderPlayerControls(model));
+  left.appendChild(renderSourceRangePanel(model));
   left.appendChild(renderSelectionPanel(model));
   grid.appendChild(left);
 
@@ -2003,6 +2096,219 @@ function renderPlayerControls(model: AppModel): HTMLElement {
   controls.appendChild(shortcuts);
 
   return controls;
+}
+
+function renderSourceRangePanel(model: AppModel): HTMLElement {
+  const panel = document.createElement('section');
+  panel.className = 'card source-range-panel';
+  panel.dataset.testid = 'source-range-panel';
+  panel.setAttribute('aria-label', 'Visual source range');
+
+  const heading = document.createElement('h3');
+  heading.textContent = 'Source range';
+  panel.appendChild(heading);
+
+  const durationMs = Math.max(0, Math.round(model.player.durationMs));
+  const range = model.player.sourceRange;
+  const snippet = synchronizeSourceRangeSnippet(model);
+  const displayed = range ?? { startMs: 0, endMs: durationMs };
+  const handles = document.createElement('div');
+  handles.className = 'source-range-handles';
+  const makeHandle = (kind: 'start' | 'end'): HTMLLabelElement => {
+    const label = document.createElement('label');
+    label.textContent = kind === 'start' ? 'Start handle' : 'End handle';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = String(durationMs);
+    input.step = '10';
+    input.value = String(kind === 'start' ? displayed.startMs : displayed.endMs);
+    input.disabled = durationMs <= 0;
+    input.setAttribute('aria-label', kind === 'start' ? 'Source range start' : 'Source range end');
+    input.addEventListener('input', () => {
+      const nextStart = kind === 'start' ? Number(input.value) : displayed.startMs;
+      const nextEnd = kind === 'end' ? Number(input.value) : displayed.endMs;
+      setVisualSourceRange(model, nextStart, nextEnd);
+      rerenderApp(model);
+    });
+    label.appendChild(input);
+    return label;
+  };
+  handles.append(makeHandle('start'), makeHandle('end'));
+  panel.appendChild(handles);
+
+  const visual = document.createElement('div');
+  visual.className = 'source-range-visual';
+  visual.setAttribute('aria-hidden', 'true');
+  const visualSelection = document.createElement('span');
+  visualSelection.className = 'source-range-visual-selection';
+  const visualStartPercent = durationMs > 0 ? (displayed.startMs / durationMs) * 100 : 0;
+  const visualEndPercent = durationMs > 0 ? (displayed.endMs / durationMs) * 100 : 0;
+  visualSelection.style.left = `${visualStartPercent}%`;
+  visualSelection.style.width = `${Math.max(0, visualEndPercent - visualStartPercent)}%`;
+  visual.appendChild(visualSelection);
+  panel.appendChild(visual);
+
+  const summary = document.createElement('p');
+  summary.className = 'source-range-summary';
+  summary.textContent = range
+    ? `Start ${formatTimeMs(range.startMs)} • End ${formatTimeMs(range.endMs)} • Duration ${formatTimeMs(range.endMs - range.startMs)}`
+    : durationMs > 0
+      ? 'Move either handle to select a source range.'
+      : 'Media duration/range unavailable.';
+  panel.appendChild(summary);
+
+  const actions = document.createElement('div');
+  actions.className = 'source-range-actions';
+  const loopSelected = document.createElement('button');
+  loopSelected.type = 'button';
+  loopSelected.textContent = 'Loop selected range';
+  loopSelected.disabled = range === null;
+  loopSelected.addEventListener('click', () => {
+    if (!model.player.sourceRange) return;
+    setLoopRange(model, model.player.sourceRange.startMs, model.player.sourceRange.endMs);
+    rerenderApp(model);
+  });
+  const clearLoop = document.createElement('button');
+  clearLoop.type = 'button';
+  clearLoop.textContent = 'Clear loop';
+  clearLoop.disabled = model.player.loopRange === null;
+  clearLoop.addEventListener('click', () => {
+    clearLoopRange(model);
+    rerenderApp(model);
+  });
+  const clearRange = document.createElement('button');
+  clearRange.type = 'button';
+  clearRange.textContent = 'Clear selected range';
+  clearRange.disabled = range === null;
+  clearRange.addEventListener('click', () => {
+    clearVisualSourceRange(model);
+    invalidateSourceRangeSnippet(model, 'Selected range cleared; transient browser audio cleaned.');
+    rerenderApp(model);
+  });
+  const useTranscriptSelection = document.createElement('button');
+  useTranscriptSelection.type = 'button';
+  useTranscriptSelection.textContent = 'Use transcript selection';
+  useTranscriptSelection.disabled = model.selection === null;
+  useTranscriptSelection.addEventListener('click', () => {
+    const selected = model.selection;
+    const cue = selected ? model.cues.find((candidate) => candidate.id === selected.cueId) : undefined;
+    const selectedRange = selected && cue
+      ? activeLoopRangeForSelection(model, cue, selected.charStart, selected.charEnd)
+      : null;
+    if (!selectedRange || !setVisualSourceRange(model, selectedRange.startMs, selectedRange.endMs)) {
+      snippet.status = 'failed';
+      snippet.message = 'The transcript selection has no usable word timings. Manual timeline selection remains available.';
+    }
+    rerenderApp(model);
+  });
+  actions.append(loopSelected, clearLoop, clearRange, useTranscriptSelection);
+  panel.appendChild(actions);
+
+  const active = document.createElement('p');
+  active.className = 'meta source-range-active-loop';
+  active.textContent = model.player.loopRange
+    ? `Active loop ${formatTimeMs(model.player.loopRange.startMs)}–${formatTimeMs(model.player.loopRange.endMs)}`
+    : 'Active loop: none';
+  panel.appendChild(active);
+
+  const pathLabel = document.createElement('label');
+  pathLabel.htmlFor = 'source-range-media-path';
+  pathLabel.textContent = 'Owned local media path';
+  const pathInput = document.createElement('input');
+  pathInput.id = 'source-range-media-path';
+  pathInput.name = 'source-range-media-path';
+  pathInput.type = 'text';
+  pathInput.value = snippet.mediaPath;
+  pathInput.placeholder = 'Absolute path (session only)';
+  pathInput.addEventListener('input', () => {
+    snippet.mediaPath = pathInput.value;
+    invalidateSourceRangeSnippet(model, isAbsoluteOwnedLocalPath(pathInput.value)
+      ? 'Media path changed; prepare fresh source audio.'
+      : 'An explicit absolute owned local media path is required.');
+    rerenderApp(model);
+  });
+  pathLabel.appendChild(pathInput);
+  panel.appendChild(pathLabel);
+
+  const selectedDurationMs = range ? range.endMs - range.startMs : 0;
+  const rangeTooLong = selectedDurationMs > 30_000;
+  const pathValid = isAbsoluteOwnedLocalPath(snippet.mediaPath);
+  const prepare = document.createElement('button');
+  prepare.type = 'button';
+  prepare.className = 'btn-primary';
+  prepare.textContent = 'Prepare source audio';
+  prepare.disabled = range === null || rangeTooLong || !pathValid || model.localService.status !== 'connected' || snippet.status === 'preparing';
+  prepare.addEventListener('click', () => {
+    const operationRange = model.player.sourceRange;
+    const operationPath = snippet.mediaPath.trim();
+    if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !isAbsoluteOwnedLocalPath(operationPath) || model.localService.status !== 'connected') return;
+    releaseSourceAudioSnippet(snippet);
+    const generation = ++snippet.generation;
+    const contextKey = sourceRangeContextKey(model, snippet);
+    snippet.contextKey = contextKey;
+    snippet.status = 'preparing';
+    snippet.message = 'Preparing range-bounded transient source audio…';
+    const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
+    rerenderApp(model);
+    void prepareSourceAudioSnippet({
+      baseUrl: model.localService.baseUrl,
+      mediaPath: operationPath,
+      startMs: operationRange.startMs,
+      endMs: operationRange.endMs,
+      lifecycle: operationLifecycle,
+    }).then(() => {
+      if (snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) {
+        releaseSourceAudioSnippet(operationLifecycle);
+        return;
+      }
+      snippet.objectUrl = operationLifecycle.objectUrl;
+      operationLifecycle.objectUrl = null;
+      snippet.status = 'ready';
+      snippet.message = 'Source audio ready; service scratch copy was deleted after browser retrieval.';
+      rerenderApp(model);
+    }).catch((error: unknown) => {
+      releaseSourceAudioSnippet(operationLifecycle);
+      if (snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) return;
+      snippet.status = 'failed';
+      snippet.message = redactSourceAudioSnippetError(error);
+      rerenderApp(model);
+    });
+  });
+  panel.appendChild(prepare);
+
+  if (snippet.objectUrl) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.autoplay = false;
+    audio.src = snippet.objectUrl;
+    panel.appendChild(audio);
+    const clean = document.createElement('button');
+    clean.type = 'button';
+    clean.textContent = 'Clean browser audio';
+    clean.addEventListener('click', () => {
+      invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned.');
+      rerenderApp(model);
+    });
+    panel.appendChild(clean);
+  }
+
+  const status = document.createElement('p');
+  status.className = 'source-range-status';
+  status.setAttribute('role', 'status');
+  if (snippet.status === 'failed') status.textContent = snippet.message;
+  else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
+  else if (model.localService.status !== 'connected') status.textContent = 'Local service unavailable or disconnected.';
+  else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
+  else if (rangeTooLong) status.textContent = `Source audio has a 30-second maximum; current duration is ${formatTimeMs(selectedDurationMs)}. This range can still be looped.`;
+  else status.textContent = snippet.message;
+  panel.appendChild(status);
+
+  const privacy = document.createElement('p');
+  privacy.className = 'meta';
+  privacy.textContent = 'Browser handles and object URLs are playback-only. The loopback service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
+  panel.appendChild(privacy);
+  return panel;
 }
 
 function seekRenderedVideoToMs(timeMs: number): void {

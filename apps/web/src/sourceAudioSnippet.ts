@@ -11,6 +11,13 @@ export type PrepareSourceAudioSnippetInput = Readonly<{
   lifecycle: SourceAudioSnippetLifecycle;
 }>;
 
+export function redactSourceAudioSnippetError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw
+    .replace(/(?:[A-Za-z]:[\\/]|\/)(?:[^\s'"<>]|\s(?=[^\s]))+/g, '[local path redacted]')
+    .replace(/blob:[^\s'"<>]+/g, '[browser audio redacted]');
+}
+
 export async function prepareSourceAudioSnippet(input: PrepareSourceAudioSnippetInput): Promise<{ objectUrl: string; mimeType: 'audio/wav' }> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const createObjectURL = input.createObjectURL ?? URL.createObjectURL.bind(URL);

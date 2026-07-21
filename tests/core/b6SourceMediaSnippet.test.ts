@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import type { CommandRunner } from '../../packages/local-transcription/src/index.ts';
 import { extractSourceAudioSnippet } from '../../packages/local-transcription/src/index.ts';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server.ts';
-import { prepareSourceAudioSnippet, releaseSourceAudioSnippet } from '../../apps/web/src/sourceAudioSnippet.ts';
+import { prepareSourceAudioSnippet, redactSourceAudioSnippetError, releaseSourceAudioSnippet } from '../../apps/web/src/sourceAudioSnippet.ts';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -171,6 +171,13 @@ describe('loopback snippet service', () => {
 });
 
 describe('browser snippet lifecycle', () => {
+  it('redacts absolute local paths and browser object URLs from visible errors', () => {
+    const message = redactSourceAudioSnippetError(new Error('ffmpeg failed at /private/owned/movie.mkv using blob:secret-audio'));
+    expect(message).not.toContain('/private/owned/movie.mkv');
+    expect(message).not.toContain('blob:secret-audio');
+    expect(message).toContain('[local path redacted]');
+  });
+
   it('fetches a full blob, deletes service bytes, and revokes superseded URLs', async () => {
     const createObjectURL = vi.fn().mockReturnValueOnce('blob:first').mockReturnValueOnce('blob:second');
     const revokeObjectURL = vi.fn();

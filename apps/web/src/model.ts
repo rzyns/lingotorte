@@ -91,6 +91,7 @@ export function createAppModel(): AppModel {
       playbackRate: 1,
       loopCue: false,
       loopRange: null,
+      sourceRange: null,
       activeCueId: null,
     },
     currentMedia: null,
@@ -370,6 +371,33 @@ export function setLoopRange(model: AppModel, startMs: number, endMs: number): v
 
 export function clearLoopRange(model: AppModel): void {
   model.player.loopRange = null;
+}
+
+export function normalizeVisualSourceRange(
+  startMs: number,
+  endMs: number,
+  durationMs: number,
+): { startMs: number; endMs: number } | null {
+  if (![startMs, endMs, durationMs].every(Number.isFinite) || durationMs <= 0) return null;
+  const duration = Math.max(0, Math.round(durationMs));
+  const first = Math.max(0, Math.min(duration, Math.round(startMs)));
+  const second = Math.max(0, Math.min(duration, Math.round(endMs)));
+  const range = { startMs: Math.min(first, second), endMs: Math.max(first, second) };
+  return range.endMs > range.startMs ? range : null;
+}
+
+export function setVisualSourceRange(
+  model: AppModel,
+  startMs: number,
+  endMs: number,
+): { startMs: number; endMs: number } | null {
+  const range = normalizeVisualSourceRange(startMs, endMs, model.player.durationMs);
+  model.player.sourceRange = range;
+  return range;
+}
+
+export function clearVisualSourceRange(model: AppModel): void {
+  model.player.sourceRange = null;
 }
 
 export function activeLoopRangeForSelection(

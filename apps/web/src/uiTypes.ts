@@ -17,6 +17,7 @@ export type PlayerState = {
   playbackRate: number;
   loopCue: boolean;
   loopRange: { startMs: number; endMs: number } | null;
+  sourceRange: { startMs: number; endMs: number } | null;
   activeCueId: string | null;
   lastTokenPreview?: string;
 };
