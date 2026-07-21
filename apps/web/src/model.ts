@@ -1526,13 +1526,13 @@ export async function listEmbeddedSubtitleTracksFromService(
     throw new TypeError(EMBEDDED_SERVICE_ERROR);
   }
   let mediaPath = '';
+  const assertCurrentContext = () => {
+    if (generations.listing !== listingGeneration || (mediaPath !== '' && state.mediaPath.trim() !== mediaPath)) {
+      throw new StaleEmbeddedSubtitleOperationError();
+    }
+  };
   try {
     mediaPath = embeddedMediaPath(state.mediaPath);
-    const assertCurrentContext = () => {
-      if (generations.listing !== listingGeneration || state.mediaPath.trim() !== mediaPath) {
-        throw new StaleEmbeddedSubtitleOperationError();
-      }
-    };
     state.listingStatus = 'listing';
     state.statusMessage = 'Listing embedded subtitle tracks.';
     const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
@@ -1553,6 +1553,7 @@ export async function listEmbeddedSubtitleTracksFromService(
     return tracks;
   } catch (error) {
     if (isStaleEmbeddedSubtitleOperationError(error)) throw error;
+    assertCurrentContext();
     if (state.listingStatus !== 'empty' && state.listingStatus !== 'ready') state.listingStatus = 'failed';
     if (isLoopbackConnectivityError(error)) {
       state.statusMessage = EMBEDDED_SERVICE_ERROR;
@@ -1601,6 +1602,17 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   if (!media) throw new TypeError('Embedded subtitle draft import requires current owned local media.');
   let mediaPath = '';
   let completedResultReceived = false;
+  let selectedStreamIndex: number | null = null;
+  const mediaId = media.id;
+  const assertCurrentContext = () => {
+    if ((mediaPath !== '' && state.mediaPath.trim() !== mediaPath)
+      || generations.extraction !== extractionGeneration
+      || model.currentMedia?.id !== mediaId
+      || (selectedStreamIndex !== null && (state.selectedStreamIndex !== selectedStreamIndex
+        || !state.tracks.some((track) => track.streamIndex === selectedStreamIndex && track.isSupported)))) {
+      throw new StaleEmbeddedSubtitleOperationError();
+    }
+  };
   try {
     mediaPath = embeddedMediaPath(state.mediaPath);
     const language = state.language.trim();
@@ -1608,17 +1620,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     const selected = state.tracks.find((track) => track.streamIndex === state.selectedStreamIndex && track.isSupported);
     if (!selected) throw new TypeError('Select a supported embedded subtitle track.');
     const outputFormat = embeddedOutputFormat(selected);
-    const mediaId = media.id;
-    const selectedStreamIndex = selected.streamIndex;
-    const assertCurrentContext = () => {
-      if (state.mediaPath.trim() !== mediaPath
-        || generations.extraction !== extractionGeneration
-        || model.currentMedia?.id !== mediaId
-        || state.selectedStreamIndex !== selectedStreamIndex
-        || !state.tracks.some((track) => track.streamIndex === selectedStreamIndex && track.isSupported)) {
-        throw new StaleEmbeddedSubtitleOperationError();
-      }
-    };
+    selectedStreamIndex = selected.streamIndex;
     state.extractionStatus = 'extracting';
     state.statusMessage = 'Extracting selected embedded subtitle track.';
     const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
@@ -1683,6 +1685,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     return imported;
   } catch (error) {
     if (isStaleEmbeddedSubtitleOperationError(error)) throw error;
+    assertCurrentContext();
     state.extractionStatus = 'failed';
     if (isLoopbackConnectivityError(error)) {
       state.statusMessage = EMBEDDED_SERVICE_ERROR;

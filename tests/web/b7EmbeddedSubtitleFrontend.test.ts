@@ -217,17 +217,38 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     });
   });
 
+  it('ignores an in-flight listing failure after the embedded media path changes', async () => {
+    const model = createAppModel();
+    model.localService.status = 'connected';
+    setEmbeddedSubtitleMediaPath(model, '/owned/old.mkv');
+    const pendingPoll = deferred<Response>();
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'old-list-failure' } }, 201)
+      : pendingPoll.promise) as typeof fetch;
+
+    const listing = listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 });
+    await waitFor(() => model.transcriptLifecycle.embeddedSubtitle.listingStatus === 'listing');
+    setEmbeddedSubtitleMediaPath(model, '/owned/new.mkv');
+    pendingPoll.resolve(jsonResponse({ ok: true, job: { status: 'failed', message: 'old listing failed' } }));
+
+    await expect(listing).rejects.toThrow('Embedded subtitle operation was superseded by a media context change.');
+    expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({
+      mediaPath: '/owned/new.mkv', listingStatus: 'idle', tracks: [], selectedStreamIndex: null,
+      statusMessage: null, errorCode: null,
+    });
+  });
+
   it.each([
-    ['failed', 'safe list failure'],
-    ['cancelled', 'status cancelled'],
-  ])('reports an explicit path-safe %s listing job state', async (status, message) => {
+    ['failed', 'ffprobe failed for /private/list-sentinel.mkv', 'ffprobe failed for [local-path]'],
+    ['cancelled', 'status cancelled', 'status cancelled'],
+  ])('reports an explicit path-safe %s listing job state', async (status, message, safeMessage) => {
     const model = createAppModel();
     model.localService.status = 'connected';
     setEmbeddedSubtitleMediaPath(model, '/private/list-sentinel.mkv');
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
       ? jsonResponse({ ok: true, job: { id: `${status}-list` } }, 201)
       : jsonResponse({ ok: true, job: { status, ...(status === 'failed' ? { message } : {}) } })) as typeof fetch;
-    await expect(listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 })).rejects.toThrow(message);
+    await expect(listEmbeddedSubtitleTracksFromService(model, { pollAttempts: 1, pollDelayMs: 0 })).rejects.toThrow(safeMessage);
     expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({ listingStatus: 'failed', errorCode: 'listing-failed' });
     expect(model.transcriptLifecycle.embeddedSubtitle.statusMessage).not.toContain('/private/list-sentinel.mkv');
   });
@@ -262,6 +283,25 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     expect(model.cues).toHaveLength(0);
     expect(model.store.listSubtitleTracksForMedia(originalMediaId)).toHaveLength(0);
     expect(model.transcriptLifecycle.embeddedSubtitle).toMatchObject({ mediaPath: '/owned/new.mkv', extractionStatus: 'idle' });
+  });
+
+  it('ignores an in-flight extraction failure after the current-media context changes', async () => {
+    const model = prepareExtractionModel('/owned/current.mkv');
+    const pendingPoll = deferred<Response>();
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST'
+      ? jsonResponse({ ok: true, job: { id: 'old-extract-failure' } }, 201)
+      : pendingPoll.promise) as typeof fetch;
+
+    const extraction = extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 });
+    await waitFor(() => model.transcriptLifecycle.embeddedSubtitle.extractionStatus === 'extracting');
+    model.currentMedia = { ...ownedMedia(), id: 'media:new-context' };
+    const currentState = { ...model.transcriptLifecycle.embeddedSubtitle };
+    pendingPoll.resolve(jsonResponse({ ok: true, job: { status: 'failed', message: 'old extraction failed' } }));
+
+    await expect(extraction).rejects.toThrow('Embedded subtitle operation was superseded by a media context change.');
+    expect(model.transcriptLifecycle.embeddedSubtitle).toEqual(currentState);
+    expect(model.targetTrackId).toBeNull();
+    expect(model.cues).toHaveLength(0);
   });
 
   it.each([
