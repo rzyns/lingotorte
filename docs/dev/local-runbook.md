@@ -74,6 +74,7 @@ Default service behavior:
 - stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot-compatible store plus forward-only `schema_migration` ledger, rebuildable typed projections for current media/transcript/learner/review/practice/import-job state, and authoritative append-only replay tables for review/import events;
 - keeps scratch/model-cache directories under `$HOME/.local/share/lingotorte/`;
 - redacts local filesystem paths from `/api/status` and startup receipts;
+- uses `base` as the local ASR model default, configurable with `LINGOTORTE_ASR_MODEL` from the bounded set `tiny`, `base`, `small`, `medium`, `large-v3`;
 - reports persistence status, including applied migration metadata, without exposing the database path;
 - refuses non-loopback hosts;
 - keeps online providers disabled unless `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` is explicitly set for a consented run.
@@ -120,7 +121,7 @@ systemd-analyze --user verify ~/.config/systemd/user/lingotorte-local-service.se
 
 In the browser, open **Settings**, keep or enter `http://127.0.0.1:5174`, click **Connect local service**, then click **Save state now** or enable autosave. Connecting to a fresh empty service does not clobber unsaved browser state; save explicitly once you want the current browser state to become the durable SQLite snapshot.
 
-The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control creates and polls one of these jobs, then imports the returned transcript as a draft track. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process.
+The same service accepts local transcription jobs through `POST /api/jobs` with `kind: "local-transcription"`. Job responses are sanitized and do not echo private filesystem paths. The browser **Generate local ASR draft** control omits a model override so the service-owned default governs, creates and polls one of these jobs, then imports the returned transcript as a draft track. Set `LINGOTORTE_ASR_MODEL` before service startup to one of `tiny`, `base`, `small`, `medium`, or `large-v3`; missing/blank values use `base`, while an unsupported value emits a raw-value-free warning and safely falls back to `base`. `tiny` remains an explicit fast smoke/fallback override. The effective selection is visible as `/api/status` → `config.defaultAsrModelName` without exposing local paths or configuration input. Configuration and status resolution do not inspect caches, load models, or download anything. Actual execution requires ffmpeg plus approved/install-local ASR dependencies (`faster-whisper`, optionally `whisperx`) available to the service process; model downloads and live media runs still require their own explicit operator authorization.
 
 For ElevenLabs Scribe v2, start the service with both gates set in the service process, not in browser JavaScript:
 
