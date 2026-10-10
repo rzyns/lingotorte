@@ -1,3 +1,4 @@
+import { nativeFixture, nativeFixtureDirectory } from '../helpers/nativeFixtures.ts';
 import { execFile } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,8 +33,8 @@ describe('local transcription pipeline', () => {
 
     const result = await extractAudioWithFfmpeg({
       ffmpegPath: 'ffmpeg',
-      inputPath: '/media/input video.mp4',
-      outputPath: '/tmp/lingotorte/audio.wav',
+      inputPath: nativeFixture('media/input video.mp4'),
+      outputPath: nativeFixture('tmp/lingotorte/audio.wav'),
     }, runner);
 
     expect(calls).toEqual([[
@@ -42,7 +43,7 @@ describe('local transcription pipeline', () => {
         '-hide_banner',
         '-y',
         '-i',
-        '/media/input video.mp4',
+        nativeFixture('media/input video.mp4'),
         '-vn',
         '-ac',
         '1',
@@ -50,13 +51,13 @@ describe('local transcription pipeline', () => {
         '16000',
         '-c:a',
         'pcm_s16le',
-        '/tmp/lingotorte/audio.wav',
+        nativeFixture('tmp/lingotorte/audio.wav'),
       ],
-      { cwd: '/tmp/lingotorte' },
+      { cwd: nativeFixtureDirectory('tmp/lingotorte') },
     ]]);
     expect(result).toEqual({
       effect: 'audio-extracted',
-      audioPath: '/tmp/lingotorte/audio.wav',
+      audioPath: nativeFixture('tmp/lingotorte/audio.wav'),
       sampleRateHz: 16000,
       channels: 1,
       codec: 'pcm_s16le',
@@ -91,8 +92,8 @@ describe('local transcription pipeline', () => {
 
     const result = await transcribeWithFasterWhisper({
       pythonPath: 'python3',
-      scriptPath: '/repo/scripts/faster_whisper_transcribe.py',
-      audioPath: '/tmp/lingotorte/audio.wav',
+      scriptPath: nativeFixture('repo/scripts/faster_whisper_transcribe.py'),
+      audioPath: nativeFixture('tmp/lingotorte/audio.wav'),
       language: 'pl',
       modelName: 'small',
       device: 'cpu',
@@ -102,9 +103,9 @@ describe('local transcription pipeline', () => {
     expect(calls).toEqual([[
       'python3',
       [
-        '/repo/scripts/faster_whisper_transcribe.py',
+        nativeFixture('repo/scripts/faster_whisper_transcribe.py'),
         '--audio',
-        '/tmp/lingotorte/audio.wav',
+        nativeFixture('tmp/lingotorte/audio.wav'),
         '--language',
         'pl',
         '--model',
@@ -115,7 +116,7 @@ describe('local transcription pipeline', () => {
         'int8',
         '--word-timestamps',
       ],
-      { cwd: '/repo/scripts' },
+      { cwd: nativeFixtureDirectory('repo/scripts') },
     ]]);
     expect(result).toEqual({
       engine: 'faster-whisper',
@@ -145,7 +146,7 @@ describe('local transcription pipeline', () => {
     await expect(transcribeWithElevenLabsScribe({
       allowOnlineProvider: false,
       apiKey: 'test-api-key',
-      audioPath: '/tmp/lingotorte/audio.wav',
+      audioPath: nativeFixture('tmp/lingotorte/audio.wav'),
       audioBytes: new Uint8Array([1, 2, 3]),
       language: 'pl',
     }, httpClient)).rejects.toThrow(/ElevenLabs|provider consent|disabled/i);
@@ -174,7 +175,7 @@ describe('local transcription pipeline', () => {
     const result = await transcribeWithElevenLabsScribe({
       allowOnlineProvider: true,
       apiKey: 'test-api-key',
-      audioPath: '/tmp/lingotorte/audio.wav',
+      audioPath: nativeFixture('tmp/lingotorte/audio.wav'),
       audioBytes: new Uint8Array([1, 2, 3]),
       language: 'pl',
     }, httpClient);
@@ -235,9 +236,9 @@ describe('local transcription pipeline', () => {
 
     const result = await alignWordsWithWhisperX({
       pythonPath: 'python3',
-      scriptPath: '/repo/scripts/whisperx_align.py',
-      audioPath: '/tmp/lingotorte/audio.wav',
-      transcriptJsonPath: '/tmp/lingotorte/transcript-segments.json',
+      scriptPath: nativeFixture('repo/scripts/whisperx_align.py'),
+      audioPath: nativeFixture('tmp/lingotorte/audio.wav'),
+      transcriptJsonPath: nativeFixture('tmp/lingotorte/transcript-segments.json'),
       language: 'pl',
       device: 'cpu',
     }, runner);
@@ -245,17 +246,17 @@ describe('local transcription pipeline', () => {
     expect(calls).toEqual([[
       'python3',
       [
-        '/repo/scripts/whisperx_align.py',
+        nativeFixture('repo/scripts/whisperx_align.py'),
         '--audio',
-        '/tmp/lingotorte/audio.wav',
+        nativeFixture('tmp/lingotorte/audio.wav'),
         '--transcript-json',
-        '/tmp/lingotorte/transcript-segments.json',
+        nativeFixture('tmp/lingotorte/transcript-segments.json'),
         '--language',
         'pl',
         '--device',
         'cpu',
       ],
-      { cwd: '/repo/scripts' },
+      { cwd: nativeFixtureDirectory('repo/scripts') },
     ]]);
     expect(result).toEqual({
       engine: 'whisperx',

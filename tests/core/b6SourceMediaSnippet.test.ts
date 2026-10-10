@@ -1,3 +1,5 @@
+import { nativeFixture, nativeFixtureDirectory } from '../helpers/nativeFixtures.ts';
+import { nativePathPolicy } from '../../packages/domain/src/nativePaths.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -52,17 +54,17 @@ describe('source audio snippet adapter', () => {
       calls.push({ command, args, ...(options.cwd !== undefined ? { cwd: options.cwd } : {}) });
       return { exitCode: 0, stdout: '', stderr: '' };
     };
-    const result = await extractSourceAudioSnippet({ inputPath: '/owned/movie.mkv', outputPath: '/scratch/clip.wav', startMs: 1250, endMs: 3500 }, runner);
-    expect(calls).toEqual([{ command: 'ffmpeg', cwd: '/scratch', args: ['-hide_banner', '-y', '-ss', '1.250', '-i', '/owned/movie.mkv', '-t', '2.250', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav', '/scratch/clip.wav'] }]);
+    const result = await extractSourceAudioSnippet({ inputPath: nativeFixture('owned/movie.mkv'), outputPath: nativeFixture('scratch/clip.wav'), startMs: 1250, endMs: 3500 }, runner);
+    expect(calls).toEqual([{ command: 'ffmpeg', cwd: nativeFixtureDirectory('scratch'), args: ['-hide_banner', '-y', '-ss', '1.250', '-i', nativeFixture('owned/movie.mkv'), '-t', '2.250', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 'wav', nativeFixture('scratch/clip.wav')] }]);
     expect(result).toMatchObject({ effect: 'source-audio-snippet-extracted', durationMs: 2250, mimeType: 'audio/wav', sampleRateHz: 16000, channels: 1 });
   });
 
   it.each([
-    [{ inputPath: 'relative.mkv', outputPath: '/scratch/a.wav', startMs: 0, endMs: 1 }, /absolute/],
-    [{ inputPath: '/a.mkv', outputPath: '/a.mkv', startMs: 0, endMs: 1 }, /differ/],
-    [{ inputPath: '/a.mkv', outputPath: '/b.wav', startMs: -1, endMs: 1 }, /non-negative integer/],
-    [{ inputPath: '/a.mkv', outputPath: '/b.wav', startMs: 2, endMs: 2 }, /greater/],
-    [{ inputPath: '/a.mkv', outputPath: '/b.wav', startMs: 0, endMs: 30001 }, /30,000/],
+    [{ inputPath: 'relative.mkv', outputPath: nativeFixture('scratch/a.wav'), startMs: 0, endMs: 1 }, /absolute/],
+    [{ inputPath: nativeFixture('a.mkv'), outputPath: nativeFixture('a.mkv'), startMs: 0, endMs: 1 }, /differ/],
+    [{ inputPath: nativeFixture('a.mkv'), outputPath: nativeFixture('b.wav'), startMs: -1, endMs: 1 }, /non-negative integer/],
+    [{ inputPath: nativeFixture('a.mkv'), outputPath: nativeFixture('b.wav'), startMs: 2, endMs: 2 }, /greater/],
+    [{ inputPath: nativeFixture('a.mkv'), outputPath: nativeFixture('b.wav'), startMs: 0, endMs: 30001 }, /30,000/],
   ])('rejects invalid bounded ranges and paths', async (input, message) => {
     await expect(extractSourceAudioSnippet(input, async () => ({ exitCode: 0, stdout: '', stderr: '' }))).rejects.toThrow(message);
   });
@@ -103,12 +105,14 @@ describe('loopback snippet service', () => {
 
   it('enforces a 16-entry LRU and cleans startup and close scratch files', async () => {
     const { root, config } = await temporaryConfig();
-    const snippetsDir = join(config.scratchDir, 'source-audio-snippets');
+    let snippetsDir = join(config.scratchDir, 'source-audio-snippets');
     await writeFile(join(root, 'owned.mkv'), 'synthetic');
     await import('node:fs/promises').then(({ mkdir }) => mkdir(snippetsDir, { recursive: true }));
     await writeFile(join(snippetsDir, 'stale.wav'), 'stale');
     const runner: CommandRunner = async (_command, args) => { await writeFile(args.at(-1)!, 'wav'); return { exitCode: 0, stdout: '', stderr: '' }; };
     const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    expect(await readdir(snippetsDir)).toEqual(['stale.wav']); // unowned parent artifacts survive
+    snippetsDir = join(service.config.scratchDir, 'source-audio-snippets');
     expect(await readdir(snippetsDir)).toEqual([]);
     const ids: string[] = [];
     for (let index = 0; index < 17; index += 1) {
@@ -121,15 +125,16 @@ describe('loopback snippet service', () => {
     await service.close();
     expect(await readdir(snippetsDir)).toEqual([]);
     await expect(access(join(snippetsDir, `${ids[16]}.wav`))).rejects.toThrow();
-  });
+  }, 15_000); // 17 real HTTP/filesystem jobs on native Windows, no real ffmpeg.
 
   it('drains a running extraction before close returns and performs final scoped cleanup', async () => {
     const { root, config } = await temporaryConfig();
-    const snippetsDir = join(config.scratchDir, 'source-audio-snippets');
+    let snippetsDir = join(config.scratchDir, 'source-audio-snippets');
     const mediaPath = join(root, 'owned.mkv');
     await writeFile(mediaPath, 'synthetic');
     const gated = gatedSnippetRunner();
     const service = await startLingotorteLocalService(config, { commandRunner: gated.runner });
+    snippetsDir = join(service.config.scratchDir, 'source-audio-snippets');
     const createdResponse = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) });
     await createdResponse.json();
     await gated.started;
@@ -159,7 +164,7 @@ describe('loopback snippet service', () => {
       await cleanupResponse.json();
       await gated.finished;
 
-      expect(await readdir(config.scratchDir)).toEqual([]);
+      expect(await readdir(service.config.scratchDir)).toEqual(['source-audio-snippets']);
       const settled = await fetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json()) as { job: Record<string, unknown> };
       expect(settled.job).toMatchObject({ status: 'cancelled' });
       expect(settled.job).not.toHaveProperty('result');
@@ -193,7 +198,7 @@ describe('browser snippet lifecycle', () => {
       return responses.shift()!;
     };
     const lifecycle = { objectUrl: null as string | null };
-    const first = await prepareSourceAudioSnippet({ baseUrl: 'http://127.0.0.1:5174', mediaPath: '/owned/movie.mkv', startMs: 1, endMs: 2, fetchImpl, createObjectURL, revokeObjectURL, lifecycle });
+    const first = await prepareSourceAudioSnippet({ pathPolicy: nativePathPolicy(process.platform), baseUrl: 'http://127.0.0.1:5174', mediaPath: nativeFixture('owned/movie.mkv'), startMs: 1, endMs: 2, fetchImpl, createObjectURL, revokeObjectURL, lifecycle });
     expect(first.objectUrl).toBe('blob:first');
     expect(fetchCalls[2]!.init).toBeUndefined();
     expect(fetchCalls[3]!.init).toMatchObject({ method: 'DELETE' });
@@ -212,9 +217,9 @@ describe('browser snippet lifecycle', () => {
     ];
     const lifecycle = { objectUrl: null as string | null };
 
-    await expect(prepareSourceAudioSnippet({
+    await expect(prepareSourceAudioSnippet({ pathPolicy: nativePathPolicy(process.platform),
       baseUrl: 'http://127.0.0.1:5174',
-      mediaPath: '/owned/movie.mkv',
+      mediaPath: nativeFixture('owned/movie.mkv'),
       startMs: 1,
       endMs: 2,
       fetchImpl: async () => responses.shift()!,

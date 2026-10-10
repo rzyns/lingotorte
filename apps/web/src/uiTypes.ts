@@ -144,6 +144,7 @@ export type AppModel = {
     lastRestore: import('@lingotorte/domain').RestoreReceipt | null;
   };
   localService: {
+    pathPolicy?: import('../../../packages/domain/src/nativePaths.ts').NativePathPolicy | null;
     baseUrl: string;
     status: 'disconnected' | 'connecting' | 'connected' | 'error';
     lastMessage: string | null;

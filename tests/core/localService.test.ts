@@ -345,6 +345,7 @@ describe('Lingotorte loopback local service', () => {
     const runner: CommandRunner = async (command, args) => {
       calls.push({ command, args });
       if (command === 'ffmpeg') {
+        await writeFile(args.at(-1)!, 'synthetic wav bytes');
         return { exitCode: 0, stdout: '', stderr: '' };
       }
       if (args[0]?.endsWith('faster_whisper_transcribe.py')) {
@@ -451,7 +452,7 @@ describe('Lingotorte loopback local service', () => {
     const calls: { command: string; args: readonly string[] }[] = [];
     const runner: CommandRunner = async (command, args) => {
       calls.push({ command, args });
-      if (command === 'ffmpeg') return { exitCode: 0, stdout: '', stderr: '' };
+      if (command === 'ffmpeg') { await writeFile(args.at(-1)!, 'synthetic wav'); return { exitCode: 0, stdout: '', stderr: '' }; }
       const modelName = args[args.indexOf('--model') + 1]!;
       return {
         exitCode: 0,
@@ -542,7 +543,7 @@ describe('Lingotorte loopback local service', () => {
       await rm(root, { recursive: true, force: true });
     });
 
-    const scratchFile = join(config.scratchDir, 'temporary-artifact.txt');
+    const scratchFile = join(service.config.scratchDir, 'temporary-artifact.txt');
     const outsideFile = join(root, 'outside.txt');
     await writeFile(scratchFile, 'scratch');
     await writeFile(outsideFile, 'outside');

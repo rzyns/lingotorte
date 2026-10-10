@@ -159,6 +159,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 60_000;
     setVisualSourceRange(model, 1_000, 31_000);
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 
@@ -185,6 +186,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
     rerenderApp(model);
@@ -217,6 +219,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
     model.localService.status = serviceStatus;
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = configuredPath;
     rerenderApp(model);
 
@@ -248,6 +251,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = privatePath;
     rerenderApp(model);
 
@@ -272,6 +276,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 
@@ -300,6 +305,7 @@ describe('B6 visual source range player UI', () => {
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_250, 3_500);
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 
@@ -366,6 +372,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
@@ -407,6 +414,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
@@ -447,6 +455,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
@@ -479,6 +488,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
@@ -512,6 +522,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
@@ -558,6 +569,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     const prepareAndWait = async () => {
@@ -629,6 +641,7 @@ describe('B6 visual source range player UI', () => {
       tokenStart: 0, tokenEnd: 1, charStart: 0, charEnd: 6,
     };
     model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 

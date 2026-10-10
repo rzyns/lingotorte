@@ -158,6 +158,7 @@ describe('P7 transcript lifecycle frontend', () => {
     });
     model.store.putMediaAsset(ownedMedia);
     model.currentMedia = ownedMedia;
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     const requests: { url: string; init: RequestInit | undefined }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -304,6 +305,7 @@ describe('P7 transcript lifecycle frontend', () => {
     });
     model.store.putMediaAsset(ownedMedia);
     model.currentMedia = ownedMedia;
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     const requests: { url: string; init: RequestInit | undefined }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -457,6 +459,7 @@ describe('P7 transcript lifecycle frontend', () => {
     }) as typeof fetch;
 
     const provider = makeLocalServiceAsrProvider('http://127.0.0.1:5174', {
+      pathPolicy: { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false },
       modelName: 'tiny', pollAttempts: 1, pollDelayMs: 0,
     });
     await provider.transcribe({ media, language: 'pl' });

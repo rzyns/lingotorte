@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, normalize } from 'node:path';
+import { basename, dirname } from 'node:path';
+import { hostNativePath, assertReadableNativeFile, assertNativeOutput, nativeExecutable, resolvedNativePath, pathInside } from '../../domain/src/nativePathsNode.ts';
 
 export type CommandRunnerOptions = Readonly<{
   cwd?: string;
@@ -135,11 +136,8 @@ export type ElevenLabsHttpResponse = Readonly<{
 export type ElevenLabsHttpClient = (request: ElevenLabsSpeechToTextRequest) => Promise<ElevenLabsHttpResponse>;
 
 function requireAbsolutePath(path: string, label: string): string {
-  const normalized = normalize(path);
-  if (!isAbsolute(normalized)) {
-    throw new TypeError(`${label} must be an absolute local path.`);
-  }
-  return normalized;
+  try { return hostNativePath(path, label.includes('output') ? 'output-file' : 'input-file'); }
+  catch { throw new TypeError(`${label} must be a fully qualified absolute local path.`); }
 }
 
 function roundMs(seconds: number): number {
@@ -340,7 +338,10 @@ export async function extractAudioWithFfmpeg(
   if (inputPath === outputPath) {
     throw new TypeError('ffmpeg audio extraction output path must differ from the input media path.');
   }
-  const ffmpegPath = input.ffmpegPath ?? 'ffmpeg';
+  const ffmpegPath = nativeExecutable(input.ffmpegPath ?? 'ffmpeg');
+  assertReadableNativeFile(inputPath);
+  assertNativeOutput(outputPath);
+  if (pathInside(resolvedNativePath(inputPath), resolvedNativePath(outputPath))) throw new TypeError('Output path must differ from input media path.');
   const args = [
     '-hide_banner',
     '-y',
@@ -357,7 +358,7 @@ export async function extractAudioWithFfmpeg(
   ];
   const result = await runner(ffmpegPath, args, { cwd: dirname(outputPath) });
   if (result.exitCode !== 0) {
-    throw new Error(`ffmpeg audio extraction failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(`ffmpeg audio extraction failed with exit code ${result.exitCode}.`);
   }
   return {
     effect: 'audio-extracted',
@@ -381,14 +382,18 @@ export async function extractSourceAudioSnippet(
   if (input.endMs <= input.startMs) throw new TypeError('endMs must be greater than startMs.');
   const durationMs = input.endMs - input.startMs;
   if (durationMs > MAX_SOURCE_AUDIO_SNIPPET_DURATION_MS) throw new TypeError('source snippet duration must not exceed 30,000 ms.');
+  const ffmpegPath = nativeExecutable(input.ffmpegPath ?? 'ffmpeg');
+  assertReadableNativeFile(inputPath);
+  assertNativeOutput(outputPath);
+  if (pathInside(resolvedNativePath(inputPath), resolvedNativePath(outputPath))) throw new TypeError('Output path must differ from input media path.');
   const seconds = (value: number) => (value / 1000).toFixed(3);
   const args = [
     '-hide_banner', '-y', '-ss', seconds(input.startMs), '-i', inputPath,
     '-t', seconds(durationMs), '-vn', '-ac', '1', '-ar', '16000',
     '-c:a', 'pcm_s16le', '-f', 'wav', outputPath,
   ];
-  const result = await runner(input.ffmpegPath ?? 'ffmpeg', args, { cwd: dirname(outputPath) });
-  if (result.exitCode !== 0) throw new Error(`source snippet extraction failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  const result = await runner(ffmpegPath, args, { cwd: dirname(outputPath) });
+  if (result.exitCode !== 0) throw new Error(`source snippet extraction failed with exit code ${result.exitCode}.`);
   return {
     effect: 'source-audio-snippet-extracted', outputPath, durationMs,
     mimeType: 'audio/wav', sampleRateHz: 16000, channels: 1, codec: 'pcm_s16le',
@@ -401,7 +406,9 @@ export async function transcribeWithFasterWhisper(
 ): Promise<LocalAsrTranscriptionResult> {
   const scriptPath = requireAbsolutePath(input.scriptPath, 'faster-whisper script path');
   const audioPath = requireAbsolutePath(input.audioPath, 'faster-whisper audio path');
-  const pythonPath = input.pythonPath ?? 'python3';
+  const pythonPath = nativeExecutable(input.pythonPath ?? 'python3');
+  assertReadableNativeFile(scriptPath);
+  assertReadableNativeFile(audioPath);
   const args = [
     scriptPath,
     '--audio',
@@ -418,7 +425,7 @@ export async function transcribeWithFasterWhisper(
   ];
   const result = await runner(pythonPath, args, { cwd: dirname(scriptPath) });
   if (result.exitCode !== 0) {
-    throw new Error(`faster-whisper transcription failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(`faster-whisper transcription failed with exit code ${result.exitCode}.`);
   }
   return normalizeTranscriptPayload(JSON.parse(result.stdout) as unknown, {
     label: 'faster-whisper',
@@ -437,6 +444,7 @@ export async function transcribeWithElevenLabsScribe(
     throw new TypeError('ElevenLabs Scribe transcription requires a non-empty API key.');
   }
   const audioPath = requireAbsolutePath(input.audioPath, 'ElevenLabs Scribe audio path');
+  if (input.audioBytes === undefined) assertReadableNativeFile(audioPath);
   const audioBytes = input.audioBytes ?? await readFile(audioPath);
   const modelId = input.modelId ?? 'scribe_v2';
   const baseUrl = (input.baseUrl ?? 'https://api.elevenlabs.io').replace(/\/+$/, '');
@@ -469,7 +477,10 @@ export async function alignWordsWithWhisperX(
   const scriptPath = requireAbsolutePath(input.scriptPath, 'WhisperX alignment script path');
   const audioPath = requireAbsolutePath(input.audioPath, 'WhisperX alignment audio path');
   const transcriptJsonPath = requireAbsolutePath(input.transcriptJsonPath, 'WhisperX transcript JSON path');
-  const pythonPath = input.pythonPath ?? 'python3';
+  const pythonPath = nativeExecutable(input.pythonPath ?? 'python3');
+  assertReadableNativeFile(scriptPath);
+  assertReadableNativeFile(audioPath);
+  assertReadableNativeFile(transcriptJsonPath);
   const args = [
     scriptPath,
     '--audio',
@@ -483,7 +494,7 @@ export async function alignWordsWithWhisperX(
   ];
   const result = await runner(pythonPath, args, { cwd: dirname(scriptPath) });
   if (result.exitCode !== 0) {
-    throw new Error(`WhisperX alignment failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(`WhisperX alignment failed with exit code ${result.exitCode}.`);
   }
   return normalizeTranscriptPayload(JSON.parse(result.stdout) as unknown, {
     label: 'WhisperX',
@@ -615,7 +626,8 @@ export async function listEmbeddedSubtitleTracks(
   runner: CommandRunner = nodeCommandRunner,
 ): Promise<FfprobeSubtitleListingResult> {
   const mediaPath = requireAbsolutePath(input.mediaPath, 'ffprobe media path');
-  const ffprobePath = input.ffprobePath ?? 'ffprobe';
+  const ffprobePath = nativeExecutable(input.ffprobePath ?? 'ffprobe');
+  assertReadableNativeFile(mediaPath);
   const args = [
     '-v', 'quiet',
     '-print_format', 'json',
@@ -625,7 +637,7 @@ export async function listEmbeddedSubtitleTracks(
   ];
   const result = await runner(ffprobePath, args, {});
   if (result.exitCode !== 0) {
-    throw new Error(`ffprobe subtitle listing failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(`ffprobe subtitle listing failed with exit code ${result.exitCode}.`);
   }
   return normalizeFfprobeStreams(JSON.parse(result.stdout) as unknown);
 }
@@ -657,7 +669,10 @@ export async function extractEmbeddedSubtitleTrack(
   if (!Number.isInteger(input.streamIndex) || input.streamIndex < 0) {
     throw new TypeError(`ffmpeg subtitle extraction stream index must be a non-negative integer, got ${input.streamIndex}`);
   }
-  const ffmpegPath = input.ffmpegPath ?? 'ffmpeg';
+  const ffmpegPath = nativeExecutable(input.ffmpegPath ?? 'ffmpeg');
+  assertReadableNativeFile(mediaPath);
+  assertNativeOutput(outputPath);
+  if (pathInside(resolvedNativePath(mediaPath), resolvedNativePath(outputPath))) throw new TypeError('Output path must differ from input media path.');
   const formatFlags: Readonly<Record<typeof input.outputFormat, readonly string[]>> = {
     srt: ['-f', 'srt'],
     vtt: ['-f', 'webvtt'],
@@ -673,7 +688,7 @@ export async function extractEmbeddedSubtitleTrack(
   ];
   const result = await runner(ffmpegPath, args, { cwd: dirname(outputPath) });
   if (result.exitCode !== 0) {
-    throw new Error(`ffmpeg subtitle extraction failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+    throw new Error(`ffmpeg subtitle extraction failed with exit code ${result.exitCode}.`);
   }
   return {
     effect: 'embedded-subtitle-extracted',

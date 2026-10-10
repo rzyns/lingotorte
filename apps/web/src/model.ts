@@ -1,3 +1,4 @@
+import { requireServiceNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE, type NativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
 import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/src/localStore';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
@@ -253,6 +254,7 @@ function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreS
 
 export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
+  if (model.localService.baseUrl !== normalizedBaseUrl) model.localService.pathPolicy = null;
   model.localService.baseUrl = normalizedBaseUrl;
   try {
     await fetchLocalServiceJson(normalizedBaseUrl, '/api/state', {
@@ -273,11 +275,14 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
 
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
+  if (model.localService.baseUrl !== normalizedBaseUrl) model.localService.pathPolicy = null;
   model.localService.baseUrl = normalizedBaseUrl;
   model.localService.status = 'connecting';
   model.localService.lastMessage = 'Connecting to local service...';
   try {
-    await fetchLocalServiceJson(normalizedBaseUrl, '/api/status');
+    model.localService.pathPolicy = null;
+    const status = await fetchLocalServiceJson(normalizedBaseUrl, '/api/status');
+    model.localService.pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
     const state = await fetchLocalServiceJson(normalizedBaseUrl, '/api/state');
     const serviceSnapshot = state.snapshot as LocalStoreSnapshot;
     if (snapshotHasDurableContent(serviceSnapshot) || !snapshotHasDurableContent(model.store.snapshot())) {
@@ -290,6 +295,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
       model.localService.lastMessage = 'Connected to empty local service; current browser state was kept until you save.';
     }
     model.localService.status = 'connected';
+    if (!model.localService.pathPolicy) model.localService.lastMessage += ` ${NATIVE_PATH_COMPATIBILITY_MESSAGE}`;
     return { ok: true, message: model.localService.lastMessage };
   } catch (error) {
     model.localService.status = 'error';
@@ -300,6 +306,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
 
 export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
   model.localService.baseUrl = baseUrl;
+  model.localService.pathPolicy = null;
 }
 
 export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void {
@@ -1267,6 +1274,7 @@ export function makeFakeLocalAsrProvider(seed: LocalAsrProviderResult): LocalAsr
 
 export type LocalServiceAsrProviderOptions = Readonly<{
   mediaPath?: string;
+  pathPolicy?: NativePathPolicy | null | undefined;
   modelName?: string;
   alignWords?: boolean;
   pollAttempts?: number;
@@ -1281,6 +1289,7 @@ export type LocalServiceYouTubeCaptionProviderOptions = Readonly<{
 
 export type LocalServiceElevenLabsScribeProviderOptions = Readonly<{
   mediaPath?: string;
+  pathPolicy?: NativePathPolicy | null | undefined;
   modelId?: 'scribe_v2' | string;
   allowOnlineProvider?: boolean;
   pollAttempts?: number;
@@ -1403,10 +1412,10 @@ export type EmbeddedSubtitleJobOptions = Readonly<{
   sleep?: (ms: number) => Promise<void>;
 }>;
 
-function embeddedMediaPath(value: string): string {
-  const path = value.trim();
-  if (!path.startsWith('/') || path === '/' || path.startsWith('//')) throw new TypeError(EMBEDDED_PATH_ERROR);
-  return path;
+function embeddedMediaPath(value: string, policy: unknown): string {
+  if (!readNativePathPolicy(policy)) throw new TypeError(NATIVE_PATH_COMPATIBILITY_MESSAGE);
+  try { return requireServiceNativePath(value, policy); }
+  catch { throw new TypeError(EMBEDDED_PATH_ERROR); }
 }
 
 function integerField(value: unknown, label: string): number {
@@ -1553,14 +1562,15 @@ export async function listEmbeddedSubtitleTracksFromService(
     state.statusMessage = EMBEDDED_SERVICE_ERROR;
     throw new TypeError(EMBEDDED_SERVICE_ERROR);
   }
+  const pathAtStart = state.mediaPath;
   let mediaPath = '';
   const assertCurrentContext = () => {
-    if (generations.listing !== listingGeneration || (mediaPath !== '' && state.mediaPath.trim() !== mediaPath)) {
+    if (generations.listing !== listingGeneration || (mediaPath !== '' && state.mediaPath !== pathAtStart)) {
       throw new StaleEmbeddedSubtitleOperationError();
     }
   };
   try {
-    mediaPath = embeddedMediaPath(state.mediaPath);
+    mediaPath = embeddedMediaPath(state.mediaPath, model.localService.pathPolicy);
     state.listingStatus = 'listing';
     state.statusMessage = 'Listing embedded subtitle tracks.';
     const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
@@ -1628,12 +1638,13 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   }
   const media = model.currentMedia;
   if (!media) throw new TypeError('Embedded subtitle draft import requires current owned local media.');
+  const pathAtStart = state.mediaPath;
   let mediaPath = '';
   let completedResultReceived = false;
   let selectedStreamIndex: number | null = null;
   const mediaId = media.id;
   const assertCurrentContext = () => {
-    if ((mediaPath !== '' && state.mediaPath.trim() !== mediaPath)
+    if ((mediaPath !== '' && state.mediaPath !== pathAtStart)
       || generations.extraction !== extractionGeneration
       || model.currentMedia?.id !== mediaId
       || (selectedStreamIndex !== null && (state.selectedStreamIndex !== selectedStreamIndex
@@ -1642,7 +1653,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     }
   };
   try {
-    mediaPath = embeddedMediaPath(state.mediaPath);
+    mediaPath = embeddedMediaPath(state.mediaPath, model.localService.pathPolicy);
     const language = state.language.trim();
     if (!language) throw new TypeError('Embedded subtitle language is required.');
     const selected = state.tracks.find((track) => track.streamIndex === state.selectedStreamIndex && track.isSupported);
@@ -1739,10 +1750,7 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
     },
     async transcribe(input) {
       callCount += 1;
-      const mediaPath = options.mediaPath?.trim() || input.media.originalPath;
-      if (!mediaPath.startsWith('/')) {
-        throw new TypeError('Local service ASR requires a durable absolute local media path. Browser blob media must be reselected or imported through the loopback service before transcription.');
-      }
+      const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
       const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
         method: 'POST',
         body: JSON.stringify({
@@ -1788,10 +1796,7 @@ export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, option
     },
     async transcribe(input) {
       callCount += 1;
-      const mediaPath = options.mediaPath?.trim() || input.media.originalPath;
-      if (!mediaPath.startsWith('/')) {
-        throw new TypeError('ElevenLabs Scribe requires a durable absolute local media path. Browser blob media must be reselected or imported through the loopback service before transcription.');
-      }
+      const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
       const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
         method: 'POST',
         body: JSON.stringify({
@@ -2388,15 +2393,11 @@ export type YtDlpMediaAcquisitionPlan = Readonly<{
 export function planYtDlpMediaAcquisition(input: {
   url: string;
   outputDirectory: string;
+  pathPolicy?: NativePathPolicy | null | undefined;
   includeMedia: boolean;
   allowMediaDownload: boolean;
 }): YtDlpMediaAcquisitionPlan {
-  if (!input.outputDirectory.startsWith('/')) {
-    throw new TypeError('yt-dlp output directory must be an absolute local path, not a repo-relative path.');
-  }
-  if (input.outputDirectory.includes('..')) {
-    throw new TypeError('yt-dlp output directory must not contain parent traversal.');
-  }
+  const outputDirectory = requireServiceNativePath(input.outputDirectory, input.pathPolicy, 'directory');
   videoIdFromYouTubeUrl(input.url);
   if (input.includeMedia && !input.allowMediaDownload) {
     throw new TypeError('YouTube media download requires rights/permission confirmation.');
@@ -2410,7 +2411,7 @@ export function planYtDlpMediaAcquisition(input: {
     '--sub-format',
     'srt/vtt',
     '--paths',
-    input.outputDirectory,
+    outputDirectory,
     input.url,
   ];
   return {
@@ -2437,7 +2438,7 @@ export async function importTargetOnlyFixture(model: AppModel, mediaPath: string
     durationMs: probe.durationMs,
     container: probe.container,
     sizeBytes: probe.sizeBytes,
-    privacyLabel: mediaPath.includes('fixtures/') ? 'synthetic' : 'owned',
+    privacyLabel: 'synthetic', // Explicit fixture import API; never inferred from path spelling.
   });
 
   const targetParsed = await importSubtitle({ mediaId: asset.id, language: 'pl', role: 'target', path: targetSrtPath });
@@ -2480,7 +2481,7 @@ export async function importFixtureMediaAndSubtitles(
     durationMs: probe.durationMs,
     container: probe.container,
     sizeBytes: probe.sizeBytes,
-    privacyLabel: mediaPath.includes('fixtures/') ? 'synthetic' : 'owned',
+    privacyLabel: 'synthetic', // Explicit fixture import API; never inferred from path spelling.
   });
 
   const targetParsed = await importSubtitle({ mediaId: asset.id, language: 'pl', role: 'target', path: targetSrtPath });

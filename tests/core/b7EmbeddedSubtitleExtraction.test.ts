@@ -1,3 +1,4 @@
+import { nativeFixture } from '../helpers/nativeFixtures.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -9,7 +10,7 @@ import {
 } from '../../packages/local-transcription/src/index.ts';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server';
 
-const DUMMY_MEDIA = join(tmpdir(), 'lingotorte-b7-test-media.mp4');
+const DUMMY_MEDIA = nativeFixture('media/lingotorte-b7-test-media.mp4');
 
 // ---------------------------------------------------------------------------
 // Unit-level tests for the command adapters (no server/HTTP involved)
@@ -352,7 +353,7 @@ describe('Lingotorte embedded-subtitle local service jobs', () => {
     const serialized = JSON.stringify(failed);
     expect(serialized).not.toContain(mediaPath);
     expect(serialized).not.toContain(root);
-    expect(serialized).toContain('[local-path]');
+    expect(serialized).toContain('exit code 1');
   });
 
   it('embedded-subtitle-list: rejects a relative media path', async () => {
@@ -366,10 +367,9 @@ describe('Lingotorte embedded-subtitle local service jobs', () => {
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath: 'relative/path.mkv' } }),
     }).then((r) => r.json());
 
-    // The job itself is queued but the runner will fail with absolute-path error
-    const failed = await waitForJob(service.origin, created.job.id);
-    expect(failed.job).toMatchObject({ status: 'failed' });
-    expect(JSON.stringify(failed)).toContain('absolute');
+    // Invalid syntax is refused before creating a job.
+    expect(created.job).toBeUndefined();
+    expect(JSON.stringify(created)).toContain('absolute');
   });
 
   it('embedded-subtitle-extract: completes successfully, imports as draft, and redacts scratch paths', async () => {
@@ -508,9 +508,8 @@ Druga linia dialogu.
       }),
     }).then((r) => r.json());
 
-    const failed = await waitForJob(service.origin, created.job.id);
-    expect(failed.job).toMatchObject({ status: 'failed' });
-    expect(JSON.stringify(failed)).toContain('absolute');
+    expect(created.job).toBeUndefined();
+    expect(JSON.stringify(created)).toContain('absolute');
   });
 
   it('embedded-subtitle-extract: rejects invalid outputFormat', async () => {
@@ -527,9 +526,9 @@ Druga linia dialogu.
       }),
     }).then((r) => r.json());
 
-    // Validation error should cause the job to fail asynchronously
-    const result = await waitForJob(service.origin, created.job.id);
-    expect((result.job as Record<string, unknown>).status).toBe('failed');
+    // Validation error must reject before job creation.
+    expect(created.job).toBeUndefined();
+    expect(created.ok).toBe(false);
   });
 
   it('embedded-subtitle-extract: rejects invalid streamIndex', async () => {
@@ -546,8 +545,8 @@ Druga linia dialogu.
       }),
     }).then((r) => r.json());
 
-    const result = await waitForJob(service.origin, created.job.id);
-    expect((result.job as Record<string, unknown>).status).toBe('failed');
+    expect(created.job).toBeUndefined();
+    expect(created.ok).toBe(false);
   });
 
   it('embedded-subtitle-extract: rejects invalid role', async () => {
@@ -564,8 +563,8 @@ Druga linia dialogu.
       }),
     }).then((r) => r.json());
 
-    const result = await waitForJob(service.origin, created.job.id);
-    expect((result.job as Record<string, unknown>).status).toBe('failed');
+    expect(created.job).toBeUndefined();
+    expect(created.ok).toBe(false);
   });
 
   it('embedded-subtitle-list and extract: do not affect the persistence layer', async () => {

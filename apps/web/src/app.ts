@@ -1,3 +1,4 @@
+import { isNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../packages/domain/src/nativePaths.ts';
 import type { AppModel, ViewName } from './uiTypes';
 import type { Cue, SavedItem, LearnerExportManifest } from '@lingotorte/domain';
 import { verifyExportIntegrity } from '@lingotorte/domain';
@@ -334,10 +335,8 @@ type SourceRangeSnippetUiState = SourceAudioSnippetLifecycle & {
 
 const sourceRangeSnippetStates = new WeakMap<AppModel, SourceRangeSnippetUiState>();
 
-function isAbsoluteOwnedLocalPath(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed || /^(?:blob:|browser-file-handle:|https?:)/i.test(trimmed)) return false;
-  return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\');
+function hasNativeInputPath(model: AppModel, value: string): boolean {
+  return isNativePath(value, model.localService.pathPolicy);
 }
 
 function hasExtractableCurrentMedia(model: AppModel): boolean {
@@ -345,10 +344,10 @@ function hasExtractableCurrentMedia(model: AppModel): boolean {
 }
 
 function preferredSourceRangeMediaPath(model: AppModel): string {
-  const configured = model.transcriptLifecycle.localAsrMediaPath.trim();
-  if (isAbsoluteOwnedLocalPath(configured)) return configured;
-  const fallback = model.currentMedia?.originalPath.trim() ?? '';
-  return isAbsoluteOwnedLocalPath(fallback) ? fallback : '';
+  const configured = model.transcriptLifecycle.localAsrMediaPath;
+  if (hasNativeInputPath(model, configured)) return configured;
+  const fallback = model.currentMedia?.originalPath ?? '';
+  return hasNativeInputPath(model, fallback) ? fallback : '';
 }
 
 function sourceRangeContextKey(model: AppModel, state: SourceRangeSnippetUiState): string {
@@ -530,12 +529,15 @@ function renderPracticeView(model: AppModel): HTMLElement {
     prepareButton.type = 'button';
     prepareButton.className = 'btn-primary';
     prepareButton.textContent = 'Prepare source audio';
-    prepareButton.disabled = model.localService.status !== 'connected' || !currentCue;
+    prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, snippet.mediaPath);
+    pathInput.addEventListener('input', () => {
+      prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, pathInput.value);
+    });
     prepareButton.addEventListener('click', async () => {
-      if (!currentCue || !snippet.mediaPath.trim()) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+      if (!currentCue || !hasNativeInputPath(model, snippet.mediaPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
       snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
       try {
-        await prepareSourceAudioSnippet({ baseUrl: model.localService.baseUrl, mediaPath: snippet.mediaPath.trim(), startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
+        await prepareSourceAudioSnippet({ baseUrl: model.localService.baseUrl, pathPolicy: model.localService.pathPolicy, mediaPath: snippet.mediaPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
         snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
       } catch (error) {
         snippet.status = 'failed'; snippet.message = error instanceof Error ? error.message : 'Source audio preparation failed.';
@@ -556,7 +558,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
     }
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
-    status.textContent = model.localService.status !== 'connected' ? 'Local service unavailable or disconnected.' : snippet.message;
+    status.textContent = model.localService.status !== 'connected' ? 'Local service unavailable or disconnected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
     privacy.className = 'meta';
@@ -2228,7 +2230,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
   pathInput.placeholder = 'Absolute path (session only)';
   pathInput.addEventListener('input', () => {
     snippet.mediaPath = pathInput.value;
-    invalidateSourceRangeSnippet(model, isAbsoluteOwnedLocalPath(pathInput.value)
+    invalidateSourceRangeSnippet(model, hasNativeInputPath(model, pathInput.value)
       ? 'Media path changed; prepare fresh source audio.'
       : 'An explicit absolute owned local media path is required.');
     rerenderApp(model);
@@ -2238,7 +2240,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const selectedDurationMs = range ? range.endMs - range.startMs : 0;
   const rangeTooLong = selectedDurationMs > 30_000;
-  const pathValid = isAbsoluteOwnedLocalPath(snippet.mediaPath);
+  const pathValid = hasNativeInputPath(model, snippet.mediaPath);
   const mediaExtractable = hasExtractableCurrentMedia(model);
   const prepare = document.createElement('button');
   prepare.type = 'button';
@@ -2247,8 +2249,8 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
   prepare.disabled = range === null || rangeTooLong || !pathValid || !mediaExtractable || model.localService.status !== 'connected' || snippet.status === 'preparing';
   prepare.addEventListener('click', () => {
     const operationRange = model.player.sourceRange;
-    const operationPath = snippet.mediaPath.trim();
-    if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !isAbsoluteOwnedLocalPath(operationPath) || !hasExtractableCurrentMedia(model) || model.localService.status !== 'connected') return;
+    const operationPath = snippet.mediaPath;
+    if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !hasNativeInputPath(model, operationPath) || !hasExtractableCurrentMedia(model) || model.localService.status !== 'connected') return;
     releaseSourceAudioSnippet(snippet);
     const generation = ++snippet.generation;
     const contextKey = sourceRangeContextKey(model, snippet);
@@ -2258,7 +2260,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
     const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
     rerenderApp(model);
     void prepareSourceAudioSnippet({
-      baseUrl: model.localService.baseUrl,
+      baseUrl: model.localService.baseUrl, pathPolicy: model.localService.pathPolicy,
       mediaPath: operationPath,
       startMs: operationRange.startMs,
       endMs: operationRange.endMs,
@@ -2305,6 +2307,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
   else if (model.localService.status !== 'connected') status.textContent = 'Local service unavailable or disconnected.';
+  else if (!readNativePathPolicy(model.localService.pathPolicy)) status.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   else if (!mediaExtractable) status.textContent = 'Source audio requires a current owned or synthetic media asset.';
   else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
   else if (rangeTooLong) status.textContent = `Source audio has a 30-second maximum; current duration is ${formatTimeMs(selectedDurationMs)}. This range can still be looped.`;
@@ -2741,7 +2744,7 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   pathInput.name = 'embedded-subtitle-media-path';
   pathInput.type = 'text';
   pathInput.value = state.mediaPath;
-  pathInput.placeholder = '/absolute/path/to/owned-media.mkv';
+  pathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.mkv' : '/absolute/path/to/owned-media.mkv';
   pathLabel.appendChild(pathInput);
 
   const languageLabel = document.createElement('label');
@@ -2760,7 +2763,7 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   trackList.setAttribute('aria-label', 'Embedded subtitle tracks');
 
   const extractionEnabled = () => model.localService.status === 'connected'
-    && state.mediaPath.trim().startsWith('/')
+    && hasNativeInputPath(model, state.mediaPath)
     && state.language.trim().length > 0
     && state.tracks.some((track) => track.streamIndex === state.selectedStreamIndex && track.isSupported);
 
@@ -2819,7 +2822,8 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   listButton.type = 'button';
   listButton.className = 'btn-secondary';
   listButton.textContent = 'List embedded subtitle tracks';
-  listButton.disabled = state.listingStatus === 'listing' || state.extractionStatus === 'extracting';
+  listButton.disabled = !readNativePathPolicy(model.localService.pathPolicy) || state.listingStatus === 'listing' || state.extractionStatus === 'extracting';
+  if (!readNativePathPolicy(model.localService.pathPolicy)) boundary.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   listButton.addEventListener('click', () => {
     void listEmbeddedSubtitleTracksFromService(model)
       .then(() => {
@@ -2922,7 +2926,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   localAsrPathInput.name = 'local-asr-media-path';
   localAsrPathInput.type = 'text';
   localAsrPathInput.value = model.transcriptLifecycle.localAsrMediaPath;
-  localAsrPathInput.placeholder = '/absolute/path/to/owned-media.webm';
+  localAsrPathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.webm' : '/absolute/path/to/owned-media.webm';
   localAsrPathInput.addEventListener('input', () => {
     model.transcriptLifecycle.localAsrMediaPath = localAsrPathInput.value;
   });
@@ -3008,10 +3012,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const asrBtn = document.createElement('button');
   asrBtn.className = 'btn-secondary';
   asrBtn.textContent = 'Generate local ASR draft';
-  asrBtn.disabled = !model.currentMedia;
+  asrBtn.disabled = !model.currentMedia || !hasNativeInputPath(model, model.transcriptLifecycle.localAsrMediaPath || currentMediaPath);
   asrBtn.addEventListener('click', () => {
     const provider = makeLocalServiceAsrProvider(model.localService.baseUrl, {
       mediaPath: model.transcriptLifecycle.localAsrMediaPath,
+      pathPolicy: model.localService.pathPolicy,
       alignWords: true,
     });
     void generateLocalAsrDraft(model, provider, model.transcriptLifecycle.youtubeLanguage)
@@ -3033,10 +3038,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const scribeBtn = document.createElement('button');
   scribeBtn.className = 'btn-secondary';
   scribeBtn.textContent = 'Generate ElevenLabs Scribe v2 draft';
-  scribeBtn.disabled = !model.currentMedia;
+  scribeBtn.disabled = !model.currentMedia || !hasNativeInputPath(model, model.transcriptLifecycle.localAsrMediaPath || currentMediaPath);
   scribeBtn.addEventListener('click', () => {
     const provider = makeLocalServiceElevenLabsScribeProvider(model.localService.baseUrl, {
       mediaPath: model.transcriptLifecycle.localAsrMediaPath,
+      pathPolicy: model.localService.pathPolicy,
       modelId: 'scribe_v2',
       allowOnlineProvider: model.transcriptLifecycle.elevenLabsAuthorized,
     });
@@ -3057,6 +3063,15 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
   });
+  localAsrPathInput.addEventListener('input', () => {
+    const disabled = !model.currentMedia || !hasNativeInputPath(model, localAsrPathInput.value || currentMediaPath);
+    asrBtn.disabled = disabled; scribeBtn.disabled = disabled;
+  });
+  if (!readNativePathPolicy(model.localService.pathPolicy)) {
+    const compatibility = document.createElement('p');
+    compatibility.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
+    actions.appendChild(compatibility);
+  }
   actions.appendChild(scribeBtn);
   panel.appendChild(actions);
 

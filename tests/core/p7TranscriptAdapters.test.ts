@@ -279,6 +279,7 @@ describe('P7 transcript provider adapters and correction lifecycle', () => {
 describe('P7 safe yt-dlp command planning', () => {
   it('plans caption/media acquisition without cookies, credential paths, DRM bypass flags, or repo-relative output paths', () => {
     const plan = planYtDlpMediaAcquisition({
+      pathPolicy: { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false },
       url: 'https://www.youtube.com/watch?v=abcdefghijk',
       outputDirectory: '/tmp/lingotorte-authorized-media',
       includeMedia: true,
@@ -301,6 +302,7 @@ describe('P7 safe yt-dlp command planning', () => {
 
   it('refuses media download without rights confirmation and refuses repo-relative output paths', () => {
     expect(() => planYtDlpMediaAcquisition({
+      pathPolicy: { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false },
       url: 'https://www.youtube.com/watch?v=abcdefghijk',
       outputDirectory: '/tmp/lingotorte-captions-only',
       includeMedia: true,
@@ -308,6 +310,7 @@ describe('P7 safe yt-dlp command planning', () => {
     })).toThrow(/rights|permission/i);
 
     expect(() => planYtDlpMediaAcquisition({
+      pathPolicy: { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false },
       url: 'https://www.youtube.com/watch?v=abcdefghijk',
       outputDirectory: 'downloads',
       includeMedia: false,

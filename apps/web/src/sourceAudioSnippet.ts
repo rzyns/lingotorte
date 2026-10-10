@@ -1,8 +1,11 @@
+import { requireServiceNativePath, type NativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
+
 export type SourceAudioSnippetLifecycle = { objectUrl: string | null };
 
 export type PrepareSourceAudioSnippetInput = Readonly<{
   baseUrl: string;
   mediaPath: string;
+  pathPolicy?: NativePathPolicy | null | undefined;
   startMs: number;
   endMs: number;
   fetchImpl?: typeof fetch;
@@ -19,6 +22,7 @@ export function redactSourceAudioSnippetError(error: unknown): string {
 }
 
 export async function prepareSourceAudioSnippet(input: PrepareSourceAudioSnippetInput): Promise<{ objectUrl: string; mimeType: 'audio/wav' }> {
+  const mediaPath = requireServiceNativePath(input.mediaPath, input.pathPolicy);
   const fetchImpl = input.fetchImpl ?? fetch;
   const createObjectURL = input.createObjectURL ?? URL.createObjectURL.bind(URL);
   const revokeObjectURL = input.revokeObjectURL ?? URL.revokeObjectURL.bind(URL);
@@ -26,7 +30,7 @@ export async function prepareSourceAudioSnippet(input: PrepareSourceAudioSnippet
   const baseUrl = input.baseUrl.replace(/\/+$/, '');
   const created = await fetchImpl(`${baseUrl}/api/jobs`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath: input.mediaPath, startMs: input.startMs, endMs: input.endMs } }),
+    body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: input.startMs, endMs: input.endMs } }),
   });
   if (!created.ok) throw new Error('Local source snippet request failed.');
   const createdBody = await created.json() as { job: { id: string } };

@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { mkdir, mkdtemp, lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { nativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
+import { hostNativePath, pathInside, resolvedNativePath, assertReadableNativeFile, nativeExecutable } from '../../../packages/domain/src/nativePathsNode.ts';
+import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch } from './nativeConfig.ts';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SqliteLocalPersistence } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
 import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStore.ts';
@@ -33,6 +37,7 @@ const ASR_MODEL_VALIDATION_MESSAGE = `modelName must be one of: ${ALLOWED_ASR_MO
 export type LocalServiceConfig = Readonly<{
   host: string;
   port: number;
+  dataDir?: string;
   databasePath: string;
   scratchDir: string;
   modelCacheDir: string;
@@ -61,6 +66,7 @@ export type LocalServiceRuntime = Readonly<{
   scriptRoot?: string;
   pythonPath?: string;
   ffmpegPath?: string;
+  ffprobePath?: string;
   defaultLanguage?: string;
   defaultModelName?: AsrModelName;
   defaultDevice?: string;
@@ -90,9 +96,7 @@ function assertLoopbackConfig(config: LocalServiceConfig): void {
     ['scratchDir', config.scratchDir],
     ['modelCacheDir', config.modelCacheDir],
   ] as const) {
-    if (!isAbsolute(path)) {
-      throw new TypeError(`${label} must be an absolute local path.`);
-    }
+    hostNativePath(path, label === 'databasePath' ? 'output-file' : 'directory');
   }
 }
 
@@ -175,6 +179,7 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
       databasePath: '[local-sqlite]',
       scratchDir: '[local-scratch]',
       modelCacheDir: '[local-model-cache]',
+      pathPolicy: nativePathPolicy(process.platform),
       defaultAsrModelName,
       allowOnlineProviders: config.allowOnlineProviders,
     },
@@ -197,21 +202,19 @@ function updateJob(job: LocalJob, patch: Partial<Omit<LocalJob, 'id' | 'kind' | 
   };
 }
 
-function pathInside(parent: string, candidate: string): boolean {
-  const root = resolve(parent);
-  const target = resolve(candidate);
-  return target === root || target.startsWith(`${root}/`);
-}
-
 async function cleanupScratchDirectory(scratchDir: string): Promise<number> {
   const root = resolve(scratchDir);
-  await mkdir(root, { recursive: true });
+  const rootInfo = await lstat(root);
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory() || !pathInside(root, resolvedNativePath(root))) throw new TypeError('Scratch cleanup refused a linked directory.');
   const entries = await readdir(root, { withFileTypes: true });
   let deletedFiles = 0;
   for (const entry of entries) {
     const target = join(root, entry.name);
     if (!pathInside(root, target)) continue;
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      // Unlink only. Never recurse through symlinks or Windows junctions.
+      await rm(target, { force: true });
+    } else if (entry.isDirectory()) {
       deletedFiles += await cleanupScratchDirectory(target);
       await rm(target, { recursive: true, force: true });
     } else {
@@ -234,7 +237,7 @@ function requiredStringField(record: Record<string, unknown>, key: string): stri
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new TypeError(`${key} must be a non-empty string.`);
   }
-  return value.trim();
+  return key === 'mediaPath' ? value : value.trim();
 }
 
 function optionalStringField(record: Record<string, unknown>, key: string, fallback: string): string {
@@ -256,14 +259,12 @@ function optionalBooleanField(record: Record<string, unknown>, key: string, fall
 }
 
 function absolutePathField(path: string, label: string): string {
-  if (!isAbsolute(path)) {
-    throw new TypeError(`${label} must be an absolute local path.`);
-  }
-  return resolve(path);
+  try { return hostNativePath(path, 'input-file'); }
+  catch { throw new TypeError(`${label} must be a fully qualified absolute local path.`); }
 }
 
 function defaultScriptRoot(runtime: LocalServiceRuntime): string {
-  return runtime.scriptRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  return hostNativePath(runtime.scriptRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'), 'directory');
 }
 
 function redactLocalPaths(message: string, paths: readonly string[]): string {
@@ -328,7 +329,7 @@ function sourceAudioSnippetPayload(value: unknown, runtime: LocalServiceRuntime)
   if (typeof startMs !== 'number' || typeof endMs !== 'number') throw new TypeError('startMs and endMs must be numbers.');
   return {
     mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'), startMs, endMs,
-    ...(body.ffmpegPath !== undefined ? { ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg') } : {}),
+    ffmpegPath: nativeExecutable(runtime.ffmpegPath ?? 'ffmpeg'),
   };
 }
 
@@ -362,8 +363,8 @@ function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime)
     language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
     modelName: jobAsrModelName(body.modelName, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME),
     alignWords: optionalBooleanField(body, 'alignWords', true),
-    pythonPath: optionalStringField(body, 'pythonPath', runtime.pythonPath ?? 'python3'),
-    ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
+    pythonPath: nativeExecutable(runtime.pythonPath ?? 'python3'),
+    ffmpegPath: nativeExecutable(runtime.ffmpegPath ?? 'ffmpeg'),
     device: optionalStringField(body, 'device', runtime.defaultDevice ?? 'cpu'),
     computeType: optionalStringField(body, 'computeType', runtime.defaultComputeType ?? 'int8'),
   };
@@ -376,7 +377,7 @@ function elevenLabsScribePayload(value: unknown, runtime: LocalServiceRuntime): 
     language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
     modelId: optionalStringField(body, 'modelId', 'scribe_v2'),
     allowOnlineProvider: optionalBooleanField(body, 'allowOnlineProvider', false),
-    ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg'),
+    ffmpegPath: nativeExecutable(runtime.ffmpegPath ?? 'ffmpeg'),
   };
 }
 
@@ -389,11 +390,11 @@ function youTubeCaptionPayload(value: unknown): YouTubeCaptionPayload {
   };
 }
 
-function embeddedSubtitleListPayload(value: unknown, _runtime: LocalServiceRuntime): EmbeddedSubtitleListPayload {
+function embeddedSubtitleListPayload(value: unknown, runtime: LocalServiceRuntime): EmbeddedSubtitleListPayload {
   const body = asObject(value, 'embedded subtitle list payload');
   return {
     mediaPath: absolutePathField(requiredStringField(body, 'mediaPath'), 'mediaPath'),
-    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', 'ffprobe') } : {}),
+    ffprobePath: nativeExecutable(runtime.ffprobePath ?? 'ffprobe'),
   };
 }
 
@@ -417,8 +418,8 @@ function embeddedSubtitleExtractPayload(value: unknown, runtime: LocalServiceRun
     outputFormat,
     language: optionalStringField(body, 'language', 'pl'),
     role,
-    ...(body.ffprobePath !== undefined ? { ffprobePath: optionalStringField(body, 'ffprobePath', 'ffprobe') } : {}),
-    ...(body.ffmpegPath !== undefined ? { ffmpegPath: optionalStringField(body, 'ffmpegPath', runtime.ffmpegPath ?? 'ffmpeg') } : {}),
+    ffprobePath: nativeExecutable(runtime.ffprobePath ?? 'ffprobe'),
+    ffmpegPath: nativeExecutable(runtime.ffmpegPath ?? 'ffmpeg'),
   };
 }
 
@@ -684,12 +685,21 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     defaultModelName: runtimeInput.defaultModelName ?? DEFAULT_ASR_MODEL_NAME,
   };
   assertLoopbackConfig(config);
+  if (runtime.scriptRoot !== undefined) hostNativePath(runtime.scriptRoot, 'directory');
+  for (const command of [runtime.pythonPath, runtime.ffmpegPath, runtime.ffprobePath]) {
+    if (command !== undefined) nativeExecutable(command);
+  }
+  assertMutablePaths(config);
+  const configuredScratchDir = config.scratchDir;
   await mkdir(dirname(config.databasePath), { recursive: true });
   await mkdir(config.scratchDir, { recursive: true });
   await mkdir(config.modelCacheDir, { recursive: true });
 
-  const snippetScratchDir = join(config.scratchDir, 'source-audio-snippets');
-  await cleanupScratchDirectory(snippetScratchDir);
+  // Every artifact belongs to this newly-created run child, never the operator parent.
+  const runScratchDir = await mkdtemp(join(resolvedNativePath(config.scratchDir), 'run-'));
+  config = { ...config, scratchDir: runScratchDir };
+  const snippetScratchDir = join(runScratchDir, 'source-audio-snippets');
+  await mkdir(snippetScratchDir);
 
   const persistence = SqliteLocalPersistence.open(config.databasePath);
   const jobs = new Map<string, LocalJob>();
@@ -772,7 +782,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       try {
         await drainSnippetJobs();
         snippets.clear();
-        return await cleanupScratchDirectory(config.scratchDir);
+        const deleted = await cleanupScratchDirectory(config.scratchDir);
+        await mkdir(snippetScratchDir);
+        return deleted;
       } finally {
         artifactCleanupPromise = undefined;
         if (snippetLifecycle === 'cleaning') snippetLifecycle = 'open';
@@ -978,7 +990,16 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         const now = new Date().toISOString();
         const status: LocalJobStatus = kind === 'noop' ? 'completed' : 'queued';
         const rawPayload = body.payload ?? {};
-        const payload = kind === 'local-transcription' ? localTranscriptionPayload(rawPayload, runtime) : rawPayload;
+        const payload = kind === 'local-transcription' ? localTranscriptionPayload(rawPayload, runtime)
+          : kind === 'elevenlabs-scribe' ? elevenLabsScribePayload(rawPayload, runtime)
+          : kind === 'embedded-subtitle-list' ? embeddedSubtitleListPayload(rawPayload, runtime)
+          : kind === 'embedded-subtitle-extract' ? embeddedSubtitleExtractPayload(rawPayload, runtime)
+          : kind === 'source-audio-snippet' ? sourceAudioSnippetPayload(rawPayload, runtime) : rawPayload;
+        if (['local-transcription', 'elevenlabs-scribe', 'embedded-subtitle-list', 'embedded-subtitle-extract', 'source-audio-snippet'].includes(kind)) {
+          const mediaPath = (payload as { mediaPath: string }).mediaPath;
+          assertMediaOutsideScratch(mediaPath, configuredScratchDir);
+          assertReadableNativeFile(mediaPath);
+        }
         const job: LocalJob = {
           id: randomUUID(),
           kind,
@@ -1047,7 +1068,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
 
       sendError(response, 404, 'Route not found.');
     } catch (error) {
-      sendError(response, 400, error instanceof Error ? error.message : String(error));
+      sendError(response, 400, error instanceof TypeError ? error.message : 'Local operation failed; paths and tool diagnostics are redacted.');
     }
   });
 
@@ -1063,7 +1084,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     server.once('error', onError);
     server.once('listening', onListening);
     server.listen(config.port, config.host);
-  });
+  }).catch((error: unknown) => { persistence.close(); throw error; });
 
   const address = server.address();
   if (!address || typeof address === 'string') {
@@ -1086,21 +1107,18 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       if (artifactCleanupPromise !== undefined) await artifactCleanupPromise;
       await drainSnippetJobs();
       snippets.clear();
-      await cleanupScratchDirectory(snippetScratchDir);
-      persistence.close();
+      try { await cleanupScratchDirectory(snippetScratchDir); }
+      finally { persistence.close(); }
     },
   };
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServiceConfig {
-  const home = env.HOME ?? process.cwd();
-  const dataRoot = env.LINGOTORTE_DATA_DIR ?? join(home, '.local', 'share', 'lingotorte');
+  const paths = mutablePathsFromEnv(env, nativePathPolicy(process.platform).platform, homedir());
   return {
     host: env.LINGOTORTE_HOST ?? '127.0.0.1',
     port: Number.parseInt(env.LINGOTORTE_PORT ?? '5174', 10),
-    databasePath: env.LINGOTORTE_DB_PATH ?? join(dataRoot, 'state.db'),
-    scratchDir: env.LINGOTORTE_SCRATCH_DIR ?? join(dataRoot, 'scratch'),
-    modelCacheDir: env.LINGOTORTE_MODEL_CACHE_DIR ?? join(dataRoot, 'models'),
+    ...paths,
     allowOnlineProviders: env.LINGOTORTE_ALLOW_ONLINE_PROVIDERS === 'true',
     ...(env.ELEVENLABS_API_KEY !== undefined ? { elevenLabsApiKey: env.ELEVENLABS_API_KEY } : {}),
     ...(env.ELEVENLABS_BASE_URL !== undefined ? { elevenLabsBaseUrl: env.ELEVENLABS_BASE_URL } : {}),
@@ -1141,7 +1159,7 @@ export async function startFromCli(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startFromCli().catch((error: unknown) => {
-    console.error(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    console.error(JSON.stringify({ ok: false, error: error instanceof TypeError ? error.message : 'Local service startup failed; diagnostic paths redacted.' }));
     process.exit(1);
   });
 }

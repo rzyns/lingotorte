@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { assertNativeOutput } from '../../domain/src/nativePathsNode.ts';
 import type {
   CardType,
   Cue,
@@ -657,10 +658,8 @@ export class SqliteLocalPersistence {
   }
 
   static open(databasePath: string): SqliteLocalPersistence {
-    if (databasePath !== ':memory:' && !databasePath.startsWith('/')) {
-      throw new TypeError('SQLite local persistence path must be absolute, or :memory: for tests.');
-    }
-    return new SqliteLocalPersistence(new DatabaseSync(databasePath));
+    const path = databasePath === ':memory:' ? databasePath : assertNativeOutput(databasePath);
+    return new SqliteLocalPersistence(new DatabaseSync(path));
   }
 
   private initialize(): void {
