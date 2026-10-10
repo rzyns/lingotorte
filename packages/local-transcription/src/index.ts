@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { selectPythonExecutable, PYTHON_UNAVAILABLE_MESSAGE } from './pythonExecutable.ts';
+export { selectPythonExecutable } from './pythonExecutable.ts';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import { hostNativePath, assertReadableNativeFile, assertNativeOutput, nativeExecutable, resolvedNativePath, pathInside } from '../../domain/src/nativePathsNode.ts';
@@ -10,6 +12,7 @@ export type CommandRunnerOptions = Readonly<{
 
 export type CommandResult = Readonly<{
   exitCode: number;
+  launchError?: 'unavailable';
   stdout: string;
   stderr: string;
 }>;
@@ -24,7 +27,10 @@ export const nodeCommandRunner: CommandRunner = async (command, args, options) =
   execFile(command, [...args], { cwd: options.cwd, env: options.env }, (error, stdout, stderr) => {
     const exitCode = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
     const errorMessage = error instanceof Error ? error.message : '';
-    resolve({ exitCode, stdout, stderr: stderr || errorMessage });
+    resolve({ exitCode, stdout, stderr: stderr || errorMessage,
+      ...(error && typeof error.code === 'string' && ['ENOENT', 'EACCES', 'EPERM', 'ENOEXEC', 'EINVAL'].includes(error.code)
+        ? { launchError: 'unavailable' as const } : {}),
+    });
   });
 });
 
@@ -406,7 +412,7 @@ export async function transcribeWithFasterWhisper(
 ): Promise<LocalAsrTranscriptionResult> {
   const scriptPath = requireAbsolutePath(input.scriptPath, 'faster-whisper script path');
   const audioPath = requireAbsolutePath(input.audioPath, 'faster-whisper audio path');
-  const pythonPath = nativeExecutable(input.pythonPath ?? 'python3');
+  const pythonPath = selectPythonExecutable(input.pythonPath);
   assertReadableNativeFile(scriptPath);
   assertReadableNativeFile(audioPath);
   const args = [
@@ -424,6 +430,7 @@ export async function transcribeWithFasterWhisper(
     '--word-timestamps',
   ];
   const result = await runner(pythonPath, args, { cwd: dirname(scriptPath) });
+  if (result.launchError === 'unavailable') throw new Error(PYTHON_UNAVAILABLE_MESSAGE);
   if (result.exitCode !== 0) {
     throw new Error(`faster-whisper transcription failed with exit code ${result.exitCode}.`);
   }
@@ -477,7 +484,7 @@ export async function alignWordsWithWhisperX(
   const scriptPath = requireAbsolutePath(input.scriptPath, 'WhisperX alignment script path');
   const audioPath = requireAbsolutePath(input.audioPath, 'WhisperX alignment audio path');
   const transcriptJsonPath = requireAbsolutePath(input.transcriptJsonPath, 'WhisperX transcript JSON path');
-  const pythonPath = nativeExecutable(input.pythonPath ?? 'python3');
+  const pythonPath = selectPythonExecutable(input.pythonPath);
   assertReadableNativeFile(scriptPath);
   assertReadableNativeFile(audioPath);
   assertReadableNativeFile(transcriptJsonPath);
@@ -493,6 +500,7 @@ export async function alignWordsWithWhisperX(
     input.device ?? 'cpu',
   ];
   const result = await runner(pythonPath, args, { cwd: dirname(scriptPath) });
+  if (result.launchError === 'unavailable') throw new Error(PYTHON_UNAVAILABLE_MESSAGE);
   if (result.exitCode !== 0) {
     throw new Error(`WhisperX alignment failed with exit code ${result.exitCode}.`);
   }

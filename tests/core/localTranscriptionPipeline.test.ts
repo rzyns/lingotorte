@@ -1,22 +1,62 @@
 import { nativeFixture, nativeFixtureDirectory } from '../helpers/nativeFixtures.ts';
 import { execFile } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
   nodeCommandRunner,
+  selectPythonExecutable,
   transcribeWithElevenLabsScribe,
   transcribeWithFasterWhisper,
   type CommandRunner,
 } from '../../packages/local-transcription/src/index';
 
 const execFileAsync = promisify(execFile);
+const fixtureDirs: string[] = [];
+async function pythonFixtureDirectory(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'lingotorte-python żółć '));
+  fixtureDirs.push(dir);
+  return dir;
+}
+afterEach(async () => {
+  for (const dir of fixtureDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+
+async function runPython(args: string[], moduleDir: string) {
+  try {
+    return await execFileAsync(selectPythonExecutable(), ['-S', '-B', '-X', 'utf8', ...args], {
+      cwd: moduleDir,
+      timeout: 10_000,
+      env: { ...process.env, PYTHONPATH: moduleDir, PYTHONIOENCODING: 'utf-8', PYTHONNOUSERSITE: '1',
+        LINGOTORTE_FAKE_AUDIO: join(moduleDir, 'audio żółć.wav') },
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('Python test prerequisite unavailable: configure LINGOTORTE_PYTHON_PATH with one installed executable.');
+    }
+    throw error;
+  }
+}
+
+async function dependencyLazyHelp(scriptPath: string) {
+  const dir = await pythonFixtureDirectory();
+  // Importing either dependency is a failure, even if ASR happens to be installed.
+  for (const name of ['faster_whisper', 'whisperx']) {
+    await writeFile(join(dir, `${name}.py`), 'raise AssertionError("ASR dependency imported during --help")\n');
+  }
+  return runPython([scriptPath, '--help'], dir);
+}
 
 describe('local transcription pipeline', () => {
+  it('runs the selected interpreter version without ASR imports', async () => {
+    const dir = await pythonFixtureDirectory();
+    const { stdout } = await runPython(['--version'], dir);
+    expect(stdout).toMatch(/^Python 3\./);
+  });
   it('reports process launch failures as nonzero command results', async () => {
     const result = await nodeCommandRunner('__lingotorte_missing_command_for_test__', [], {});
 
@@ -278,7 +318,7 @@ describe('local transcription pipeline', () => {
   it('ships a dependency-lazy WhisperX Python alignment entrypoint with the expected CLI flags', async () => {
     const scriptPath = resolve('scripts/whisperx_align.py');
 
-    const { stdout } = await execFileAsync('python3', [scriptPath, '--help']);
+    const { stdout } = await dependencyLazyHelp(scriptPath);
 
     expect(stdout).toContain('--audio');
     expect(stdout).toContain('--transcript-json');
@@ -289,7 +329,7 @@ describe('local transcription pipeline', () => {
   it('ships a dependency-lazy faster-whisper Python entrypoint with the expected CLI flags', async () => {
     const scriptPath = resolve('scripts/faster_whisper_transcribe.py');
 
-    const { stdout } = await execFileAsync('python3', [scriptPath, '--help']);
+    const { stdout } = await dependencyLazyHelp(scriptPath);
 
     expect(stdout).toContain('--audio');
     expect(stdout).toContain('--language');
@@ -299,8 +339,10 @@ describe('local transcription pipeline', () => {
 
   it('executes the faster-whisper Python entrypoint against a fake local module', async () => {
     const scriptPath = resolve('scripts/faster_whisper_transcribe.py');
-    const fakeModuleDir = await mkdtemp(join(tmpdir(), 'lingotorte-fast-whisper-'));
+    const fakeModuleDir = await pythonFixtureDirectory();
     await writeFile(join(fakeModuleDir, 'faster_whisper.py'), `
+import os
+
 class Word:
     word = 'Cześć'
     start = 0.0
@@ -324,19 +366,22 @@ class WhisperModel:
         self.compute_type = compute_type
 
     def transcribe(self, audio, language, beam_size, vad_filter, word_timestamps):
+        assert audio == os.environ['LINGOTORTE_FAKE_AUDIO']
+        assert (self.model, self.device, self.compute_type) == ('small', 'cpu', 'int8')
+        assert (language, beam_size, vad_filter, word_timestamps) == ('pl', 5, False, True)
         return [Segment()], Info()
 `, 'utf-8');
 
-    const { stdout } = await execFileAsync('python3', [
+    const { stdout } = await runPython([
       scriptPath,
       '--audio',
-      '/tmp/lingotorte/audio.wav',
+      join(fakeModuleDir, 'audio żółć.wav'),
       '--language',
       'pl',
       '--model',
       'small',
       '--word-timestamps',
-    ], { env: { ...process.env, PYTHONPATH: fakeModuleDir } });
+    ], fakeModuleDir);
 
     expect(JSON.parse(stdout)).toMatchObject({
       engine: 'faster-whisper',
@@ -354,12 +399,14 @@ class WhisperModel:
 
   it('executes the WhisperX Python alignment entrypoint against a fake local module', async () => {
     const scriptPath = resolve('scripts/whisperx_align.py');
-    const fakeModuleDir = await mkdtemp(join(tmpdir(), 'lingotorte-whisperx-'));
+    const fakeModuleDir = await pythonFixtureDirectory();
     const transcriptJsonPath = join(fakeModuleDir, 'segments.json');
     await writeFile(transcriptJsonPath, JSON.stringify([
       { startMs: 0, endMs: 1500, text: 'Cześć świecie.' },
     ]), 'utf-8');
     await writeFile(join(fakeModuleDir, 'whisperx.py'), `
+import os
+
 def load_audio(path):
     return {'path': path}
 
@@ -367,7 +414,7 @@ def load_align_model(language_code, device):
     return 'align-model', {'language': language_code, 'device': device}
 
 def align(segments, align_model, metadata, audio, device, return_char_alignments=False):
-    if audio != {'path': '/tmp/lingotorte/audio.wav'}:
+    if audio != {'path': os.environ['LINGOTORTE_FAKE_AUDIO']}:
         raise AssertionError(f'expected loaded audio object, got {audio!r}')
     return {'segments': [{
         'start': segments[0]['start'],
@@ -377,17 +424,17 @@ def align(segments, align_model, metadata, audio, device, return_char_alignments
     }]}
 `, 'utf-8');
 
-    const { stdout } = await execFileAsync('python3', [
+    const { stdout } = await runPython([
       scriptPath,
       '--audio',
-      '/tmp/lingotorte/audio.wav',
+      join(fakeModuleDir, 'audio żółć.wav'),
       '--transcript-json',
       transcriptJsonPath,
       '--language',
       'pl',
       '--device',
       'cpu',
-    ], { env: { ...process.env, PYTHONPATH: fakeModuleDir } });
+    ], fakeModuleDir);
 
     expect(JSON.parse(stdout)).toMatchObject({
       engine: 'whisperx',

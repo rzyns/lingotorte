@@ -415,7 +415,8 @@ describe('Lingotorte loopback local service', () => {
     expect(created.job.payloadSummary).toMatchObject({ modelName: 'base' });
     expect(serialized).not.toContain(mediaPath);
     expect(serialized).not.toContain(resolve(root));
-    expect(calls.map((call) => call.command)).toEqual(['ffmpeg', 'python3', 'python3']);
+    const expectedPython = process.env.LINGOTORTE_PYTHON_PATH ?? (process.platform === 'win32' ? 'python' : 'python3');
+    expect(calls.map((call) => call.command)).toEqual(['ffmpeg', expectedPython, expectedPython]);
     expect(calls.find((call) => call.args.includes('--model'))?.args).toEqual(expect.arrayContaining(['--model', 'base']));
     expect(jobResult.transcript).toMatchObject({
       engine: 'whisperx',

@@ -16,6 +16,7 @@ import {
   extractEmbeddedSubtitleTrack,
   listEmbeddedSubtitleTracks,
   nodeCommandRunner,
+  selectPythonExecutable,
   transcribeWithElevenLabsScribe,
   transcribeWithFasterWhisper,
   type CommandRunner,
@@ -363,7 +364,7 @@ function localTranscriptionPayload(value: unknown, runtime: LocalServiceRuntime)
     language: optionalStringField(body, 'language', runtime.defaultLanguage ?? 'pl'),
     modelName: jobAsrModelName(body.modelName, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME),
     alignWords: optionalBooleanField(body, 'alignWords', true),
-    pythonPath: nativeExecutable(runtime.pythonPath ?? 'python3'),
+    pythonPath: selectPythonExecutable(runtime.pythonPath),
     ffmpegPath: nativeExecutable(runtime.ffmpegPath ?? 'ffmpeg'),
     device: optionalStringField(body, 'device', runtime.defaultDevice ?? 'cpu'),
     computeType: optionalStringField(body, 'computeType', runtime.defaultComputeType ?? 'int8'),
@@ -682,6 +683,7 @@ async function runEmbeddedSubtitleExtract(
 export async function startLingotorteLocalService(config: LocalServiceConfig, runtimeInput: LocalServiceRuntime = {}): Promise<RunningLingotorteLocalService> {
   const runtime: LocalServiceRuntime = {
     ...runtimeInput,
+    pythonPath: selectPythonExecutable(runtimeInput.pythonPath),
     defaultModelName: runtimeInput.defaultModelName ?? DEFAULT_ASR_MODEL_NAME,
   };
   assertLoopbackConfig(config);
