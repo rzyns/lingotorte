@@ -24,7 +24,7 @@ These IDs are stable navigation, **not a status snapshot**. Ask Beads for curren
 - **Issue / bead:** one independently verifiable unit of work. Native types here include bug, task, feature, decision and chore.
 - **Epic:** a grouping of issues, not one giant assignment. The root daily-driver epic contains bounded phase epics.
 - **Dependency:** a prerequisite. `bd dep add A B` means **A depends on B**. Parent-child organization is not a substitute for explicit prerequisites.
-- **Ready frontier:** open, unclaimed work with no active blocker. Ready does not mean authorized. Raw `bd ready` also includes organizational epics: use `--exclude-type epic` and never claim an epic as an implementation task. After migration closure, only the authorization gate should appear in this filtered frontier.
+- **Ready frontier:** open, unclaimed work with no active blocker. Ready does not mean authorized. Raw `bd ready` also includes organizational epics: use `--exclude-type epic` and never claim an epic as an implementation task. The initial migration frontier contained the authorization gate; query current records rather than treating that historical frontier as today's status.
 - **Claim:** an actor takes responsibility; read back ownership before acting. Never steal another actor's claim.
 - **Deferred:** deliberately outside the present program, without an arbitrary date that might silently activate it.
 - **Evidence record:** a closed audit task can describe historical acceptance without claiming today's application works.
@@ -47,7 +47,7 @@ bd --sandbox blocked
 bd --sandbox status
 ```
 
-If `bd` is absent from the worker PATH, the verified installed executable is `C:/Users/jmdzi/scoop/shims/bd.exe`. In PowerShell invoke it with `&`; in Bash quote the executable path. Pass `-C C:/Users/jmdzi/workspace/lingotorte` when running from another worktree, and verify `bd where --json` before writes. Use the actual process working directory and absolute output paths for init/backup/restore operations; `BEADS_DIR` and `-C` alone did not isolate init's Git side effects during the backup rehearsal. Do not install a second copy merely because the shim directory is missing from PATH.
+If `bd` is absent from the worker PATH, the installed executable verified for the amendment task is `C:/Users/jmdzi/AppData/Local/Programs/bd/bd.exe`; the original migration used a Scoop shim. In PowerShell invoke it with `&`; in Bash quote the executable path. Pass `-C C:/Users/jmdzi/workspace/lingotorte` when running from another worktree, and verify `bd where --json` before writes. Use the actual process working directory and absolute output paths for init/backup/restore operations; `BEADS_DIR` and `-C` alone did not isolate init's Git side effects during the backup rehearsal. Do not install a second copy merely because a shim directory is missing from PATH.
 
 Hermes native tools are verified against this store:
 
@@ -72,6 +72,12 @@ An installed Hermes integration is not proof of a visible Desktop board. This se
 7. Scope authorization, technical decisions, automated correctness, browser qualification, human acceptance, real-state transfer, persistent local deployment and remote publication are distinct. Deferred deployment/transfer issues retain their own approval. No blanket Git commit/push, model/provider, microphone, real-state mutation or public action follows from a claim.
 
 Use the narrowest sufficient evidence: synthetic/fake-runner tests for most fixes; isolated browser/process checks for runtime/UI boundaries; real-tool or real-data work only where explicitly authorized. Preserve source/cue/version identity and provider-off defaults. Do not weaken checks or quietly broaden a batch to get green tests.
+
+### Amendment closure and evidence boundaries
+
+[Reviewed amendment disposition](docs/review/planning-amendments-2026-10-10.md) records `lt-foe.1`; [Windows qualification procedure](docs/dev/windows-qualification-procedure.md) defines candidate binding and harness preflight. These are requirement/evidence documents, not renewed live execution authority. The blocked launcher retains its exhausted allowance. Final `lt-3f1` qualification waits for `lt-04i`; authorized fixture preparation can occur earlier without closing the qualification issue. Planner-level merge acceptance is distinct from mandatory integrated safety acceptance at `lt-2t4`.
+
+Report the actual scope of each verification command: `scan:privacy` checks reference-product markers in runtime sources, not secrets/path/egress/security comprehensively; `test:no-network` proves exercised flows under its intercepted primitives, not all browser/subprocess behavior; `validate_final_bundle.py` checks historical bundle terms/links/hashes, not semantic plan completeness. Node fetch/JSDOM is not a real-browser networking receipt. A green status/count or document checklist never substitutes for the stated behavior and exact candidate identity.
 
 ## Coverage and source documents
 

@@ -4,7 +4,7 @@
 **Design:** keep one active dataset, reuse the existing history tables as immutable payload stores, and add explicit active-history membership. Do not introduce generations of entire application state or a general event-sourcing framework.
 **Riskiest assumption:** all save/load/export paths can distinguish active history from retained audit. A single unfiltered replay or stale whole-snapshot write defeats replacement; the tests below are release gates, not optional polish.
 
-Status: proposed technical decision for `lt-xnu`, ready for independent specification then quality review. This document is not implementation, approval, issue closure, deployment authorization, or proof of repaired behavior. Source baseline: `a96ddce728e9860887d1a9b6fb0ef92105c04729` on `work/lt-xnu-restore-policy`. Beads remains the task/status authority.
+Status: accepted technical decision (`lt-xnu` closed); implementation and qualification remain pending in canonical Beads. This document is not proof of repaired behavior or deployment authorization. Historical decision-task source baseline: `a96ddce728e9860887d1a9b6fb0ef92105c04729` on `work/lt-xnu-restore-policy`. Historical observations below retain their original scope.
 
 Independent review: specification approved (`deleg_a24dfdb3/task-0`), quality approved (`deleg_a2dc2b80/task-1`). The proposal below is accepted as the implementation contract; implementation and durable qualification remain pending.
 
@@ -209,14 +209,21 @@ This is the precise handoff, not a second status tracker:
 | `lt-2t4` | Integrated synthetic restore, migration, request-safety and save-conflict qualification with exact active/audit readback. |
 | `lt-3kk` / `lt-4ct` | Qualified daily-driver journey includes working durable replace and truthful receipt; human accepts that exact candidate, not this document. |
 
-Parent should coordinate ordering/dependencies of the restore, migration and revision branches before implementation; this document does not edit Beads or claim their work complete. No genuine human-scope blocker was found for this non-destructive local design. The additional serialized-practice defect, Windows file-path baseline limitation, shared migration-number allocation, and revision integration are **technical dependencies**, not authority to weaken acceptance. File-backed Windows tests wait for the existing portability repair rather than bypassing its path policy.
+### Closure ownership clarification — amendment `lt-foe.1`
+
+- `lt-3xg` owns the serialized FSRS-linked practice defect at the validation/planner/LocalStore boundary: export → stringify → parse → validate → merge twice preserves exact IDs, captured source context and nested event links, with immutable conflict rejection and no rerating. `lt-7lq` owns the active-only export projection and fresh-app recovery disclosures using that shared validation/equality. Direct in-memory manifest calls cannot substitute for the serialized boundary.
+- Planner-level closure of `lt-3xg` establishes pure preview/plan agreement, session memory atomicity and truthful session/failure receipt semantics. It does **not** require the later all-mode, file-backed active/audit replacement, migration, revision or browser matrix to be complete. Those integrated obligations remain mandatory at `lt-2t4`; this split prevents a prerequisite task from depending on its own downstream implementation.
+- Final historical-migration qualification `lt-3f1` depends on `lt-04i`, in addition to its existing dependencies; `lt-04i` already depends on `lt-8hh`. Qualify against the completed active/audit schema, revision metadata and practice-mode migration, not an intermediate schema. Authorized fixture preparation and raw legacy inspection may proceed earlier without closing `lt-3f1`; no separate preparation bead is needed because it has no independent release outcome.
+- Any restore preview/commit route uses the shared pre-dispatch request gate. Planner/persistence development may precede the request branch, but no route may be presented as request-qualified while that integration is pending. `lt-2t4` reconciles the actual integrated route/client inventory with the full request contract and performs T01–T14, including stale/dirty state and outcome-unknown cases.
+
+Canonical Beads owns these dependencies and acceptance criteria; this section is their requirement interface, not another task tracker. No genuine human-scope blocker was found for this non-destructive local design. Shared migration-number allocation and revision integration are **technical dependencies**, not authority to weaken acceptance. Preserve the native-path repair and its policy; its closure is not evidence of repaired restore semantics.
 
 Escalate if implementation requires deleting audit, changing a human retention rule, broad new dataset-history/undo architecture, disabling replacement as the final product, real-state access, private-media discovery, remote/provider use or deployment. Do not escalate routine choice of helper names or SQL indexes.
 
-Independent review requested before implementation:
+Historical decision review questions (resolved by the independent approvals above):
 
 1. Accept active-only replacement with immutable retained review **and practice** payloads, and the explicit non-erasure/non-undo disclosure?
 2. Accept explicit membership plus restore-only replacement, preserving ordinary omission/replay tests and source identities?
 3. Accept the shared revision/transaction and migration/recovery gates as mandatory downstream acceptance, including serialized linked-practice roundtrip?
 
-Only this contract is added to the repository by the decision task. No application implementation, historical migration/test edits, commits, pushes, bead writes/closure or real-state actions are included.
+The original decision task added only this contract; its execution observations above are historical. The `lt-foe.1` amendment changes planning acceptance and ownership only, not application implementation, historical SQL or real learner state. See [amendment disposition](../review/planning-amendments-2026-10-10.md).

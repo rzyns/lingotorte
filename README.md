@@ -8,6 +8,8 @@ Current work lives in the native **Beads** graph: daily-driver epic `lt-foe`, de
 
 Creating the work graph did not start implementation. `lt-dy6` records authorization for the next bounded local scope. The store is local-only; Git files/JSONL do not contain its complete Dolt history.
 
+The [reviewed planning amendments](docs/review/planning-amendments-2026-10-10.md) clarify closure ownership and evidence requirements. The [Windows qualification procedure](docs/dev/windows-qualification-procedure.md) does not authorize another live run: the blocked launcher allowance remains exhausted. The quick start below is baseline usage, not a Windows daily-driver qualification receipt; use isolated synthetic stores for authorized qualification, never an existing learner database.
+
 ## Purpose
 
 This workspace captures preliminary grounding research for a planned `hermes-war-room` exploration and planning mission around a Lingopie-like local app. The product goal is to use **Janusz’s own local videos/subtitles**, not Lingopie proprietary content.

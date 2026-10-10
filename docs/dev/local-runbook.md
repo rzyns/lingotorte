@@ -15,13 +15,16 @@ The fixture set is synthetic/local and contains no Lingopie media, subtitles, sc
 
 ## Prerequisites
 
-- Node.js and npm matching the lockfile environment.
+- For native Windows qualification, use the selected exact tuple and acceptance gates in the [Windows platform contract](windows-platform-contract.md) and the [content-bound Windows qualification procedure](windows-qualification-procedure.md), not the historical Linux receipts below. Node 26.7.0 / Edge 156.0.4314.15 are selected targets, not a qualified combined application. CPython 3.14.7 via `python` is the help/fake target only. The reviewed dirty Job Object launcher additionally requires accepted PowerShell 7 plus usable in-memory `Add-Type` C# compilation; this prerequisite is conditional on selecting that architecture, not a claim that this checkout contains the repair.
+- Node.js and npm matching the selected runtime and exact lockfile/dependency closure.
 - A checkout of this repo.
 - The npm cache already populated if running in no-network/offline mode.
 
-### Node version pin (2026-07-19)
+The Windows procedure is planning only: `lt-a46` remains blocked, historical failures stay frozen, and no live run, install, browser journey or retry-budget reset is authorized here. Commands below are operator recipes, not permission to execute during planning. Windows qualification must use fresh external synthetic roots, no learner state, providers disabled, and one combined launcher/native-path/Python content identity.
 
-The services run `.ts` sources directly under Node's type stripping, which is **strip-only** as of Node 26: relative imports must carry explicit `.ts` extensions and TypeScript-only runtime syntax (parameter properties, enums outside `.d.ts`, namespaces) is not allowed in the node-executed graph. An unattended linuxbrew upgrade to Node 26.5.0 broke service boot on 2026-07-19 (fixed forward in `b74327c`/`d04d63a`); the formula is now pinned with `brew pin node` (verify via `brew list --pinned`). Before unpinning/upgrading Node, run the boot smoke: load each `packages/*/src/index.ts` with plain `node -e "await import(...)"` and `node --check apps/local-service/src/server.ts`, then restart the systemd units and check `/api/health`.
+### Historical Linux Node version pin (2026-07-19)
+
+The services run `.ts` sources directly under Node's type stripping, which is **strip-only** as of Node 26: relative imports must carry explicit `.ts` extensions and TypeScript-only runtime syntax (parameter properties, enums outside `.d.ts`, namespaces) is not allowed in the node-executed graph. An unattended linuxbrew upgrade to Node 26.5.0 broke service boot on 2026-07-19 (fixed forward in `b74327c`/`d04d63a`); the historical Linux host recorded a `brew pin node` pin. That is not a current Windows installation or pin claim. For an authorized runtime update, run the boot smoke: load each `packages/*/src/index.ts` with plain `node -e "await import(...)"` and `node --check apps/local-service/src/server.ts`, then check `/api/health` after the authorized platform-specific restart. Systemd applies only to the historical Linux lane.
 
 Do not install new packages from the network during V1 acceptance unless Janusz separately authorizes that exact package-manager network action.
 
@@ -53,6 +56,8 @@ git diff --check
 
 For V1 acceptance also run a conservative tracked-file secret scan and a committed-range whitespace check after committing. If `validate_final_bundle.py` is run while generated dependency docs are present under `node_modules/`, remove generated local artifacts first or run validation in a clean repo-only state.
 
+The `python3` recipes in this runbook are historical Linux commands. On Windows use the selected `python` or explicit executable for validation/help/fake tests; a missing prerequisite must be reported, not silently skipped or installed. No ASR support follows from CLI help success.
+
 ## Local services
 
 For the normal live-local development path, start the loopback SQLite/job service and Vite UI together:
@@ -71,8 +76,8 @@ npm run dev -- --host 127.0.0.1
 Default service behavior:
 
 - binds only to `127.0.0.1:5174` unless loopback env vars override it;
-- stores the SQLite state at `$HOME/.local/share/lingotorte/state.db` by default as a snapshot-compatible store plus forward-only `schema_migration` ledger, rebuildable typed projections for current media/transcript/learner/review/practice/import-job state, and authoritative append-only replay tables for review/import events;
-- keeps scratch/model-cache directories under `$HOME/.local/share/lingotorte/`;
+- the integrated `lt-8s9` native-config repair resolves Windows `%LOCALAPPDATA%/lingotorte` (validated home/AppData/Local fallback), Linux absolute XDG data-home/default resolution, and explicit native `LINGOTORTE_DATA_DIR`, `LINGOTORTE_DB_PATH`, `LINGOTORTE_SCRATCH_DIR`, `LINGOTORTE_MODEL_CACHE_DIR` overrides. The older `$HOME/.local/share/lingotorte` receipt below is historical Linux context. Component repair evidence is not combined Windows qualification; explicitly redirect all roots to a fresh external synthetic store before authorized qualification startup;
+- the SQLite store is snapshot-compatible with a forward-only `schema_migration` ledger, rebuildable typed projections for current media/transcript/learner/review/practice/import-job state, and authoritative append-only replay tables for review/import events;
 - redacts local filesystem paths from `/api/status` and startup receipts;
 - uses `base` as the local ASR model default, configurable with `LINGOTORTE_ASR_MODEL` from the bounded set `tiny`, `base`, `small`, `medium`, `large-v3`;
 - reports persistence status, including applied migration metadata, without exposing the database path;
@@ -88,7 +93,7 @@ curl -sS http://127.0.0.1:5174/api/status
 
 ### Systemd user units
 
-This local checkout can be run durably through systemd user units installed under `~/.config/systemd/user/`:
+This section records the historical Linux deployment, not native Windows support, a current installed-unit assertion, or permission to deploy. That Linux tuple remains unqualified for current combined bytes until native evidence is collected. The historical units were installed under `~/.config/systemd/user/`:
 
 - `lingotorte-local-service.service` — loopback SQLite/job/ASR service on `127.0.0.1:5174`.
 - `lingotorte-web.service` — Vite web UI on `127.0.0.1:5173`.
@@ -145,7 +150,9 @@ Use the localhost URL printed by Vite, commonly `http://127.0.0.1:5173/`. Treat 
 
 ## Browser smoke script
 
-Use WSL Edge DevTools when available. Regular browser tooling is an acceptable fallback if Edge DevTools is unavailable.
+Native Windows qualification requires the selected exact Edge build in a fresh empty disposable profile and a separate browser receipt under the [Windows qualification procedure](windows-qualification-procedure.md). WSL tooling, fake DOM tests or HTTP asset checks are not native Edge journey evidence. Do not open an existing user profile.
+
+**Historical behavior, not repaired acceptance:** the export/restore step below and the existing **Restore complete** receipt/limitations text describe the prior UI workflow only. They do not prove repaired restore/revision correctness, stale-preview handling, rollback, durable persistence or identity-preserving relink. Those acceptance gates remain parent-owned and open; a success message alone is insufficient. During qualification use synthetic disposable state only, never restore into a real learner store.
 
 1. Open the local Vite URL.
 2. Verify the shell loads without fatal console errors.
@@ -231,7 +238,7 @@ python3 scripts/whisperx_align.py --audio /absolute/path/audio.wav --transcript-
 
 ### B4 ASR dependency proof (recorded 2026-07-04)
 
-The local ASR pipeline has been proven on this machine with the following setup:
+The historical Linux local ASR pipeline receipt recorded the following setup; it does not qualify this Windows host, CPython 3.14.7, or the current exact Linux tuple:
 
 - **Python:** 3.12.3 in a dedicated venv at `~/.local/share/lingotorte/asr-venv/`
 - **faster-whisper:** 1.2.1, installed via `uv pip install faster-whisper`

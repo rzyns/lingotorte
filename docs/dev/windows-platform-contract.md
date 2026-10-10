@@ -136,6 +136,8 @@ Rejected alternatives: broad “any modern Node/browser,” continuing the shell
 
 ## 5. Qualification receipts required before claiming support
 
+Execution mechanics and content identity are defined in the [Windows qualification procedure](windows-qualification-procedure.md). It requires one combined base-plus-content manifest covering launcher/native paths/Python, dependencies, fixtures and harness; offline URL/source-closure preflight; explicit prerequisite recording (including PowerShell 7 and usable `Add-Type` compilation if the reviewed Job Object launcher is selected); and separate application, harness and NOT REACHED outcomes. This is a planning amendment, not a retry authorization or implementation receipt. Historical integration attempts remain frozen; `lt-a46` remains blocked. Recovery termination is not lifecycle success. Existing positive controls, persistence/reopen, native Ctrl+C, occupied foreign listener, premature-exit and owned-process cleanup gates below remain unchanged.
+
 ### Phase ownership (not one prerequisite checklist)
 
 **Windows portability checkpoint `lt-13v`:** qualify pure path contracts, browser/API path agreement, native startup/shutdown and isolated SQLite persistence, Python fake/help execution, portable mutable-root behavior, and the existing automated baseline plus new portability regressions. Its disposable browser smoke covers synthetic import/playback, native-path input, save/reload and shutdown. Existing non-portability correctness defects remain explicitly open. It does not require completed identity-preserving relink, request capability pairing, or durable restore repairs.
