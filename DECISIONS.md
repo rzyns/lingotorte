@@ -1,16 +1,18 @@
 # Lingotorte decisions for autonomous development
 
-Status: current human-decision record for continuing Lingotorte development through the current `PLAN.md` backlog with minimal human intervention.
+Status: durable human-decision record for Lingotorte development with minimal human intervention. Current work/status is the native Beads graph described in `BEADS.md`; the former `PLAN.md` backlog is archived. These policy decisions remain binding, but historical implementation premises below are not live task status.
 
-Use this file as an implementation-facing supplement to `PLAN.md`, `docs/review/safety-privacy-boundary-review.md`, and `docs/dev/local-runbook.md`. It resolves product/authority choices that older planning docs leave open. It does **not** supersede the safety/privacy boundary review or the hard non-authorizations in `PLAN.md`.
+Use this file alongside `BEADS.md`, the relevant native issue, `docs/review/safety-privacy-boundary-review.md`, and `docs/dev/local-runbook.md`. It resolves product/authority choices that older planning docs leave open. It does **not** supersede the safety/privacy boundary review or grant the actions excluded by the current issue and work contract.
 
 ## Worker authority and escalation rule
 
-For repo-local Lingotorte implementation work, agents may proceed through the current backlog using the decisions below without asking Janusz again when the action is local, reversible, testable, and inside the active repo/local-service boundary.
+Standing Git authorization: follow `GIT-POLICY.md` for verified atomic commits and pushes as work completes, without asking again for each ordinary commit/push. This supersedes older blanket prohibitions, not implementation-scope or other safety gates.
+
+Within a user-authorized local implementation scope, agents may proceed using the decisions below without asking Janusz again when the action is local, reversible, testable, and inside the active repo/local-service boundary. Record that scope in Beads (`lt-dy6` or an exact-scope successor). Planning, creating issues, a ready frontier and historical deployment receipts do not themselves authorize starting implementation. Resolve specialist technical judgments through evidence and independent review; escalate actual scope/privacy/destructive tradeoffs rather than routine implementation choices.
 
 Agents must still stop and ask/block for:
 
-- push, PR, release, public deployment, hosted exposure, or public sharing;
+- PR, release, public deployment, hosted exposure, public sharing beyond the existing repository, or Git operations outside `GIT-POLICY.md`;
 - destructive changes to Janusz's real learner state, media library, provider accounts, or external apps;
 - DRM/circumvention, browser credential/cookie use, private/account-gated media access, or automatic online media download;
 - any action with plausible Terms-of-Service/account-lock/account-ban risk;
@@ -80,9 +82,9 @@ Current B3 semantics:
 
 ### 5. Local ASR benchmark acceptance
 
-The local ASR dependency path exists, but “good enough for daily use” is not yet decided.
+Historical outcome: the approved Linux tiny/base benchmark and LDM6 configurable `base` default were completed; see `docs/dev/b4-asr-quality-benchmark-2026-07-21.md` and the LDM6 gate receipt. Current-machine readiness and optional ASR defects are tracked in Beads, not inferred from that historical proof.
 
-Decision: run one B4 benchmark on a short real owned Polish clip with tiny/base comparison, then decide whether “tiny CPU” is acceptable or only useful as smoke coverage.
+Original decision (fulfilled historically): run one B4 benchmark on a short real owned Polish clip with tiny/base comparison. The adopted recommendation was `base` CPU/int8 for daily use, with `tiny` as smoke/fallback. This does not authorize a new install, model download or media selection.
 
 Autonomous execution boundaries:
 
@@ -189,7 +191,7 @@ ElevenLabs/TTS clarification:
 
 ### 9. Embedded subtitle extraction
 
-B7 has parsing and offset tools, but embedded extraction is not implemented.
+B7 parsing, offset tools, service extraction and its browser workflow have historical acceptance through LDM7. Beads tracks remaining correctness/portability work and optional role/alignment enhancements; do not rebuild initial extraction because an older plan says it is missing.
 
 Decision: local-service `ffprobe` track listing first, then explicit user-selected extraction. Persist transcript text/timing/provenance, not styling, unless a real use case appears.
 

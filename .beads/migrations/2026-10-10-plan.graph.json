@@ -1,0 +1,1456 @@
+{
+  "commit_message": "Migrate Lingotorte plan review into local Beads work graph",
+  "nodes": [
+    {
+      "key": "daily",
+      "title": "Trustworthy local daily-driver: Windows, data safety and learning correctness",
+      "type": "epic",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nFinite recovery and next-feature program, not a rewrite. Accepted LDM5-LDM8 history is preserved; review findings reopen specific correctness contracts, not whole historical batches. Fresh synthetic state only until separately authorized transfer. Optional lanes are outside this epic.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All required child work and final acceptance complete with exact evidence; no real-state migration, provider/model install, packaging, push or deployment required.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "daily"
+        ],
+        "evidence_class": "recommendation"
+      }
+    },
+    {
+      "key": "authorize",
+      "title": "Authorize a bounded local remediation scope",
+      "type": "decision",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nPlanning and Beads migration are authorized now; application implementation is not. Record the next user authorization naming issue IDs or the whole local synthetic recovery epic, limits and stop point. A broad local-only scope may cover several issues without repeated technical arbitration. Do not close merely because this graph exists.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Append the actual user authorization and scope; enable only named issues. For partial scope, keep this gate open and replace it only on approved issues with a closed exact-scope authorization record. No commit/push/deploy/real-state permissions by implication.",
+      "labels": [
+        "lingotorte",
+        "gate:authorization"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "authorize"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "migration",
+      "title": "Migrate plan/status into verified native Beads and retire duplicate tracking",
+      "type": "chore",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nThis task is authorized by the current request. Initialize native local store, map R1-R12 and B1-B8, wire dependencies, verify all records, preserve source documents, install concise pointers and workflow, and create verified local recovery material. Do not implement application issues.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Graph count/fields/edges/acyclicity verified; native tools can read; active frontier is authorization-only; optional work deferred; archives preserve prior content; pointers eliminate dual status; backup and export read back; no remote writes.",
+      "labels": [
+        "lingotorte",
+        "scope:migration"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "migration"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "baseline",
+      "title": "Evidence: takeover audit and accepted Linux LDM5-LDM8 baseline",
+      "type": "chore",
+      "priority": 3,
+      "status": "closed",
+      "description": "## Scope\nHistorical evidence record, not a new implementation completion claim. Audit base a703dab. LDM5 source audio, LDM6 base default, LDM7 embedded browser UI, LDM8 visual range were accepted and Linux-local deployed under exact receipts. Windows audit: 266/300 tests passed, 34 failed; launcher spawn EINVAL; types/build/privacy/no-network passed. Review probes reproduced R1/R2/R3 despite 56 focused tests passing.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md; docs/plan/autonomous-batches/20260722T051655Z-ldm8-gate-decision-deploy-local-t_b99dacc1.md; archived PLAN-STATUS\nEvidence class: executed audit and historical receipts.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Reference evidence only. Closed means audit/historical evidence captured, not Windows readiness or proof of no defects.",
+      "labels": [
+        "lingotorte",
+        "evidence:historical"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "baseline"
+        ],
+        "evidence_class": "executed audit and historical receipts"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "windows",
+      "title": "Windows development baseline",
+      "type": "epic",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nGroup of bounded child issues; hierarchy organizes ownership, while explicit dependencies control readiness. Close only after all children meet their own evidence contracts.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All children verified and reviewed; epic closure is not deployment authorization.",
+      "labels": [
+        "lingotorte",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "windows"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "safety",
+      "title": "Local request safety and durable learner-state correctness",
+      "type": "epic",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nGroup of bounded child issues; hierarchy organizes ownership, while explicit dependencies control readiness. Close only after all children meet their own evidence contracts.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All children verified and reviewed; epic closure is not deployment authorization.",
+      "labels": [
+        "lingotorte",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "safety"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "learning",
+      "title": "Trustworthy review, practice and source identity",
+      "type": "epic",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nGroup of bounded child issues; hierarchy organizes ownership, while explicit dependencies control readiness. Close only after all children meet their own evidence contracts.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All children verified and reviewed; epic closure is not deployment authorization.",
+      "labels": [
+        "lingotorte",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "learning"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "language",
+      "title": "B5: learner-facing local morphology",
+      "type": "epic",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nGroup of bounded child issues; hierarchy organizes ownership, while explicit dependencies control readiness. Close only after all children meet their own evidence contracts.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All children verified and reviewed; epic closure is not deployment authorization.",
+      "labels": [
+        "lingotorte",
+        "phase:language"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "language"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "qualification",
+      "title": "Integrated synthetic daily-driver qualification",
+      "type": "epic",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nGroup of bounded child issues; hierarchy organizes ownership, while explicit dependencies control readiness. Close only after all children meet their own evidence contracts.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All children verified and reviewed; epic closure is not deployment authorization.",
+      "labels": [
+        "lingotorte",
+        "phase:qualification"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "qualification"
+        ],
+        "evidence_class": "recommendation"
+      },
+      "parent_key": "daily"
+    },
+    {
+      "key": "platform-contract",
+      "title": "Specify supported Windows runtime/browser and native-path policy",
+      "type": "decision",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nDefine qualified Node/Python/browser combinations, fully-qualified Windows/POSIX path behavior, explicit UNC/network-path policy, external data/scratch roots, and Linux compatibility. Do not infer local ownership from path shape.\n\n## Evidence\nR8; docs/review/plan-review-2026-10-10.md\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Document supported versions and path positive/negative matrix including drive-relative, UNC, blob, URL and tilde; align browser/service rules; no installs needed to choose fake-test contract.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "platform-contract"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "windows"
+    },
+    {
+      "key": "launcher",
+      "title": "Repair Windows launcher startup, failure and shutdown",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nDirect npm.cmd spawning fails with EINVAL. Repair process creation/error reporting and sibling/child cleanup without public binding or detached orphan processes.\n\n## Evidence\nR8; scripts/start-local.mjs:3-25\nEvidence class: reproduced Windows failure.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Regression first; successful isolated start of both services, sibling failure and Ctrl-C cleanup; no remaining listeners/child processes; retain Linux behavior.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "launcher"
+        ],
+        "evidence_class": "reproduced Windows failure"
+      },
+      "parent_key": "windows"
+    },
+    {
+      "key": "native-paths",
+      "title": "Unify native path validation across SQLite and all browser job flows",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nRepair POSIX-only checks for persistence, embedded tracks, local ASR, ElevenLabs and source snippets; respect the platform contract and redaction/scoped cleanup.\n\n## Evidence\nR8; packages/storage/src/sqliteLocalPersistence.ts:659; apps/web/src/model.ts:1406,1742,1791; apps/web/src/app.ts:2762\nEvidence class: executed SQLite failure and source-confirmed browser gaps.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Fully-qualified approved path forms accepted; relative/drive-relative/blob/http/tilde rejected; UNC follows explicit policy; all affected browser/service seams covered with fake runners.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "native-paths"
+        ],
+        "evidence_class": "executed SQLite failure and source-confirmed browser gaps"
+      },
+      "parent_key": "windows"
+    },
+    {
+      "key": "python-fixtures",
+      "title": "Make Python selection and fake command fixtures portable",
+      "type": "task",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nReplace hard-coded python3 assumption with explicit qualified interpreter selection and portable native-path assertions. Set deterministic scratch roots outside repo; no ASR/model install.\n\n## Evidence\nR8; tests/core/localTranscriptionPipeline.test.ts; apps/local-service/src/server.ts:365\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Python lazy --help and fake-module tests run on Windows; path expectations do not weaken validation; Linux regression evidence; clear missing-interpreter errors.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "python-fixtures"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "windows"
+    },
+    {
+      "key": "windows-qa",
+      "title": "Qualify isolated Windows startup and publish the Windows runbook",
+      "type": "task",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nRun baseline plus new regressions after portability fixes. Use fresh synthetic SQLite state and an isolated browser/profile; avoid connecting real state or processing private media. Update runtime/start/stop docs.\n\n## Evidence\nR8; docs/review/plan-review-2026-10-10.md\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "All existing tests plus new regressions pass; types/build/no-network/privacy-marker checks; health/status, synthetic import/range/loop/save/reload and clean shutdown demonstrated; known non-portability review defects stay explicitly open.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:windows"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "windows-qa"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "windows"
+    },
+    {
+      "key": "request-policy",
+      "title": "Define personal-local request authenticity and client policy",
+      "type": "decision",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nCORS response headers and loopback binding are not caller authenticity. Define allowed Origin/Host/content-type/method behavior, non-browser client needs and session-capability requirement. This is not hosted multi-user design or a demonstrated browser exploit.\n\n## Evidence\nR4; apps/local-service/src/server.ts:99-128,932-1045; safety review:158\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Reviewed bounded threat model and positive/negative request matrix; reject-side-effect invariant; no automatic media-root confinement or broad auth framework.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "request-policy"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "request-guards",
+      "title": "Enforce local mutation request boundaries with zero-side-effect rejection",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nImplement the reviewed local request policy across state writes, jobs, cancellation, snippets and cleanup; preserve trusted browser/client behavior.\n\n## Evidence\nR4; apps/local-service/src/server.ts\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Untrusted Origin/Host/simple content-type mutations rejected before jobs/state/commands/cleanup; allowed clients pass; loopback-only retained; regression and independent security review.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "request-guards"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "restore-policy",
+      "title": "Resolve Replace-all active-state versus append-only audit semantics",
+      "type": "decision",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nCurrent UI promises replacement while immutable event replay retains omitted history. Evaluate explicit active-dataset/audit separation versus disabling misleading replacement until safe; choose minimal defensible design, not a silent weakening of audit.\n\n## Evidence\nR1/R5; exportRestoreService.ts; sqliteLocalPersistence.ts:1353-1359,1505-1514\nEvidence class: reproduced replace failure and source-confirmed audit conflict.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Document active dataset, audit retention, event conflicts, transaction boundaries and truthful UI receipts; specialist review; escalate only if user retention/destructive policy changes.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "restore-policy"
+        ],
+        "evidence_class": "reproduced replace failure and source-confirmed audit conflict"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "restore-merge",
+      "title": "Make merge restore idempotent, conflict-safe and atomic",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nIdentical manifest currently duplicates review/practice history. Align preview and actual ID-aware behavior, reject conflicting immutable events before partial changes, and measure receipts from results.\n\n## Evidence\nR1; packages/storage/src/exportRestoreService.ts:127-154; packages/domain/src/exportManifest.ts:529-621\nEvidence class: reproduced.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Repeated import preserves counts/IDs; conflicts handled under policy before partial mutation; save/reload passes; failed durable save not reported as durable restore.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "restore-merge"
+        ],
+        "evidence_class": "reproduced"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "restore-replace",
+      "title": "Implement truthful Replace-all and durable reload behavior",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nFix array-index/ID deletion and durable replay semantics according to approved retention design. Fixing in-memory deletion alone is insufficient.\n\n## Evidence\nR1; packages/storage/src/exportRestoreService.ts:127-134; sqliteLocalPersistence.ts:1505-1514\nEvidence class: reproduced in-memory failure; durable replay source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Synthetic replace -> save -> reopen yields declared active records and retained audit exactly; preview/receipt match; failures rollback; never exercise against real learner state.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "restore-replace"
+        ],
+        "evidence_class": "reproduced in-memory failure; durable replay source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "practice-schema",
+      "title": "Add forward migration for every supported practice mode",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nSentence-builder attempts violate SQLite CHECK and roll back whole saves. Add forward migration, never edit checksummed historical SQL.\n\n## Evidence\nR2; sqliteLocalPersistence.ts:231-235; model.ts:2834-2859\nEvidence class: reproduced.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Every supported mode submits and survives SQLite save/reload; existing records migrate; failed writes preserve prior snapshot; regression proves original failure.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "practice-schema"
+        ],
+        "evidence_class": "reproduced"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "save-conflicts",
+      "title": "Protect unsaved browser work and stale whole-snapshot saves",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nDefine dirty-connect comparison/confirmation and single-writer or revision-conflict behavior; serialize/observe saves and report failures honestly. Do not turn this into cloud sync.\n\n## Evidence\nR5; apps/web/src/model.ts:229-311; server.ts:964-967\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Dirty nonempty connect does not silently discard edits; two stale writers/out-of-order saves handled explicitly; errors visible; completion only after durable acknowledgement.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "save-conflicts"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "upgrade-recovery",
+      "title": "Qualify populated historical migrations, backfill and rollback",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nUse synthetic pre-event-table snapshots to test migration preservation/backfill, future-schema refusal policy and recovery after failed migration. No real database access.\n\n## Evidence\nR5; sqliteLocalPersistence.ts:666-703,1505-1514\nEvidence class: source-derived compatibility risk; not reproduced against historical DB.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "History/IDs/anchors preserved across reopen; snapshot-only events not replaced with empty tables; forward schema policy and failure recovery tested; consistent backup recipe.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "upgrade-recovery"
+        ],
+        "evidence_class": "source-derived compatibility risk; not reproduced against historical DB"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "export-contract",
+      "title": "Define and verify learner-state export inclusion and recovery limits",
+      "type": "task",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nCurrent manifest is not full media/transcript-library backup. Rename/explain accurately and record included/excluded collections; keep media copying out.\n\n## Evidence\nR6; packages/storage/src/exportRestoreService.ts:37-69\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Fresh-app import test and documented missing-source behavior; precise inclusion/exclusion list; UI/runbook do not claim full recovery; no expansion into media bundles.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "export-contract"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "safety-qa",
+      "title": "Independently qualify local safety and persistence contracts",
+      "type": "task",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nIntegrated synthetic negative request, restore, migration and save-conflict verification. This gate closes only after underlying fixes and independent review evidence, not because old acceptance receipts exist.\n\n## Evidence\nR1/R2/R4/R5/R6; docs/review/plan-review-2026-10-10.md\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Fresh reviewed revision; focused/full gates; exact evidence for no-side-effect rejection, modes, repeat merge, replacement/reload, historical synthetic upgrade and stale writes; no real-state rollout.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:safety"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "safety-qa"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "safety"
+    },
+    {
+      "key": "mature-due",
+      "title": "Keep mature/mastered cards eligible when genuinely due",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nMastered is a presentation label, not a reason to drop due FSRS cards. Fix selection/counts/copy.\n\n## Evidence\nR3; model.ts:2661-2724; reviewService.ts:98-123\nEvidence class: reproduced.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Overdue scheduledDays=30 card appears in automatic review/practice and due count; future mature cards stay not due; regression demonstrates original backend/frontend mismatch.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "mature-due"
+        ],
+        "evidence_class": "reproduced"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "live-clock",
+      "title": "Use an injectable advancing clock for review and practice",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nReplace stale session bucketAsOf use at real query/submission boundaries while preserving deterministic tests.\n\n## Evidence\nR3; model.ts:133; app.ts:507,714,719,3845\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Card becomes due during open session without reload; later actions get later timestamps; time boundaries tested; counts/selection agree.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "live-clock"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "practice-contract",
+      "title": "Make practice prompts, grading and next-card state honest",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nDefine expected answer/hints/reveal/FSRS effect per mode; avoid answer in prompt; distinguish cue transcription from saved-word response; clear result/answer/token state on card transition. Speaking remains unavailable, not microphone authorization.\n\n## Evidence\nR9; model.ts:2655,2744-2784; app.ts:455-507,732\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Two-card tests for all supported modes; no pre-answer leakage; expected answer matches prompt; retry/skip behavior and FSRS effect documented; persists through supported schema.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "practice-contract"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "practice-audio",
+      "title": "Guard Practice source-audio races and cleanup across contexts",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nApply generation/current card/media/path/view guards and object-URL cleanup to Practice; do not assume Player tests cover this surface.\n\n## Evidence\nR9; app.ts:318-332,526-543; Player guard at app.ts:2267-2280\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Out-of-order successes/failures ignored; path/card/view/privacy changes revoke/invalidate; retrieval/deletion failure handled; no audio autoplay, mic/provider or exported transient state.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "practice-audio"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "dirty-approval",
+      "title": "Prevent approving a transcript while visible edits are unsaved",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nConnect dirty editor state to Apply/Approve UX while preserving immutable corrected versions and exact occurrence provenance.\n\n## Evidence\nR12; app.ts:3304-3362; model.ts:2368-2379\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Dirty edits prompt/apply/block explicitly; approved version equals visible accepted content; existing saved anchors remain valid; draft-save gate preserved.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "dirty-approval"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "relink",
+      "title": "Relink existing media identity instead of importing a replacement asset",
+      "type": "bug",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nPreserve existing media/track/learner anchors when reselecting; check fingerprint/identity instead of filename alone; handle non-handle and stale/missing permission paths safely.\n\n## Evidence\nR7; app.ts:1682-1712; model.ts:962-1020,1052,1110-1159\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Same-file reselection retains IDs/track selection; same-name different content requires explicit handling; fake negative tests plus isolated real-browser restart/permission evidence.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "relink"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "metrics",
+      "title": "Label estimated study metrics and avoid linked-event double counting",
+      "type": "task",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nKeep simple progress but call fixed per-event time an estimate; define local-day/timezone semantics and deduplicate linked review/practice events.\n\n## Evidence\nR12; model.ts:2874-2932; practiceService.ts:91-109\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "One practice action counted once under documented policy; time/day-boundary tests; visible estimate label; no new tracking/analytics upload.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "metrics"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "learning-qa",
+      "title": "Qualify the multi-card learning loop and source identity",
+      "type": "task",
+      "priority": 1,
+      "status": "open",
+      "description": "## Scope\nIndependent cross-surface tests for review, practice, correction and relink, with SQLite persistence where relevant.\n\n## Evidence\nR3/R7/R9/R12; docs/review/plan-review-2026-10-10.md\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Mature due/live time, successive prompts/audio cleanup, dirty approval, anchor-preserving relink and honest metrics all verified on exact revision; original four probes replaced by positive regressions.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:learning"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "learning-qa"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "learning"
+    },
+    {
+      "key": "morph-service",
+      "title": "Expose typed local Morfeusz analysis through the loopback service",
+      "type": "feature",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nUse existing licensed local morphology adapter; bounded typed service API, ambiguity/confidence/unavailable/error semantics, runtime capability. This does not add a dictionary or provider.\n\n## Evidence\nR10; DECISIONS.md section 7; packages/language/src/adapters.ts:399-557\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Polish fixtures/unknown/ambiguous tokens and service-off/error responses; safe request boundary; no external calls; contract reviewed before UI wiring.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:language"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "morph-service"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "language"
+    },
+    {
+      "key": "morph-ui",
+      "title": "Surface local morphology in UI with honest fallback and quality states",
+      "type": "feature",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nWire analysis into learner token interaction with clear ambiguity/confidence and browser fallback; distinguish morphology from currently unavailable word meanings.\n\n## Evidence\nR10; model.ts:3072-3085; DECISIONS.md section 7\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Keyboard-accessible result UI; Polish quality fixtures; disconnected/error/no-result behavior; zero-network provider-off proof; no online dictionary/LLM added; independent UI review.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:language"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "morph-ui"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "language"
+    },
+    {
+      "key": "daily-qa",
+      "title": "Verify the finite synthetic daily-driver acceptance journey",
+      "type": "task",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nOn supported Windows browser/runtime: import, correct/approve, save occurrence, review due cards, practice, persist/reload, relink, learner-export/restore. Include keyboard/focus and unsupported codec feedback; no real media/provider dependency.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md section 3\nEvidence class: source-confirmed.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Exact candidate revision; all gates/new regressions green; isolated browser journey and clean shutdown; review findings disposition; explicit real-tool/ASR gaps; no flake hidden by retry.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:qualification"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "daily-qa"
+        ],
+        "evidence_class": "source-confirmed"
+      },
+      "parent_key": "qualification"
+    },
+    {
+      "key": "human-accept",
+      "title": "Human acceptance of the qualified local daily-driver candidate",
+      "type": "decision",
+      "priority": 2,
+      "status": "open",
+      "description": "## Scope\nPresent finite verified scope and limitations to Janusz. Acceptance of code is separate from persistent local rollout, real-state use and remote publication.\n\n## Evidence\nFinal candidate packet; docs/review/plan-review-2026-10-10.md\nEvidence class: future human disposition.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Record explicit acceptance/repair/defer decision and candidate revision. Closing acceptance does not deploy, copy real data, push or enable providers.",
+      "labels": [
+        "lingotorte",
+        "scope:daily-driver",
+        "phase:qualification"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "human-accept"
+        ],
+        "evidence_class": "future human disposition"
+      },
+      "parent_key": "qualification"
+    },
+    {
+      "key": "optional",
+      "title": "Deferred and separately gated follow-ons (not daily-driver blockers)",
+      "type": "epic",
+      "priority": 4,
+      "status": "deferred",
+      "description": "## Scope\nRetain B1-B8 optional work without turning it into prerequisite scope. All children deferred with explicit activation conditions, no arbitrary activation date.\n\n## Evidence\ndocs/review/plan-review-2026-10-10.md\nEvidence class: recommendation.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "No aggregate completion requirement; activate individual child only for a named justified scope.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "optional"
+        ],
+        "evidence_class": "recommendation"
+      }
+    },
+    {
+      "key": "asr-units",
+      "title": "Correct alignment timestamp units by field names",
+      "type": "bug",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nMagnitude-based units are incorrect at short-ms and long-seconds boundaries. Safe fake-only repair when local-ASR lane is selected.\n\n## Evidence\nR11; scripts/whisperx_align.py:53-59\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "start/end seconds and startMs/endMs milliseconds normalize correctly across boundaries; invalid ranges fail; no model install.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "asr-units"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "asr-capability",
+      "title": "Make optional forced alignment capability-aware",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nBrowser asks for WhisperX although historical install proved only faster-whisper. Preserve native word timings; explicit optional alignment/unavailable state.\n\n## Evidence\nR11; app.ts:3008-3017; server.ts:513-532\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Fake tested absent/present alignment behavior; separate Windows dependency/license/model gate and exact owned-media consent for live proof.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "asr-capability"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "real-transfer",
+      "title": "Authorize and rehearse non-destructive real-state transfer",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nOnly when Janusz identifies source state and wants migration: exact-scope authority, consistent backup, disposable copy rehearsal and media relink. Git/learner export do not transfer complete app state.\n\n## Evidence\nR5/R6; DECISIONS.md section 3\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Explicit authority, verified backup/readback, populated upgrade, IDs/history/anchors preserved, rollback; no implicit credentials/media/handle copy.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "real-transfer"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "local-deploy",
+      "title": "Authorize and verify a persistent loopback-only local rollout",
+      "type": "decision",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nAfter candidate acceptance, ask for exact persistent startup/runtime/data scope. No new system services or provider environment by implication.\n\n## Evidence\nLDM8 receipt is historical only\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Explicit rollout decision, isolated preflight, backup if real state, health/status/browser verification, stop/rollback instructions; no public exposure.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "local-deploy"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "audit-streams",
+      "title": "Add provider/export event streams only for a justified audit use case",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nCurrent projections are sufficient until authoritative policy replay or multi-step async export needs history. Do not build event sourcing because old plan listed it.\n\n## Evidence\nB1; DECISIONS.md section 1\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Named use case and schema/replay contract; migration tests; no credentials/events with raw provider payloads.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "audit-streams"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "full-metadata",
+      "title": "Design full metadata recovery beyond learner-state export",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nOnly if full-library recovery is needed; explicit include/exclude model for media refs, all transcript versions/timings and policies. Separate physical artifact hash from semantic manifest integrity. Media bytes remain excluded by default.\n\n## Evidence\nB3; R6\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Recovery rehearsal from empty app with documented completeness and integrity; scoped conflict rollback; optional media-copy proposal remains explicit.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "full-metadata"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "dictionary",
+      "title": "Evaluate licensed local word meanings/manual-meaning workflow",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nMorphology is not a dictionary. Assess licensed local data and usable manual meanings before considering online services.\n\n## Evidence\nB5; R10\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Provenance/license/quality coverage, unavailable states and source-context retention; separate consent for any future online adapter.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "dictionary"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "snippet-reuse",
+      "title": "Reuse source audio on saved occurrences and transcript surfaces",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nAdd reuse/browser-only playback only if real daily-use feedback warrants it. Durable cache/export is separate; preserve timing/version/cleanup semantics.\n\n## Evidence\nB6; accepted LDM5/LDM8\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "No duplicate snippet subsystem; source identity/range/context guards; no durable bytes unless separately designed; no TTS/provider implication.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "snippet-reuse"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "subtitle-extras",
+      "title": "Assess dual-role alignment, native-track selection or bitmap OCR",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nAccepted embedded workflow is target draft extraction plus global offset. Role selection, real alignment confidence, OCR and style retention are distinct future requests.\n\n## Evidence\nB7; R12\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Select one bounded use case first; preserve correction/approval/provenance; no claim offset equals alignment.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "subtitle-extras"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "anki",
+      "title": "Design local Anki file export (not AnkiConnect mutation)",
+      "type": "task",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nFile-first export with explicit private text/media/sync warnings; Lingotorte remains canonical review state.\n\n## Evidence\nB8; DECISIONS.md section 10\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Named approved file scope; format/readback fixtures; no live Anki collection or AnkiWeb actions.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "anki"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "voice",
+      "title": "Reconsider microphone/shadowing only with explicit voice privacy approval",
+      "type": "decision",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nSource audio exists; learner voice remains separately gated.\n\n## Evidence\nB8; DECISIONS.md section 11\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Exact permission/retention/deletion/scoring design and authorization before implementation; no default voice egress.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "voice"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    },
+    {
+      "key": "cloud-packaging",
+      "title": "Keep cloud sync, online explanations/TTS and packaging separately gated",
+      "type": "decision",
+      "priority": 3,
+      "status": "deferred",
+      "description": "## Scope\nParking record, not a combined implementation batch. Split into individually authorized work only if needed. No auto-update/installer/public distribution/sync/provider expansion now.\n\n## Evidence\nB8; DECISIONS.md sections 6,12,13\nEvidence class: deferred proposal or source-confirmed optional defect.\n\n## Boundaries and closure\nWork only in the scope subsequently authorized by Janusz. Use synthetic fixtures/isolated stores; no real learner-state replacement, private-media discovery, providers, downloads, microphone, remote sync, Git commit/push or deployment implied. Preserve DECISIONS.md and safety-privacy-boundary-review.md. Record exact revision/patch, tests and failures/retries; independent review must address this issue before closure. Technical decisions may be resolved by evidence-based specialist review; ask Janusz only for scope/privacy/product tradeoffs or external/destructive authority. See BEADS.md for the work contract.",
+      "acceptance_criteria": "Before activation split selected lane, define threat model/data disclosure, authority and finite outcome; unrelated lanes remain deferred.",
+      "labels": [
+        "lingotorte",
+        "scope:optional"
+      ],
+      "metadata": {
+        "migration": "2026-10-10-plan-to-beads",
+        "source_keys": [
+          "cloud-packaging"
+        ],
+        "evidence_class": "deferred proposal or source-confirmed optional defect"
+      },
+      "parent_key": "optional"
+    }
+  ],
+  "edges": [
+    {
+      "from_key": "platform-contract",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "launcher",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "launcher",
+      "to_key": "platform-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "native-paths",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "native-paths",
+      "to_key": "platform-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "python-fixtures",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "python-fixtures",
+      "to_key": "platform-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "windows-qa",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "windows-qa",
+      "to_key": "launcher",
+      "type": "blocks"
+    },
+    {
+      "from_key": "windows-qa",
+      "to_key": "native-paths",
+      "type": "blocks"
+    },
+    {
+      "from_key": "windows-qa",
+      "to_key": "python-fixtures",
+      "type": "blocks"
+    },
+    {
+      "from_key": "request-policy",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "request-guards",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "request-guards",
+      "to_key": "request-policy",
+      "type": "blocks"
+    },
+    {
+      "from_key": "request-guards",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-policy",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-merge",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-merge",
+      "to_key": "restore-policy",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-merge",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-replace",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "restore-replace",
+      "to_key": "restore-merge",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-schema",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-schema",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "save-conflicts",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "save-conflicts",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "upgrade-recovery",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "upgrade-recovery",
+      "to_key": "practice-schema",
+      "type": "blocks"
+    },
+    {
+      "from_key": "upgrade-recovery",
+      "to_key": "restore-policy",
+      "type": "blocks"
+    },
+    {
+      "from_key": "export-contract",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "export-contract",
+      "to_key": "restore-replace",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "request-guards",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "restore-replace",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "practice-schema",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "save-conflicts",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "upgrade-recovery",
+      "type": "blocks"
+    },
+    {
+      "from_key": "safety-qa",
+      "to_key": "export-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "mature-due",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "mature-due",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "live-clock",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "live-clock",
+      "to_key": "mature-due",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-contract",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-contract",
+      "to_key": "live-clock",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-contract",
+      "to_key": "practice-schema",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-audio",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "practice-audio",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "dirty-approval",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "dirty-approval",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "relink",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "relink",
+      "to_key": "native-paths",
+      "type": "blocks"
+    },
+    {
+      "from_key": "relink",
+      "to_key": "windows-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "metrics",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "metrics",
+      "to_key": "practice-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "live-clock",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "practice-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "practice-audio",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "dirty-approval",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "relink",
+      "type": "blocks"
+    },
+    {
+      "from_key": "learning-qa",
+      "to_key": "metrics",
+      "type": "blocks"
+    },
+    {
+      "from_key": "morph-service",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "morph-service",
+      "to_key": "safety-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "morph-service",
+      "to_key": "learning-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "morph-ui",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "morph-ui",
+      "to_key": "morph-service",
+      "type": "blocks"
+    },
+    {
+      "from_key": "daily-qa",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "daily-qa",
+      "to_key": "safety-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "daily-qa",
+      "to_key": "learning-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "daily-qa",
+      "to_key": "morph-ui",
+      "type": "blocks"
+    },
+    {
+      "from_key": "human-accept",
+      "to_key": "authorize",
+      "type": "blocks"
+    },
+    {
+      "from_key": "human-accept",
+      "to_key": "daily-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "asr-capability",
+      "to_key": "asr-units",
+      "type": "blocks"
+    },
+    {
+      "from_key": "real-transfer",
+      "to_key": "safety-qa",
+      "type": "blocks"
+    },
+    {
+      "from_key": "real-transfer",
+      "to_key": "relink",
+      "type": "blocks"
+    },
+    {
+      "from_key": "local-deploy",
+      "to_key": "human-accept",
+      "type": "blocks"
+    },
+    {
+      "from_key": "full-metadata",
+      "to_key": "export-contract",
+      "type": "blocks"
+    },
+    {
+      "from_key": "dictionary",
+      "to_key": "morph-ui",
+      "type": "blocks"
+    },
+    {
+      "from_key": "snippet-reuse",
+      "to_key": "practice-audio",
+      "type": "blocks"
+    },
+    {
+      "from_key": "snippet-reuse",
+      "to_key": "relink",
+      "type": "blocks"
+    }
+  ]
+}

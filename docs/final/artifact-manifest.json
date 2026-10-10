@@ -103,16 +103,16 @@
     {
       "path": "README.md",
       "relative_path": "README.md",
-      "bytes": 7771,
-      "lines": 90,
-      "sha256": "0503ab7a0dd6d3addabb48e52ae45f5636d3697dc507664860090af799f46ba5"
+      "bytes": 8500,
+      "lines": 96,
+      "sha256": "b8f22f4dbd32d3633332c62dbc8ee4dc10aa36103d9ec684268de987d93853e6"
     },
     {
       "path": "AGENTS.md",
       "relative_path": "AGENTS.md",
-      "bytes": 3862,
-      "lines": 61,
-      "sha256": "395627abc18a7c4f8973dcc5ca8cdb3325cf7caaa2ea6e9623730c08a19a3bc9"
+      "bytes": 5074,
+      "lines": 67,
+      "sha256": "55a2bc150b1dec769ea8ed8a8e3eda0a5789629f359e70e8426643eab607a179"
     }
   ]
 }

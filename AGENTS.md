@@ -1,6 +1,6 @@
 # Lingotorte — Agent Context
 
-This workspace is for planning a local/private Lingopie-like language-learning video system, tentatively **Lingotorte**. Treat this file as project-level context for agents working in this workspace.
+This workspace contains **Lingotorte**, a local/private language-learning video app. Treat this file as project-level context for agents working in this workspace.
 
 ## Core framing
 
@@ -22,7 +22,13 @@ Agents must preserve these boundaries unless Janusz explicitly changes them:
 
 ## Recommended reading order
 
-Read these in order before planning, deep-diving, or launching implementation work:
+Read `GIT-POLICY.md`: Janusz explicitly authorizes and expects verified atomic commits and pushes as work completes. This supersedes older blanket commit/push prohibitions, not scope/privacy/deployment gates. Do not leave completed work uncommitted by default.
+
+For current work, read `BEADS.md`, the relevant native Beads issue and its blockers, `DECISIONS.md`, and `docs/review/safety-privacy-boundary-review.md` first. The canonical work/status store is this primary checkout's `.beads/`; `PLAN.md` and `PLAN-STATUS.md` are pointers, not task lists. The root daily-driver epic is `lt-foe`; optional work is `lt-5lb`; implementation requires the scope recorded in `lt-dy6`. A ready issue is not authorization.
+
+Use `beads_frontier`/`beads_show` or `bd --sandbox ready --exclude-type epic` / `bd --sandbox show <id>`. Route worktree operations to the canonical primary checkout with `bd -C`; do not create competing stores. Claim then read back. Preserve exact verification/review evidence before closure; parent/operator closes delegated work. Do not commit, push, sync, deploy or mutate real learner state by implication. See `BEADS.md` for full workflow and backup limitations.
+
+When historical product/design rationale is needed, use this background reading order; its future-tense implementation lists are not current status:
 
 1. `README.md` — workspace index and file map.
 2. `docs/mission/hermes-war-room-mission-statement.md` — original War Room mission statement.

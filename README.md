@@ -1,6 +1,12 @@
 # Lingotorte
 
-Local/private language-learning video app planning workspace.
+Local/private language-learning video app for owned media and subtitles.
+
+## Work planning and status
+
+Current work lives in the native **Beads** graph: daily-driver epic `lt-foe`, deferred follow-ons `lt-5lb`. Read [BEADS.md](BEADS.md) for terminology, commands, authorization, worktrees and recovery. `PLAN.md` and `PLAN-STATUS.md` now point there; old contents remain archived. The [takeover review](docs/review/plan-review-2026-10-10.md) supplies evidence for the repair issues. Query the store for current readiness; historical Linux acceptance does not establish Windows readiness.
+
+Creating the work graph did not start implementation. `lt-dy6` records authorization for the next bounded local scope. The store is local-only; Git files/JSONL do not contain its complete Dolt history.
 
 ## Purpose
 

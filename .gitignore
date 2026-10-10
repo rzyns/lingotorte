@@ -10,3 +10,6 @@ vendor/morfeusz-ts/morfeusz2/dict/
 .env
 .env.*
 !.env.example
+
+# Beads runtime/database exclusions live in .beads/.gitignore.
+.beads.gate.lock*

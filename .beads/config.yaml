@@ -1,0 +1,7 @@
+# Local-only Lingotorte work graph. No remote sync or automatic Git staging.
+dolt.mode: embedded
+dolt.local-only: true
+dolt.auto-push: false
+backup.enabled: false
+export.auto: false
+export.git-add: false

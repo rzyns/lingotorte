@@ -1,0 +1,402 @@
+{
+  "dry_run": true,
+  "edge_count": 79,
+  "node_count": 49,
+  "nodes": [
+    {
+      "key": "daily",
+      "priority": 1,
+      "status": "open",
+      "title": "Trustworthy local daily-driver: Windows, data safety and learning correctness",
+      "type": "epic"
+    },
+    {
+      "key": "authorize",
+      "parent_key": "daily",
+      "priority": 1,
+      "status": "open",
+      "title": "Authorize a bounded local remediation scope",
+      "type": "decision"
+    },
+    {
+      "key": "migration",
+      "parent_key": "daily",
+      "priority": 1,
+      "status": "open",
+      "title": "Migrate plan/status into verified native Beads and retire duplicate tracking",
+      "type": "chore"
+    },
+    {
+      "key": "baseline",
+      "parent_key": "daily",
+      "priority": 3,
+      "status": "closed",
+      "title": "Evidence: takeover audit and accepted Linux LDM5-LDM8 baseline",
+      "type": "chore"
+    },
+    {
+      "key": "windows",
+      "parent_key": "daily",
+      "priority": 1,
+      "status": "open",
+      "title": "Windows development baseline",
+      "type": "epic"
+    },
+    {
+      "key": "safety",
+      "parent_key": "daily",
+      "priority": 1,
+      "status": "open",
+      "title": "Local request safety and durable learner-state correctness",
+      "type": "epic"
+    },
+    {
+      "key": "learning",
+      "parent_key": "daily",
+      "priority": 2,
+      "status": "open",
+      "title": "Trustworthy review, practice and source identity",
+      "type": "epic"
+    },
+    {
+      "key": "language",
+      "parent_key": "daily",
+      "priority": 2,
+      "status": "open",
+      "title": "B5: learner-facing local morphology",
+      "type": "epic"
+    },
+    {
+      "key": "qualification",
+      "parent_key": "daily",
+      "priority": 2,
+      "status": "open",
+      "title": "Integrated synthetic daily-driver qualification",
+      "type": "epic"
+    },
+    {
+      "key": "platform-contract",
+      "parent_key": "windows",
+      "priority": 1,
+      "status": "open",
+      "title": "Specify supported Windows runtime/browser and native-path policy",
+      "type": "decision"
+    },
+    {
+      "key": "launcher",
+      "parent_key": "windows",
+      "priority": 1,
+      "status": "open",
+      "title": "Repair Windows launcher startup, failure and shutdown",
+      "type": "bug"
+    },
+    {
+      "key": "native-paths",
+      "parent_key": "windows",
+      "priority": 1,
+      "status": "open",
+      "title": "Unify native path validation across SQLite and all browser job flows",
+      "type": "bug"
+    },
+    {
+      "key": "python-fixtures",
+      "parent_key": "windows",
+      "priority": 1,
+      "status": "open",
+      "title": "Make Python selection and fake command fixtures portable",
+      "type": "task"
+    },
+    {
+      "key": "windows-qa",
+      "parent_key": "windows",
+      "priority": 1,
+      "status": "open",
+      "title": "Qualify isolated Windows startup and publish the Windows runbook",
+      "type": "task"
+    },
+    {
+      "key": "request-policy",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Define personal-local request authenticity and client policy",
+      "type": "decision"
+    },
+    {
+      "key": "request-guards",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Enforce local mutation request boundaries with zero-side-effect rejection",
+      "type": "bug"
+    },
+    {
+      "key": "restore-policy",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Resolve Replace-all active-state versus append-only audit semantics",
+      "type": "decision"
+    },
+    {
+      "key": "restore-merge",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Make merge restore idempotent, conflict-safe and atomic",
+      "type": "bug"
+    },
+    {
+      "key": "restore-replace",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Implement truthful Replace-all and durable reload behavior",
+      "type": "bug"
+    },
+    {
+      "key": "practice-schema",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Add forward migration for every supported practice mode",
+      "type": "bug"
+    },
+    {
+      "key": "save-conflicts",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Protect unsaved browser work and stale whole-snapshot saves",
+      "type": "bug"
+    },
+    {
+      "key": "upgrade-recovery",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Qualify populated historical migrations, backfill and rollback",
+      "type": "bug"
+    },
+    {
+      "key": "export-contract",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Define and verify learner-state export inclusion and recovery limits",
+      "type": "task"
+    },
+    {
+      "key": "safety-qa",
+      "parent_key": "safety",
+      "priority": 1,
+      "status": "open",
+      "title": "Independently qualify local safety and persistence contracts",
+      "type": "task"
+    },
+    {
+      "key": "mature-due",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Keep mature/mastered cards eligible when genuinely due",
+      "type": "bug"
+    },
+    {
+      "key": "live-clock",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Use an injectable advancing clock for review and practice",
+      "type": "bug"
+    },
+    {
+      "key": "practice-contract",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Make practice prompts, grading and next-card state honest",
+      "type": "bug"
+    },
+    {
+      "key": "practice-audio",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Guard Practice source-audio races and cleanup across contexts",
+      "type": "bug"
+    },
+    {
+      "key": "dirty-approval",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Prevent approving a transcript while visible edits are unsaved",
+      "type": "bug"
+    },
+    {
+      "key": "relink",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Relink existing media identity instead of importing a replacement asset",
+      "type": "bug"
+    },
+    {
+      "key": "metrics",
+      "parent_key": "learning",
+      "priority": 2,
+      "status": "open",
+      "title": "Label estimated study metrics and avoid linked-event double counting",
+      "type": "task"
+    },
+    {
+      "key": "learning-qa",
+      "parent_key": "learning",
+      "priority": 1,
+      "status": "open",
+      "title": "Qualify the multi-card learning loop and source identity",
+      "type": "task"
+    },
+    {
+      "key": "morph-service",
+      "parent_key": "language",
+      "priority": 2,
+      "status": "open",
+      "title": "Expose typed local Morfeusz analysis through the loopback service",
+      "type": "feature"
+    },
+    {
+      "key": "morph-ui",
+      "parent_key": "language",
+      "priority": 2,
+      "status": "open",
+      "title": "Surface local morphology in UI with honest fallback and quality states",
+      "type": "feature"
+    },
+    {
+      "key": "daily-qa",
+      "parent_key": "qualification",
+      "priority": 2,
+      "status": "open",
+      "title": "Verify the finite synthetic daily-driver acceptance journey",
+      "type": "task"
+    },
+    {
+      "key": "human-accept",
+      "parent_key": "qualification",
+      "priority": 2,
+      "status": "open",
+      "title": "Human acceptance of the qualified local daily-driver candidate",
+      "type": "decision"
+    },
+    {
+      "key": "optional",
+      "priority": 4,
+      "status": "deferred",
+      "title": "Deferred and separately gated follow-ons (not daily-driver blockers)",
+      "type": "epic"
+    },
+    {
+      "key": "asr-units",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Correct alignment timestamp units by field names",
+      "type": "bug"
+    },
+    {
+      "key": "asr-capability",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Make optional forced alignment capability-aware",
+      "type": "task"
+    },
+    {
+      "key": "real-transfer",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Authorize and rehearse non-destructive real-state transfer",
+      "type": "task"
+    },
+    {
+      "key": "local-deploy",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Authorize and verify a persistent loopback-only local rollout",
+      "type": "decision"
+    },
+    {
+      "key": "audit-streams",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Add provider/export event streams only for a justified audit use case",
+      "type": "task"
+    },
+    {
+      "key": "full-metadata",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Design full metadata recovery beyond learner-state export",
+      "type": "task"
+    },
+    {
+      "key": "dictionary",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Evaluate licensed local word meanings/manual-meaning workflow",
+      "type": "task"
+    },
+    {
+      "key": "snippet-reuse",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Reuse source audio on saved occurrences and transcript surfaces",
+      "type": "task"
+    },
+    {
+      "key": "subtitle-extras",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Assess dual-role alignment, native-track selection or bitmap OCR",
+      "type": "task"
+    },
+    {
+      "key": "anki",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Design local Anki file export (not AnkiConnect mutation)",
+      "type": "task"
+    },
+    {
+      "key": "voice",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Reconsider microphone/shadowing only with explicit voice privacy approval",
+      "type": "decision"
+    },
+    {
+      "key": "cloud-packaging",
+      "parent_key": "optional",
+      "priority": 3,
+      "status": "deferred",
+      "title": "Keep cloud sync, online explanations/TTS and packaging separately gated",
+      "type": "decision"
+    }
+  ],
+  "parent_deps": 47,
+  "schema_version": 1,
+  "validation_notes": [
+    "dry-run validates the graph structure only; live create may still reject parent-child blocking paths after resolving stored dependencies"
+  ]
+}
