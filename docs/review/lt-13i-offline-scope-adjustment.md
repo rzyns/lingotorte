@@ -47,12 +47,12 @@ Notation: **A depends on B** means a Beads `blocks` dependency stored on A towar
 
 | Record | Proposed later change, only after reviewed disposition and fresh authority |
 | --- | --- |
-| `OFFLINE_REPAIR` | New task, priority 1, organizational parent `lt-aur` (sibling of `lt-13i`); initial status **blocked**, no assignee. `blocks` prerequisites: `lt-13i.1` and `lt-dy6`. No `lt-13v` dependency. Notes explicitly retain fresh implementation-authority and qualified execution-lane blockers. |
+| `OFFLINE_REPAIR` | Activated as `lt-aur.1`, priority 1, organizational parent `lt-aur` (sibling of `lt-13i`); status **blocked**, no assignee. `blocks` prerequisite: `lt-dy6`. The closed `lt-13i.1` review is bound in activation evidence, not a blocking edge: the latter creates the actual cycle described below. No `lt-13v` dependency. Notes explicitly retain qualified execution-lane and explicit execution-authority blockers. |
 | `lt-13i` | Add only a `blocks` dependency on `OFFLINE_REPAIR` and an evidence/closure annotation below. Retain `blocks` edges to `lt-13v` and `lt-dy6`, parent `lt-aur`, original description, acceptance, status and claim state. |
 | `lt-13i.1` | Keep its parent `lt-13i`; parent may close only the planning decision after independent review, with disposition evidence. Do not add an inverse blocking edge from `lt-13i` to this review child. |
 | `lt-13v`, `lt-3bi`, native diagnostic/launcher issues | No edits. `lt-13v` retains blockers `lt-dy6`, `lt-a46`, `lt-8s9`, `lt-tow` and parent `lt-c0r`; `lt-3bi` still depends on `lt-13i` and all its other prerequisites. |
 
-This sibling arrangement avoids an organizational-plus-blocking cycle through `lt-13i`. No issue creation, dependency/status change or annotation is performed by this draft.
+The initial reviewed arrangement did not avoid an organizational-plus-blocking cycle: Beads counts the review child's parent relationship during cycle detection. At initial draft delivery no graph activation was performed. The later activation correction below replaces this inaccurate claim; the frozen draft and historical review are preserved unchanged.
 
 **Proposed OFFLINE_REPAIR scope:** narrowly edit transcript editor/approval state and guards in app/model/UI types, with existing synthetic lifecycle tests and minimal associated documentation. No new runnable harness, backend rewrite or runtime lane.
 
@@ -98,3 +98,11 @@ Independent review `deleg_262bc011` **PASS / APPROVED** for planning only, with 
 Frozen draft SHA-256: `518b407c7ec1190c472a99d01dd8f76529be47caf3795b5857fd5e7556b008d6`; source-manifest SHA-256: `1fbe14a37917bd763599967e64637ff4f0288205f226779665d264c2a0c402a6`. The status update and acceptance annotation postdate the archived draft; no archive was altered or relabeled. Canonical Beads records the exact publication revision and remote readback.
 
 Disposition: accept the proposed split for a later explicitly authorized activation. Only `lt-13i.1` closes as a reviewed planning decision. No `OFFLINE_REPAIR` issue is created, no original issue dependency or acceptance is changed, and no product repair or execution begins. Fresh named implementation authority and an independently checked, explicitly authorized offline execution lane remain prerequisites. All Windows/runtime/native qualification gates remain intact.
+
+## Activation correction — one independently reviewed graph correction
+
+Fresh user authorization, “Authorized -- thanks so much! Please proceed,” activates the repair scope and read-only lane discovery, not test/build/import/guest execution. `lt-aur.1` was created blocked/unclaimed. Beads then rejected `lt-13i` depending on `lt-aur.1` because the initial edges formed `lt-13i → lt-aur.1 → lt-13i.1 → lt-13i`; the last edge is organizational `parent-child`. No force flag was used and no original dependency was removed.
+
+Independent correction review `deleg_5ec0339d`, task 2, **PASS / APPROVED**: remove only `lt-aur.1`'s `blocks` edge to `lt-13i.1`; retain its `lt-dy6` prerequisite and parent `lt-aur`; add `lt-13i`'s `blocks` edge to `lt-aur.1`. Keep `lt-13i.1` closed with its parent and historical evidence. Its review prerequisite is checked and bound in activation notes to publication `6c319f5d2b127486cafffaa7290052b6e53b8bcb`, frozen draft and manifest hashes above. This consumes the single correction allowance; it does not waive a runtime or authority gate.
+
+The reviewer read the canonical outgoing paths: after removing the review edge, `lt-aur.1` reaches `lt-dy6 → lt-foe` or `lt-aur → lt-foe`, and `lt-foe` has no dependencies. Neither reaches `lt-13i`. Parent must apply and read back the exact approved edges; canonical Beads records that result. Original acceptance/description/status/claim, retained `lt-13v`/`lt-dy6` prerequisites and downstream `lt-3bi` remain unchanged. Execution remains blocked because no qualified offline lane has been established.
