@@ -190,155 +190,48 @@ def active(k,h):
 
 def controller(root, case_id):
     raise RuntimeError(LIVE_EXECUTION_BLOCK)
-    assert not sys.flags.optimize
-    cfg=load(root/'config.json'); plan=load(root/'plan.json'); case=plan['cases'][case_id-1]
-    verify(load(root/'manifest.json')); verify(load(root/'originals-pre.json'))
-    marker=root/f'case-{case_id}-started.json'
-    with marker.open('x',encoding='utf-8') as f: json.dump({'id':case_id,'pid':os.getpid(),'monotonic_ns':time.monotonic_ns(),'manifest_sha256':sha(root/'manifest.json'),'plan_sha256':sha(root/'plan.json')},f)
-    k=native(); handles={}; meta={}; p=None
-    record={'case':case,'events':[],'ports':[],'no_listener_fixture':True}
-    log_path=root/f'case-{case_id}.log'
-    def event(boundary,**extra):
-        record['events'].append({'boundary':boundary,'monotonic_ns':time.monotonic_ns(),**extra})
-        save(root/f'case-{case_id}-result.json',record)
-    def track():
-        entries=process_list(k); owned=set(handles)|({p.pid} if p else set())
-        for _ in range(10):
-            more={r['pid'] for r in entries if r['ppid'] in owned}
-            if more<=owned: break
-            owned|=more
-        for r in entries:
-            pid=r['pid']
-            if pid in owned and pid not in handles:
-                h=k.OpenProcess(0x1001,False,pid)
-                if h: handles[pid]=h; meta[pid]=r
-        record['owned']=list(meta.values())
-    def owned_listeners():
-        raw=subprocess.check_output([str(Path(os.environ['SystemRoot'])/'System32/netstat.exe'),'-ano','-p','TCP'],text=True,timeout=15)
-        return [{'address':parts[1],'pid':int(parts[4])} for line in raw.splitlines() if len(parts:=line.split())==5 and parts[0]=='TCP' and parts[3]=='LISTENING' and int(parts[4]) in handles]
-    log=log_path.open('w',encoding='utf-8')
-    try:
-        if case['reset_before_spawn']:
-            assert k.SetConsoleCtrlHandler(None,False),ctypes.get_last_error()
-            event('controller-prespawn-reset')
-        startup=subprocess.STARTUPINFO(); startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW; startup.wShowWindow=0
-        package=Path(cfg['package']); env=load(root/'environment.json')
-        stop_file=root/f'case-{case_id}-stop.request'
-        env['LTDIAG_STOP_FILE']=str(stop_file)
-        p=subprocess.Popen([cfg['node'],'--import',(package/'control-bridge.mjs').as_uri(),str(package/'scripts/start-local.mjs')],cwd=package,env=env,stdout=log,stderr=subprocess.STDOUT,startupinfo=startup,creationflags=subprocess.CREATE_NEW_CONSOLE)
-        event('spawn',launcher_pid=p.pid,creationflags=subprocess.CREATE_NEW_CONSOLE,show_window=0,stdio='stdout file, stderr STDOUT, stdin inherited; helper bootstrap/stdio unchanged')
-        deadline=time.monotonic()+35
-        while time.monotonic()<deadline:
-            track()
-            text=log_path.read_text(encoding='utf-8')
-            fixtures=[json.loads(line[8:]) for line in text.splitlines() if line.startswith('FIXTURE ')]
-            if len(fixtures)==2 and 'launcherregistered' in text: break
-            assert p.poll() is None, 'launcher exited before synthetic readiness'
-            time.sleep(.05)
-        else: raise AssertionError('synthetic readiness timeout')
-        assert len(fixtures)==2
-        for r in fixtures:
-            assert r['pid'] in handles and r['ownerPid'] in handles
-        event('ready',fixtures=fixtures)
-        if case_id == 2:
-            stop_file.write_text('SIGINT',encoding='utf-8')
-            event('direct-JS-SIGINT-request')
-        else:
-            track(); k.FreeConsole(); assert k.AttachConsole(p.pid),ctypes.get_last_error()
-            try:
-                array=(W.DWORD*128)(); count=k.GetConsoleProcessList(array,128)
-                assert 0<count<=128 and p.pid in list(array)[:count]
-                # Console membership metadata only; never take ownership from membership.
-                window=k.GetConsoleWindow()
-                user=ctypes.WinDLL('user32',use_last_error=True)
-                user.GetWindowThreadProcessId.argtypes=[W.HWND,ctypes.POINTER(W.DWORD)]; user.GetWindowThreadProcessId.restype=W.DWORD
-                window_pid=W.DWORD()
-                if window: user.GetWindowThreadProcessId(window,ctypes.byref(window_pid))
-                conhost=next((r for r in process_list(k) if r['pid']==window_pid.value and r['exe'].lower()=='conhost.exe'),None)
-                if conhost and conhost['pid'] not in handles:
-                    h=k.OpenProcess(0x1001,False,conhost['pid'])
-                    assert h,ctypes.get_last_error()
-                    handles[conhost['pid']]=h; meta[conhost['pid']]={**conhost,'ownership':'GetConsoleWindow of exclusively owned attached console'}
-                event('console-attached',console_window=int(window or 0),console_window_pid=window_pid.value,console_members=list(array)[:count],controller_pid=os.getpid(),held_conhost=conhost)
-                assert k.SetConsoleCtrlHandler(None,True),ctypes.get_last_error()
-                assert k.GenerateConsoleCtrlEvent(0,0),ctypes.get_last_error()
-                event('native-event-generated',event=0,process_group=0)
-                time.sleep(.15)
-            finally: k.FreeConsole()
-        deadline=time.monotonic()+20
-        while p.poll() is None and time.monotonic()<deadline:
-            track(); time.sleep(.05)
-        code=p.wait(timeout=1)
-        record['launcher_exit']=code
-        record['lifecycle_pid_readback']=[{'pid':pid,'alive':active(k,h)} for pid,h in handles.items()]
-        assert code==0 and all(not r['alive'] for r in record['lifecycle_pid_readback']), 'exit or owned cleanup failure'
-        record['lifecycle']='PASS synthetic only'
-        event('lifecycle-result')
-    except BaseException as error:
-        record['lifecycle']='FAIL'; record['error']=repr(error); record['traceback']=traceback.format_exc()
-        record['failure_pid_readback']=[{'pid':pid,'alive':active(k,h)} for pid,h in handles.items()]
-        event('failure-before-recovery')
-    finally:
-        track()
-        record['recovery_targets']=[]
-        for pid,h in list(handles.items()):
-            if active(k,h):
-                record['recovery_targets'].append(pid)
-                assert k.TerminateProcess(h,99),ctypes.get_last_error()
-        if p:
-            try: p.wait(timeout=10)
-            except subprocess.TimeoutExpired: record['recovery_wait_timeout']=True
-        deadline=time.monotonic()+10
-        while any(active(k,h) for h in handles.values()) and time.monotonic()<deadline: time.sleep(.05)
-        record['final_held_readback']=[{'pid':pid,'alive':active(k,h)} for pid,h in handles.items()]
-        record['final_owned_listeners']=owned_listeners()
-        record['cleanup_safe']=all(not r['alive'] for r in record['final_held_readback']) and not record['final_owned_listeners']
-        # Independently re-open identities; a newly reused PID is not killed.
-        record['independent_readback']=[]
-        for pid in handles:
-            h=k.OpenProcess(0x1000,False,pid)
-            if h:
-                code=W.DWORD(); assert k.GetExitCodeProcess(h,ctypes.byref(code)); k.CloseHandle(h)
-                record['independent_readback'].append({'pid':pid,'exit_code':code.value})
-            else: record['independent_readback'].append({'pid':pid,'open_error':ctypes.get_last_error()})
-        for h in handles.values(): k.CloseHandle(h)
-        log.close()
-        record['log_sha256']=sha(log_path)
-        verify(load(root/'originals-pre.json'))
-        save(root/f'case-{case_id}-result.json',record)
-    return 0 if record['cleanup_safe'] else 2
+    return controller_injected(*root.controller_capabilities(case_id))
+
+
+def controller_injected(driver, ownership, emit):
+    return recovery_core().controller_core(driver, ownership, emit)
 
 
 def execute(root, expected):
     raise RuntimeError(LIVE_EXECUTION_BLOCK)
-    assert sha(root/'manifest.json') == expected
-    verify(load(root/'manifest.json')); verify(load(root/'originals-pre.json'))
-    with (root/'execution-started.json').open('x',encoding='utf-8') as f:
-        json.dump({'maximum_cases':3,'manifest_sha256':expected,'plan_sha256':sha(root/'plan.json'),'pid':os.getpid()},f)
-    cfg=load(root/'config.json'); results=[]
-    for case_id in range(1,4):
-        with (root/'case-budget.jsonl').open('a',encoding='utf-8') as f: f.write(json.dumps({'case':case_id,'maximum':3,'monotonic_ns':time.monotonic_ns()})+'\n')
-        cp=subprocess.run([cfg['python'],str(root/'controller.py'),'controller',str(root),'--case',str(case_id)],env=load(root/'environment.json'),capture_output=True,text=True,timeout=100)
-        save(root/f'case-{case_id}-controller-output.json',{'returncode':cp.returncode,'stdout':cp.stdout,'stderr':cp.stderr})
-        receipt=root/f'case-{case_id}-result.json'
-        if receipt.exists(): results.append(load(receipt))
-        if cp.returncode != 0 or not receipt.exists() or not results[-1].get('cleanup_safe'):
-            break
-    verify(load(root/'originals-pre.json')); verify(load(root/'manifest.json'))
-    save(root/'originals-post.json',inventory([Path(r['path']) for r in load(root/'originals-pre.json')]))
-    save(root/'batch-result.json',{'executed_cases':len(results),'maximum_cases':3,'cases':[{'id':r['case']['id'],'lifecycle':r.get('lifecycle','HARNESS FAIL before completed result'),'cleanup_safe':r.get('cleanup_safe',False)} for r in results], 'stopped_before_repair':True,'originals_unchanged':True})
-    save(root/'receipts-manifest.json',inventory([p for p in root.iterdir() if p.is_file() and p.name not in ['receipts-manifest.json']]))
-    print(json.dumps({'batch':load(root/'batch-result.json'),'receipts_manifest':str(root/'receipts-manifest.json'),'receipts_manifest_sha256':sha(root/'receipts-manifest.json')},indent=2))
+    return execute_injected(*root.execution_capabilities(expected))
 
 
-if __name__ == '__main__':
+def execute_injected(driver, ledger, recoveries, emit):
+    return recovery_core().execute_core(driver, ledger, recoveries, emit)
+
+
+def recovery_core():
+    # Path-bound import; there is deliberately no live/native capability adapter.
+    import importlib.util
+    path = Path(__file__).with_name('windows_shutdown_recovery.py')
+    spec = importlib.util.spec_from_file_location('windows_shutdown_recovery', path)
+    module = sys.modules.get(spec.name)
+    if module is None:
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+    return module
+
+
+def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('mode',choices=['prepare','execute','controller'])
     parser.add_argument('root',type=Path)
     parser.add_argument('--manifest-sha')
     parser.add_argument('--case',type=int,choices=[1,2,3])
-    args=parser.parse_args()
-    assert os.name=='nt' and not sys.flags.optimize
-    if args.mode=='prepare': prepare(args.root)
-    elif args.mode=='execute': execute(args.root,args.manifest_sha)
-    else: raise SystemExit(controller(args.root,args.case))
+    args=parser.parse_args(argv)
+    if args.mode=='execute': return execute(args.root,args.manifest_sha)
+    if args.mode=='controller': return controller(args.root,args.case)
+    if os.name != 'nt' or sys.flags.optimize:
+        raise RuntimeError('prepare requires Windows and non-optimized checks')
+    return prepare(args.root)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

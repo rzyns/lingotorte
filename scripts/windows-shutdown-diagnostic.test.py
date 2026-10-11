@@ -12,6 +12,34 @@ with patch('subprocess.Popen', side_effect=AssertionError('import spawned a proc
 
 
 class DiagnosticOfflineTests(unittest.TestCase):
+    def test_cli_guards_before_any_native_or_prepare_call(self):
+        with patch.object(diag, 'native', side_effect=AssertionError('native forbidden')), \
+             patch.object(diag, 'prepare', side_effect=AssertionError('prepare forbidden')), \
+             patch.object(diag, 'load', side_effect=AssertionError('read forbidden')):
+            for mode in ('execute', 'controller'):
+                with self.assertRaisesRegex(RuntimeError, 'Diagnostic execution disabled'):
+                    diag.main([mode, 'inert'])
+
+    def test_retained_injected_call_paths_use_real_core(self):
+        core = diag.recovery_core()
+        self.assertEqual(Path(core.__file__).resolve(), SOURCE.with_name('windows_shutdown_recovery.py').resolve())
+        with patch.object(core, 'controller_core', return_value='controller') as controller, \
+             patch.object(core, 'execute_core', return_value='execute') as execute:
+            self.assertEqual(diag.controller_injected(1, 2, 3), 'controller')
+            self.assertEqual(diag.execute_injected(1, 2, 3, 4), 'execute')
+            controller.assert_called_once_with(1, 2, 3)
+            execute.assert_called_once_with(1, 2, 3, 4)
+
+    def test_optimized_prepare_cli_is_explicitly_blocked(self):
+        original_flags = diag.sys.flags
+        class Flags:
+            optimize = 1
+            def __getattr__(self, name): return getattr(original_flags, name)
+        with patch.object(diag.sys, 'flags', Flags()), \
+             patch.object(diag, 'prepare', side_effect=AssertionError('prepare forbidden')):
+            with self.assertRaisesRegex(RuntimeError, 'non-optimized'):
+                diag.main(['prepare', 'inert'])
+
     def test_live_entry_points_block_before_io(self):
         with patch.object(diag, 'load', side_effect=AssertionError('read before guard')), \
              patch.object(diag, 'sha', side_effect=AssertionError('hash before guard')), \
