@@ -101,7 +101,7 @@ describe('durable local persistence', () => {
     const persistence = SqliteLocalPersistence.open(':memory:');
 
     expect(persistence.status()).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       hasSnapshot: false,
       appliedMigrations: [
         {
@@ -137,6 +137,11 @@ describe('durable local persistence', () => {
         {
           version: 7,
           name: 'create_provider_policy_projection',
+          result: 'applied',
+        },
+        {
+          version: 8,
+          name: 'expand_practice_modes',
           result: 'applied',
         },
       ],
@@ -187,6 +192,13 @@ describe('durable local persistence', () => {
       expect.objectContaining({
         version: 7,
         name: 'create_provider_policy_projection',
+        result: 'applied',
+        checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+      expect.objectContaining({
+        version: 8,
+        name: 'expand_practice_modes',
         result: 'applied',
         checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
         appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),

@@ -35,7 +35,7 @@ import type {
 } from '@lingotorte/domain';
 import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 const SNAPSHOT_KEY = 'default';
 
 const CREATE_SNAPSHOT_STORE_SQL = `
@@ -303,6 +303,36 @@ const CREATE_PROVIDER_POLICY_PROJECTION_SQL = `
   CREATE INDEX IF NOT EXISTS idx_provider_policy_provider_enabled ON provider_policy(provider_id, enabled);
   INSERT INTO lingotorte_schema (id, schema_version)
     VALUES (1, 7)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
+// Rebuild only this projection: SQLite cannot alter an existing CHECK constraint.
+// Historical migration SQL remains immutable because its checksums are persisted.
+const EXPAND_PRACTICE_MODES_SQL = `
+  CREATE TABLE practice_attempt_v8 (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder')),
+    result TEXT NOT NULL CHECK (result IN ('pass', 'fail', 'pass-with-hesitation', 'skipped', 'abandoned')),
+    given_answer TEXT,
+    expected_answer TEXT,
+    response_ms INTEGER CHECK (response_ms IS NULL OR response_ms >= 0),
+    source_context_json TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    event_link_json TEXT NOT NULL
+  );
+  INSERT INTO practice_attempt_v8 (
+    id, card_id, mode, result, given_answer, expected_answer,
+    response_ms, source_context_json, reviewed_at, created_at, event_link_json
+  ) SELECT id, card_id, mode, result, given_answer, expected_answer,
+    response_ms, source_context_json, reviewed_at, created_at, event_link_json
+    FROM practice_attempt;
+  DROP TABLE practice_attempt;
+  ALTER TABLE practice_attempt_v8 RENAME TO practice_attempt;
+  CREATE INDEX idx_practice_attempt_card_time ON practice_attempt(card_id, reviewed_at, created_at);
+  INSERT INTO lingotorte_schema (id, schema_version)
+    VALUES (1, 8)
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
@@ -646,6 +676,12 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
     name: 'create_provider_policy_projection',
     sql: CREATE_PROVIDER_POLICY_PROJECTION_SQL,
     checksum: migrationChecksum(CREATE_PROVIDER_POLICY_PROJECTION_SQL),
+  },
+  {
+    version: 8,
+    name: 'expand_practice_modes',
+    sql: EXPAND_PRACTICE_MODES_SQL,
+    checksum: migrationChecksum(EXPAND_PRACTICE_MODES_SQL),
   },
 ];
 
