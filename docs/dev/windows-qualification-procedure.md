@@ -1,5 +1,7 @@
 # Windows qualification procedure — content-bound combined candidate
 
+**Optional native lane:** [Docker-primary scope](../plan/docker-primary-runtime.md) supersedes this procedure as the required product/runtime prerequisite. Preserve this procedure and failed packets for any separately authorized native-Windows follow-on; no diagnostic continuation or allowance renewal is implied by Docker work.
+
 **Status: planning only; not authorization to execute.** `lt-a46` remains blocked. This procedure neither repairs the product nor resets a retry budget. No live service, integration probe, browser, installation, provider, learner-state operation, commit, or Beads mutation is authorized by publishing it.
 
 Qualify one combined launcher/native-path/Python candidate, not separately green branches assembled by inference. Follow the [Windows platform contract](windows-platform-contract.md) for acceptance and the [local runbook](local-runbook.md) for historical operator context. The principal risk is evidence against the wrong bytes or a broken harness, rather than a missing positive control.

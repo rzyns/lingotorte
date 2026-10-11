@@ -66,11 +66,16 @@ describe('Lingotorte loopback local service', () => {
     expect(warnings[0]).not.toContain(rejected);
   });
 
-  it('refuses non-loopback bind hosts before opening a server', async () => {
+  it('serves a wildcard listener through loopback while retaining private provider defaults', async () => {
     const { root, config } = await makeTempConfig();
-    cleanups.push(() => rm(root, { recursive: true, force: true }));
-
-    await expect(startLingotorteLocalService({ ...config, host: '0.0.0.0' })).rejects.toThrow(/loopback/i);
+    const service = await startLingotorteLocalService({ ...config, host: '0.0.0.0' });
+    cleanups.push(async () => {
+      await service.close();
+      await rm(root, { recursive: true, force: true });
+    });
+    const origin = `http://127.0.0.1:${service.config.port}`;
+    expect(await fetch(`${origin}/api/health`).then((response) => response.json())).toMatchObject({ ok: true });
+    expect(await fetch(`${origin}/api/status`).then((response) => response.json())).toMatchObject({ config: { host: '0.0.0.0', allowOnlineProviders: false } });
   });
 
   it('serves health and redacted status on loopback', async () => {

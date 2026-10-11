@@ -84,14 +84,7 @@ export type RunningLingotorteLocalService = Readonly<{
   close(): Promise<void>;
 }>;
 
-function isLoopbackHost(host: string): boolean {
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
-}
-
-function assertLoopbackConfig(config: LocalServiceConfig): void {
-  if (!isLoopbackHost(config.host)) {
-    throw new TypeError(`Lingotorte local service must bind to a loopback host; refused ${config.host}`);
-  }
+function assertNativeConfig(config: LocalServiceConfig): void {
   for (const [label, path] of [
     ['databasePath', config.databasePath],
     ['scratchDir', config.scratchDir],
@@ -686,7 +679,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     pythonPath: selectPythonExecutable(runtimeInput.pythonPath),
     defaultModelName: runtimeInput.defaultModelName ?? DEFAULT_ASR_MODEL_NAME,
   };
-  assertLoopbackConfig(config);
+  assertNativeConfig(config);
   if (runtime.scriptRoot !== undefined) hostNativePath(runtime.scriptRoot, 'directory');
   for (const command of [runtime.pythonPath, runtime.ffmpegPath, runtime.ffprobePath]) {
     if (command !== undefined) nativeExecutable(command);

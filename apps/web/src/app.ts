@@ -1459,7 +1459,7 @@ function renderTranscriptWorkbenchOverview(model: AppModel): HTMLElement {
     ),
     renderSourceCandidateCard(
       'Local ASR draft',
-      'Uses the loopback local service and local tools when those dependencies are installed and explicitly chosen.',
+      'Uses the configured local service and local tools when those dependencies are installed and explicitly chosen.',
       [renderRiskToken('local dependency required', 'warning')],
     ),
     renderSourceCandidateCard(
@@ -2316,7 +2316,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const privacy = document.createElement('p');
   privacy.className = 'meta';
-  privacy.textContent = 'Browser handles and object URLs are playback-only. The loopback service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
+  privacy.textContent = 'Browser handles and object URLs are playback-only. The configured service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
   panel.appendChild(privacy);
   return panel;
 }
@@ -2428,7 +2428,7 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
   if (model.cues.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No transcript loaded yet. Import subtitles in the Library view, or use Generate local ASR draft after connecting the loopback local service.';
+    empty.textContent = 'No transcript loaded yet. Import subtitles in the Library view, or use Generate local ASR draft after connecting the configured local service.';
     panel.appendChild(empty);
     return panel;
   }
@@ -2936,7 +2936,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   if (currentMediaPath.startsWith('blob:') || currentMediaPath.startsWith('browser-file-handle:')) {
     const localAsrPathNote = document.createElement('p');
     localAsrPathNote.className = 'gate-note local-service-media-path-note';
-    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; the loopback local service still needs an explicit absolute owned local media path for ASR, ffmpeg, ffprobe, and source-media snippets.';
+    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; the configured local service still needs an explicit absolute owned local media path for ASR, ffmpeg, ffprobe, and source-media snippets.';
     gateControls.appendChild(localAsrPathNote);
   }
   panel.appendChild(gateControls);
@@ -2998,7 +2998,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
-        model.transcriptLifecycle.lastMessage = 'Public YouTube caption draft imported through the loopback service';
+        model.transcriptLifecycle.lastMessage = 'Public YouTube caption draft imported through the configured service';
         model.importError = null;
         rerenderApp(model);
       })
@@ -3936,7 +3936,7 @@ function renderSettingsView(model: AppModel): HTMLElement {
   servicePanel.appendChild(serviceHeading);
 
   const serviceDescription = document.createElement('p');
-  serviceDescription.textContent = 'Connect to the loopback-only local service when you want SQLite-backed state, local transcription jobs, and scratch-artifact cleanup. This is explicit so default browser tests make no network calls.';
+  serviceDescription.textContent = 'Connect to the configured private local service when you want SQLite-backed state, local transcription jobs, and scratch-artifact cleanup. Use Docker for same-origin access on a trusted private LAN, never the public internet. This connection is explicit; browser handles are playback-only and Docker media paths start with /media/.';
   servicePanel.appendChild(serviceDescription);
 
   const urlLabel = document.createElement('label');

@@ -1,0 +1,66 @@
+name: lingotorte
+x-image: &image
+  image: ${LINGOTORTE_IMAGE:-lingotorte:local}
+  build:
+    context: .
+    target: runtime
+services:
+  api:
+    <<: *image
+    init: true
+    command: ["node", "apps/local-service/src/server.ts"]
+    stop_grace_period: 30s
+    environment:
+      LINGOTORTE_HOST: 0.0.0.0
+      LINGOTORTE_PORT: "5174"
+      LINGOTORTE_ALLOW_ONLINE_PROVIDERS: "false"
+    volumes:
+      - state:/state
+      - scratch:/scratch
+      - models:/models
+      - type: bind
+        source: ${LINGOTORTE_MEDIA_DIR:?Set LINGOTORTE_MEDIA_DIR to an explicit absolute owned-media directory}
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5174/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [private]
+  web:
+    <<: *image
+    init: true
+    command: ["node", "node_modules/vite/bin/vite.js", "preview", "--config", "vite.config.ts"]
+    stop_grace_period: 30s
+    environment:
+      LINGOTORTE_WEB_HOST: 0.0.0.0
+      LINGOTORTE_WEB_ALLOWED_HOSTS: ${LINGOTORTE_WEB_ALLOWED_HOSTS:-localhost}
+      LINGOTORTE_API_PROXY_TARGET: http://api:5174
+    ports:
+      - "${LINGOTORTE_BIND_HOST:-0.0.0.0}:${LINGOTORTE_WEB_PORT:-5173}:4173"
+    depends_on:
+      api:
+        condition: service_healthy
+    # Docker's internal-only network does not make published ports reachable
+    # on every engine. Give only the web entry point an ingress network.
+    networks: [private, ingress]
+  contributor:
+    image: ${LINGOTORTE_CONTRIBUTOR_IMAGE:-lingotorte:contributor}
+    build:
+      context: .
+      target: contributor
+    profiles: [tools]
+    init: true
+    command: ["node", "node_modules/vitest/vitest.mjs", "run"]
+    # No host source, media, state or credentials are mounted into verification.
+volumes:
+  state:
+  scratch:
+  models:
+networks:
+  private:
+    internal: true
+  ingress:

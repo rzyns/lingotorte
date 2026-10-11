@@ -1,5 +1,7 @@
 # Lingotorte local runbook
 
+**Current entry point:** use the [Docker runbook](docker-runbook.md) and [Docker-primary replacement scope](../plan/docker-primary-runtime.md). Janusz selected Docker and removed mandatory loopback-only binding for trusted private-LAN use. The native startup/systemd/Windows recipes below are retained historical/operator context, not prerequisites to Docker. The original app ran in WSL (user-provided history); current container bytes require fresh verification. Provider/state/media boundaries still apply.
+
 Status: V4 local transcription runbook. This document describes how to run and inspect the current local baseline without enabling cloud sync, AnkiConnect, live Lingopie inspection, public sharing, public-internet writes, external account mutation, or unapproved media/model downloads. The transcript lifecycle lane includes fakeable/local adapter seams for provider captions, real local ffmpeg/faster-whisper/WhisperX-style command adapters, and explicit-opt-in ElevenLabs Scribe v2 cloud STT. Generated/provider tracks must be corrected and approved before learner study use.
 
 ## Scope and safety posture

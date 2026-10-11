@@ -1,0 +1,26 @@
+FROM node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 AS contributor
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+
+COPY packages/ packages/
+COPY vendor/ vendor/
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY apps/ apps/
+COPY fixtures/ fixtures/
+COPY scripts/ scripts/
+COPY tests/ tests/
+COPY tsconfig.json vite.config.ts vitest.config.ts ./
+# nativeConfig's checkout exclusion expects a .git directory. This empty
+# image-only sentinel protects /app without importing any host Git metadata.
+RUN mkdir -p /app/.git /state /scratch /models /home/node/.cache && chown -R node:node /app /state /scratch /models /home/node/.cache
+ENV LINGOTORTE_DATA_DIR=/state LINGOTORTE_SCRATCH_DIR=/scratch LINGOTORTE_MODEL_CACHE_DIR=/models \
+    LINGOTORTE_PYTHON_PATH=python3 LINGOTORTE_ALLOW_ONLINE_PROVIDERS=false
+USER node
+CMD ["node", "apps/local-service/src/server.ts"]
+
+FROM contributor AS runtime
+ARG VITE_LOCAL_SERVICE_BASE_URL=/
+ENV VITE_LOCAL_SERVICE_BASE_URL=${VITE_LOCAL_SERVICE_BASE_URL}
+RUN node node_modules/vite/bin/vite.js build --config vite.config.ts

@@ -7,7 +7,8 @@
 | What you want | Bead |
 | --- | --- |
 | Required daily-driver program | `lt-foe` |
-| Windows development baseline | `lt-c0r` |
+| Docker-primary runtime and contributor baseline | `lt-foe.2` |
+| Optional native Windows baseline / preserved history | `lt-c0r` |
 | Local request safety and durable state | `lt-04k` |
 | Review, practice and source identity | `lt-aur` |
 | Learner-facing local morphology | `lt-fze` |
@@ -18,6 +19,8 @@
 | Captured historical/takeover evidence | `lt-4jg` |
 
 These IDs are stable navigation, **not a status snapshot**. Ask Beads for current state.
+
+The [Docker-primary replacement scope](docs/plan/docker-primary-runtime.md) records Janusz's runtime/LAN decision. It supersedes native Windows qualification as the required product prerequisite, not the frozen Windows results or their exhausted execution allowances. Docker qualification must produce its own Linux/container/browser evidence. Remaining request-authenticity and learner-state correctness issues stay required; trusted-LAN binding is not an authentication claim. Query canonical edges rather than interpreting old Windows diagnostic handoffs as the next assignment.
 
 ## Vocabulary and why this shape
 

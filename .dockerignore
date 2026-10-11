@@ -1,0 +1,37 @@
+# Default deny; only public application inputs enter the build context.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!vitest.config.ts
+!apps/
+!apps/**
+!packages/
+!packages/**
+!vendor/
+!vendor/**
+!fixtures/
+!fixtures/**
+!scripts/
+!scripts/**
+!tests/
+!tests/**
+**/dist
+# Reviewed tracked vendored runtime, not host-generated build output.
+!vendor/morfeusz-ts/dist/
+!vendor/morfeusz-ts/dist/**
+**/.env
+**/.env.*
+**/.git
+**/.beads
+**/.worktrees
+**/node_modules
+**/.cache
+**/__pycache__
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.log
+**/*secret*
+**/*credential*

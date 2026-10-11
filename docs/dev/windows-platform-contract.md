@@ -1,5 +1,7 @@
 # Windows/runtime and native-path contract
 
+**Scope supersession:** the [Docker-primary decision](../plan/docker-primary-runtime.md) replaces native Windows as the required runtime/contributor target and permits trusted private-LAN binding. This document remains the historical/optional native-Windows contract; its Windows console/helper/browser tuple is not a prerequisite to the new Docker lane. Shared native-path validation and provider/state/privacy obligations remain applicable. Historical Windows qualification is not closed or relabeled successful.
+
 Decision artifact for **lt-21e**, against source revision `a96ddce728e9860887d1a9b6fb0ef92105c04729`.
 
 Select native Windows 11 x64, Node **26.7.0**, and Edge **156.0.4314.15** as the first qualification target; Python **3.14.7** is only a dependency-free CLI/fake-module target, not an ASR endorsement.

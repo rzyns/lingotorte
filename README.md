@@ -14,9 +14,15 @@ The [reviewed planning amendments](docs/review/planning-amendments-2026-10-10.md
 
 This workspace captures preliminary grounding research for a planned `hermes-war-room` exploration and planning mission around a Lingopie-like local app. The product goal is to use **Janusz’s own local videos/subtitles**, not Lingopie proprietary content.
 
-## Local V1 quick start
+## Docker-primary runtime and contributions
 
-This repo currently has a local-only Vite/TypeScript baseline backed by synthetic fixtures. From a clean checkout with the npm cache already populated:
+Docker is the primary runtime/contributor path. See the [Docker runbook](docs/dev/docker-runbook.md) for build/start/stop, verification commands, an explicitly selected read-only media-folder mount, persistent Linux-native state, and private-LAN host configuration. The [replacement scope](docs/plan/docker-primary-runtime.md) explains which old native-Windows prerequisites are superseded and which product/safety gates remain.
+
+Janusz reports this project was originally written and running in WSL. This is a reproducible packaging of the Linux direction, not a ground-up rewrite. Container binding and trusted private-LAN use are permitted; loopback-only binding is no longer mandatory. Do not expose the contributor server to the public internet or infer provider access, real learner-state migration, or multi-user security from this choice. Current qualification evidence lives in Beads `lt-foe.2`; historical Windows failures stay preserved and do not block this runtime path.
+
+## Historical native/local V1 quick start
+
+The following is the older native/local Vite/TypeScript baseline recipe, retained for context; use Docker above for the primary contributor path. From a clean checkout with the npm cache already populated:
 
 ```bash
 npm ci --offline --no-audit --no-fund

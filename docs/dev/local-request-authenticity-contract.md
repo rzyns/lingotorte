@@ -1,5 +1,7 @@
 # Personal-local request authenticity contract
 
+**Runtime amendment / revision required:** Janusz's [Docker-primary private-LAN decision](../plan/docker-primary-runtime.md) supersedes the loopback-only/no-LAN/no-proxy deployment restrictions in this historical contract. Retain its request-admission, private-read protection, zero-side-effect rejection, pairing/credential-delivery, redirect and provider-consent objectives. Before `lt-sor` implementation, reconcile exact public authority/UI origins, the same-origin container proxy and native clients with the selected private-LAN runtime; do not simply substitute an unrestricted Origin/Host wildcard or claim CORS authenticates callers. The Docker contributor baseline is not implementation or security acceptance of this contract. Historical A01–A30 evidence requirements remain source material, not an assertion that the old loopback tuple is mandatory for Docker.
+
 **Decision:** `lt-9zj` — recommend an exact request gate plus one ephemeral, process-scoped capability for the existing browser + loopback service.
 **Approach:** validate authority, Origin, route/method and request envelope before dispatch; require the capability for every API operation except minimal health and validated preflight.
 **Riskiest assumption:** the operator, local service, and selected UI origin are trusted; this is not protection against compromised same-user software or script running inside the paired UI.

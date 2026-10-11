@@ -22,6 +22,8 @@ Agents must preserve these boundaries unless Janusz explicitly changes them:
 
 ## Recommended reading order
 
+**Current runtime direction:** Docker is primary for development and contributions. Read `docs/plan/docker-primary-runtime.md` and `docs/dev/docker-runbook.md`. Janusz explicitly removed mandatory loopback-only binding for trusted private-LAN use; container-native media paths use one explicitly selected read-only bind mount, and SQLite lives on a Linux-native volume. Providers remain disabled by default. The original app ran in WSL; historical Linux receipts do not qualify today's bytes. Native Windows launcher/console work is optional history, not a prerequisite to the Docker or product lanes. Do not resume old diagnostic handoffs or reset their consumed budgets by implication.
+
 Read `GIT-POLICY.md`: Janusz explicitly authorizes and expects verified atomic commits and pushes as work completes. This supersedes older blanket commit/push prohibitions, not scope/privacy/deployment gates. Do not leave completed work uncommitted by default.
 
 For current work, read `BEADS.md`, the relevant native Beads issue and its blockers, `DECISIONS.md`, and `docs/review/safety-privacy-boundary-review.md` first. The canonical work/status store is this primary checkout's `.beads/`; `PLAN.md` and `PLAN-STATUS.md` are pointers, not task lists. The root daily-driver epic is `lt-foe`; optional work is `lt-5lb`; implementation requires the scope recorded in `lt-dy6`. A ready issue is not authorization.

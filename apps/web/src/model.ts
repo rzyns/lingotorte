@@ -34,7 +34,9 @@ export const CUE_SYNC_TOLERANCE_MS = 100;
 export const MIN_PLAYBACK_RATE = 0.5;
 export const MAX_PLAYBACK_RATE = 1.5;
 export const PLAYBACK_RATE_STEP = 0.1;
-export const DEFAULT_LOCAL_SERVICE_BASE_URL = 'http://127.0.0.1:5174';
+// '/' selects same-origin routing; every API client appends an /api path.
+// An unset build setting retains the direct local development baseline.
+export const DEFAULT_LOCAL_SERVICE_BASE_URL = import.meta.env.VITE_LOCAL_SERVICE_BASE_URL ?? 'http://127.0.0.1:5174';
 const HANDLE_LABEL_PREFIX = 'browser-file-handle:';
 
 function emptyBrowserLocalMedia(overrides: Partial<BrowserLocalMediaState> = {}): BrowserLocalMediaState {
