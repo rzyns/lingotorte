@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { request } from 'node:http';
+import { request, Server, type IncomingMessage } from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { createServer as createSocketServer, connect } from 'node:net';
 
@@ -127,6 +127,22 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
 
   it('compares full seeded snapshot/revision/tables/files/LRU/worker oracles for admission denial and releases a still-owned paused worker', async () => {
     const { root, config } = await fixture();
+    // Passive boundary observation: retain only envelope fields, never authorization.
+    const zeroEnvelopes: { method: string; path: string; fields: string[] }[] = [];
+    const originalEmit = Server.prototype.emit;
+    const boundarySpy = vi.spyOn(Server.prototype, 'emit').mockImplementation(function (this: Server, event, ...args) {
+      if (event === 'request') {
+        const incoming = args[0] as IncomingMessage;
+        if (incoming.headers['content-length'] === '0' && ['GET', 'DELETE'].includes(incoming.method ?? '')) {
+          const fields: string[] = [];
+          for (let i = 0; i < incoming.rawHeaders.length; i += 2) {
+            if (['content-length', 'content-type', 'transfer-encoding'].includes(incoming.rawHeaders[i]!.toLowerCase())) fields.push(incoming.rawHeaders[i]!, incoming.rawHeaders[i + 1]!);
+          }
+          zeroEnvelopes.push({ method: incoming.method!, path: incoming.url!, fields });
+        }
+      }
+      return originalEmit.call(this, event, ...args);
+    });
     const other = await fixture(); let otherToken = '';
     const otherService = await startLingotorteLocalService(other.config, { receiveCapability: value => { otherToken = value; } });
     const mediaPath = join(root, 'synthetic.mkv'); await writeFile(mediaPath, 'synthetic');
@@ -165,6 +181,25 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
         const positive = await raw(service.origin, path, 'GET', browserAuth); expect(positive.status).toBe(200);
         expect(positive.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173');
         if (path === snippet) { expect(positive.body).toBe('RIFF-synthetic-wave'); expect(positive.headers['content-type']).toContain('audio/wav'); }
+      }
+      const zeroGetPaths = ['/api/status', '/api/state', `/api/jobs/${waiting}`, snippet];
+      for (const path of zeroGetPaths) {
+        const expected = JSON.parse(await oracle());
+        const positive = await raw(service.origin, path, 'GET', [...browserAuth, 'Content-Length', '0']);
+        expect(positive.status).toBe(200);
+        expect(positive.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173');
+        if (path === snippet) {
+          expect(positive.body).toBe('RIFF-synthetic-wave');
+          expect(positive.headers['content-type']).toContain('audio/wav');
+          expected.state.snippetAccessCounter++;
+          expected.state.snippets.find(([id]: [string]) => id === snippetJob.result.snippetId)[1].lastAccess = expected.state.snippetAccessCounter;
+        } else if (path === '/api/state') {
+          expect(JSON.parse(positive.body).snapshot).toEqual(seededSnapshot);
+          expect(JSON.parse(positive.body).revision).toBe(revision);
+        } else if (path.startsWith('/api/jobs/')) expect(JSON.parse(positive.body).job.id).toBe(waiting);
+        else expect(JSON.parse(positive.body).ok).toBe(true);
+        await settle(); expect(JSON.parse(await oracle())).toEqual(expected);
+        expect(zeroEnvelopes.at(-1)).toEqual({ method: 'GET', path, fields: ['Content-Length', '0'] });
       }
       const routes = [
         { path: '/api/status', method: 'GET' }, { path: '/api/state', method: 'GET' }, { path: `/api/jobs/${waiting}`, method: 'GET' }, { path: snippet, method: 'GET' },
@@ -296,7 +331,17 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
       expect((await raw(service.origin, published.result.url, 'GET', auth)).body).toBe('RIFF-synthetic-wave');
       expect(await readFile(mediaPath, 'utf8')).toBe('synthetic');
       expect((await raw(service.origin, `/api/jobs/${waiting}/cancel`, 'POST', json, '{}')).status).toBe(200);
-      expect((await raw(service.origin, snippet, 'DELETE', browserAuth)).status).toBe(204);
+      const expectedDelete = JSON.parse(await oracle());
+      const deletedEntry = expectedDelete.state.snippets.find(([id]: [string]) => id === snippetJob.result.snippetId);
+      expect(deletedEntry).toBeDefined();
+      expectedDelete.state.snippets = expectedDelete.state.snippets.filter(([id]: [string]) => id !== snippetJob.result.snippetId);
+      delete expectedDelete.files[deletedEntry[1].path.slice(root.length)];
+      const deleted = await raw(service.origin, snippet, 'DELETE', [...browserAuth, 'Content-Length', '0']);
+      expect(deleted.status).toBe(204); expect(deleted.body).toBe('');
+      expect(deleted.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173');
+      await settle(); expect(JSON.parse(await oracle())).toEqual(expectedDelete);
+      expect(zeroEnvelopes).toEqual([...zeroGetPaths.map(path => ({ method: 'GET', path, fields: ['Content-Length', '0'] })), { method: 'DELETE', path: snippet, fields: ['Content-Length', '0'] }]);
+      console.info(JSON.stringify({ a17ExplicitZeroLength: { get: 4, delete: 1, boundaryRequests: zeroEnvelopes.length, rawEnvelope: ['Content-Length', '0'], contentTypeAbsent: true, transferEncodingAbsent: true, readOracleUnchanged: true, snippetReadOnlyLru: true, deleteOnlyMapAndFile: true } }));
       expect((await raw(service.origin, '/api/artifacts/cleanup', 'POST', json, '{}')).status).toBe(200);
       for (const type of ['Application/JSON', 'application/json ; charset = UTF-8', 'application/json;charset="utf-8"']) {
         const typed = [...browserAuth, 'Content-Type', type];
@@ -307,7 +352,7 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
         expect((await raw(service.origin, '/api/artifacts/cleanup', 'POST', typed, '{}')).status).toBe(200);
       }
       console.info(JSON.stringify({ seededExpandedDenials: expanded, admissionFaults: faults.length, routeClasses: routes.length, positiveJobKinds: 8, preflightControls, fullTablesFilesRevisionSaveLRU: true, pausedWorkerDenials: 4, fakeProviderCalls: providerCalls }));
-    } finally { release(); database.close(); saveSpy.mockRestore(); await service.close(); await otherService.close(); await rm(other.root, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }); }
+    } finally { boundarySpy.mockRestore(); release(); database.close(); saveSpy.mockRestore(); await service.close(); await otherService.close(); await rm(other.root, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }); }
   }, 30_000);
 
   it('configured preview and localhost origins admit real JSON/WAV/cancel/delete dispatch', async () => {
