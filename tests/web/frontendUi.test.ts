@@ -478,7 +478,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       value: vi.fn(async (url: string) => ({
         ok: true,
         json: async () => url.endsWith('/api/state')
-          ? { ok: true, snapshot: sourceModel.store.snapshot() }
+          ? { ok: true, snapshot: sourceModel.store.snapshot(), revision: `sha256:${'1'.repeat(64)}` }
           : { ok: true, status: 'ok' },
       })),
     });

@@ -61,7 +61,7 @@ for (const platform of ['win32', 'linux'] as const) describe(`${platform} browse
 
 it.each([undefined, { version: 2, platform: 'win32' }, nativePathPolicy('win32')])('reads status capability and keeps browser-only playback for unknown versions: %j', async (pathPolicy) => {
   const model = createAppModel();
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/api/status') ? { config: { pathPolicy } } : { snapshot: createEmptyLocalStoreSnapshot() }), { status: 200 })));
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/api/status') ? { config: { pathPolicy } } : { snapshot: createEmptyLocalStoreSnapshot(), revision: `sha256:${'1'.repeat(64)}` }), { status: 200 })));
   const result = await connectLocalService(model);
   expect(result.ok).toBe(true);
   expect(model.localService.status).toBe('connected');

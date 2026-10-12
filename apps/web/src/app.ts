@@ -65,6 +65,9 @@ import {
   setExportImportConfirmReplace,
   setExportImportError,
   connectLocalService,
+  resolveLocalServiceConnection,
+  observeLocalServiceSync,
+  markUnsavedBrowserEdits,
   saveModelToLocalService,
   setLocalServiceAutosave,
   setLocalServiceBaseUrl,
@@ -105,7 +108,24 @@ export function renderApp(model: AppModel): HTMLElement {
   const root = document.createElement('div');
   root.className = 'lingotorte-app';
   root.appendChild(renderHeader(model));
+  const syncStatus = document.createElement('div');
+  syncStatus.dataset.localServiceSync = 'true';
+  syncStatus.setAttribute('role', 'status');
+  root.appendChild(syncStatus);
+  const updateSyncStatus = () => {
+    for (const node of root.querySelectorAll<HTMLElement>('[data-local-service-sync]')) {
+      node.textContent = model.localService.lastMessage;
+      node.dataset.syncState = model.localService.syncState ?? 'idle';
+      node.className = `status-banner ${model.localService.status === 'error' ? 'error' : ''}`;
+      node.hidden = model.localService.status === 'disconnected' && !model.localService.syncState;
+    }
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-local-service-save]')) {
+      button.disabled = model.localService.status === 'connecting' || ['choice', 'conflict', 'saving'].includes(model.localService.syncState ?? '');
+    }
+  };
   root.appendChild(renderMain(model));
+  observeLocalServiceSync(model, updateSyncStatus);
+  updateSyncStatus();
   root.appendChild(renderFooter());
   return root;
 }
@@ -3171,6 +3191,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       textarea.value = model.transcriptLifecycle.pendingCueEdits[cue.id] ?? cue.text;
       textarea.addEventListener('input', () => {
         model.transcriptLifecycle.pendingCueEdits[cue.id] = textarea.value;
+        markUnsavedBrowserEdits(model);
       });
       label.appendChild(textarea);
       const sourceComparison = renderCueSourceComparison(model, cue, targetTrack.id);
@@ -3203,6 +3224,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           startMs: Number(startInput.value),
           endMs: Number(endInput.value),
         };
+        markUnsavedBrowserEdits(model);
       };
       startInput.addEventListener('input', updateTimingEdit);
       endInput.addEventListener('input', updateTimingEdit);
@@ -3248,6 +3270,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         wordEnd.step = '10';
         wordEnd.value = String(wordEdit.endMs);
         const updateWordTimingEdit = () => {
+          markUnsavedBrowserEdits(model);
           model.transcriptLifecycle.pendingWordTimingEdits[word.id] = {
             text: wordText.value,
             startMs: Number(wordStart.value),
@@ -3968,11 +3991,30 @@ function renderSettingsView(model: AppModel): HTMLElement {
   const saveButton = document.createElement('button');
   saveButton.className = 'btn-secondary';
   saveButton.textContent = 'Save state now';
+  saveButton.dataset.localServiceSave = 'true';
+  saveButton.disabled = model.localService.status === 'connecting' || ['choice', 'conflict', 'saving'].includes(model.localService.syncState ?? '');
   saveButton.addEventListener('click', () => {
     void saveModelToLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
   });
   buttonRow.appendChild(saveButton);
   servicePanel.appendChild(buttonRow);
+
+  if (model.localService.syncState === 'choice') {
+    const choices = document.createElement('div');
+    choices.setAttribute('role', 'group');
+    choices.setAttribute('aria-label', 'Confirm browser and durable state choice');
+    for (const [choice, label] of [
+      ['browser', 'Keep browser work'],
+      ['service', 'Load service state (discard browser edits)'],
+      ['cancel', 'Cancel connection'],
+    ] as const) {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.addEventListener('click', () => { resolveLocalServiceConnection(model, choice); rerenderApp(model); });
+      choices.appendChild(button);
+    }
+    servicePanel.appendChild(choices);
+  }
 
   const autosaveLabel = document.createElement('label');
   autosaveLabel.htmlFor = 'local-service-autosave';
@@ -3992,9 +4034,8 @@ function renderSettingsView(model: AppModel): HTMLElement {
   const serviceStatus = document.createElement('div');
   serviceStatus.className = `status-banner ${model.localService.status === 'error' ? 'error' : model.localService.status === 'connected' ? 'success' : ''}`;
   serviceStatus.setAttribute('role', 'status');
-  serviceStatus.textContent = model.localService.status === 'connected'
-    ? `Connected to local service. SQLite durable state is available.${model.localService.lastSavedAt ? ` Last saved: ${model.localService.lastSavedAt}` : ''}`
-    : model.localService.lastMessage ?? 'Local service not connected.';
+  serviceStatus.dataset.localServiceSync = 'true';
+  serviceStatus.textContent = model.localService.lastMessage ?? 'Local service not connected.';
   servicePanel.appendChild(serviceStatus);
   section.appendChild(servicePanel);
 

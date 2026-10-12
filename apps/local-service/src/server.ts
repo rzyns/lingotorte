@@ -7,7 +7,7 @@ import { hostNativePath, pathInside, resolvedNativePath, assertReadableNativeFil
 import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch } from './nativeConfig.ts';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SqliteLocalPersistence } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
+import { SqliteLocalPersistence, SnapshotRevisionConflictError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
 import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStore.ts';
 import {
   alignWordsWithWhisperX,
@@ -964,14 +964,28 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/state') {
-        sendJson(response, 200, { ok: true, snapshot: persistence.loadSnapshot() });
+        sendJson(response, 200, { ok: true, ...persistence.loadVersionedSnapshot() });
         return;
       }
 
       if (request.method === 'PUT' && path === '/api/state') {
         const body = objectBody(await readJsonBody(request));
-        persistence.saveSnapshot(body.snapshot as LocalStoreSnapshot);
-        sendJson(response, 200, { ok: true, persistence: persistence.status() });
+        if (body.expectedRevision === undefined) {
+          sendError(response, 428, 'A durable state revision is required. Read state before saving.');
+          return;
+        }
+        if (typeof body.expectedRevision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(body.expectedRevision)) {
+          sendError(response, 400, 'Invalid durable state revision.');
+          return;
+        }
+        const savedAt = new Date().toISOString();
+        try {
+          const revision = persistence.saveSnapshot(body.snapshot as LocalStoreSnapshot, savedAt, body.expectedRevision);
+          sendJson(response, 200, { ok: true, revision, savedAt, persistence: persistence.status() });
+        } catch (error) {
+          if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
+          else throw error;
+        }
         return;
       }
 

@@ -38,6 +38,19 @@ import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot,
 const CURRENT_SCHEMA_VERSION = 8;
 const SNAPSHOT_KEY = 'default';
 
+export class SnapshotRevisionConflictError extends Error {
+  constructor() { super('Durable state changed. Reconnect and choose which state to keep; browser work was not saved.'); }
+}
+
+// Equivalent durable content is the same revision; object ordering is immaterial.
+function revisionOf(snapshot: LocalStoreSnapshot): string {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value !== null && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]))
+      : value;
+  return `sha256:${createHash('sha256').update(JSON.stringify(canonical(snapshot))).digest('hex')}`;
+}
+
 const CREATE_SNAPSHOT_STORE_SQL = `
   CREATE TABLE IF NOT EXISTS lingotorte_schema (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1549,10 +1562,23 @@ export class SqliteLocalPersistence {
     };
   }
 
-  saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString()): void {
+  loadVersionedSnapshot(): { snapshot: LocalStoreSnapshot; revision: string } {
+    this.db.exec('BEGIN');
+    try {
+      const snapshot = this.loadSnapshot();
+      const result = { snapshot, revision: revisionOf(snapshot) };
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString(), expectedRevision?: string): string {
     const normalized = normalizeLocalStoreSnapshot(snapshot);
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      if (expectedRevision !== undefined && expectedRevision !== revisionOf(this.loadSnapshot())) {
+        throw new SnapshotRevisionConflictError();
+      }
       this.db
         .prepare(`
           INSERT INTO lingotorte_snapshots (snapshot_key, schema_version, snapshot_json, updated_at)
@@ -1569,7 +1595,9 @@ export class SqliteLocalPersistence {
       this.saveReviewPracticeJobProjections(normalized);
       this.saveExportJobProjection(normalized);
       this.saveProviderPolicyProjection(normalized);
+      const revision = revisionOf(this.loadSnapshot());
       this.db.exec('COMMIT');
+      return revision;
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;

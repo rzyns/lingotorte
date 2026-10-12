@@ -119,7 +119,7 @@ describe('Lingotorte loopback local service', () => {
     const saveResponse = await fetch(`${service.origin}/api/state`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ snapshot }),
+      body: JSON.stringify({ snapshot, expectedRevision: (await fetch(`${service.origin}/api/state`).then(r => r.json())).revision }),
     });
     expect(saveResponse.status).toBe(200);
     await service.close();

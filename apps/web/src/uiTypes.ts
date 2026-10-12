@@ -150,6 +150,8 @@ export type AppModel = {
     lastMessage: string | null;
     lastSavedAt: string | null;
     autosaveEnabled: boolean;
+    syncState?: 'idle' | 'saving' | 'unsaved' | 'choice' | 'conflict' | 'error' | 'saved';
+    revision?: string | null;
   };
 };
 

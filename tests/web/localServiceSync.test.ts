@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -27,6 +27,48 @@ describe('web model local-service sync', () => {
     while (cleanups.length > 0) {
       await cleanups.pop()!();
     }
+  });
+
+  it('preserves a stale browser writer and reports a real SQLite/API revision conflict', async () => {
+    const { root, config } = await makeTempConfig();
+    const service = await startLingotorteLocalService(config);
+    cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
+    const seed = createAppModel();
+    await importFixtureMediaAndSubtitles(seed, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
+    expect((await saveModelToLocalService(seed, service.origin)).ok).toBe(true);
+    const first = createAppModel(); const stale = createAppModel();
+    await connectLocalService(first, service.origin); await connectLocalService(stale, service.origin);
+    await saveSentenceFromCue(first, first.cues[0]!);
+    expect((await saveModelToLocalService(first)).ok).toBe(true);
+    stale.store.putMediaAsset({ ...stale.currentMedia!, title: 'unsaved stale edit' }); const prior = stale.store.snapshot();
+    expect((await saveModelToLocalService(stale)).ok).toBe(false);
+    expect(stale.localService.syncState).toBe('conflict'); expect(stale.store.snapshot()).toEqual(prior);
+    expect(stale.localService.lastSavedAt).toBeNull();
+    const durable = createAppModel(); await connectLocalService(durable, service.origin);
+    expect(durable.store.snapshot()).toEqual(first.store.snapshot());
+  });
+
+  it('reports a lost acknowledgement honestly even when SQLite committed, then conflicts on retry', async () => {
+    const { root, config } = await makeTempConfig(); const service = await startLingotorteLocalService(config);
+    cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
+    const model = createAppModel();
+    await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
+    await connectLocalService(model, service.origin);
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const reply = await realFetch(input, init);
+      expect(reply.status).toBe(200);
+      await reply.json(); // actual server commit; only delivery to the caller is lost
+      throw new TypeError('Acknowledgement lost; browser save unverified.');
+    }));
+    try {
+      expect((await saveModelToLocalService(model)).ok).toBe(false);
+      expect(model.localService.lastSavedAt).toBeNull(); expect(model.localService.lastMessage).toContain('Acknowledgement lost');
+    } finally { vi.unstubAllGlobals(); }
+    const durable = await realFetch(`${service.origin}/api/state`).then(r => r.json());
+    expect(durable.snapshot).toEqual(model.store.snapshot());
+    expect((await saveModelToLocalService(model)).ok).toBe(false);
+    expect(model.localService.syncState).toBe('conflict'); expect(model.localService.lastSavedAt).toBeNull();
   });
 
   it('saves learner state to the loopback service and hydrates a fresh model from SQLite', async () => {

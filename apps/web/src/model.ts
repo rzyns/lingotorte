@@ -186,6 +186,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+class LocalServiceRequestError extends TypeError {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
 async function fetchLocalServiceJson(baseUrl: string, path: string, init?: RequestInit): Promise<Record<string, unknown>> {
   const response = await fetch(`${normalizeLocalServiceBaseUrl(baseUrl)}${path}`, {
     ...init,
@@ -199,7 +203,7 @@ async function fetchLocalServiceJson(baseUrl: string, path: string, init?: Reque
     throw new TypeError('Local service returned a non-object JSON response.');
   }
   if (!response.ok || value.ok === false) {
-    throw new TypeError(typeof value.error === 'string' ? value.error : `Local service request failed with HTTP ${response.status}`);
+    throw new LocalServiceRequestError(response.status, typeof value.error === 'string' ? value.error : `Local service request failed with HTTP ${response.status}`);
   }
   return value;
 }
@@ -218,15 +222,7 @@ function chooseActiveTrack(tracks: SubtitleTrack[], role: 'target' | 'native'): 
 }
 
 function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
-  return Object.values(snapshot.mediaAssets).length > 0
-    || Object.values(snapshot.subtitleTracks).length > 0
-    || Object.values(snapshot.cues).length > 0
-    || Object.values(snapshot.savedItems).length > 0
-    || Object.values(snapshot.savedOccurrences).length > 0
-    || Object.values(snapshot.reviewCards).length > 0
-    || Object.values(snapshot.reviewCardStates).length > 0
-    || Object.values(snapshot.practiceAttempts).length > 0
-    || Object.values(snapshot.transcriptWordTimings).length > 0;
+  return Object.entries(snapshot).some(([key, value]) => key !== 'schemaVersion' && value !== null && typeof value === 'object' && Object.keys(value).length > 0);
 }
 
 function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
@@ -254,70 +250,215 @@ function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreS
   model.player.activeCueId = model.cues[0]?.id ?? null;
 }
 
+type SyncOwner = {
+  generation: number;
+  tail: Promise<unknown>;
+  baseline: string | null;
+  choice: { snapshot: LocalStoreSnapshot; revision: string; comparison: string } | null;
+  notify?: () => void;
+};
+const syncOwners = new WeakMap<AppModel, SyncOwner>();
+function syncOwner(model: AppModel): SyncOwner {
+  let owner = syncOwners.get(model);
+  if (!owner) { owner = { generation: 0, tail: Promise.resolve(), baseline: null, choice: null }; syncOwners.set(model, owner); }
+  return owner;
+}
+export function observeLocalServiceSync(model: AppModel, notify: () => void): void { syncOwner(model).notify = notify; }
+function notifySync(model: AppModel): void { syncOwner(model).notify?.(); }
+function browserComparison(model: AppModel): string {
+  return JSON.stringify({ snapshot: model.store.snapshot(), media: model.currentMedia?.id,
+    browser: model.browserLocalMedia, cueEdits: model.transcriptLifecycle.pendingCueEdits,
+    timingEdits: model.transcriptLifecycle.pendingCueTimingEdits, wordEdits: model.transcriptLifecycle.pendingWordTimingEdits });
+}
+function hasPendingTranscriptEdits(model: AppModel): boolean {
+  return [model.transcriptLifecycle.pendingCueEdits, model.transcriptLifecycle.pendingCueTimingEdits,
+    model.transcriptLifecycle.pendingWordTimingEdits].some(value => Object.keys(value).length > 0);
+}
+function stateRevision(value: unknown): string {
+  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) throw new TypeError('Local service revision missing or invalid. Update the service before saving.');
+  return value;
+}
+const supersededSync = (): LocalServiceSyncResult => ({ ok: false, message: 'Local service operation superseded; browser work was kept.' });
+
 export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
-  const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
-  if (model.localService.baseUrl !== normalizedBaseUrl) model.localService.pathPolicy = null;
-  model.localService.baseUrl = normalizedBaseUrl;
-  try {
-    await fetchLocalServiceJson(normalizedBaseUrl, '/api/state', {
-      method: 'PUT',
-      body: JSON.stringify({ snapshot: model.store.snapshot() }),
-    });
-    const savedAt = new Date().toISOString();
-    model.localService.status = 'connected';
-    model.localService.lastSavedAt = savedAt;
-    model.localService.lastMessage = `Saved local state at ${savedAt}`;
-    return { ok: true, message: model.localService.lastMessage };
-  } catch (error) {
-    model.localService.status = 'error';
-    model.localService.lastMessage = error instanceof Error ? error.message : String(error);
-    return { ok: false, message: model.localService.lastMessage };
+  const owner = syncOwner(model);
+  const url = normalizeLocalServiceBaseUrl(baseUrl);
+  if (normalizeLocalServiceBaseUrl(model.localService.baseUrl) !== url) setLocalServiceBaseUrl(model, url);
+  if (owner.choice || model.localService.syncState === 'conflict' || model.localService.status === 'connecting') {
+    return { ok: false, message: model.localService.lastMessage ?? 'Finish connecting and confirm the state choice before saving.' };
   }
+  const generation = owner.generation;
+  const current = () => owner.generation === generation && normalizeLocalServiceBaseUrl(model.localService.baseUrl) === url;
+  const run = async (): Promise<LocalServiceSyncResult> => {
+    if (!current()) return supersededSync();
+    if (!model.localService.revision) return supersededSync();
+    if (owner.choice || model.localService.syncState === 'conflict') return { ok: false, message: model.localService.lastMessage ?? 'Reconnect and choose a state before saving.' };
+    const snapshot = model.store.snapshot();
+    const serialized = JSON.stringify(snapshot);
+    const expectedRevision = model.localService.revision;
+    model.localService.syncState = 'saving';
+    model.localService.lastMessage = 'Saving browser state; waiting for durable SQLite acknowledgement.';
+    notifySync(model);
+    try {
+      const ack = await fetchLocalServiceJson(url, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
+      if (!current()) return supersededSync();
+      if (ack.ok !== true) throw new TypeError('Local service did not acknowledge durable save.');
+      const revision = stateRevision(ack.revision);
+      if (typeof ack.savedAt !== 'string' || !Number.isFinite(Date.parse(ack.savedAt))) throw new TypeError('Local service did not acknowledge durable save time.');
+      model.localService.revision = revision;
+      owner.baseline = serialized;
+      model.localService.status = 'connected';
+      model.localService.lastSavedAt = ack.savedAt;
+      const dirty = JSON.stringify(model.store.snapshot()) !== serialized || hasPendingTranscriptEdits(model);
+      model.localService.syncState = dirty ? 'unsaved' : 'saved';
+      model.localService.lastMessage = dirty ? 'Earlier snapshot saved; newer browser edits remain unsaved.' : `Saved local state at ${ack.savedAt}`;
+      notifySync(model);
+      return { ok: !dirty, message: model.localService.lastMessage };
+    } catch (error) {
+      if (!current()) return supersededSync();
+      model.localService.status = 'error';
+      model.localService.syncState = error instanceof LocalServiceRequestError && error.status === 409 ? 'conflict' : 'error';
+      model.localService.lastMessage = error instanceof Error ? error.message : 'Local save failed; browser work remains unsaved.';
+      notifySync(model);
+      return { ok: false, message: model.localService.lastMessage };
+    }
+  };
+  // One PUT at a time, including autosave. Every queued call uses the latest snapshot
+  // and the preceding durable acknowledgement, never a captured stale revision.
+  if (!model.localService.revision) {
+    const connected = await connectLocalService(model, url);
+    if (!connected.ok) return connected;
+    return saveModelToLocalService(model, url);
+  }
+  const result = owner.tail.then(run, run);
+  owner.tail = result;
+  return result;
 }
 
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
-  const normalizedBaseUrl = normalizeLocalServiceBaseUrl(baseUrl);
-  if (model.localService.baseUrl !== normalizedBaseUrl) model.localService.pathPolicy = null;
-  model.localService.baseUrl = normalizedBaseUrl;
+  const owner = syncOwner(model);
+  const generation = ++owner.generation;
+  const url = normalizeLocalServiceBaseUrl(baseUrl);
+  const comparison = browserComparison(model);
+  const current = () => owner.generation === generation && normalizeLocalServiceBaseUrl(model.localService.baseUrl) === url;
+  model.localService.baseUrl = url;
+  model.localService.pathPolicy = null;
+  model.localService.revision = null;
+  model.localService.lastSavedAt = null;
+  owner.choice = null;
   model.localService.status = 'connecting';
-  model.localService.lastMessage = 'Connecting to local service...';
+  model.localService.lastMessage = 'Connecting and comparing durable state; browser work is kept.';
+  notifySync(model);
   try {
-    model.localService.pathPolicy = null;
-    const status = await fetchLocalServiceJson(normalizedBaseUrl, '/api/status');
-    model.localService.pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
-    const state = await fetchLocalServiceJson(normalizedBaseUrl, '/api/state');
-    const serviceSnapshot = state.snapshot as LocalStoreSnapshot;
-    if (snapshotHasDurableContent(serviceSnapshot) || !snapshotHasDurableContent(model.store.snapshot())) {
-      projectHydratedSnapshotIntoModel(model, serviceSnapshot);
-      const restoredBrowserHandle = await restoreBrowserMediaHandle(model);
-      model.localService.lastMessage = restoredBrowserHandle
-        ? 'Connected to local service, loaded durable state, and restored the browser media handle for playback.'
-        : 'Connected to local service and loaded durable state.';
-    } else {
-      model.localService.lastMessage = 'Connected to empty local service; current browser state was kept until you save.';
+    const status = await fetchLocalServiceJson(url, '/api/status');
+    if (!current()) return supersededSync();
+    const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
+    const state = await fetchLocalServiceJson(url, '/api/state');
+    if (!current()) return supersededSync();
+    const revision = stateRevision(state.revision);
+    const serviceSnapshot = new LocalStore(state.snapshot as LocalStoreSnapshot).snapshot();
+    const serialized = JSON.stringify(model.store.snapshot());
+    const remote = JSON.stringify(serviceSnapshot);
+    const changedDuringConnect = comparison !== browserComparison(model);
+    const dirty = hasPendingTranscriptEdits(model) || (owner.baseline !== null
+      ? owner.baseline !== serialized : snapshotHasDurableContent(model.store.snapshot()));
+    model.localService.pathPolicy = pathPolicy;
+    if (changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(serviceSnapshot)) || hasPendingTranscriptEdits(model)) {
+      model.localService.status = 'connected';
+      owner.choice = { snapshot: serviceSnapshot, revision, comparison: browserComparison(model) };
+      model.localService.syncState = 'choice';
+      model.localService.lastMessage = 'Browser work differs from durable state. Choose Keep browser work or Load service state (discard browser edits), or cancel. Nothing has been replaced or saved.';
+      notifySync(model);
+      return { ok: false, message: model.localService.lastMessage };
     }
+    model.localService.revision = revision;
+    if (!snapshotHasDurableContent(serviceSnapshot) && snapshotHasDurableContent(model.store.snapshot())) {
+      model.localService.syncState = 'unsaved';
+      model.localService.lastMessage = 'Connected to empty local service; browser work is unsaved until durable acknowledgement.';
+    } else {
+      projectHydratedSnapshotIntoModel(model, serviceSnapshot);
+      owner.baseline = JSON.stringify(model.store.snapshot());
+      const hydratedComparison = browserComparison(model);
+      const restoredBrowserHandle = await restoreBrowserMediaHandle(model, () => current() && hydratedComparison === browserComparison(model));
+      if (!current()) return supersededSync();
+      model.localService.syncState = JSON.stringify(model.store.snapshot()) === owner.baseline && !hasPendingTranscriptEdits(model) ? 'idle' : 'unsaved';
+      model.localService.lastMessage = model.localService.syncState === 'unsaved' ? 'Connected; newer browser edits remain unsaved.'
+        : restoredBrowserHandle ? 'Connected to local service, loaded durable state, and restored the browser media handle for playback.' : 'Connected to local service and loaded durable state.';
+    }
+    if (!pathPolicy) model.localService.lastMessage += ` ${NATIVE_PATH_COMPATIBILITY_MESSAGE}`;
     model.localService.status = 'connected';
-    if (!model.localService.pathPolicy) model.localService.lastMessage += ` ${NATIVE_PATH_COMPATIBILITY_MESSAGE}`;
+    notifySync(model);
     return { ok: true, message: model.localService.lastMessage };
   } catch (error) {
+    if (!current()) return supersededSync();
     model.localService.status = 'error';
-    model.localService.lastMessage = error instanceof Error ? error.message : String(error);
+    model.localService.syncState = 'error';
+    model.localService.lastMessage = error instanceof Error ? error.message : 'Connection failed; browser work was kept.';
+    notifySync(model);
     return { ok: false, message: model.localService.lastMessage };
   }
 }
 
-export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
-  model.localService.baseUrl = baseUrl;
-  model.localService.pathPolicy = null;
+export function resolveLocalServiceConnection(model: AppModel, choice: 'browser' | 'service' | 'cancel'): LocalServiceSyncResult {
+  const owner = syncOwner(model);
+  const pending = owner.choice;
+  if (!pending) return { ok: false, message: 'No pending comparison. Reconnect to compare state.' };
+  if (choice === 'cancel') {
+    setLocalServiceBaseUrl(model, model.localService.baseUrl);
+    model.localService.lastMessage = 'Connection cancelled; browser work was kept and remains unsaved.';
+    notifySync(model);
+    return { ok: false, message: model.localService.lastMessage };
+  }
+  if (pending.comparison !== browserComparison(model)) {
+    pending.comparison = browserComparison(model);
+    model.localService.lastMessage = 'Browser edits changed since comparison. Confirm your choice again; no edits were discarded.';
+    notifySync(model);
+    return { ok: false, message: model.localService.lastMessage };
+  }
+  if (choice === 'service') {
+    projectHydratedSnapshotIntoModel(model, pending.snapshot);
+    model.transcriptLifecycle.pendingCueEdits = {};
+    model.transcriptLifecycle.pendingCueTimingEdits = {};
+    model.transcriptLifecycle.pendingWordTimingEdits = {};
+    owner.baseline = JSON.stringify(model.store.snapshot());
+  }
+  owner.choice = null;
+  model.localService.revision = pending.revision;
+  model.localService.syncState = choice === 'browser' ? 'unsaved' : 'idle';
+  model.localService.lastMessage = choice === 'browser' ? 'Browser work kept. Save explicitly to replace the compared durable state; concurrent changes will conflict.' : 'Loaded compared service state; browser edits discarded by explicit confirmation.';
+  notifySync(model);
+  return { ok: true, message: model.localService.lastMessage };
 }
 
-export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void {
-  model.localService.autosaveEnabled = enabled;
+export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
+  const owner = syncOwner(model);
+  ++owner.generation;
+  owner.choice = null;
+  owner.baseline = null;
+  model.localService.baseUrl = baseUrl;
+  model.localService.pathPolicy = null;
+  model.localService.revision = null;
+  model.localService.lastSavedAt = null;
+  model.localService.status = 'disconnected';
+  model.localService.syncState = 'unsaved';
+  model.localService.lastMessage = 'Service connection changed; browser work is kept and unsaved here.';
+  notifySync(model);
+}
+
+export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void { model.localService.autosaveEnabled = enabled; }
+
+export function markUnsavedBrowserEdits(model: AppModel): void {
+  if (!['choice', 'conflict', 'error', 'saving'].includes(model.localService.syncState ?? '')) {
+    model.localService.syncState = 'unsaved';
+    model.localService.lastMessage = 'Browser changes are unsaved (transcript form drafts are not saved until applied).';
+  }
+  notifySync(model);
 }
 
 export function persistIfLocalServiceAutosaveEnabled(model: AppModel): void {
-  if (model.localService.autosaveEnabled && model.localService.status === 'connected') {
-    void saveModelToLocalService(model);
+  markUnsavedBrowserEdits(model);
+  if (model.localService.revision && !syncOwner(model).choice && model.localService.syncState !== 'conflict') {
+    if (model.localService.autosaveEnabled && model.localService.status === 'connected') void saveModelToLocalService(model);
   }
 }
 
@@ -1100,10 +1241,14 @@ async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise
   }
 }
 
-export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolean> {
+export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () => boolean = () => true): Promise<boolean> {
   const expectedHandleName = handleNameFromMedia(model);
   const sourceLabel = expectedHandleName ? `${HANDLE_LABEL_PREFIX}${expectedHandleName}` : model.browserLocalMedia.sourceLabel;
+  const mediaAtStart = model.currentMedia;
+  const browserAtStart = model.browserLocalMedia;
+  const current = () => isCurrent() && model.currentMedia === mediaAtStart && model.browserLocalMedia === browserAtStart;
   const store = await getHandleStore();
+  if (!current()) return false;
   if (!store) {
     if (expectedHandleName) {
       model.browserLocalMedia = emptyBrowserLocalMedia({
@@ -1117,6 +1262,7 @@ export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolea
   }
   try {
     const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike | undefined;
+    if (!current()) return false;
     if (!handle) {
       if (expectedHandleName) {
         model.browserLocalMedia = emptyBrowserLocalMedia({
@@ -1138,6 +1284,7 @@ export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolea
       return false;
     }
     const permissionState = await ensureBrowserHandleReadPermission(handle);
+    if (!current()) return false;
     if (permissionState !== 'granted' && permissionState !== 'unknown') {
       model.browserLocalMedia = emptyBrowserLocalMedia({
         sourceLabel,
@@ -1150,6 +1297,7 @@ export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolea
       return false;
     }
     const file = await handle.getFile();
+    if (!current()) return false;
     if (typeof URL.createObjectURL !== 'function') {
       model.browserLocalMedia = emptyBrowserLocalMedia({
         sourceLabel,
@@ -1169,6 +1317,7 @@ export async function restoreBrowserMediaHandle(model: AppModel): Promise<boolea
     };
     return true;
   } catch (error) {
+    if (!current()) return false;
     model.browserLocalMedia = emptyBrowserLocalMedia({
       sourceLabel: expectedHandleName ? `${HANDLE_LABEL_PREFIX}${expectedHandleName}` : model.browserLocalMedia.sourceLabel,
       handleName: expectedHandleName ?? model.browserLocalMedia.handleName,

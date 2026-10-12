@@ -28,12 +28,18 @@ describe('Docker browser service selection', () => {
     vi.stubEnv('VITE_LOCAL_SERVICE_BASE_URL', baseUrl);
     vi.resetModules();
     const { createAppModel, saveModelToLocalService } = await import('../../apps/web/src/model');
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { createEmptyLocalStoreSnapshot } = await import('../../packages/storage/src');
+    const revision = `sha256:${'1'.repeat(64)}`;
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => new Response(JSON.stringify(init?.method === 'PUT'
+      ? { ok: true, revision, savedAt: '2026-01-01T00:00:00.000Z' }
+      : { ok: true, config: {}, snapshot: createEmptyLocalStoreSnapshot(), revision }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const model = createAppModel();
     expect(model.localService.baseUrl).toBe(baseUrl);
     expect((await saveModelToLocalService(model)).ok).toBe(true);
-    expect(fetchMock.mock.calls[0]![0]).toBe(baseUrl === '/' ? '/api/state' : `${baseUrl}/api/state`);
-    expect(fetchMock.mock.calls[0]![1].method).toBe('PUT');
+    const prefix = baseUrl === '/' ? '' : baseUrl;
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([`${prefix}/api/status`, `${prefix}/api/state`, `${prefix}/api/state`]);
+    expect(fetchMock.mock.calls[2]![1]!.method).toBe('PUT');
+    expect(JSON.parse(fetchMock.mock.calls[2]![1]!.body as string).expectedRevision).toBe(revision);
   });
 });
