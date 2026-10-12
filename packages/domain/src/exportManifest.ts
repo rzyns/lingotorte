@@ -34,6 +34,9 @@ import type {
 import { validateSavedOccurrenceSourceContext } from './sourceContext.ts';
 
 const CURRENT_SCHEMA_VERSION = 'lingotorte.learner-export.v1' as const;
+// Retain the verified wire spelling for legacy decoders without rewriting supplied integrity.
+// A mutated decoded object never inherits this validation evidence.
+const verifiedWire = new WeakMap<object, { fingerprint: string; wire: unknown }>();
 const PRACTICE_MODES: PracticeAttempt['mode'][] = ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'];
 const PRACTICE_RESULTS: PracticeAttempt['result'][] = ['pass', 'fail', 'pass-with-hesitation', 'skipped', 'abandoned'];
 const CARD_TYPES: ReviewCard['cardType'][] = ['recognition', 'production'];
@@ -195,10 +198,10 @@ function sha256HexUtf8(text: string): string {
   return [h0, h1, h2, h3, h4, h5, h6, h7].map((word) => word.toString(16).padStart(8, '0')).join('');
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
-  const keys = Object.keys(value as object).sort();
+  const keys = Object.keys(value as object).filter(k => (value as Record<string, unknown>)[k] !== undefined).sort();
   const entries = keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`);
   return '{' + entries.join(',') + '}';
 }
@@ -272,8 +275,13 @@ export function defaultPrivacyWarnings(exporting: boolean): PrivacyWarning[] {
   return warnings;
 }
 
+function requireKnownFields(record: Record<string, unknown>, fields: readonly string[], label: string): void {
+  if (Object.keys(record).some(field => !fields.includes(field))) throw new TypeError(`${label} contains unsupported fields`);
+}
+
 function validateSavedItem(value: unknown): SavedItem {
   const record = asRecord(value, 'savedItem');
+  requireKnownFields(record, ["id", "kind", "language", "displayText", "meaning", "notes", "createdAt", "updatedAt", "archivedAt"], 'savedItem');
   const meaning = requireOptionalString(record, 'meaning');
   const notes = requireOptionalString(record, 'notes');
   const archivedAt = requireOptionalString(record, 'archivedAt');
@@ -294,10 +302,14 @@ function validateSavedItem(value: unknown): SavedItem {
 
 function validateSavedOccurrence(value: unknown, sourceContexts: Record<string, SavedOccurrenceSourceContext>): SavedOccurrence {
   const record = asRecord(value, 'savedOccurrence');
-  const sourceContextId = requireString(record, 'sourceContextId');
-  const sourceContext = sourceContexts[sourceContextId];
+  requireKnownFields(record, ["id", "savedItemId", "mediaId", "cueId", "startMs", "endMs", "selectionKind", "selectionText", "contextBefore", "contextAfter", "createdAt", "sourceContext", "sourceContextId"], 'savedOccurrence');
+  const sourceContextId = requireOptionalString(record, 'sourceContextId');
+  const sourceContext = sourceContextId === undefined ? validateSavedOccurrenceSourceContext(record.sourceContext) : (Object.hasOwn(sourceContexts, sourceContextId) ? sourceContexts[sourceContextId] : undefined);
   if (sourceContext === undefined) {
     throw new TypeError(`savedOccurrence references unknown sourceContext ${sourceContextId}`);
+  }
+  if (record.sourceContext !== undefined) {
+    if (canonicalJson(record.sourceContext) !== canonicalJson(sourceContext)) throw new TypeError('Conflicting source context spellings');
   }
   const contextBefore = requireOptionalString(record, 'contextBefore');
   const contextAfter = requireOptionalString(record, 'contextAfter');
@@ -321,6 +333,7 @@ function validateSavedOccurrence(value: unknown, sourceContexts: Record<string, 
 
 function validateReviewCard(value: unknown): ReviewCard {
   const record = asRecord(value, 'reviewCard');
+  requireKnownFields(record, ["id", "savedItemId", "savedOccurrenceId", "cardType", "promptTemplate", "createdAt", "suspendedAt", "deletedAt"], 'reviewCard');
   const suspendedAt = requireOptionalString(record, 'suspendedAt');
   const deletedAt = requireOptionalString(record, 'deletedAt');
   const base: Omit<ReviewCard, 'suspendedAt' | 'deletedAt'> = {
@@ -339,6 +352,7 @@ function validateReviewCard(value: unknown): ReviewCard {
 
 function validateReviewCardState(value: unknown): ReviewCardState {
   const record = asRecord(value, 'reviewCardState');
+  requireKnownFields(record, ["cardId", "dueAt", "stability", "difficulty", "elapsedDays", "scheduledDays", "reps", "lapses", "state", "lastReviewedAt", "fsrsVersion", "updatedAt"], 'reviewCardState');
   const lastReviewedAt = requireOptionalString(record, 'lastReviewedAt');
   const base: Omit<ReviewCardState, 'lastReviewedAt'> = {
     cardId: requireString(record, 'cardId'),
@@ -360,6 +374,7 @@ function validateReviewCardState(value: unknown): ReviewCardState {
 
 function validateReviewEvent(value: unknown): ReviewEvent {
   const record = asRecord(value, 'reviewEvent');
+  requireKnownFields(record, ["id", "cardId", "rating", "reviewedAt", "responseMs", "previousStateJson", "nextStateJson", "createdAt", "deviceId"], 'reviewEvent');
   const responseMs = record.responseMs === undefined ? undefined : requireNonNegativeInteger(record, 'responseMs');
   const deviceId = requireOptionalString(record, 'deviceId');
   const base: Omit<ReviewEvent, 'responseMs' | 'deviceId'> = {
@@ -382,15 +397,22 @@ function validatePracticeAttempt(
   sourceContexts: Record<string, SavedOccurrenceSourceContext>,
 ): PracticeAttempt {
   const record = asRecord(value, 'practiceAttempt');
-  const sourceContextId = requireString(record, 'sourceContextId');
-  const sourceContext = sourceContexts[sourceContextId];
+  requireKnownFields(record, ["id", "cardId", "mode", "result", "givenAnswer", "expectedAnswer", "responseMs", "sourceContext", "sourceContextId", "eventLink", "eventLink_reviewEventId", "reviewedAt", "createdAt"], 'practiceAttempt');
+  const sourceContextId = requireOptionalString(record, 'sourceContextId');
+  const sourceContext = sourceContextId === undefined ? validateSavedOccurrenceSourceContext(record.sourceContext) : (Object.hasOwn(sourceContexts, sourceContextId) ? sourceContexts[sourceContextId] : undefined);
   if (sourceContext === undefined) {
     throw new TypeError(`practiceAttempt references unknown sourceContext ${sourceContextId}`);
   }
+  if (record.sourceContext !== undefined && canonicalJson(record.sourceContext) !== canonicalJson(sourceContext)) throw new TypeError('Conflicting source context spellings');
   const givenAnswer = requireOptionalString(record, 'givenAnswer');
   const expectedAnswer = requireOptionalString(record, 'expectedAnswer');
   const responseMs = record.responseMs === undefined ? undefined : requireNonNegativeInteger(record, 'responseMs');
-  const reviewEventId = requireOptionalString(record, 'eventLink_reviewEventId');
+  const legacyReviewEventId = requireOptionalString(record, 'eventLink_reviewEventId');
+  const nestedLink = record.eventLink === undefined ? undefined : asRecord(record.eventLink, 'eventLink');
+  if (nestedLink !== undefined) requireKnownFields(nestedLink, ['reviewEventId'], 'eventLink');
+  const nestedReviewEventId = nestedLink === undefined ? undefined : requireOptionalString(nestedLink, 'reviewEventId');
+  if (legacyReviewEventId !== undefined && nestedLink !== undefined && legacyReviewEventId !== nestedReviewEventId) throw new TypeError('Conflicting practice eventLink spellings');
+  const reviewEventId = nestedReviewEventId ?? legacyReviewEventId;
   const base: Omit<PracticeAttempt, 'givenAnswer' | 'expectedAnswer' | 'responseMs' | 'eventLink'> = {
     id: requireString(record, 'id'),
     cardId: requireString(record, 'cardId'),
@@ -404,7 +426,7 @@ function validatePracticeAttempt(
   if (givenAnswer !== undefined) (result as unknown as Record<string, string>).givenAnswer = givenAnswer;
   if (expectedAnswer !== undefined) (result as unknown as Record<string, string>).expectedAnswer = expectedAnswer;
   if (responseMs !== undefined) (result as unknown as Record<string, number>).responseMs = responseMs;
-  if (reviewEventId !== undefined) (result as unknown as Record<string, { reviewEventId?: string }>).eventLink = { reviewEventId };
+  (result as unknown as Record<string, { reviewEventId?: string }>).eventLink = reviewEventId === undefined ? {} : { reviewEventId };
   return result;
 }
 
@@ -417,20 +439,27 @@ function validateIntegrity(value: unknown): ExportIntegrity {
   };
 }
 
+export function captureLearnerExportWire(manifest: LearnerExportManifest): unknown {
+  const evidence = verifiedWire.get(manifest);
+  return structuredClone(evidence && evidence.fingerprint === canonicalJson(manifest) ? evidence.wire : manifest);
+}
+
 export function verifyExportIntegrity(manifest: LearnerExportManifest): boolean {
-  const recomputed = computeExportIntegrity(manifest.content);
+  const evidence = verifiedWire.get(manifest);
+  const source = evidence && evidence.fingerprint === canonicalJson(manifest) ? evidence.wire as LearnerExportManifest : manifest;
+  const recomputed = computeExportIntegrity(source.content);
   return recomputed.rootHash === manifest.integrity.rootHash && recomputed.recordCount === manifest.integrity.recordCount;
 }
 
 export function buildLearnerExportContent(input: {
-  savedItems: SavedItem[];
-  savedOccurrences: SavedOccurrence[];
-  reviewCards: ReviewCard[];
-  reviewCardStates: ReviewCardState[];
-  reviewEvents: ReviewEvent[];
-  practiceAttempts: PracticeAttempt[];
+  savedItems: readonly SavedItem[];
+  savedOccurrences: readonly SavedOccurrence[];
+  reviewCards: readonly ReviewCard[];
+  reviewCardStates: readonly ReviewCardState[];
+  reviewEvents: readonly ReviewEvent[];
+  practiceAttempts: readonly PracticeAttempt[];
 }): LearnerExportContent {
-  const sourceContexts = [...new Map(input.savedOccurrences.map((o) => [JSON.stringify(o.sourceContext), o.sourceContext])).values()];
+  const sourceContexts = [...new Map([...input.savedOccurrences, ...input.practiceAttempts].map((o) => [JSON.stringify(o.sourceContext), o.sourceContext])).values()];
   const contextIdByKey = new Map(sourceContexts.map((sc, index) => [JSON.stringify(sc), `source-context-${index}`]));
   const contextIdFor = (sc: SavedOccurrenceSourceContext) => contextIdByKey.get(JSON.stringify(sc))!;
 
@@ -446,6 +475,10 @@ export function buildLearnerExportContent(input: {
 }
 
 export function validateLearnerExportManifest(value: unknown): LearnerExportManifest {
+  if (typeof value === 'object' && value !== null) {
+    const evidence = verifiedWire.get(value);
+    if (evidence && evidence.fingerprint === canonicalJson(value)) return validateLearnerExportManifest(evidence.wire);
+  }
   const record = asRecord(value, 'learner export manifest');
   const schemaVersion = requireString(record, 'schemaVersion');
   if (schemaVersion !== CURRENT_SCHEMA_VERSION) {
@@ -457,6 +490,9 @@ export function validateLearnerExportManifest(value: unknown): LearnerExportMani
   const sourceContexts: SavedOccurrenceSourceContext[] = sourceContextsRaw.map((sc, index) =>
     validateSavedOccurrenceSourceContext({ ...asRecord(sc, `sourceContext[${index}]`), sourceContextId: `source-context-${index}` }),
   );
+  for (let index = 0; index < sourceContextsRaw.length; index++) {
+    if (canonicalJson(sourceContextsRaw[index]) !== canonicalJson(sourceContexts[index])) throw new TypeError('sourceContext contains unsupported fields');
+  }
   const sourceContextsById = Object.fromEntries(sourceContexts.map((sc, index) => [`source-context-${index}`, sc]));
 
   const savedItems = requireArray(contentRaw, 'savedItems').map(validateSavedItem);
@@ -477,7 +513,7 @@ export function validateLearnerExportManifest(value: unknown): LearnerExportMani
   };
 
   const integrity = validateIntegrity(record.integrity);
-  const recomputed = computeExportIntegrity(content);
+  const recomputed = computeExportIntegrity(contentRaw as unknown as LearnerExportContent);
   if (recomputed.rootHash !== integrity.rootHash || recomputed.recordCount !== integrity.recordCount) {
     throw new TypeError('Export integrity check failed: manifest content does not match integrity root hash');
   }
@@ -493,6 +529,7 @@ export function validateLearnerExportManifest(value: unknown): LearnerExportMani
   };
   const result: LearnerExportManifest = base as LearnerExportManifest;
   if (deviceId !== undefined) (result as unknown as Record<string, string>).deviceId = deviceId;
+  verifiedWire.set(result, { fingerprint: canonicalJson(result), wire: structuredClone(value) });
   return result;
 }
 
@@ -533,7 +570,7 @@ function compareRestoreCollection<T extends RestoreComparableRecord>(
   const counts = { ...EMPTY_OPERATION_COUNTS };
   const operations: RestoreOperationWithRecord<T>[] = [];
   for (const record of importedRecords) {
-    const local = localRecords[record.id];
+    const local = Object.hasOwn(localRecords, record.id) ? localRecords[record.id] : undefined;
     const action: RestoreOperationAction =
       local === undefined ? 'added' : canonicalJson(local) === canonicalJson(record) ? 'skipped-identical' : 'updated';
     if (action === 'skipped-identical') {
@@ -550,7 +587,7 @@ function compareRestoreArrayCollection<T extends RestoreComparableRecord>(
   importedRecords: readonly T[],
   localRecords: readonly T[],
 ): RestoreCollectionComparison<T> {
-  const localById: Record<string, T> = {};
+  const localById: Record<string, T> = Object.create(null);
   for (const record of localRecords) {
     localById[record.id] = record;
   }
@@ -561,7 +598,7 @@ function compareReviewCardStateCollection(
   importedRecords: readonly ReviewCardState[],
   localRecords: Readonly<Record<string, ReviewCardState>>,
 ): RestoreCollectionComparison<ReviewCardState & RestoreComparableRecord> {
-  const localByCardId: Record<string, ReviewCardState & RestoreComparableRecord> = {};
+  const localByCardId: Record<string, ReviewCardState & RestoreComparableRecord> = Object.create(null);
   for (const state of Object.values(localRecords)) {
     localByCardId[state.cardId] = { ...state, id: state.cardId };
   }

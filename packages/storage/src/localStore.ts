@@ -59,23 +59,7 @@ export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
 }
 
 function cloneSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
-  return {
-    mediaAssets: { ...snapshot.mediaAssets },
-    mediaObservations: [...snapshot.mediaObservations],
-    subtitleTracks: { ...snapshot.subtitleTracks },
-    cues: { ...snapshot.cues },
-    transcriptWordTimings: { ...snapshot.transcriptWordTimings },
-    savedItems: { ...snapshot.savedItems },
-    savedOccurrences: { ...snapshot.savedOccurrences },
-    reviewCards: { ...snapshot.reviewCards },
-    reviewCardStates: { ...snapshot.reviewCardStates },
-    reviewEvents: [...snapshot.reviewEvents],
-    practiceAttempts: [...snapshot.practiceAttempts],
-    exportJobs: { ...snapshot.exportJobs },
-    providerPolicies: { ...snapshot.providerPolicies },
-    importJobs: { ...snapshot.importJobs },
-    importJobEvents: [...snapshot.importJobEvents],
-  };
+  return structuredClone(snapshot);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -114,6 +98,27 @@ export function normalizeLocalStoreSnapshot(value: unknown): LocalStoreSnapshot 
 export class LocalStore {
   private state: LocalStoreSnapshot;
 
+  private pendingRestoreIntent: { mode: 'merge' | 'replace-active'; manifest: unknown } | undefined;
+
+  snapshotPendingRestoreIntent() { return structuredClone(this.pendingRestoreIntent); }
+
+  private restoreAudit: { reviewEvents: ReviewEvent[]; practiceAttempts: PracticeAttempt[] } = { reviewEvents: [], practiceAttempts: [] };
+
+  snapshotRestoreAudit() {
+    return structuredClone(this.restoreAudit);
+  }
+
+  installRestoreCandidate(snapshot: LocalStoreSnapshot, audit: { reviewEvents: ReviewEvent[]; practiceAttempts: PracticeAttempt[] }, intent?: { mode: 'merge' | 'replace-active'; manifest: unknown }): LocalStoreSnapshot {
+    const next = cloneSnapshot(snapshot);
+    const nextAudit = structuredClone(audit);
+    const nextIntent = structuredClone(intent);
+    const result = cloneSnapshot(next);
+    this.state = next;
+    this.restoreAudit = nextAudit;
+    this.pendingRestoreIntent = nextIntent;
+    return result;
+  }
+
   constructor(initialSnapshot: LocalStoreSnapshot = createEmptyLocalStoreSnapshot()) {
     this.state = cloneSnapshot(normalizeLocalStoreSnapshot(initialSnapshot));
   }
@@ -132,12 +137,12 @@ export class LocalStore {
   }
 
   putMediaAsset(asset: MediaAsset): LocalStoreSnapshot {
-    this.state.mediaAssets[asset.id] = asset;
+    Object.defineProperty(this.state.mediaAssets, asset.id, { value: asset, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getMediaAsset(id: UUID): MediaAsset | undefined {
-    return this.state.mediaAssets[id];
+    return Object.hasOwn(this.state.mediaAssets, id) ? this.state.mediaAssets[id] : undefined;
   }
 
   listMediaAssets(): MediaAsset[] {
@@ -156,12 +161,12 @@ export class LocalStore {
   }
 
   putSubtitleTrack(track: SubtitleTrack): LocalStoreSnapshot {
-    this.state.subtitleTracks[track.id] = track;
+    Object.defineProperty(this.state.subtitleTracks, track.id, { value: track, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getSubtitleTrack(id: UUID): SubtitleTrack | undefined {
-    return this.state.subtitleTracks[id];
+    return Object.hasOwn(this.state.subtitleTracks, id) ? this.state.subtitleTracks[id] : undefined;
   }
 
   listSubtitleTracksForMedia(mediaId: UUID): SubtitleTrack[] {
@@ -169,12 +174,12 @@ export class LocalStore {
   }
 
   putCue(cue: Cue): LocalStoreSnapshot {
-    this.state.cues[cue.id] = cue;
+    Object.defineProperty(this.state.cues, cue.id, { value: cue, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getCue(id: UUID): Cue | undefined {
-    return this.state.cues[id];
+    return Object.hasOwn(this.state.cues, id) ? this.state.cues[id] : undefined;
   }
 
   listCuesForTrack(trackId: UUID): Cue[] {
@@ -184,7 +189,7 @@ export class LocalStore {
   }
 
   putTranscriptWordTiming(timing: TranscriptWordTiming): LocalStoreSnapshot {
-    this.state.transcriptWordTimings[timing.id] = timing;
+    Object.defineProperty(this.state.transcriptWordTimings, timing.id, { value: timing, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
@@ -201,16 +206,16 @@ export class LocalStore {
   }
 
   putSavedItem(item: SavedItem): LocalStoreSnapshot {
-    this.state.savedItems[item.id] = item;
+    Object.defineProperty(this.state.savedItems, item.id, { value: item, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getSavedItem(id: UUID): SavedItem | undefined {
-    return this.state.savedItems[id];
+    return Object.hasOwn(this.state.savedItems, id) ? this.state.savedItems[id] : undefined;
   }
 
   getSavedOccurrence(id: UUID): SavedOccurrence | undefined {
-    return this.state.savedOccurrences[id];
+    return Object.hasOwn(this.state.savedOccurrences, id) ? this.state.savedOccurrences[id] : undefined;
   }
 
   listSavedOccurrences(): SavedOccurrence[] {
@@ -218,7 +223,7 @@ export class LocalStore {
   }
 
   putSavedOccurrence(occurrence: SavedOccurrence): LocalStoreSnapshot {
-    this.state.savedOccurrences[occurrence.id] = occurrence;
+    Object.defineProperty(this.state.savedOccurrences, occurrence.id, { value: occurrence, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
@@ -227,21 +232,21 @@ export class LocalStore {
   }
 
   putReviewCard(card: ReviewCard): LocalStoreSnapshot {
-    this.state.reviewCards[card.id] = card;
+    Object.defineProperty(this.state.reviewCards, card.id, { value: card, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getReviewCard(id: UUID): ReviewCard | undefined {
-    return this.state.reviewCards[id];
+    return Object.hasOwn(this.state.reviewCards, id) ? this.state.reviewCards[id] : undefined;
   }
 
   putReviewCardState(state: ReviewCardState): LocalStoreSnapshot {
-    this.state.reviewCardStates[state.cardId] = state;
+    Object.defineProperty(this.state.reviewCardStates, state.cardId, { value: state, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getReviewCardState(cardId: UUID): ReviewCardState | undefined {
-    return this.state.reviewCardStates[cardId];
+    return Object.hasOwn(this.state.reviewCardStates, cardId) ? this.state.reviewCardStates[cardId] : undefined;
   }
 
   addReviewEvent(event: ReviewEvent): LocalStoreSnapshot {
@@ -267,12 +272,12 @@ export class LocalStore {
   }
 
   putExportJob(job: ExportJob): LocalStoreSnapshot {
-    this.state.exportJobs[job.id] = job;
+    Object.defineProperty(this.state.exportJobs, job.id, { value: job, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getExportJob(id: UUID): ExportJob | undefined {
-    return this.state.exportJobs[id];
+    return Object.hasOwn(this.state.exportJobs, id) ? this.state.exportJobs[id] : undefined;
   }
 
   listExportJobs(): ExportJob[] {
@@ -280,12 +285,12 @@ export class LocalStore {
   }
 
   putProviderPolicy(policy: ProviderPolicyEntry): LocalStoreSnapshot {
-    this.state.providerPolicies[policy.id] = policy;
+    Object.defineProperty(this.state.providerPolicies, policy.id, { value: policy, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getProviderPolicy(id: UUID): ProviderPolicyEntry | undefined {
-    return this.state.providerPolicies[id];
+    return Object.hasOwn(this.state.providerPolicies, id) ? this.state.providerPolicies[id] : undefined;
   }
 
   listProviderPolicies(): ProviderPolicyEntry[] {
@@ -293,12 +298,12 @@ export class LocalStore {
   }
 
   putImportJob(job: ImportJob): LocalStoreSnapshot {
-    this.state.importJobs[job.id] = job;
+    Object.defineProperty(this.state.importJobs, job.id, { value: job, enumerable: true, writable: true, configurable: true });
     return this.clone();
   }
 
   getImportJob(id: UUID): ImportJob | undefined {
-    return this.state.importJobs[id];
+    return Object.hasOwn(this.state.importJobs, id) ? this.state.importJobs[id] : undefined;
   }
 
   addImportJobEvent(event: ImportJobEvent): LocalStoreSnapshot {

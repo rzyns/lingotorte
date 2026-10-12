@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LocalStore, SavedOccurrenceService, PracticeService, ExportService, RestoreService } from '../../packages/storage/src';
 import { makeMediaAsset, validateSavedOccurrenceSourceContext } from '../../packages/domain/src';
-import { verifyExportIntegrity, buildRestorePreview } from '../../packages/domain/src';
+import { verifyExportIntegrity, buildRestorePreview, buildLearnerExportContent, computeExportIntegrity } from '../../packages/domain/src';
 import { sha256File } from '../../packages/storage/src/mediaHelpers';
 import { parseSrt } from '../../packages/subtitles/src/import';
 import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
@@ -345,9 +345,13 @@ describe('P6 export/restore manifest', () => {
       },
     };
 
+    const validContent = buildLearnerExportContent({
+      ...updatedManifest.content, savedOccurrences: updatedManifest.content.savedOccurrences,
+    });
+    const validManifest = { ...updatedManifest, content: validContent, integrity: computeExportIntegrity(validContent) };
     const restoreService = new RestoreService(target.store);
     const beforeSnapshot = target.store.snapshot();
-    const preview = restoreService.preview(updatedManifest);
+    const preview = restoreService.preview(validManifest);
     const afterPreviewSnapshot = target.store.snapshot();
 
     expect(afterPreviewSnapshot).toEqual(beforeSnapshot);
