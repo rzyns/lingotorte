@@ -108,7 +108,7 @@ describe('P7 transcript lifecycle domain gates', () => {
     })).toThrow(/approved transcript/i);
   });
 
-  it('exports approved transcript provenance and warning flags with learner source contexts', () => {
+  it('exports captured source context without enriching it from current transcript metadata', () => {
     const { store, service, asset, track, cue, sourceContext } = setupDraftTranscriptStore();
     store.putSubtitleTrack({ ...track, transcriptStatus: 'approved' });
     service.saveSelection({
@@ -125,12 +125,7 @@ describe('P7 transcript lifecycle domain gates', () => {
     const manifest = new ExportService(store, '0.0.0-p7').buildManifest();
 
     expect(manifest.content.sourceContexts).toHaveLength(1);
-    expect(manifest.content.sourceContexts[0]!.transcriptTrack).toMatchObject({
-      trackId: track.id,
-      status: 'approved',
-      sourceKind: 'youtube-auto-caption',
-      sourceVideoId: 'abcdefghijk',
-      warningFlags: ['autoCaption', 'timingUnverified'],
-    });
+    expect(manifest.content.sourceContexts[0]).toEqual(sourceContext);
+    expect(manifest.content.sourceContexts[0]!.transcriptTrack).toBeUndefined();
   });
 });
