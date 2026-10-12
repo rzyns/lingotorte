@@ -20,6 +20,8 @@
 
 These IDs are stable navigation, **not a status snapshot**. Ask Beads for current state.
 
+The [historical work index](docs/plan/archive/historical-work-index.md) locates the verified external Git/source archive and summarizes retired local Windows diagnostic work. It preserves recovery and useful conclusions without adding obsolete tooling to the active application or reviving stopped execution.
+
 The [Docker-primary replacement scope](docs/plan/docker-primary-runtime.md) records Janusz's runtime/LAN decision. It supersedes native Windows qualification as the required product prerequisite, not the frozen Windows results or their exhausted execution allowances. Docker qualification must produce its own Linux/container/browser evidence. Remaining request-authenticity and learner-state correctness issues stay required; trusted-LAN binding is not an authentication claim. Query canonical edges rather than interpreting old Windows diagnostic handoffs as the next assignment.
 
 ## Vocabulary and why this shape
