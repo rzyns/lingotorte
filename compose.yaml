@@ -13,7 +13,13 @@ services:
     environment:
       LINGOTORTE_HOST: 0.0.0.0
       LINGOTORTE_PORT: "5174"
+      LINGOTORTE_PRIVATE_DELIVERY: socket
+      LINGOTORTE_PUBLIC_ORIGINS: ${LINGOTORTE_PUBLIC_ORIGINS:?Set exact browser-visible HTTP origins}
+      LINGOTORTE_UI_ORIGINS: ${LINGOTORTE_PUBLIC_ORIGINS:?Set exact browser-visible HTTP origins}
+      LINGOTORTE_HEALTH_AUTHORITY: 127.0.0.1:5174
       LINGOTORTE_ALLOW_ONLINE_PROVIDERS: "false"
+    tmpfs:
+      - /run/lingotorte-pairing:rw,noexec,nosuid,nodev,size=64k,mode=0700,uid=1000,gid=1000
     volumes:
       - state:/state
       - scratch:/scratch
@@ -37,6 +43,7 @@ services:
     stop_grace_period: 30s
     environment:
       LINGOTORTE_WEB_HOST: 0.0.0.0
+      LINGOTORTE_PUBLIC_ORIGINS: ${LINGOTORTE_PUBLIC_ORIGINS:?Set exact browser-visible HTTP origins}
       LINGOTORTE_WEB_ALLOWED_HOSTS: ${LINGOTORTE_WEB_ALLOWED_HOSTS:-localhost}
       LINGOTORTE_API_PROXY_TARGET: http://api:5174
     ports:

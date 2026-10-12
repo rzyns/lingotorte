@@ -1,11 +1,12 @@
+import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   activeLoopRangeForSelection,
   clearVisualSourceRange,
-  createAppModel,
   exportLearnerState,
   importFixtureMediaAndSubtitles,
+  setLocalServiceBaseUrl,
   setVisualSourceRange,
 } from '../../apps/web/src/model.ts';
 import { rerenderApp } from '../../apps/web/src/app.ts';
@@ -40,7 +41,7 @@ function buttonByText(text: string): HTMLButtonElement {
 
 describe('B6 visual source range model', () => {
   it('creates an ordered integer range, clamps it to media duration, and clears it', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.player.durationMs = 10_000;
 
     expect(setVisualSourceRange(model, 8_900.8, 2_100.2)).toEqual({ startMs: 2_100, endMs: 8_901 });
@@ -65,8 +66,30 @@ describe('B6 visual source range player UI', () => {
     dom.window.close();
   });
 
+  it('endpoint edit fences the real Player snippet continuation and leaves replacement UI untouched', async () => {
+    let complete!: (response: Response) => void;
+    const waiting = new Promise<Response>(resolve => { complete = resolve; });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify({ job: { id: 'pending' } }))).mockImplementationOnce(() => waiting);
+    vi.stubGlobal('fetch', fetcher);
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:forbidden');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const model = pairedModel();
+    await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
+    model.localService.status = 'connected'; model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
+    model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
+    setVisualSourceRange(model, 100, 1000); rerenderApp(model); buttonByText('Prepare source audio').click();
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    setLocalServiceBaseUrl(model, 'http://selected-private-host:7514'); rerenderApp(model);
+    const before = document.querySelector('[data-testid="source-range-panel"]')?.textContent;
+    complete(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } })));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(fetcher).toHaveBeenCalledTimes(2); expect(create).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeNull();
+    expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toBe(before);
+  });
+
   it('renders keyboard-operable range handles with visible start, end, duration, and separate loop actions', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 4_000;
     setVisualSourceRange(model, 500, 2_000);
@@ -87,7 +110,7 @@ describe('B6 visual source range player UI', () => {
   });
 
   it('updates the selected interval from actual range-handle input events', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 4_000;
     rerenderApp(model);
@@ -108,7 +131,7 @@ describe('B6 visual source range player UI', () => {
   });
 
   it('seeds only the visual range from timed transcript text and applies or clears the loop deliberately', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     const cue = model.cues[0]!;
     model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
@@ -154,7 +177,7 @@ describe('B6 visual source range player UI', () => {
   it('allows a long visual loop but rejects 30,001 ms snippets before fetch', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 60_000;
     setVisualSourceRange(model, 1_000, 31_000);
@@ -181,7 +204,7 @@ describe('B6 visual source range player UI', () => {
   it('fails closed before fetch for licensed or missing current media', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
@@ -214,7 +237,7 @@ describe('B6 visual source range player UI', () => {
   ] as const)('rejects %s before fetch', async (_label, serviceStatus, configuredPath, expectedStatus) => {
     const fetchImpl = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
@@ -241,12 +264,12 @@ describe('B6 visual source range player UI', () => {
         return new Response(JSON.stringify({ job: { status: 'failed', message: `ffmpeg failed at ${privatePath}` } }), { status: 200 });
       }
       if (String(input).includes('/api/jobs/')) {
-        return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 });
+        return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } }), { status: 200 });
       }
       return new Response(privatePath, { status: 500 });
     });
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
@@ -265,13 +288,13 @@ describe('B6 visual source range player UI', () => {
   it('does not promote browser audio or claim deletion when DELETE fails', async () => {
     const responses = [
       new Response(JSON.stringify({ job: { id: 'job-delete-failure' } }), { status: 201 }),
-      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } }), { status: 200 }),
       new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
       new Response('/private/scratch/opaque.wav', { status: 500 }),
     ];
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => responses.shift()!));
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:must-not-exist');
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);
@@ -292,7 +315,7 @@ describe('B6 visual source range player UI', () => {
   it('prepares the exact selected range, renders deliberate audio, deletes service bytes, and cleans its browser URL', async () => {
     const responses = [
       new Response(JSON.stringify({ job: { id: 'job-1' } }), { status: 201 }),
-      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } }), { status: 200 }),
       new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
       new Response(null, { status: 204 }),
     ];
@@ -300,7 +323,7 @@ describe('B6 visual source range player UI', () => {
     vi.stubGlobal('fetch', fetchImpl);
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:visual-range');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_250, 3_500);
@@ -330,7 +353,7 @@ describe('B6 visual source range player UI', () => {
   });
 
   it('keeps manual handles usable and reports a timed-selection miss without changing learner text selection', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     const cue = model.cues[0]!;
     model.selection = {
@@ -358,9 +381,9 @@ describe('B6 visual source range player UI', () => {
         return new Response(JSON.stringify({ job: { id: range === 1_000 ? 'old' : 'new' } }), { status: 201 });
       }
       if (url.endsWith('/api/jobs/old')) return oldPoll;
-      if (url.endsWith('/api/jobs/new')) return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'new', url: '/api/snippets/new', mimeType: 'audio/wav' } } }), { status: 200 });
-      if (url.endsWith('/api/snippets/new') && init?.method !== 'DELETE') return new Response(new Blob(['new']), { status: 200 });
-      if (url.endsWith('/api/snippets/old') && init?.method !== 'DELETE') return new Response(new Blob(['old']), { status: 200 });
+      if (url.endsWith('/api/jobs/new')) return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000002', url: '/api/snippets/00000000-0000-4000-8000-000000000002', mimeType: 'audio/wav' } } }), { status: 200 });
+      if (url.endsWith('/api/snippets/00000000-0000-4000-8000-000000000002') && init?.method !== 'DELETE') return new Response(new Blob(['new']), { status: 200 });
+      if (url.endsWith('/api/snippets/00000000-0000-4000-8000-000000000003') && init?.method !== 'DELETE') return new Response(new Blob(['old']), { status: 200 });
       return new Response(null, { status: 204 });
     });
     vi.stubGlobal('fetch', fetchImpl);
@@ -368,7 +391,7 @@ describe('B6 visual source range player UI', () => {
       .mockReturnValueOnce('blob:new')
       .mockReturnValueOnce('blob:old');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -387,7 +410,7 @@ describe('B6 visual source range player UI', () => {
     prepare.click();
     await vi.waitFor(() => expect((document.querySelector('[data-testid="source-range-panel"] audio') as HTMLAudioElement | null)?.src).toContain('blob:new'));
 
-    resolveOldPoll(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'old', url: '/api/snippets/old', mimeType: 'audio/wav' } } }), { status: 200 }));
+    resolveOldPoll(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000003', url: '/api/snippets/00000000-0000-4000-8000-000000000003', mimeType: 'audio/wav' } } }), { status: 200 }));
     await vi.waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:old'));
     expect((document.querySelector('[data-testid="source-range-panel"] audio') as HTMLAudioElement).src).toContain('blob:new');
     expect(createObjectURL).toHaveBeenCalledTimes(2);
@@ -403,14 +426,14 @@ describe('B6 visual source range player UI', () => {
         return new Response(JSON.stringify({ job: { id: startMs === 1_000 ? 'old-failure' : 'new-success' } }), { status: 201 });
       }
       if (url.endsWith('/api/jobs/old-failure')) return oldPoll;
-      if (url.endsWith('/api/jobs/new-success')) return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'new', url: '/api/snippets/new', mimeType: 'audio/wav' } } }), { status: 200 });
-      if (url.endsWith('/api/snippets/new') && init?.method !== 'DELETE') return new Response(new Blob(['new']), { status: 200 });
+      if (url.endsWith('/api/jobs/new-success')) return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000002', url: '/api/snippets/00000000-0000-4000-8000-000000000002', mimeType: 'audio/wav' } } }), { status: 200 });
+      if (url.endsWith('/api/snippets/00000000-0000-4000-8000-000000000002') && init?.method !== 'DELETE') return new Response(new Blob(['new']), { status: 200 });
       return new Response(null, { status: 204 });
     });
     vi.stubGlobal('fetch', fetchImpl);
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:new-success');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -443,7 +466,7 @@ describe('B6 visual source range player UI', () => {
         return new Response(JSON.stringify({ job: { id: 'same-id-success' } }), { status: 201 });
       }
       if (url.endsWith('/api/jobs/same-id-success')) return pendingPoll;
-      if (url.endsWith('/api/snippets/same-id-success') && init?.method !== 'DELETE') {
+      if (url.endsWith('/api/snippets/00000000-0000-4000-8000-000000000004') && init?.method !== 'DELETE') {
         return new Response(new Blob(['wav']), { status: 200 });
       }
       return new Response(null, { status: 204 });
@@ -451,7 +474,7 @@ describe('B6 visual source range player UI', () => {
     vi.stubGlobal('fetch', fetchImpl);
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:same-id-success');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -464,7 +487,7 @@ describe('B6 visual source range player UI', () => {
 
     model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
     rerenderApp(model);
-    resolvePoll(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'same-id-success', url: '/api/snippets/same-id-success', mimeType: 'audio/wav' } } }), { status: 200 }));
+    resolvePoll(new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000004', url: '/api/snippets/00000000-0000-4000-8000-000000000004', mimeType: 'audio/wav' } } }), { status: 200 }));
     await vi.waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:same-id-success'));
 
     const panel = document.querySelector('[data-testid="source-range-panel"]')!;
@@ -484,7 +507,7 @@ describe('B6 visual source range player UI', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -518,7 +541,7 @@ describe('B6 visual source range player UI', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal('fetch', fetchImpl);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -555,7 +578,7 @@ describe('B6 visual source range player UI', () => {
         return new Response(JSON.stringify({ job: { id: `job-${job}` } }), { status: 201 });
       }
       if (/\/api\/jobs\/job-\d+$/.test(url)) {
-        const id = url.match(/job-\d+$/)![0];
+        const id = `00000000-0000-4000-8000-${String(job).padStart(12, '0')}`;
         return new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: id, url: `/api/snippets/${id}`, mimeType: 'audio/wav' } } }), { status: 200 });
       }
       if (url.includes('/api/snippets/') && init?.method !== 'DELETE') return new Response(new Blob(['wav']), { status: 200 });
@@ -565,7 +588,7 @@ describe('B6 visual source range player UI', () => {
     let urlNumber = 0;
     vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:lifecycle-${++urlNumber}`);
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     model.localService.status = 'connected';
@@ -611,14 +634,14 @@ describe('B6 visual source range player UI', () => {
   it('preserves Save occurrence source context after visual range, loop, and snippet operations', async () => {
     const responses = [
       new Response(JSON.stringify({ job: { id: 'job-save-context' } }), { status: 201 }),
-      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } }), { status: 200 }),
       new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
       new Response(null, { status: 204 }),
     ];
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => responses.shift()!));
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:save-context');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     const media = model.currentMedia!;
     const cue = model.cues[0]!;
@@ -670,7 +693,7 @@ describe('B6 visual source range player UI', () => {
   });
 
   it('keeps visual range and snippet lifecycle out of learner snapshots and exports', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.player.durationMs = 10_000;
     setVisualSourceRange(model, 1_000, 2_000);

@@ -1,3 +1,4 @@
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -7,7 +8,6 @@ import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 import {
   ALLOWED_ASR_MODEL_NAMES,
   resolveDefaultAsrModelName,
-  startLingotorteLocalService,
 } from '../../apps/local-service/src/server';
 import type { CommandRunner, ElevenLabsHttpClient } from '../../packages/local-transcription/src';
 
@@ -30,7 +30,7 @@ async function makeTempConfig() {
 
 async function waitForJob(origin: string, id: string): Promise<Record<string, unknown>> {
   for (let i = 0; i < 20; i++) {
-    const body = await fetch(`${origin}/api/jobs/${id}`).then((response) => response.json()) as Record<string, unknown>;
+    const body = await pairedFetch(`${origin}/api/jobs/${id}`).then((response) => response.json()) as Record<string, unknown>;
     const job = body.job as Record<string, unknown> | undefined;
     if (job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled') return body;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
@@ -68,19 +68,19 @@ describe('Lingotorte loopback local service', () => {
 
   it('serves a wildcard listener through loopback while retaining private provider defaults', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService({ ...config, host: '0.0.0.0' });
+    const service = await startPairedService({ ...config, host: '0.0.0.0', serviceHostname: '127.0.0.1' });
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
     const origin = `http://127.0.0.1:${service.config.port}`;
-    expect(await fetch(`${origin}/api/health`).then((response) => response.json())).toMatchObject({ ok: true });
-    expect(await fetch(`${origin}/api/status`).then((response) => response.json())).toMatchObject({ config: { host: '0.0.0.0', allowOnlineProviders: false } });
+    expect(await pairedFetch(`${origin}/api/health`).then((response) => response.json())).toMatchObject({ ok: true });
+    expect(await pairedFetch(`${origin}/api/status`).then((response) => response.json())).toMatchObject({ config: { host: '0.0.0.0', allowOnlineProviders: false } });
   });
 
   it('serves health and redacted status on loopback', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
@@ -88,10 +88,10 @@ describe('Lingotorte loopback local service', () => {
 
     expect(service.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
 
-    const health = await fetch(`${service.origin}/api/health`).then((response) => response.json());
+    const health = await pairedFetch(`${service.origin}/api/health`).then((response) => response.json());
     expect(health).toMatchObject({ ok: true, service: 'lingotorte-local-service' });
 
-    const status = await fetch(`${service.origin}/api/status`).then((response) => response.json());
+    const status = await pairedFetch(`${service.origin}/api/status`).then((response) => response.json());
     expect(status.ok).toBe(true);
     expect(status.config.host).toBe('127.0.0.1');
     expect(status.config.databasePath).toBe('[local-sqlite]');
@@ -101,7 +101,7 @@ describe('Lingotorte loopback local service', () => {
 
   it('persists a LocalStoreSnapshot through the HTTP state API and SQLite restart', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => rm(root, { recursive: true, force: true }));
 
     const snapshot = createEmptyLocalStoreSnapshot();
@@ -116,40 +116,40 @@ describe('Lingotorte loopback local service', () => {
     });
     snapshot.mediaAssets[media.id] = media;
 
-    const saveResponse = await fetch(`${service.origin}/api/state`, {
+    const saveResponse = await pairedFetch(`${service.origin}/api/state`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ snapshot, expectedRevision: (await fetch(`${service.origin}/api/state`).then(r => r.json())).revision }),
+      body: JSON.stringify({ snapshot, expectedRevision: (await pairedFetch(`${service.origin}/api/state`).then(r => r.json())).revision }),
     });
     expect(saveResponse.status).toBe(200);
     await service.close();
 
-    const restarted = await startLingotorteLocalService(config);
+    const restarted = await startPairedService(config);
     cleanups.push(() => restarted.close());
-    const loaded = await fetch(`${restarted.origin}/api/state`).then((response) => response.json());
+    const loaded = await pairedFetch(`${restarted.origin}/api/state`).then((response) => response.json());
 
     expect(loaded.snapshot.mediaAssets[media.id]).toEqual(media);
   });
 
   it('creates, reads, and cancels local jobs without external side effects', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'waiting', payload: { label: 'test job' } }),
     }).then((response) => response.json());
     expect(created.job).toMatchObject({ kind: 'waiting', status: 'queued' });
 
-    const read = await fetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json());
+    const read = await pairedFetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json());
     expect(read.job.id).toBe(created.job.id);
 
-    const cancelled = await fetch(`${service.origin}/api/jobs/${created.job.id}/cancel`, { method: 'POST' }).then((response) => response.json());
+    const cancelled = await pairedFetch(`${service.origin}/api/jobs/${created.job.id}/cancel`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((response) => response.json());
     expect(cancelled.job.status).toBe('cancelled');
   });
 
@@ -165,14 +165,14 @@ describe('Lingotorte loopback local service', () => {
         ],
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     };
-    const disabled = await startLingotorteLocalService(config, { fetchImpl });
+    const disabled = await startPairedService(config, { fetchImpl });
     let disabledClosed = false;
     cleanups.push(async () => {
       if (!disabledClosed) await disabled.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const disabledCreated = await fetch(`${disabled.origin}/api/jobs`, {
+    const disabledCreated = await pairedFetch(`${disabled.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -187,9 +187,9 @@ describe('Lingotorte loopback local service', () => {
 
     await disabled.close();
     disabledClosed = true;
-    const enabled = await startLingotorteLocalService({ ...config, allowOnlineProviders: true }, { fetchImpl });
+    const enabled = await startPairedService({ ...config, allowOnlineProviders: true }, { fetchImpl });
     cleanups.push(() => enabled.close());
-    const created = await fetch(`${enabled.origin}/api/jobs`, {
+    const created = await pairedFetch(`${enabled.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -246,7 +246,7 @@ describe('Lingotorte loopback local service', () => {
       };
     };
 
-    const disabled = await startLingotorteLocalService(config, {
+    const disabled = await startPairedService(config, {
       commandRunner: runner,
       elevenLabsApiKey: 'test-elevenlabs-key',
       elevenLabsHttpClient,
@@ -256,7 +256,7 @@ describe('Lingotorte loopback local service', () => {
       if (!disabledClosed) await disabled.close();
       await rm(root, { recursive: true, force: true });
     });
-    const disabledCreated = await fetch(`${disabled.origin}/api/jobs`, {
+    const disabledCreated = await pairedFetch(`${disabled.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -273,13 +273,13 @@ describe('Lingotorte loopback local service', () => {
     await disabled.close();
     disabledClosed = true;
 
-    const enabled = await startLingotorteLocalService({ ...config, allowOnlineProviders: true }, {
+    const enabled = await startPairedService({ ...config, allowOnlineProviders: true }, {
       commandRunner: runner,
       elevenLabsApiKey: 'test-elevenlabs-key',
       elevenLabsHttpClient,
     });
     cleanups.push(() => enabled.close());
-    const denied = await fetch(`${enabled.origin}/api/jobs`, {
+    const denied = await pairedFetch(`${enabled.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -293,7 +293,7 @@ describe('Lingotorte loopback local service', () => {
     expect(requests).toHaveLength(0);
     expect(calls).toHaveLength(0);
 
-    const created = await fetch(`${enabled.origin}/api/jobs`, {
+    const created = await pairedFetch(`${enabled.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -393,13 +393,13 @@ describe('Lingotorte loopback local service', () => {
       }
       throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
     };
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -469,7 +469,7 @@ describe('Lingotorte loopback local service', () => {
         stderr: '',
       };
     };
-    const service = await startLingotorteLocalService(config, {
+    const service = await startPairedService(config, {
       commandRunner: runner,
       defaultModelName: 'small',
     });
@@ -478,10 +478,10 @@ describe('Lingotorte loopback local service', () => {
       await rm(root, { recursive: true, force: true });
     });
 
-    const status = await fetch(`${service.origin}/api/status`).then((response) => response.json());
+    const status = await pairedFetch(`${service.origin}/api/status`).then((response) => response.json());
     expect(status.config.defaultAsrModelName).toBe('small');
 
-    const create = async (payload: Record<string, unknown>) => fetch(`${service.origin}/api/jobs`, {
+    const create = async (payload: Record<string, unknown>) => pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'local-transcription', payload: { mediaPath, alignWords: false, ...payload } }),
@@ -513,13 +513,13 @@ describe('Lingotorte loopback local service', () => {
     const runner: CommandRunner = async () => {
       throw new Error(`ffmpeg could not open ${mediaPath} in ${resolve(root)}`);
     };
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -543,7 +543,7 @@ describe('Lingotorte loopback local service', () => {
 
   it('cleans declared scratch artifacts without touching paths outside the scratch root', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
@@ -554,7 +554,7 @@ describe('Lingotorte loopback local service', () => {
     await writeFile(scratchFile, 'scratch');
     await writeFile(outsideFile, 'outside');
 
-    const result = await fetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST' }).then((response) => response.json());
+    const result = await pairedFetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((response) => response.json());
 
     expect(result).toMatchObject({ ok: true });
     expect(result.deletedFiles).toBeGreaterThanOrEqual(1);

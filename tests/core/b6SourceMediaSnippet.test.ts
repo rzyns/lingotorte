@@ -1,3 +1,5 @@
+import { pairTransport } from '../../apps/web/src/pairedTransport.ts';
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { nativeFixture, nativeFixtureDirectory } from '../helpers/nativeFixtures.ts';
 import { nativePathPolicy } from '../../packages/domain/src/nativePaths.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +8,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { CommandRunner } from '../../packages/local-transcription/src/index.ts';
 import { extractSourceAudioSnippet } from '../../packages/local-transcription/src/index.ts';
-import { startLingotorteLocalService } from '../../apps/local-service/src/server.ts';
 import { prepareSourceAudioSnippet, redactSourceAudioSnippetError, releaseSourceAudioSnippet } from '../../apps/web/src/sourceAudioSnippet.ts';
 
 const roots: string[] = [];
@@ -23,7 +24,7 @@ async function temporaryConfig() {
 
 async function waitForJob(origin: string, id: string) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    const body = await fetch(`${origin}/api/jobs/${id}`).then((response) => response.json()) as { job: Record<string, unknown> };
+    const body = await pairedFetch(`${origin}/api/jobs/${id}`).then((response) => response.json()) as { job: Record<string, unknown> };
     if (['completed', 'failed', 'cancelled'].includes(String(body.job.status))) return body.job;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -79,9 +80,9 @@ describe('loopback snippet service', () => {
       await writeFile(args.at(-1)!, Buffer.from('RIFF-synthetic-wave'));
       return { exitCode: 0, stdout: '', stderr: '' };
     };
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     try {
-      const created = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 100, endMs: 600 } }) }).then((response) => response.json()) as { job: Record<string, unknown> };
+      const created = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 100, endMs: 600 } }) }).then((response) => response.json()) as { job: Record<string, unknown> };
       const completed = await waitForJob(service.origin, String(created.job.id));
       const serialized = JSON.stringify({ created, completed });
       expect(serialized).not.toContain(root);
@@ -89,15 +90,15 @@ describe('loopback snippet service', () => {
       expect(completed).toMatchObject({ status: 'completed', result: { mimeType: 'audio/wav', startMs: 100, endMs: 600, durationMs: 500 } });
       const result = completed.result as { snippetId: string; url: string };
       expect(result.snippetId).toMatch(/^[0-9a-f-]{36}$/);
-      const persistedState = await fetch(`${service.origin}/api/state`).then((response) => response.text());
+      const persistedState = await pairedFetch(`${service.origin}/api/state`).then((response) => response.text());
       expect(persistedState).not.toContain(result.snippetId);
       expect(persistedState).not.toContain(mediaPath);
-      const audio = await fetch(`${service.origin}${result.url}`);
+      const audio = await pairedFetch(`${service.origin}${result.url}`);
       expect(audio.headers.get('content-type')).toBe('audio/wav');
       expect(await audio.text()).toBe('RIFF-synthetic-wave');
-      expect((await fetch(`${service.origin}${result.url}`, { method: 'DELETE' })).status).toBe(204);
-      expect((await fetch(`${service.origin}${result.url}`)).status).toBe(404);
-      expect((await fetch(`${service.origin}/api/snippets/not-an-opaque-id`)).status).toBe(404);
+      expect((await pairedFetch(`${service.origin}${result.url}`, { method: 'DELETE' })).status).toBe(204);
+      expect((await pairedFetch(`${service.origin}${result.url}`)).status).toBe(404);
+      expect((await pairedFetch(`${service.origin}/api/snippets/not-an-opaque-id`)).status).toBe(404);
     } finally {
       await service.close();
     }
@@ -110,17 +111,17 @@ describe('loopback snippet service', () => {
     await import('node:fs/promises').then(({ mkdir }) => mkdir(snippetsDir, { recursive: true }));
     await writeFile(join(snippetsDir, 'stale.wav'), 'stale');
     const runner: CommandRunner = async (_command, args) => { await writeFile(args.at(-1)!, 'wav'); return { exitCode: 0, stdout: '', stderr: '' }; };
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     expect(await readdir(snippetsDir)).toEqual(['stale.wav']); // unowned parent artifacts survive
     snippetsDir = join(service.config.scratchDir, 'source-audio-snippets');
     expect(await readdir(snippetsDir)).toEqual([]);
     const ids: string[] = [];
     for (let index = 0; index < 17; index += 1) {
-      const created = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath: join(root, 'owned.mkv'), startMs: index, endMs: index + 1 } }) }).then((response) => response.json()) as { job: { id: string } };
+      const created = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath: join(root, 'owned.mkv'), startMs: index, endMs: index + 1 } }) }).then((response) => response.json()) as { job: { id: string } };
       const completed = await waitForJob(service.origin, created.job.id);
       ids.push((completed.result as { snippetId: string }).snippetId);
     }
-    expect((await fetch(`${service.origin}/api/snippets/${ids[0]}`)).status).toBe(404);
+    expect((await pairedFetch(`${service.origin}/api/snippets/${ids[0]}`)).status).toBe(404);
     expect((await readdir(snippetsDir))).toHaveLength(16);
     await service.close();
     expect(await readdir(snippetsDir)).toEqual([]);
@@ -133,9 +134,9 @@ describe('loopback snippet service', () => {
     const mediaPath = join(root, 'owned.mkv');
     await writeFile(mediaPath, 'synthetic');
     const gated = gatedSnippetRunner();
-    const service = await startLingotorteLocalService(config, { commandRunner: gated.runner });
+    const service = await startPairedService(config, { commandRunner: gated.runner });
     snippetsDir = join(service.config.scratchDir, 'source-audio-snippets');
-    const createdResponse = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) });
+    const createdResponse = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) });
     await createdResponse.json();
     await gated.started;
 
@@ -152,12 +153,12 @@ describe('loopback snippet service', () => {
     const mediaPath = join(root, 'owned.mkv');
     await writeFile(mediaPath, 'synthetic');
     const gated = gatedSnippetRunner();
-    const service = await startLingotorteLocalService(config, { commandRunner: gated.runner });
+    const service = await startPairedService(config, { commandRunner: gated.runner });
     try {
-      const created = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) }).then((response) => response.json()) as { job: { id: string } };
+      const created = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }) }).then((response) => response.json()) as { job: { id: string } };
       await gated.started;
 
-      const cleanupPromise = fetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST' });
+      const cleanupPromise = pairedFetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       setTimeout(gated.releaseRunner, 25);
       const cleanupResponse = await cleanupPromise;
       expect(cleanupResponse.status).toBe(200);
@@ -165,7 +166,7 @@ describe('loopback snippet service', () => {
       await gated.finished;
 
       expect(await readdir(service.config.scratchDir)).toEqual(['source-audio-snippets']);
-      const settled = await fetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json()) as { job: Record<string, unknown> };
+      const settled = await pairedFetch(`${service.origin}/api/jobs/${created.job.id}`).then((response) => response.json()) as { job: Record<string, unknown> };
       expect(settled.job).toMatchObject({ status: 'cancelled' });
       expect(settled.job).not.toHaveProperty('result');
       expect(JSON.stringify(settled)).not.toContain(root);
@@ -180,7 +181,7 @@ describe('browser snippet lifecycle', () => {
     const message = redactSourceAudioSnippetError(new Error('ffmpeg failed at /private/owned/movie.mkv using blob:secret-audio'));
     expect(message).not.toContain('/private/owned/movie.mkv');
     expect(message).not.toContain('blob:secret-audio');
-    expect(message).toContain('[local path redacted]');
+    expect(message).toBe('Local source audio preparation failed. Check the connection and pair again if required.');
   });
 
   it('fetches a full blob, deletes service bytes, and revokes superseded URLs', async () => {
@@ -198,9 +199,10 @@ describe('browser snippet lifecycle', () => {
       return responses.shift()!;
     };
     const lifecycle = { objectUrl: null as string | null };
-    const first = await prepareSourceAudioSnippet({ pathPolicy: nativePathPolicy(process.platform), baseUrl: 'http://127.0.0.1:5174', mediaPath: nativeFixture('owned/movie.mkv'), startMs: 1, endMs: 2, fetchImpl, createObjectURL, revokeObjectURL, lifecycle });
+    const first = await prepareSourceAudioSnippet({ pathPolicy: nativePathPolicy(process.platform), transport: pairTransport({}, 'http://127.0.0.1:5174', 'A'.repeat(43)), mediaPath: nativeFixture('owned/movie.mkv'), startMs: 1, endMs: 2, fetchImpl, createObjectURL, revokeObjectURL, lifecycle });
     expect(first.objectUrl).toBe('blob:first');
-    expect(fetchCalls[2]!.init).toBeUndefined();
+    expect(fetchCalls[2]!.init).toMatchObject({ credentials: 'omit', redirect: 'error' });
+    expect(new Headers(fetchCalls[2]!.init?.headers).has('authorization')).toBe(true);
     expect(fetchCalls[3]!.init).toMatchObject({ method: 'DELETE' });
     lifecycle.objectUrl = first.objectUrl;
     releaseSourceAudioSnippet(lifecycle, revokeObjectURL);
@@ -211,14 +213,14 @@ describe('browser snippet lifecycle', () => {
     const createObjectURL = vi.fn().mockReturnValue('blob:must-not-exist');
     const responses = [
       new Response(JSON.stringify({ job: { id: 'job-delete-failure' } }), { status: 201 }),
-      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: 'opaque', url: '/api/snippets/opaque', mimeType: 'audio/wav' } } }), { status: 200 }),
+      new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '11111111-1111-4111-8111-111111111111', url: '/api/snippets/11111111-1111-4111-8111-111111111111', mimeType: 'audio/wav' } } }), { status: 200 }),
       new Response(new Blob(['wav'], { type: 'audio/wav' }), { status: 200 }),
       new Response('still present at /private/scratch/opaque.wav', { status: 500 }),
     ];
     const lifecycle = { objectUrl: null as string | null };
 
     await expect(prepareSourceAudioSnippet({ pathPolicy: nativePathPolicy(process.platform),
-      baseUrl: 'http://127.0.0.1:5174',
+      transport: pairTransport({}, 'http://127.0.0.1:5174', 'A'.repeat(43)),
       mediaPath: nativeFixture('owned/movie.mkv'),
       startMs: 1,
       endMs: 2,

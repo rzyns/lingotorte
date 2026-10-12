@@ -1,5 +1,6 @@
+import { SYNTHETIC_CAPABILITY, pairedModel } from './pairingFixture.ts';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createAppModel, connectLocalService, saveModelToLocalService, importFixtureMediaAndSubtitles, resolveLocalServiceConnection, setLocalServiceBaseUrl, setLocalServiceAutosave, persistIfLocalServiceAutosaveEnabled, restoreBrowserMediaHandle } from '../../apps/web/src/model';
+import { createAppModel, pairLocalService, connectLocalService, saveModelToLocalService, importFixtureMediaAndSubtitles, resolveLocalServiceConnection, setLocalServiceBaseUrl, setLocalServiceAutosave, persistIfLocalServiceAutosaveEnabled, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 
 const revision = `sha256:${'1'.repeat(64)}`;
@@ -7,7 +8,7 @@ const response = (value: unknown, status = 200) => new Response(JSON.stringify(v
 const deferred = <T>() => { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; };
 afterEach(() => vi.unstubAllGlobals());
 async function dirtyModel() {
-  const model = createAppModel();
+  const model = pairedModel();
   await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
   return model;
 }
@@ -22,7 +23,7 @@ it('preserves dirty nonempty browser work when connecting to different durable c
 });
 
 it('does not discard an edit made while connect awaits its snapshot', async () => {
-  const model = createAppModel(); const waiting = deferred<Response>();
+  const model = pairedModel(); const waiting = deferred<Response>();
   vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/api/status') ? Promise.resolve(response({ config: {} })) : waiting.promise));
   const connecting = connectLocalService(model);
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
@@ -47,7 +48,7 @@ it('does not report newer browser edits saved by an older durable acknowledgemen
 });
 
 it('treats unsaved deletion of all previously loaded browser content as dirty on reconnect', async () => {
-  const model = createAppModel(); const remote = await dirtyModel();
+  const model = pairedModel(); const remote = await dirtyModel();
   vi.stubGlobal('fetch', vi.fn(async (url: string) => response(url.endsWith('/api/status') ? { config: {} } : { snapshot: remote.store.snapshot(), revision })));
   expect((await connectLocalService(model)).ok).toBe(true);
   model.store.replaceSnapshot(createEmptyLocalStoreSnapshot());
@@ -104,7 +105,7 @@ it.each(['failure', 'missing-ack'])('does not claim durable completion for %s', 
 });
 
 it('revokes pending connect ownership on URL edit and on reconnect, including stale errors', async () => {
-  const model = createAppModel(); const first = deferred<Response>();
+  const model = pairedModel(); const first = deferred<Response>();
   vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/api/status') ? Promise.resolve(response({ config: {} })) : first.promise));
   const old = connectLocalService(model);
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
@@ -114,6 +115,7 @@ it('revokes pending connect ownership on URL edit and on reconnect, including st
   expect((await old).ok).toBe(false); expect(model.currentMedia).toBeNull(); expect(model.localService).toEqual(current);
   const stale = deferred<Response>();
   vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/api/status') ? Promise.resolve(response({ config: {} })) : stale.promise));
+  pairLocalService(model, SYNTHETIC_CAPABILITY);
   const reconnecting = connectLocalService(model);
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   await connectEmpty(model); const final = { ...model.localService };

@@ -1,3 +1,4 @@
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -5,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { nativePathPolicy } from '../../packages/domain/src/nativePaths.ts';
 import { pathInside } from '../../packages/domain/src/nativePathsNode.ts';
 import { mutablePathsFromEnv, assertMutablePaths, repositoryRoots } from '../../apps/local-service/src/nativeConfig.ts';
-import { configFromEnv, startLingotorteLocalService } from '../../apps/local-service/src/server.ts';
+import { configFromEnv } from '../../apps/local-service/src/server.ts';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence.ts';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src/localStore.ts';
 
@@ -97,15 +98,15 @@ describe('service authoritative path boundary', () => {
   it('advertises capability, refuses invalid paths for every job before runners, jobs or scratch writes', async () => {
     const { root, config } = await fixture();
     const runner = vi.fn(async () => ({ exitCode: 0, stdout: '{"streams":[]}', stderr: '' }));
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     try {
-      const status = await fetch(`${service.origin}/api/status`).then((r) => r.json());
+      const status = await pairedFetch(`${service.origin}/api/status`).then((r) => r.json());
       expect(status.config.pathPolicy).toEqual(nativePathPolicy(process.platform));
       expect(JSON.stringify(status)).not.toContain(root);
       const kinds = ['local-transcription', 'elevenlabs-scribe', 'embedded-subtitle-list', 'embedded-subtitle-extract', 'source-audio-snippet'];
       const invalid = ['relative.mp4', 'C:clip.mp4', '//server/share/clip.mp4', '\\\\?\\C:\\clip.mp4', 'blob:playback', 'browser-file-handle:clip.mp4', ':memory:', process.platform === 'win32' ? '/clip.mp4' : 'C:/Media/clip.mp4'];
       for (const kind of kinds) for (const mediaPath of invalid) {
-        const response = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, payload: { mediaPath, streamIndex: 0, outputFormat: 'srt', role: 'target', startMs: 0, endMs: 1 } }) });
+        const response = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, payload: { mediaPath, streamIndex: 0, outputFormat: 'srt', role: 'target', startMs: 0, endMs: 1 } }) });
         expect(response.status).toBe(400);
         expect(await response.json()).not.toHaveProperty('job');
       }
@@ -116,12 +117,12 @@ describe('service authoritative path boundary', () => {
   it('rejects missing files, directories and media inside scratch without a runner bypass', async () => {
     const { root, config } = await fixture();
     const runner = vi.fn(async () => ({ exitCode: 0, stdout: '{"streams":[]}', stderr: '' }));
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     try {
       const scratchMedia = join(config.scratchDir, 'input.mp4');
       await writeFile(scratchMedia, 'synthetic');
       for (const mediaPath of [join(root, 'missing.mp4'), root, scratchMedia]) {
-        const response = await fetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }) });
+        const response = await pairedFetch(`${service.origin}/api/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }) });
         expect(response.status).toBe(400);
         await response.json();
       }
@@ -133,10 +134,10 @@ describe('service authoritative path boundary', () => {
     const target = join(root, 'dedicated-scratch-target');
     await mkdir(target);
     await symlink(target, config.scratchDir, process.platform === 'win32' ? 'junction' : 'dir');
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     try {
       expect(pathInside(target, service.config.scratchDir)).toBe(true);
-      const cleanup = await fetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST' });
+      const cleanup = await pairedFetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       expect(cleanup.status).toBe(200);
       await cleanup.json();
     } finally { await service.close(); }
@@ -147,13 +148,13 @@ describe('service authoritative path boundary', () => {
     await mkdir(config.scratchDir);
     const parentFile = join(config.scratchDir, 'operator-file.txt');
     await writeFile(parentFile, 'keep');
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     try {
       const cacheFile = join(config.modelCacheDir, 'synthetic-cache.txt');
       await writeFile(cacheFile, 'cache stays');
       await writeFile(join(service.config.scratchDir, 'owned.txt'), 'delete');
       await symlink(config.modelCacheDir, join(service.config.scratchDir, 'linked-cache'), process.platform === 'win32' ? 'junction' : 'dir');
-      const response = await fetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST' });
+      const response = await pairedFetch(`${service.origin}/api/artifacts/cleanup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ ok: true, deletedFiles: 1 });
       expect(await readFile(parentFile, 'utf8')).toBe('keep');

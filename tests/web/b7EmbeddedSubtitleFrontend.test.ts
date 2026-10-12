@@ -1,9 +1,11 @@
+import { SYNTHETIC_CAPABILITY, pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeMediaAsset } from '@lingotorte/domain';
 import {
+  pairLocalService,
   approveTranscriptTrack,
-  createAppModel,
+
   createCorrectedTranscriptVersion,
   exportLearnerState,
   extractSelectedEmbeddedSubtitleDraft,
@@ -65,7 +67,7 @@ function deferred<T>() {
 }
 
 function prepareExtractionModel(mediaPath = '/synthetic/extract-owned.mkv') {
-  const model = createAppModel();
+  const model = pairedModel();
   model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
   const media = ownedMedia();
@@ -107,7 +109,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it.each(['', 'relative/movie.mkv', 'blob:synthetic', 'browser-file-handle:synthetic.mkv', 'https://example.invalid/movie.mkv', '~'])('rejects non-absolute embedded media path %j before fetch', async (mediaPath) => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
@@ -144,14 +146,14 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('shows a distinct unreachable-service state and an exact zero-track state', async () => {
-    const disconnected = createAppModel();
+    const disconnected = pairedModel();
     disconnected.view = 'library';
     disconnected.currentMedia = ownedMedia();
     rerenderApp(disconnected);
     expect(button('List embedded subtitle tracks').disabled).toBe(true);
     expect(document.body.textContent).toContain('compatible local service path policy');
 
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
@@ -172,7 +174,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('normalizes an actually unreachable configured loopback service without exposing fetch details', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.embeddedSubtitle.mediaPath = '/synthetic/unreachable-owned.mkv';
@@ -185,7 +187,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('polls queued and running list jobs through to a strictly decoded completion', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.embeddedSubtitle.mediaPath = '/synthetic/polling-owned.mkv';
@@ -213,7 +215,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('ignores an in-flight listing completion after the embedded media path changes', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     setEmbeddedSubtitleMediaPath(model, '/owned/old.mkv');
@@ -239,7 +241,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('ignores an in-flight listing failure after the embedded media path changes', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     setEmbeddedSubtitleMediaPath(model, '/owned/old.mkv');
@@ -264,7 +266,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     ['failed', 'ffprobe failed for /private/list-sentinel.mkv', 'ffprobe failed for [local-path]'],
     ['cancelled', 'status cancelled', 'status cancelled'],
   ])('reports an explicit path-safe %s listing job state', async (status, message, safeMessage) => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     setEmbeddedSubtitleMediaPath(model, '/private/list-sentinel.mkv');
@@ -277,7 +279,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('reports an explicit bounded polling deadline', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     setEmbeddedSubtitleMediaPath(model, '/private/deadline-sentinel.mkv');
@@ -369,7 +371,9 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
 
   it('routes list and extraction requests only through the configured loopback base URL', async () => {
     const model = prepareExtractionModel('/owned/routing.mkv');
-    model.localService.baseUrl = 'http://127.0.0.1:49174/custom/';
+    pairLocalService(model, SYNTHETIC_CAPABILITY, 'http://127.0.0.1:49174');
+    model.localService.status = 'connected';
+    model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     const urls: string[] = [];
     let phase: 'list' | 'extract' = 'list';
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -386,14 +390,14 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     phase = 'extract';
     await extractSelectedEmbeddedSubtitleDraft(model, { pollAttempts: 1, pollDelayMs: 0 });
     expect(urls).toEqual([
-      'http://127.0.0.1:49174/custom/api/jobs', 'http://127.0.0.1:49174/custom/api/jobs/list',
-      'http://127.0.0.1:49174/custom/api/jobs', 'http://127.0.0.1:49174/custom/api/jobs/extract',
+      'http://127.0.0.1:49174/api/jobs', 'http://127.0.0.1:49174/api/jobs/list',
+      'http://127.0.0.1:49174/api/jobs', 'http://127.0.0.1:49174/api/jobs/extract',
     ]);
     expect(urls.every((url) => new URL(url).hostname === '127.0.0.1')).toBe(true);
   });
 
   it('lists metadata without auto-selection, extracts an explicit supported selection, and imports a path-safe draft', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
@@ -490,7 +494,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('clears stale selection after a path change and redacts echoed extraction failures', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
@@ -538,7 +542,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
   });
 
   it('fails closed with the import-validation state when completed extraction cues are malformed', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.localService.status = 'connected';
     model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     const media = ownedMedia();

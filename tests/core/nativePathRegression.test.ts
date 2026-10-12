@@ -1,10 +1,10 @@
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertNativeOutput } from '../../packages/domain/src/nativePathsNode.ts';
 import { assertMutablePaths } from '../../apps/local-service/src/nativeConfig.ts';
-import { startLingotorteLocalService } from '../../apps/local-service/src/server.ts';
 import { extractAudioWithFfmpeg, extractEmbeddedSubtitleTrack, extractSourceAudioSnippet, listEmbeddedSubtitleTracks } from '../../packages/local-transcription/src/index.ts';
 
 const roots: string[] = [];
@@ -52,7 +52,7 @@ describe('native file-ancestor regression', () => {
       expect.soft(() => assertMutablePaths(config)).toThrow(TypeError);
       let startupError: unknown;
       try {
-        const service = await startLingotorteLocalService(config, { commandRunner: runner });
+        const service = await startPairedService(config, { commandRunner: runner });
         await service.close();
       } catch (error) { startupError = error; }
       expect.soft(startupError).toBeInstanceOf(TypeError);
@@ -106,7 +106,7 @@ describe('future database directory-role regression', () => {
         expect.soft(() => assertMutablePaths(config)).toThrow(TypeError);
         let startupError: unknown;
         try {
-          const service = await startLingotorteLocalService(config, { commandRunner: runner });
+          const service = await startPairedService(config, { commandRunner: runner });
           await service.close();
         } catch (error) { startupError = error; }
         expect.soft(startupError).toBeInstanceOf(TypeError);
@@ -135,9 +135,9 @@ describe('future database directory-role regression', () => {
         [field]: layout === 'junction' ? alias : target,
       };
       expect(() => assertMutablePaths(config)).not.toThrow();
-      const service = await startLingotorteLocalService(config);
+      const service = await startPairedService(config);
       try {
-        expect((await fetch(`${service.origin}/api/status`)).status).toBe(200);
+        expect((await pairedFetch(`${service.origin}/api/status`)).status).toBe(200);
         expect((await readFile(config.databasePath)).length).toBeGreaterThan(0);
       } finally { await service.close(); }
     });

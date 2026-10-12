@@ -1,4 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { socketDelivery, nativeTerminalDelivery } from './privateDelivery.ts';
+import { admit, deny, canonicalOrigin, freezePolicy, type AdmissionPolicy } from './requestAdmission.ts';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -29,7 +31,6 @@ import { importSubtitle } from '../../../packages/subtitles/src/import.ts';
 
 const SERVICE_NAME = 'lingotorte-local-service';
 const SERVICE_VERSION = '0.1.0';
-const MAX_JSON_BODY_BYTES = 5 * 1024 * 1024;
 export const ALLOWED_ASR_MODEL_NAMES = ['tiny', 'base', 'small', 'medium', 'large-v3'] as const;
 export type AsrModelName = typeof ALLOWED_ASR_MODEL_NAMES[number];
 const DEFAULT_ASR_MODEL_NAME: AsrModelName = 'base';
@@ -38,6 +39,11 @@ const ASR_MODEL_VALIDATION_MESSAGE = `modelName must be one of: ${ALLOWED_ASR_MO
 export type LocalServiceConfig = Readonly<{
   host: string;
   port: number;
+  serviceHostname?: string;
+  publicOrigins?: readonly string[];
+  uiOrigins?: readonly string[];
+  healthAuthority?: string;
+  privateNetworkOrigins?: readonly string[];
   dataDir?: string;
   databasePath: string;
   scratchDir: string;
@@ -63,6 +69,10 @@ type LocalJob = Readonly<{
 }>;
 
 export type LocalServiceRuntime = Readonly<{
+  receiveCapability?: (capability: string) => void | Promise<void>;
+  observeState?: (read: () => unknown) => void;
+  deliveryReady?: () => Promise<boolean>;
+  startupCheckpoint?: (stage: 'bound' | 'authority-frozen' | 'resources-ready', port: number) => void | Promise<void>;
   commandRunner?: CommandRunner;
   scriptRoot?: string;
   pythonPath?: string;
@@ -100,30 +110,12 @@ function sendJson(response: ServerResponse, statusCode: number, value: unknown):
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
-    'access-control-allow-origin': 'http://127.0.0.1:5173',
-    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type',
   });
   response.end(body);
 }
 
 function sendError(response: ServerResponse, statusCode: number, message: string): void {
   sendJson(response, statusCode, { ok: false, error: message });
-}
-
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buffer.byteLength;
-    if (total > MAX_JSON_BODY_BYTES) {
-      throw new TypeError('JSON body is too large.');
-    }
-    chunks.push(buffer);
-  }
-  if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
 }
 
 function objectBody(value: unknown): Record<string, unknown> {
@@ -685,6 +677,65 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     if (command !== undefined) nativeExecutable(command);
   }
   assertMutablePaths(config);
+  if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) throw new TypeError('Invalid service port.');
+  const hostname = config.serviceHostname ?? config.host;
+  const displayHostname = hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
+  canonicalOrigin(`http://${displayHostname}`);
+  const uiOrigins = config.uiOrigins ?? ['http://127.0.0.1:5173'];
+  uiOrigins.forEach(canonicalOrigin);
+  if (config.publicOrigins && (!config.publicOrigins.length || config.port === 0)) throw new TypeError('Docker requires fixed port and public origins.');
+  config.publicOrigins?.forEach(canonicalOrigin);
+  if (config.publicOrigins && (!config.uiOrigins ||
+      JSON.stringify([...new Set(config.publicOrigins)].sort()) !== JSON.stringify([...new Set(config.uiOrigins)].sort()) ||
+      config.privateNetworkOrigins?.length ||
+      (config.healthAuthority !== undefined && config.healthAuthority !== `127.0.0.1:${config.port}`))) {
+    throw new TypeError('Docker requires matching exact public/UI origins and a separate loopback health-only authority.');
+  }
+  if (!config.publicOrigins && ['0.0.0.0', '::', '[::]'].includes(hostname)) throw new TypeError('An exact advertised service hostname is required for wildcard bind.');
+  // Validate the entire ephemeral policy before binding; port 1 is only a
+  // non-listening validation placeholder, never an accepted authority.
+  if (config.port === 0) freezePolicy([`http://${displayHostname}:1`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins);
+  let policy: AdmissionPolicy | undefined = config.port === 0 ? undefined : freezePolicy(
+    config.publicOrigins ?? [`http://${displayHostname}${config.port === 80 ? '' : `:${config.port}`}`], uiOrigins,
+    config.healthAuthority, config.privateNetworkOrigins);
+  if (!runtime.receiveCapability) throw new TypeError('Private capability delivery is required.');
+  const capability = randomBytes(32);
+  await runtime.receiveCapability(capability.toString('base64url'));
+  const deliveryReady = runtime.deliveryReady ?? (async () => true);
+  if (!await deliveryReady()) throw new TypeError('Private delivery is unavailable.');
+  let admissionReady = false;
+  let dispatch: ((request: IncomingMessage, response: ServerResponse, path: string, body?: Record<string, unknown>) => Promise<void>) | undefined;
+  const boundary = async (request: IncomingMessage, response: ServerResponse, expectContinue = false) => {
+    if (!admissionReady || !policy || !dispatch) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
+    try {
+      const admitted = await admit(request, response, policy, capability, deliveryReady, expectContinue);
+      // Revalidate after awaited body/receiver work at the dispatch boundary.
+      if (!admissionReady || !await deliveryReady() || !admissionReady) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
+      if (admitted.preflight) { response.writeHead(204); response.end(); return; }
+      await dispatch(request, response, admitted.path, admitted.body);
+    } catch (error) { if (!response.headersSent) deny(response, error); else response.destroy(); }
+  };
+  const server: Server = createServer((request, response) => { void boundary(request, response); });
+  server.on('checkContinue', (request, response) => { void boundary(request, response, true); });
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 15_000;
+  server.timeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  const listen = () => new Promise<void>((resolvePromise, rejectPromise) => {
+    server.once('error', rejectPromise);
+    server.listen(config.port, config.host, () => { server.off('error', rejectPromise); resolvePromise(); });
+  });
+  let openedPersistence: SqliteLocalPersistence | undefined;
+  let startupScratch: string | undefined;
+  try {
+  if (config.port === 0) {
+    await listen();
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new TypeError('Missing actual service authority.');
+    await runtime.startupCheckpoint?.('bound', address.port);
+    policy = freezePolicy([`http://${displayHostname}:${address.port}`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins);
+    await runtime.startupCheckpoint?.('authority-frozen', address.port);
+  }
   const configuredScratchDir = config.scratchDir;
   await mkdir(dirname(config.databasePath), { recursive: true });
   await mkdir(config.scratchDir, { recursive: true });
@@ -692,17 +743,23 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
 
   // Every artifact belongs to this newly-created run child, never the operator parent.
   const runScratchDir = await mkdtemp(join(resolvedNativePath(config.scratchDir), 'run-'));
+  startupScratch = runScratchDir;
   config = { ...config, scratchDir: runScratchDir };
   const snippetScratchDir = join(runScratchDir, 'source-audio-snippets');
   await mkdir(snippetScratchDir);
 
   const persistence = SqliteLocalPersistence.open(config.databasePath);
+  openedPersistence = persistence;
   const jobs = new Map<string, LocalJob>();
   const snippets = new Map<string, { path: string; lastAccess: number }>();
   const inFlightSnippetJobs = new Set<Promise<void>>();
   let snippetAccessCounter = 0;
+  let allocatedJobIds = 0;
+  let allocatedSnippetIds = 0;
   let snippetLifecycle: 'open' | 'cleaning' | 'closing' = 'open';
   let artifactCleanupPromise: Promise<number> | undefined;
+  runtime.observeState?.(() => ({ state: persistence.loadVersionedSnapshot(), jobs: [...jobs.entries()],
+    snippets: [...snippets.entries()], snippetAccessCounter, allocatedJobIds, allocatedSnippetIds, snippetLifecycle, inFlight: inFlightSnippetJobs.size }));
 
   const deleteSnippet = async (snippetId: string): Promise<boolean> => {
     const entry = snippets.get(snippetId);
@@ -724,6 +781,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     try {
       const payload = sourceAudioSnippetPayload(queued.payload, runtime);
       const snippetId = randomUUID();
+      allocatedSnippetIds++;
       outputPath = join(snippetScratchDir, `${snippetId}.wav`);
       if (!pathInside(snippetScratchDir, outputPath)) throw new TypeError('Invalid snippet output location.');
       const extracted = await extractSourceAudioSnippet({
@@ -936,25 +994,11 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     })();
   };
 
-  const server: Server = createServer(async (request, response) => {
+  dispatch = async (request, response, path, admittedBody) => {
     try {
-      if (request.method === 'OPTIONS') {
-        sendJson(response, 204, {});
-        return;
-      }
-      const requestUrl = new URL(request.url ?? '/', `http://${config.host}`);
-      const path = requestUrl.pathname;
 
       if (request.method === 'GET' && path === '/api/health') {
-        const serverAddress = server.address();
-        const port = serverAddress && typeof serverAddress === 'object' ? serverAddress.port : config.port;
-        sendJson(response, 200, {
-          ok: true,
-          service: SERVICE_NAME,
-          version: SERVICE_VERSION,
-          host: config.host,
-          port,
-        });
+        sendJson(response, 200, { ok: true, service: SERVICE_NAME, version: SERVICE_VERSION });
         return;
       }
 
@@ -969,7 +1013,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'PUT' && path === '/api/state') {
-        const body = objectBody(await readJsonBody(request));
+        const body = objectBody(admittedBody);
         if (body.expectedRevision === undefined) {
           sendError(response, 428, 'A durable state revision is required. Read state before saving.');
           return;
@@ -990,7 +1034,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'POST' && path === '/api/jobs') {
-        const body = objectBody(await readJsonBody(request));
+        const body = objectBody(admittedBody);
         const kind = jobKind(body.kind);
         if (kind === 'source-audio-snippet' && snippetLifecycle !== 'open') {
           sendError(response, 409, 'Source snippet lifecycle cleanup is in progress.');
@@ -1009,6 +1053,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           assertMediaOutsideScratch(mediaPath, configuredScratchDir);
           assertReadableNativeFile(mediaPath);
         }
+        allocatedJobIds++;
         const job: LocalJob = {
           id: randomUUID(),
           kind,
@@ -1058,13 +1103,13 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         if (!entry || !pathInside(snippetScratchDir, entry.path)) { sendError(response, 404, 'Source snippet not found.'); return; }
         entry.lastAccess = ++snippetAccessCounter;
         const body = await readFile(entry.path);
-        response.writeHead(200, { 'content-type': 'audio/wav', 'content-length': body.byteLength, 'cache-control': 'no-store', 'access-control-allow-origin': 'http://127.0.0.1:5173' });
+        response.writeHead(200, { 'content-type': 'audio/wav', 'content-length': body.byteLength, 'cache-control': 'no-store' });
         response.end(body);
         return;
       }
       if (snippetMatch && request.method === 'DELETE') {
         if (!await deleteSnippet(snippetMatch[1]!)) { sendError(response, 404, 'Source snippet not found.'); return; }
-        response.writeHead(204, { 'access-control-allow-origin': 'http://127.0.0.1:5173' });
+        response.writeHead(204);
         response.end();
         return;
       }
@@ -1079,33 +1124,25 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     } catch (error) {
       sendError(response, 400, error instanceof TypeError ? error.message : 'Local operation failed; paths and tool diagnostics are redacted.');
     }
-  });
+  };
 
-  await new Promise<void>((resolvePromise, rejectPromise) => {
-    const onError = (error: Error) => {
-      server.off('listening', onListening);
-      rejectPromise(error);
-    };
-    const onListening = () => {
-      server.off('error', onError);
-      resolvePromise();
-    };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen(config.port, config.host);
-  }).catch((error: unknown) => { persistence.close(); throw error; });
+  await runtime.startupCheckpoint?.('resources-ready', (server.address() as { port: number } | null)?.port ?? config.port);
+  if (!await deliveryReady()) throw new TypeError('Private delivery is unavailable.');
+  if (config.port !== 0) await listen();
+  admissionReady = true;
 
   const address = server.address();
   if (!address || typeof address === 'string') {
     throw new TypeError('Unable to resolve local service address.');
   }
-  const origin = `http://${config.host}:${address.port}`;
+  const origin = config.publicOrigins?.[0] ?? `http://${displayHostname}${address.port === 80 ? '' : `:${address.port}`}`;
   const runtimeConfig: LocalServiceConfig = { ...config, port: address.port };
 
   return {
     origin,
     config: runtimeConfig,
     async close() {
+      admissionReady = false;
       snippetLifecycle = 'closing';
       await new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => {
@@ -1120,13 +1157,26 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       finally { persistence.close(); }
     },
   };
+  } catch (error) {
+    admissionReady = false;
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>(resolvePromise => server.close(() => resolvePromise()));
+    openedPersistence?.close();
+    if (startupScratch) await rm(startupScratch, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServiceConfig {
   const paths = mutablePathsFromEnv(env, nativePathPolicy(process.platform).platform, homedir());
   return {
     host: env.LINGOTORTE_HOST ?? '127.0.0.1',
-    port: Number.parseInt(env.LINGOTORTE_PORT ?? '5174', 10),
+    port: /^(0|[1-9][0-9]{0,4})$/.test(env.LINGOTORTE_PORT ?? '5174') ? Number(env.LINGOTORTE_PORT ?? '5174') : NaN,
+    ...(env.LINGOTORTE_SERVICE_HOSTNAME ? { serviceHostname: env.LINGOTORTE_SERVICE_HOSTNAME } : {}),
+    ...(env.LINGOTORTE_PUBLIC_ORIGINS !== undefined ? { publicOrigins: env.LINGOTORTE_PUBLIC_ORIGINS.split(',') } : {}),
+    ...(env.LINGOTORTE_UI_ORIGINS !== undefined ? { uiOrigins: env.LINGOTORTE_UI_ORIGINS.split(',') } : {}),
+    ...(env.LINGOTORTE_HEALTH_AUTHORITY ? { healthAuthority: env.LINGOTORTE_HEALTH_AUTHORITY } : {}),
+    ...(env.LINGOTORTE_PRIVATE_NETWORK_ORIGINS !== undefined ? { privateNetworkOrigins: env.LINGOTORTE_PRIVATE_NETWORK_ORIGINS.split(',') } : {}),
     ...paths,
     allowOnlineProviders: env.LINGOTORTE_ALLOW_ONLINE_PROVIDERS === 'true',
     ...(env.ELEVENLABS_API_KEY !== undefined ? { elevenLabsApiKey: env.ELEVENLABS_API_KEY } : {}),
@@ -1136,7 +1186,14 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServic
 
 export async function startFromCli(): Promise<void> {
   const defaultModelName = resolveDefaultAsrModelName(process.env.LINGOTORTE_ASR_MODEL);
-  const service = await startLingotorteLocalService(configFromEnv(), { defaultModelName });
+  const config = configFromEnv();
+  const mode = process.env.LINGOTORTE_PRIVATE_DELIVERY ?? 'tty';
+  if (!['tty', 'socket'].includes(mode)) throw new TypeError('Invalid private delivery mode.');
+  if (mode === 'socket' && !config.publicOrigins?.length) throw new TypeError('Docker requires explicit public origins.');
+  const delivery = mode === 'socket' ? await socketDelivery() : await nativeTerminalDelivery();
+  let service: RunningLingotorteLocalService;
+  try { service = await startLingotorteLocalService(config, { defaultModelName, ...delivery }); }
+  catch (error) { await delivery.close(); throw error; }
   console.log(JSON.stringify({
     ok: true,
     service: SERVICE_NAME,
@@ -1160,6 +1217,7 @@ export async function startFromCli(): Promise<void> {
   }));
   const close = async () => {
     await service.close();
+    await delivery.close();
     process.exit(0);
   };
   process.once('SIGINT', () => void close());

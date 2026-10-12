@@ -1,3 +1,4 @@
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -21,7 +22,7 @@ async function fixture() {
   } };
 }
 async function submit(service: RunningLingotorteLocalService, mediaPath: string) {
-  const created = await fetch(`${service.origin}/api/jobs`, {
+  const created = await pairedFetch(`${service.origin}/api/jobs`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ kind: 'local-transcription', payload: {
       mediaPath, alignWords: false, pythonPath: 'browser-must-not-run', ffmpegPath: 'browser-must-not-run',
@@ -29,7 +30,7 @@ async function submit(service: RunningLingotorteLocalService, mediaPath: string)
   }).then((r) => r.json());
   expect(created.job).toBeDefined();
   for (let i = 0; i < 100; i++) {
-    const body = await fetch(`${service.origin}/api/jobs/${created.job.id}`).then((r) => r.json());
+    const body = await pairedFetch(`${service.origin}/api/jobs/${created.job.id}`).then((r) => r.json());
     if (body.job.status === 'completed' || body.job.status === 'failed') return body;
     await new Promise((r) => setTimeout(r, 10));
   }
@@ -46,7 +47,7 @@ describe('service-owned Python executable', () => {
       if (args[0] === 'ffmpeg') await writeFile(args[1].at(-1)!, 'synthetic wav');
       return { exitCode: 0, stderr: '', stdout: JSON.stringify({ engine: 'fake', model_name: 'base', language: 'pl', segments: [] }) };
     };
-    const service = await startLingotorteLocalService(config, {
+    const service = await startPairedService(config, {
       commandRunner: runner, scriptRoot: resolve('.'), ...(inject ? { pythonPath: 'injected-python' } : {}),
     });
     cleanups.push(() => service.close());
@@ -72,18 +73,18 @@ describe('service-owned Python executable', () => {
       }
       return nodeCommandRunner(command, args, options);
     };
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(() => service.close());
     expect(calls).toEqual([]);
-    expect(await fetch(`${service.origin}/api/health`).then((r) => r.json())).toMatchObject({ ok: true });
-    const status = await fetch(`${service.origin}/api/status`).then((r) => r.json());
+    expect(await pairedFetch(`${service.origin}/api/health`).then((r) => r.json())).toMatchObject({ ok: true });
+    const status = await pairedFetch(`${service.origin}/api/status`).then((r) => r.json());
     expect(JSON.stringify(status)).not.toContain(root);
     const result = await submit(service, mediaPath);
     expect(result.job).toMatchObject({ status: 'failed', message: 'Python executable is unavailable. Configure LINGOTORTE_PYTHON_PATH with one installed executable.' });
     expect(calls).toEqual(['ffmpeg', missing]);
     expect(JSON.stringify(result)).not.toContain(root);
     expect(JSON.stringify(result)).not.toContain('missing private');
-    expect(await fetch(`${service.origin}/api/health`).then((r) => r.json())).toMatchObject({ ok: true });
+    expect(await pairedFetch(`${service.origin}/api/health`).then((r) => r.json())).toMatchObject({ ok: true });
   });
 
   it('rejects malformed operator configuration before creating service artifacts', async () => {

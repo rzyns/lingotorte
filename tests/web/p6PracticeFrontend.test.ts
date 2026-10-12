@@ -1,7 +1,10 @@
+import { SYNTHETIC_CAPABILITY } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   createAppModel,
+  pairLocalService,
+  setLocalServiceBaseUrl,
   importFixtureMediaAndSubtitles,
   saveSentenceFromCue,
   createReviewCardForSavedItem,
@@ -455,6 +458,24 @@ describe('P6 frontend export / import local learner state', () => {
     expect(attempts.length).toBeGreaterThan(0);
     expect(attempts[attempts.length - 1]!.result).toBe('pass');
     expect(attempts[attempts.length - 1]!.mode).toBe('sentence-builder');
+  });
+
+  it('endpoint replacement fences the actual Practice audio continuation', async () => {
+    const { value: { model } } = await createPracticeModel();
+    pairLocalService(model, SYNTHETIC_CAPABILITY);
+    model.localService.status = 'connected'; model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
+    setPracticeMode(model, 'audio-recall'); renderPractice(model);
+    const path = document.getElementById('practice-audio-media-path') as HTMLInputElement; path.value = '/media/synthetic.wav'; path.dispatchEvent(new dom.window.Event('input'));
+    let finish!: (response: Response) => void; const waiting = new Promise<Response>(resolve => { finish = resolve; });
+    const fetcher = vi.fn<typeof fetch>(() => waiting); vi.stubGlobal('fetch', fetcher);
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:forbidden');
+    try {
+      ([...document.querySelectorAll('button')].find(button => button.textContent === 'Prepare source audio') as HTMLButtonElement).click();
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+      setLocalServiceBaseUrl(model, 'http://selected-private-host:7514'); rerenderApp(model); const before = document.getElementById('app')?.textContent;
+      finish(new Response(JSON.stringify({ job: { id: 'old-job' } }))); await new Promise(resolve => setTimeout(resolve, 20));
+      expect(fetcher).toHaveBeenCalledTimes(1); expect(create).not.toHaveBeenCalled(); expect(document.querySelector('.practice-audio-recall audio')).toBeNull(); expect(document.getElementById('app')?.textContent).toBe(before);
+    } finally { vi.unstubAllGlobals(); create.mockRestore(); }
   });
 
   it('renders source-audio recall without microphone APIs and hides the answer before submission', async () => {

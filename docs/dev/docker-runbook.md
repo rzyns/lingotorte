@@ -12,6 +12,7 @@ Linux / WSL shell (Docker daemon must be able to access the path):
 export LINGOTORTE_MEDIA_DIR="$(pwd)/fixtures/media"
 export LINGOTORTE_BIND_HOST=127.0.0.1 # rehearsal: host-only
 export LINGOTORTE_WEB_PORT=5173
+export LINGOTORTE_PUBLIC_ORIGINS=http://127.0.0.1:5173 # exact browser-visible origin, no slash
 ```
 
 Windows PowerShell, from the checkout:
@@ -20,6 +21,7 @@ Windows PowerShell, from the checkout:
 $env:LINGOTORTE_MEDIA_DIR = (Resolve-Path './fixtures/media').Path
 $env:LINGOTORTE_BIND_HOST = '127.0.0.1'
 $env:LINGOTORTE_WEB_PORT = '5173'
+$env:LINGOTORTE_PUBLIC_ORIGINS = 'http://127.0.0.1:5173'
 ```
 
 Git Bash with Windows Docker uses an explicit native path, e.g. `export LINGOTORTE_MEDIA_DIR='C:/work/lingotorte/fixtures/media'`. Paths containing spaces are supported. Compose refuses an unset media variable or missing directory; it will not create a folder or silently select private media.
@@ -33,9 +35,15 @@ docker compose -p lingotorte-private up -d api web
 docker compose -p lingotorte-private logs --tail 50 api web
 ```
 
-Open `http://127.0.0.1:5173` with the host-only example. In Settings explicitly connect to `/`: browser API calls use the web origin's `/api` proxy, not the browser machine's localhost. API port 5174 is **not published**. A manually selected absolute service URL is still supported; cross-origin access remains subject to the service's existing narrow CORS policy.
+Open `http://127.0.0.1:5173` with the host-only example. In Settings select `/` and pair this browser tab with the current service capability before connecting. Retrieve it only in a private interactive controlling terminal:
 
-For an explicitly authorized trusted private LAN, set `LINGOTORTE_BIND_HOST=0.0.0.0` (the Compose default), choose the web port, and set `LINGOTORTE_WEB_ALLOWED_HOSTS` to the exact comma-separated hostname(s) used by browsers, for example `lingotorte.local,my-workstation`. Vite continues to enforce its hostname allowlist; IP hosts and localhost follow Vite's built-in rules. Do not disable host protection. Never expose this Vite preview server to the public internet or forward router ports. This is a contributor/private server, not hardened production hosting; LAN binding, CORS and same-origin routing are not authentication or authorization. The separate request-authenticity security work remains outstanding.
+```sh
+docker compose -p lingotorte-private exec -it api node scripts/pair-local.ts
+```
+
+Paste into Settings → Session capability, pair, then connect. Do not redirect, pipe, capture, screenshot, or record the terminal; never put the capability in shell arguments/history, environment/config files, logs, URLs, exports, or browser persistent storage. The helper intentionally has no output-file option and refuses without a private controlling terminal. The pairing socket is container-local tmpfs and is not a public HTTP route. Capability rotation on restart requires re-pairing. Browser API calls use the web origin's `/api` proxy, not the browser machine's localhost. API port 5174 is **not published**. CORS/preflight success does not authenticate an actual request.
+
+For an explicitly authorized trusted private LAN, set `LINGOTORTE_BIND_HOST=0.0.0.0`, choose the web port, set `LINGOTORTE_PUBLIC_ORIGINS` to the exact comma-separated browser-visible HTTP origins (scheme, hostname and external port; no trailing slash), and set `LINGOTORTE_WEB_ALLOWED_HOSTS` to their exact comma-separated hostnames. For example, origin `http://lingotorte.local:5173` requires hostname `lingotorte.local`; `localhost`, IP literals and alternate ports are distinct enrollments. API and web must receive the identical public-origin set. Do not enroll Docker's internal `api:5174`: its loopback health authority is health-only, never a protected-route bypass. Docker PNA requests are denied. Vite continues to enforce its hostname allowlist. Do not disable host protection or use wildcard origins. Never expose this contributor/private server to the public internet or forward router ports. Pairing authorizes local service requests; it is not multi-user identity, TLS, protection from trusted-browser compromise, or provider consent.
 
 Backend media paths are Linux container paths, e.g. `/media/synthetic-polish-dialogue.webm`, **not Windows drive paths**. Browser file handles/object URLs remain playback-only. Persistent browser handles can be unavailable on plain HTTP LAN origins because they require a secure context; ordinary file import still works. Python and ffmpeg are installed only inside the image. ASR libraries/models are not installed and providers remain disabled. The API is attached only to an internal network, preventing its outbound internet access in the default stack. The web proxy also has a normal ingress network so the published port is reachable; this is not an outbound-network sandbox for the web process.
 

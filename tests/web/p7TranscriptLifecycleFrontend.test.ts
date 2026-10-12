@@ -1,7 +1,8 @@
+import { pairedModel, syntheticTransport } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeMediaAsset } from '@lingotorte/domain';
-import { approveTranscriptTrack, createAppModel, makeLocalServiceAsrProvider } from '../../apps/web/src/model';
+import { approveTranscriptTrack, makeLocalServiceAsrProvider } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 async function setupDom() {
@@ -48,7 +49,7 @@ describe('P7 transcript lifecycle frontend', () => {
   });
 
   it('presents transcript lifecycle as a staged workbench with risk-tier source cards', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     rerenderApp(model);
 
@@ -72,7 +73,7 @@ describe('P7 transcript lifecycle frontend', () => {
   });
 
   it('keeps provider captions in draft state until the learner corrects and approves them', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     rerenderApp(model);
 
@@ -145,7 +146,7 @@ describe('P7 transcript lifecycle frontend', () => {
   });
 
   it('generates local ASR drafts through the loopback service job API', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const ownedMedia = makeMediaAsset({
       title: 'Owned local clip',
@@ -292,7 +293,7 @@ describe('P7 transcript lifecycle frontend', () => {
   });
 
   it('generates ElevenLabs Scribe v2 drafts through the loopback service job API only after explicit cloud consent', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const ownedMedia = makeMediaAsset({
       title: 'Owned Scribe clip',
@@ -395,7 +396,7 @@ describe('P7 transcript lifecycle frontend', () => {
   });
 
   it('splits and merges transcript cues into immutable corrected versions', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     rerenderApp(model);
 
@@ -458,7 +459,7 @@ describe('P7 transcript lifecycle frontend', () => {
       }), { status: 200 });
     }) as typeof fetch;
 
-    const provider = makeLocalServiceAsrProvider('http://127.0.0.1:5174', {
+    const provider = makeLocalServiceAsrProvider(syntheticTransport(), {
       pathPolicy: { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false },
       modelName: 'tiny', pollAttempts: 1, pollDelayMs: 0,
     });

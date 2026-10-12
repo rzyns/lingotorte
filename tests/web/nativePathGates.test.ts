@@ -1,13 +1,14 @@
+import { pairedModel, syntheticTransport } from './pairingFixture.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeMediaAsset } from '../../packages/domain/src/index.ts';
 import { nativePathPolicy, validateNativePath, type NativePathPolicy } from '../../packages/domain/src/nativePaths.ts';
-import { createAppModel, connectLocalService, extractSelectedEmbeddedSubtitleDraft, listEmbeddedSubtitleTracksFromService, makeLocalServiceAsrProvider, makeLocalServiceElevenLabsScribeProvider, planYtDlpMediaAcquisition } from '../../apps/web/src/model.ts';
+import { connectLocalService, extractSelectedEmbeddedSubtitleDraft, listEmbeddedSubtitleTracksFromService, makeLocalServiceAsrProvider, makeLocalServiceElevenLabsScribeProvider, planYtDlpMediaAcquisition } from '../../apps/web/src/model.ts';
 import { prepareSourceAudioSnippet } from '../../apps/web/src/sourceAudioSnippet.ts';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src/localStore.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 function modelFor(path: string, policy: NativePathPolicy | null) {
-  const model = createAppModel();
+  const model = pairedModel();
   model.localService.status = 'connected';
   model.localService.pathPolicy = policy;
   model.currentMedia = makeMediaAsset({ title: 'Explicit synthetic fixture', originalPath: 'browser-file-handle:clip.mp4', contentSha256: `sha256:${'7'.repeat(64)}`, durationMs: 1000, container: 'mp4', sizeBytes: 10, privacyLabel: 'synthetic' });
@@ -19,11 +20,11 @@ async function submit(kind: typeof jobs[number], path: string, policy: NativePat
   const model = modelFor(path, policy);
   if (kind === 'embedded-list') return listEmbeddedSubtitleTracksFromService(model);
   if (kind === 'embedded-extract') return extractSelectedEmbeddedSubtitleDraft(model);
-  if (kind === 'snippet') return prepareSourceAudioSnippet({ baseUrl: model.localService.baseUrl, mediaPath: path, pathPolicy: policy, startMs: 0, endMs: 1, lifecycle: { objectUrl: null } });
+  if (kind === 'snippet') return prepareSourceAudioSnippet({ transport: syntheticTransport(model.localService.baseUrl), mediaPath: path, pathPolicy: policy, startMs: 0, endMs: 1, lifecycle: { objectUrl: null } });
   const options = { mediaPath: path, pathPolicy: policy };
   const input = { media: model.currentMedia!, language: 'pl' };
-  return kind === 'ASR' ? makeLocalServiceAsrProvider(model.localService.baseUrl, options).transcribe(input)
-    : makeLocalServiceElevenLabsScribeProvider(model.localService.baseUrl, options).transcribe(input);
+  return kind === 'ASR' ? makeLocalServiceAsrProvider(syntheticTransport(model.localService.baseUrl), options).transcribe(input)
+    : makeLocalServiceElevenLabsScribeProvider(syntheticTransport(model.localService.baseUrl), options).transcribe(input);
 }
 
 for (const platform of ['win32', 'linux'] as const) describe(`${platform} browser/job policy agreement`, () => {
@@ -60,7 +61,7 @@ for (const platform of ['win32', 'linux'] as const) describe(`${platform} browse
 });
 
 it.each([undefined, { version: 2, platform: 'win32' }, nativePathPolicy('win32')])('reads status capability and keeps browser-only playback for unknown versions: %j', async (pathPolicy) => {
-  const model = createAppModel();
+  const model = pairedModel();
   vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/api/status') ? { config: { pathPolicy } } : { snapshot: createEmptyLocalStoreSnapshot(), revision: `sha256:${'1'.repeat(64)}` }), { status: 200 })));
   const result = await connectLocalService(model);
   expect(result.ok).toBe(true);

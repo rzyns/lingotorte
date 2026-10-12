@@ -3,7 +3,7 @@ import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/s
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
-import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity } from '@lingotorte/domain';
+import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type {
@@ -172,14 +172,35 @@ export function createAppModel(): AppModel {
   };
 }
 
+import { exactServiceOrigin, pairTransport, capturedTransport, clearPairing, PAIR_AGAIN, type PairedTransport } from './pairedTransport.ts';
+
 export type LocalServiceSyncResult = Readonly<{
   ok: boolean;
   message: string;
 }>;
 
 function normalizeLocalServiceBaseUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim() || DEFAULT_LOCAL_SERVICE_BASE_URL;
-  return trimmed.replace(/\/+$/, '');
+  return exactServiceOrigin(baseUrl);
+}
+
+export function pairLocalService(model: AppModel, capability: string, baseUrl = model.localService.baseUrl): void {
+  const origin = exactServiceOrigin(baseUrl);
+  setLocalServiceBaseUrl(model, origin);
+  pairTransport(model, origin, capability, () => {
+    const owner = syncOwner(model);
+    ++owner.generation;
+    owner.choice = null;
+    model.localService.status = 'error';
+    model.localService.syncState = 'error';
+    model.localService.revision = null;
+    model.localService.pathPolicy = null;
+    model.localService.autosaveEnabled = false;
+    model.localService.lastMessage = PAIR_AGAIN;
+    notifySync(model);
+  });
+}
+export function captureLocalServiceTransport(model: AppModel): PairedTransport {
+  return capturedTransport(model, model.localService.baseUrl);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -190,15 +211,10 @@ class LocalServiceRequestError extends TypeError {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
-async function fetchLocalServiceJson(baseUrl: string, path: string, init?: RequestInit): Promise<Record<string, unknown>> {
-  const response = await fetch(`${normalizeLocalServiceBaseUrl(baseUrl)}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-      ...(init?.body ? { 'content-type': 'application/json' } : {}),
-    },
-  });
+async function fetchLocalServiceJson(transport: PairedTransport, path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  const response = await transport.request(path, init);
   const value: unknown = await response.json();
+  transport.assertCurrent();
   if (!isPlainObject(value)) {
     throw new TypeError('Local service returned a non-object JSON response.');
   }
@@ -282,7 +298,10 @@ const supersededSync = (): LocalServiceSyncResult => ({ ok: false, message: 'Loc
 
 export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const owner = syncOwner(model);
-  const url = normalizeLocalServiceBaseUrl(baseUrl);
+  let transport: PairedTransport;
+  let url: string;
+  try { url = normalizeLocalServiceBaseUrl(baseUrl); transport = capturedTransport(model, url); }
+  catch { return { ok: false, message: PAIR_AGAIN }; }
   if (normalizeLocalServiceBaseUrl(model.localService.baseUrl) !== url) setLocalServiceBaseUrl(model, url);
   if (owner.choice || model.localService.syncState === 'conflict' || model.localService.status === 'connecting') {
     return { ok: false, message: model.localService.lastMessage ?? 'Finish connecting and confirm the state choice before saving.' };
@@ -300,7 +319,7 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
     model.localService.lastMessage = 'Saving browser state; waiting for durable SQLite acknowledgement.';
     notifySync(model);
     try {
-      const ack = await fetchLocalServiceJson(url, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
+      const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
       if (!current()) return supersededSync();
       if (ack.ok !== true) throw new TypeError('Local service did not acknowledge durable save.');
       const revision = stateRevision(ack.revision);
@@ -337,8 +356,11 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
 
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const owner = syncOwner(model);
+  let transport: PairedTransport;
+  let url: string;
+  try { url = normalizeLocalServiceBaseUrl(baseUrl); transport = capturedTransport(model, url); }
+  catch { model.localService.status = 'error'; model.localService.lastMessage = PAIR_AGAIN; return { ok: false, message: PAIR_AGAIN }; }
   const generation = ++owner.generation;
-  const url = normalizeLocalServiceBaseUrl(baseUrl);
   const comparison = browserComparison(model);
   const current = () => owner.generation === generation && normalizeLocalServiceBaseUrl(model.localService.baseUrl) === url;
   model.localService.baseUrl = url;
@@ -350,10 +372,10 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
   model.localService.lastMessage = 'Connecting and comparing durable state; browser work is kept.';
   notifySync(model);
   try {
-    const status = await fetchLocalServiceJson(url, '/api/status');
+    const status = await fetchLocalServiceJson(transport, '/api/status');
     if (!current()) return supersededSync();
     const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
-    const state = await fetchLocalServiceJson(url, '/api/state');
+    const state = await fetchLocalServiceJson(transport, '/api/state');
     if (!current()) return supersededSync();
     const revision = stateRevision(state.revision);
     const serviceSnapshot = new LocalStore(state.snapshot as LocalStoreSnapshot).snapshot();
@@ -431,6 +453,7 @@ export function resolveLocalServiceConnection(model: AppModel, choice: 'browser'
 }
 
 export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
+  clearPairing(model);
   const owner = syncOwner(model);
   ++owner.generation;
   owner.choice = null;
@@ -641,7 +664,7 @@ function hexFromBytes(bytes: Uint8Array): string {
 async function sha256Bytes(bytes: ArrayBuffer | Uint8Array): Promise<Sha256Digest> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
-    throw new TypeError('Browser fixture import requires Web Crypto SHA-256 support.');
+    return `sha256:${sha256HexBytes(bytes)}` as Sha256Digest;
   }
   const input: ArrayBuffer = bytes instanceof Uint8Array ? (bytes.slice().buffer as ArrayBuffer) : bytes;
   const digest = await subtle.digest('SHA-256', input);
@@ -1358,6 +1381,7 @@ export type YouTubeCaptionProviderResult = Readonly<{
 export type YouTubeCaptionProvider = Readonly<{
   providerId: string;
   privacyMode: 'local' | 'explicit-online';
+  assertCurrent?: () => void;
   readonly calls: number;
   fetchCaptions(input: { url: string; language: string }): Promise<YouTubeCaptionProviderResult>;
 }>;
@@ -1373,6 +1397,7 @@ export type LocalAsrProviderResult = Readonly<{
 export type LocalAsrProvider = Readonly<{
   providerId: string;
   privacyMode: 'local';
+  assertCurrent?: () => void;
   readonly calls: number;
   transcribe(input: { media: MediaAsset; language: string }): Promise<LocalAsrProviderResult>;
 }>;
@@ -1387,6 +1412,7 @@ export type ElevenLabsScribeProviderResult = Readonly<{
 export type ElevenLabsScribeProvider = Readonly<{
   providerId: string;
   privacyMode: 'explicit-online';
+  assertCurrent?: () => void;
   readonly calls: number;
   transcribe(input: { media: MediaAsset; language: string }): Promise<ElevenLabsScribeProviderResult>;
 }>;
@@ -1622,7 +1648,7 @@ function redactEmbeddedSubtitleError(value: unknown, mediaPath: string): string 
 
 function isLoopbackConnectivityError(value: unknown): boolean {
   const message = value instanceof Error ? value.message : String(value);
-  return /failed to fetch|fetch failed|networkerror|econnrefused|connection refused/i.test(message);
+  return /unreachable|failed to fetch|fetch failed|networkerror|econnrefused|connection refused/i.test(message);
 }
 
 const EMBEDDED_STALE_OPERATION_ERROR = 'Embedded subtitle operation was superseded by a media context change.';
@@ -1650,16 +1676,19 @@ function embeddedSubtitleGenerations(model: AppModel): EmbeddedSubtitleOperation
 }
 
 async function completedEmbeddedJob(
-  baseUrl: string,
+  transport: PairedTransport,
   jobId: string,
   label: string,
   options: EmbeddedSubtitleJobOptions,
+  assertContext: () => void,
 ): Promise<Record<string, unknown>> {
   const attempts = options.pollAttempts ?? 120;
   const delayMs = options.pollDelayMs ?? 1000;
   const wait = options.sleep ?? sleep;
   for (let attempt = 0; attempt < attempts; attempt++) {
-    const response = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+    assertContext();
+    const response = await fetchLocalServiceJson(transport, `/api/jobs/${encodeURIComponent(jobId)}`);
+    assertContext();
     const job = recordField(response.job, `local service ${label} job`);
     const status = stringField(job.status, `local service ${label} job status`);
     if (status === 'completed') return job;
@@ -1700,6 +1729,7 @@ export async function listEmbeddedSubtitleTracksFromService(
   model: AppModel,
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<EmbeddedSubtitleTrackState[]> {
+  const transport = captureLocalServiceTransport(model);
   const state = model.transcriptLifecycle.embeddedSubtitle;
   const generations = embeddedSubtitleGenerations(model);
   const listingGeneration = ++generations.listing;
@@ -1716,6 +1746,7 @@ export async function listEmbeddedSubtitleTracksFromService(
   const pathAtStart = state.mediaPath;
   let mediaPath = '';
   const assertCurrentContext = () => {
+    transport.assertCurrent();
     if (generations.listing !== listingGeneration || (mediaPath !== '' && state.mediaPath !== pathAtStart)) {
       throw new StaleEmbeddedSubtitleOperationError();
     }
@@ -1724,13 +1755,14 @@ export async function listEmbeddedSubtitleTracksFromService(
     mediaPath = embeddedMediaPath(state.mediaPath, model.localService.pathPolicy);
     state.listingStatus = 'listing';
     state.statusMessage = 'Listing embedded subtitle tracks.';
-    const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
+    const created = await fetchLocalServiceJson(transport, '/api/jobs', {
       method: 'POST',
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }),
     });
     const createdJob = recordField(created.job, 'local service embedded subtitle listing job');
     const jobId = stringField(createdJob.id, 'embedded subtitle listing job id');
-    const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle listing', options);
+    assertCurrentContext();
+    const job = await completedEmbeddedJob(transport, jobId, 'embedded subtitle listing', options, assertCurrentContext);
     const result = recordField(job.result, 'embedded subtitle listing job result');
     const tracks = embeddedTracksFromJson(result.listing);
     assertCurrentContext();
@@ -1779,6 +1811,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   model: AppModel,
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<TranscriptImportResult> {
+  const transport = captureLocalServiceTransport(model);
   const state = model.transcriptLifecycle.embeddedSubtitle;
   const generations = embeddedSubtitleGenerations(model);
   const extractionGeneration = ++generations.extraction;
@@ -1795,6 +1828,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   let selectedStreamIndex: number | null = null;
   const mediaId = media.id;
   const assertCurrentContext = () => {
+    transport.assertCurrent();
     if ((mediaPath !== '' && state.mediaPath !== pathAtStart)
       || generations.extraction !== extractionGeneration
       || model.currentMedia?.id !== mediaId
@@ -1813,7 +1847,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     selectedStreamIndex = selected.streamIndex;
     state.extractionStatus = 'extracting';
     state.statusMessage = 'Extracting selected embedded subtitle track.';
-    const created = await fetchLocalServiceJson(model.localService.baseUrl, '/api/jobs', {
+    const created = await fetchLocalServiceJson(transport, '/api/jobs', {
       method: 'POST',
       body: JSON.stringify({ kind: 'embedded-subtitle-extract', payload: {
         mediaPath, streamIndex: selected.streamIndex, outputFormat, language, role: 'target',
@@ -1821,7 +1855,8 @@ export async function extractSelectedEmbeddedSubtitleDraft(
     });
     const createdJob = recordField(created.job, 'local service embedded subtitle extraction job');
     const jobId = stringField(createdJob.id, 'embedded subtitle extraction job id');
-    const job = await completedEmbeddedJob(model.localService.baseUrl, jobId, 'embedded subtitle extraction', options);
+    assertCurrentContext();
+    const job = await completedEmbeddedJob(transport, jobId, 'embedded subtitle extraction', options, assertCurrentContext);
     assertCurrentContext();
     completedResultReceived = true;
     const result = recordField(job.result, 'embedded subtitle extraction job result');
@@ -1866,6 +1901,7 @@ export async function extractSelectedEmbeddedSubtitleDraft(
       segments,
       beforeCommit: assertCurrentContext,
     });
+    assertCurrentContext();
     state.extractionStatus = 'imported';
     state.statusMessage = 'Embedded subtitle track imported as a draft; correct and approve it before study use.';
     state.errorCode = null;
@@ -1891,9 +1927,10 @@ export async function extractSelectedEmbeddedSubtitleDraft(
   }
 }
 
-export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServiceAsrProviderOptions = {}): LocalAsrProvider {
+export function makeLocalServiceAsrProvider(transport: PairedTransport, options: LocalServiceAsrProviderOptions = {}): LocalAsrProvider {
   let callCount = 0;
   return {
+    assertCurrent: transport.assertCurrent,
     providerId: 'lingotorte.loopback-local-service-asr',
     privacyMode: 'local',
     get calls() {
@@ -1902,7 +1939,7 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
     async transcribe(input) {
       callCount += 1;
       const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
-      const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
+      const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
         method: 'POST',
         body: JSON.stringify({
           kind: 'local-transcription',
@@ -1919,7 +1956,7 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
       const attempts = options.pollAttempts ?? 120;
       const delayMs = options.pollDelayMs ?? 1000;
       for (let attempt = 0; attempt < attempts; attempt++) {
-        const jobResponse = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+        const jobResponse = await fetchLocalServiceJson(transport, `/api/jobs/${encodeURIComponent(jobId)}`);
         const job = recordField(jobResponse.job, 'local service transcription job');
         const status = stringField(job.status, 'local service transcription job status');
         if (status === 'completed') {
@@ -1937,9 +1974,10 @@ export function makeLocalServiceAsrProvider(baseUrl: string, options: LocalServi
   };
 }
 
-export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, options: LocalServiceElevenLabsScribeProviderOptions = {}): ElevenLabsScribeProvider {
+export function makeLocalServiceElevenLabsScribeProvider(transport: PairedTransport, options: LocalServiceElevenLabsScribeProviderOptions = {}): ElevenLabsScribeProvider {
   let callCount = 0;
   return {
+    assertCurrent: transport.assertCurrent,
     providerId: 'lingotorte.loopback-local-service-elevenlabs-scribe',
     privacyMode: 'explicit-online',
     get calls() {
@@ -1948,7 +1986,7 @@ export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, option
     async transcribe(input) {
       callCount += 1;
       const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
-      const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
+      const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
         method: 'POST',
         body: JSON.stringify({
           kind: 'elevenlabs-scribe',
@@ -1965,7 +2003,7 @@ export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, option
       const attempts = options.pollAttempts ?? 120;
       const delayMs = options.pollDelayMs ?? 1000;
       for (let attempt = 0; attempt < attempts; attempt++) {
-        const jobResponse = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+        const jobResponse = await fetchLocalServiceJson(transport, `/api/jobs/${encodeURIComponent(jobId)}`);
         const job = recordField(jobResponse.job, 'local service ElevenLabs Scribe job');
         const status = stringField(job.status, 'local service ElevenLabs Scribe job status');
         if (status === 'completed') {
@@ -1989,9 +2027,10 @@ export function makeLocalServiceElevenLabsScribeProvider(baseUrl: string, option
   };
 }
 
-export function makeLocalServiceYouTubeCaptionProvider(baseUrl: string, options: LocalServiceYouTubeCaptionProviderOptions = {}): YouTubeCaptionProvider {
+export function makeLocalServiceYouTubeCaptionProvider(transport: PairedTransport, options: LocalServiceYouTubeCaptionProviderOptions = {}): YouTubeCaptionProvider {
   let callCount = 0;
   return {
+    assertCurrent: transport.assertCurrent,
     providerId: 'lingotorte.loopback-local-service-youtube-caption',
     privacyMode: 'explicit-online',
     get calls() {
@@ -1999,7 +2038,7 @@ export function makeLocalServiceYouTubeCaptionProvider(baseUrl: string, options:
     },
     async fetchCaptions(input) {
       callCount += 1;
-      const createResponse = await fetchLocalServiceJson(baseUrl, '/api/jobs', {
+      const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
         method: 'POST',
         body: JSON.stringify({
           kind: 'youtube-caption',
@@ -2015,7 +2054,7 @@ export function makeLocalServiceYouTubeCaptionProvider(baseUrl: string, options:
       const attempts = options.pollAttempts ?? 60;
       const delayMs = options.pollDelayMs ?? 1000;
       for (let attempt = 0; attempt < attempts; attempt++) {
-        const jobResponse = await fetchLocalServiceJson(baseUrl, `/api/jobs/${encodeURIComponent(jobId)}`);
+        const jobResponse = await fetchLocalServiceJson(transport, `/api/jobs/${encodeURIComponent(jobId)}`);
         const job = recordField(jobResponse.job, 'local service YouTube caption job');
         const status = stringField(job.status, 'local service YouTube caption job status');
         if (status === 'completed') {
@@ -2200,7 +2239,9 @@ export async function importYouTubeCaptionCandidate(
     throw new TypeError('YouTube caption import disabled: explicit public-read authorization is required.');
   }
   const expectedVideoId = videoIdFromYouTubeUrl(input.url);
+  provider.assertCurrent?.();
   const result = await provider.fetchCaptions({ url: input.url, language: input.language });
+  provider.assertCurrent?.();
   const videoId = result.videoId || expectedVideoId;
   const warningFlags: TranscriptWarningFlag[] = result.isAutoGenerated
     ? ['providerCaption', 'autoCaption', 'timingUnverified']
@@ -2231,6 +2272,7 @@ export async function importYouTubeCaptionCandidate(
       isAutoGenerated: result.isAutoGenerated,
       warningFlags,
     },
+    beforeCommit: () => provider.assertCurrent?.(),
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
   });
@@ -2240,7 +2282,9 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
   if (!model.currentMedia) {
     throw new TypeError('Local ASR draft generation requires a current local/owned media asset.');
   }
+  provider.assertCurrent?.();
   const result = await provider.transcribe({ media: model.currentMedia, language });
+  provider.assertCurrent?.();
   const warningFlags: TranscriptWarningFlag[] = ['asrDraft', 'timingUnverified', 'qualityUnreviewed'];
   const imported = await putTranscriptSegments(model, {
     media: model.currentMedia,
@@ -2258,9 +2302,11 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
       ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
       warningFlags,
     },
+    beforeCommit: () => provider.assertCurrent?.(),
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
   });
+  provider.assertCurrent?.();
   putTranscriptWordTimingsForSegments(model, {
     imported,
     segments: result.segments,
@@ -2284,7 +2330,9 @@ export async function generateElevenLabsScribeDraft(
   if (!model.currentMedia) {
     throw new TypeError('ElevenLabs Scribe draft generation requires a current local/owned media asset.');
   }
+  provider.assertCurrent?.();
   const result = await provider.transcribe({ media: model.currentMedia, language: input.language });
+  provider.assertCurrent?.();
   const warningFlags: TranscriptWarningFlag[] = ['asrDraft', 'qualityUnreviewed'];
   const imported = await putTranscriptSegments(model, {
     media: model.currentMedia,
@@ -2302,10 +2350,12 @@ export async function generateElevenLabsScribeDraft(
       ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
       warningFlags,
     },
+    beforeCommit: () => provider.assertCurrent?.(),
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
   });
 
+  provider.assertCurrent?.();
   putTranscriptWordTimingsForSegments(model, {
     imported,
     segments: result.segments,

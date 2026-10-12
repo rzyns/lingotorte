@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { startLingotorteLocalService } from '../../apps/local-service/src/server';
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { makeMediaAsset } from '../../packages/domain/src';
@@ -19,10 +19,10 @@ const snapshot = (title: string) => {
 it('rejects two stale HTTP writers and missing revisions without replacing durable state; reopens SQLite', async () => {
   const root = await mkdtemp(join(tmpdir(), 'lt-save-safety-'));
   const config = { host: '127.0.0.1', port: 0, databasePath: join(root, 'state.db'), scratchDir: join(root, 'scratch'), modelCacheDir: join(root, 'models'), allowOnlineProviders: false };
-  let service = await startLingotorteLocalService(config);
+  let service = await startPairedService(config);
   cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
-  const get = () => fetch(`${service.origin}/api/state`).then(r => r.json());
-  const put = (value: unknown, expectedRevision?: unknown) => fetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: value, expectedRevision }) });
+  const get = () => pairedFetch(`${service.origin}/api/state`).then(r => r.json());
+  const put = (value: unknown, expectedRevision?: unknown) => pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: value, expectedRevision }) });
   const a = await get(); const b = await get();
   const first = snapshot('first'); const stale = snapshot('stale');
   expect((await put(first, a.revision)).status).toBe(200);
@@ -35,7 +35,7 @@ it('rejects two stale HTTP writers and missing revisions without replacing durab
   const failed = await put(invalid, acknowledged.revision);
   expect(failed.status).toBe(400); expect(await failed.json()).toMatchObject({ ok: false });
   expect(await get()).toEqual(acknowledged);
-  await service.close(); service = await startLingotorteLocalService(config);
+  await service.close(); service = await startPairedService(config);
   expect(await get()).toEqual(acknowledged);
   expect((await put(stale, b.revision)).status).toBe(409);
 });
@@ -77,15 +77,15 @@ it('enforces CAS across independent SQLite connections and direct trusted persis
 it('accepts exactly one competing HTTP snapshot from the same durable revision', async () => {
   const root = await mkdtemp(join(tmpdir(), 'lt-http-race-'));
   const config = { host: '127.0.0.1', port: 0, databasePath: join(root, 'state.db'), scratchDir: join(root, 'scratch'), modelCacheDir: join(root, 'models'), allowOnlineProviders: false };
-  const a = await startLingotorteLocalService(config); const b = await startLingotorteLocalService(config);
+  const a = await startPairedService(config); const b = await startPairedService(config);
   cleanups.push(async () => { await a.close(); await b.close(); await rm(root, { recursive: true, force: true }); });
-  const state = await fetch(`${a.origin}/api/state`).then(r => r.json());
+  const state = await pairedFetch(`${a.origin}/api/state`).then(r => r.json());
   const candidates = [snapshot('a'), snapshot('b')];
-  const replies = await Promise.all([a, b].map((service, index) => fetch(`${service.origin}/api/state`, {
+  const replies = await Promise.all([a, b].map((service, index) => pairedFetch(`${service.origin}/api/state`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: candidates[index], expectedRevision: state.revision }),
   })));
   expect(replies.map(r => r.status).sort()).toEqual([200, 409]);
   const winner = replies.findIndex(r => r.status === 200); const ack = await replies[winner]!.json();
-  const loaded = await fetch(`${a.origin}/api/state`).then(r => r.json());
+  const loaded = await pairedFetch(`${a.origin}/api/state`).then(r => r.json());
   expect(loaded.snapshot).toEqual(candidates[winner]); expect(loaded.revision).toBe(ack.revision);
 });
