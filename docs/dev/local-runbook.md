@@ -68,7 +68,9 @@ For the normal live-local development path, start the loopback SQLite/job servic
 npm run local
 ```
 
-This starts the local service on `127.0.0.1:5174` and Vite on `127.0.0.1:5173`. For split terminals, start the loopback local service before or after Vite:
+This starts the local service on `127.0.0.1:5174` and Vite on `127.0.0.1:5173`. Run from a private interactive controlling terminal: native delivery defaults to `tty`, not stdout/stderr. It fails closed without a private receiver; unattended historical units below require a separately designed private receiver and are not current startup recipes. Do not pipe, redirect, capture or screenshot the terminal. In Settings set `http://127.0.0.1:5174`, paste the displayed current session capability, pair the tab, then connect. The capability stays only in tab memory and rotates at each service start; reload/restart requires re-pairing. Never put it in command arguments/history, URLs, config/environment files, logs, browser storage, exports or backups. Plain `/api/health` remains an unauthenticated liveness check; `/api/status`, state, jobs and snippets require Bearer authorization and exact admitted Host/Origin.
+
+For split private terminals:
 
 ```bash
 npm run dev:local-service
@@ -83,15 +85,16 @@ Default service behavior:
 - redacts local filesystem paths from `/api/status` and startup receipts;
 - uses `base` as the local ASR model default, configurable with `LINGOTORTE_ASR_MODEL` from the bounded set `tiny`, `base`, `small`, `medium`, `large-v3`;
 - reports persistence status, including applied migration metadata, without exposing the database path;
-- refuses non-loopback hosts;
+- accepts another bind only with an exact advertised `LINGOTORTE_SERVICE_HOSTNAME`; native UI origins default only to `http://127.0.0.1:5173`. For an explicitly chosen preview or localhost UI set `LINGOTORTE_UI_ORIGINS` to its exact comma-separated HTTP origins, e.g. `http://127.0.0.1:4173,http://localhost:5173`, before startup. No wildcards or trailing slashes; scheme/port/hostname are distinct enrollments. Enrollment does not replace pairing;
 - keeps online providers disabled unless `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true` is explicitly set for a consented run.
 
 Useful checks:
 
 ```bash
 curl -sS http://127.0.0.1:5174/api/health
-curl -sS http://127.0.0.1:5174/api/status
 ```
+
+For authenticated status inspection use the paired Settings UI rather than a shell token argument. An unauthenticated status request must return 401 with no private payload. Preflight/CORS success never authenticates a later request. Do not copy capabilities into `curl -H` commands.
 
 ### Systemd user units
 
@@ -132,8 +135,10 @@ The same service accepts local transcription jobs through `POST /api/jobs` with 
 
 For ElevenLabs Scribe v2, start the service with both gates set in the service process, not in browser JavaScript:
 
+Set the service-only `ELEVENLABS_API_KEY` through an approved private secret-delivery mechanism, not a pasted command, command argument, log or committed config. Only for a separately consented run, set the nonsecret provider enable flag before startup:
+
 ```bash
-LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true ELEVENLABS_API_KEY='<your-key>' npm run local
+LINGOTORTE_ALLOW_ONLINE_PROVIDERS=true npm run local
 ```
 
 The `/api/status` response reports `providers.elevenLabsScribe.apiKeyPresent` and `ready` booleans without exposing the key. In **Library → Transcript lifecycle**, check **I authorize sending extracted audio to ElevenLabs Scribe v2**, enter an absolute owned media path if the current browser media is a `blob:` URL, then click **Generate ElevenLabs Scribe v2 draft**. This creates a `kind: "elevenlabs-scribe"` loopback job. The service extracts local audio with ffmpeg, sends that audio to ElevenLabs, imports the returned draft as `online-asr`, and keeps learner-state saves blocked until correction/approval. Do not click **Generate local ASR draft** when intending to use ElevenLabs; that local button intentionally runs faster-whisper.

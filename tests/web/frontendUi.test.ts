@@ -1,6 +1,7 @@
+import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { connectLocalService, createAppModel, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
+import { connectLocalService, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -36,7 +37,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('renders the app shell with local-only provider status', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     rerenderApp(model);
     const app = document.getElementById('app');
     expect(app?.querySelector('h1')?.textContent).toBe('Lingotorte');
@@ -46,7 +47,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('switches views via navigation and marks active page', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     rerenderApp(model);
     const app = document.getElementById('app');
     const nav = app?.querySelector('nav');
@@ -58,7 +59,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('loads the synthetic fixture and renders transcript cues', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -75,7 +76,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('presents a source-backed study cockpit with transcript and status tokens', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -101,7 +102,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('imports browser-selected local media and subtitle files into the player without upload', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const createObjectURL = vi.fn(() => 'blob:local-video-0');
     const revokeObjectURL = vi.fn();
@@ -148,7 +149,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('imports browser persistent file handles with a stable source label and transient playback URL', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const createObjectURL = vi.fn(() => 'blob:persistent-handle-video');
     const revokeObjectURL = vi.fn();
     Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
@@ -175,7 +176,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('offers a browser persistent media-handle picker in the Library when supported', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const createObjectURL = vi.fn(() => 'blob:persistent-picker-video');
     const revokeObjectURL = vi.fn();
@@ -205,7 +206,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('shows a relink prompt when a hydrated handle-sourced media has no active object URL', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const store = model.store;
     const asset = makeMediaAsset({
       title: 'relinked-clip',
@@ -236,7 +237,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('persists and restores a browser file handle through IndexedDB on reload', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const createObjectURL = vi.fn(() => 'blob:restored-handle-video');
     const revokeObjectURL = vi.fn();
     Object.defineProperty(globalThis.URL, 'createObjectURL', { configurable: true, value: createObjectURL });
@@ -270,7 +271,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.browserLocalMedia.handleName).toBe('persisted-clip.webm');
 
     // Simulate reload: create fresh model, hydrate from stored handle
-    const restoredModel = createAppModel();
+    const restoredModel = pairedModel();
     const asset = makeMediaAsset({
       title: 'persisted-clip',
       originalPath: 'browser-file-handle:persisted-clip.webm',
@@ -299,7 +300,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('records denied browser handle permission and explains the regrant path', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const mediaHandle = {
       name: 'denied-clip.webm',
       getFile: vi.fn(async () => new dom.window.File([new Uint8Array([1])], 'denied-clip.webm', { type: 'video/webm' })),
@@ -335,7 +336,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('reports a clear error when the saved browser handle is missing from the store', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const idbStore = new Map<string, unknown>();
     Object.defineProperty(globalThis, 'lingotorteHandleStore', {
       configurable: true,
@@ -365,7 +366,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('reports a clear error when browser handle storage is unavailable', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     // No lingotorteHandleStore set — simulates no IndexedDB
     const asset = makeMediaAsset({
       title: 'no-store-clip',
@@ -390,7 +391,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('detects a stale stored handle whose name does not match the current media', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const staleHandle = {
       name: 'old-clip.webm',
       getFile: vi.fn(async () => new dom.window.File([new Uint8Array([1])], 'old-clip.webm', { type: 'video/webm' })),
@@ -426,7 +427,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('shows the local-service absolute-path boundary note in the relink placeholder', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const store = model.store;
     const asset = makeMediaAsset({
       title: 'boundary-clip',
@@ -451,8 +452,8 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('restores a persisted browser media handle after loading local-service durable state', async () => {
-    const model = createAppModel();
-    const sourceModel = createAppModel();
+    const model = pairedModel();
+    const sourceModel = pairedModel();
     const asset = makeMediaAsset({
       title: 'service-clip',
       originalPath: 'browser-file-handle:service-clip.webm',
@@ -499,7 +500,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('imports browser-selected media without subtitles so ASR can create a draft later', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const createObjectURL = vi.fn(() => 'blob:media-only-video');
     const revokeObjectURL = vi.fn();
@@ -542,7 +543,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('shows local subtitle parse errors and revokes the failed object URL', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'library';
     const createObjectURL = vi.fn(() => 'blob:bad-local-video');
     const revokeObjectURL = vi.fn();
@@ -568,7 +569,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('revokes the previous local object URL when replacing browser-selected media', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     const createObjectURL = vi.fn()
       .mockReturnValueOnce('blob:first-local-video')
       .mockReturnValueOnce('blob:second-local-video');
@@ -592,7 +593,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('saves a sentence from a cue and shows it in the saved view', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -613,7 +614,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('search filters transcript cues', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -631,13 +632,13 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('does not issue network requests in provider-disabled model', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     expect(model.providerPolicy.onlineProvidersEnabled).toBe(false);
     expect(model.adapters.dictionary?.adapterId).toContain('unavailable');
   });
 
   it('shows learner progress counts in the study cockpit status rail', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -661,7 +662,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('surfaces metadata-only export and restore schema/integrity copy without stale preview state', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'export-import';
     rerenderApp(model);
 
@@ -711,7 +712,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('offers a File System Access save-file picker for export when supported and verifies writeback integrity', async () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'export-import';
     const createObjectURL = vi.fn(() => 'blob:export-download');
     const revokeObjectURL = vi.fn();
@@ -758,7 +759,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
   });
 
   it('shows a post-restore receipt with mode, integrity, counts, and no-media note after merge restore', () => {
-    const model = createAppModel();
+    const model = pairedModel();
     model.view = 'export-import';
     rerenderApp(model);
 
@@ -812,7 +813,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
   it('shows a destructive-mode receipt after Replace-all restore with synthetic isolated state', async () => {
     // Source model: import fixture, save a sentence, export
-    const sourceModel = createAppModel();
+    const sourceModel = pairedModel();
     await importFixtureMediaAndSubtitles(
       sourceModel,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -827,7 +828,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const manifestJson = sourceModel.exportImport.lastExport!.manifestJson;
 
     // Target model: import fixture, save a DIFFERENT sentence so local state exists
-    const model = createAppModel();
+    const model = pairedModel();
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',

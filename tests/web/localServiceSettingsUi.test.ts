@@ -53,9 +53,17 @@ describe('local service settings UI', () => {
     }
   });
 
+  it('shows the captured exact Docker page origin before explicit pairing', () => {
+    const model = createAppModel(); model.localService.baseUrl = '/'; model.view = 'settings'; rerenderApp(model);
+    expect((document.getElementById('local-service-url') as HTMLInputElement).value).toBe('http://localhost:5173');
+    expect((document.getElementById('local-service-capability') as HTMLInputElement).value).toBe('');
+    expect(model.localService.status).toBe('disconnected');
+  });
+
   it('connects to the loopback service from Settings and reports durable-state status', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    let capability = '';
+    const service = await startLingotorteLocalService(config, { receiveCapability(value) { capability = value; } });
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
@@ -72,7 +80,12 @@ describe('local service settings UI', () => {
 
     const connectButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Connect local service') as HTMLButtonElement | undefined;
     expect(connectButton).toBeTruthy();
+    const capabilityInput = document.getElementById('local-service-capability') as HTMLInputElement;
+    expect(capabilityInput.type).toBe('password');
+    capabilityInput.value = capability;
     connectButton!.click();
+    expect(capabilityInput.value).toBe('');
+    expect(JSON.stringify(model).includes(capability)).toBe(false);
 
     for (let i = 0; i < 20 && model.localService.status !== 'connected'; i++) {
       await new Promise((resolve) => setTimeout(resolve, 0));

@@ -1,7 +1,8 @@
+import { pairedModel, SYNTHETIC_CAPABILITY } from './pairingFixture.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { rerenderApp } from '../../apps/web/src/app';
-import { createAppModel, connectLocalService, importFixtureMediaAndSubtitles, saveModelToLocalService, persistIfLocalServiceAutosaveEnabled, setLocalServiceAutosave } from '../../apps/web/src/model';
+import { connectLocalService, importFixtureMediaAndSubtitles, saveModelToLocalService, persistIfLocalServiceAutosaveEnabled, setLocalServiceAutosave } from '../../apps/web/src/model';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 
 const revision = `sha256:${'1'.repeat(64)}`;
@@ -14,7 +15,7 @@ beforeEach(() => {
 });
 afterEach(() => { dom.window.close(); vi.unstubAllGlobals(); });
 async function dirtyModel() {
-  const model = createAppModel();
+  const model = pairedModel();
   await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
   return model;
 }
@@ -24,7 +25,7 @@ it.each(['Keep browser work', 'Load service state (discard browser edits)', 'Can
   const model = await dirtyModel(); model.view = 'settings'; const prior = model.store.snapshot();
   const remote = await dirtyModel(); remote.store.putMediaAsset({ ...remote.currentMedia!, title: 'remote' });
   const fetchMock = vi.fn(async (url: string) => response(url.endsWith('/api/status') ? { config: {} } : { snapshot: remote.store.snapshot(), revision }));
-  vi.stubGlobal('fetch', fetchMock); rerenderApp(model); click('Connect local service');
+  vi.stubGlobal('fetch', fetchMock); rerenderApp(model); (document.getElementById('local-service-capability') as HTMLInputElement).value = SYNTHETIC_CAPABILITY; click('Connect local service');
   await vi.waitFor(() => expect(document.body.textContent).toContain('Keep browser work'));
   expect(model.store.snapshot()).toEqual(prior);
   expect((document.querySelector('[data-local-service-save]') as HTMLButtonElement).disabled).toBe(true);

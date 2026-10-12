@@ -1,5 +1,13 @@
 import { isNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../packages/domain/src/nativePaths.ts';
 import type { AppModel, ViewName } from './uiTypes';
+import { PAIR_AGAIN, type PairedTransport } from './pairedTransport.ts';
+function captureUiServiceOwner(model: AppModel): PairedTransport | null {
+  try { return captureLocalServiceTransport(model); }
+  catch { model.localService.lastMessage = PAIR_AGAIN; rerenderApp(model); return null; }
+}
+function uiOwnerCurrent(transport: PairedTransport): boolean {
+  try { transport.assertCurrent(); return true; } catch { return false; }
+}
 import type { Cue, SavedItem, LearnerExportManifest } from '@lingotorte/domain';
 import { verifyExportIntegrity } from '@lingotorte/domain';
 import { formatDueAt, formatTimeMs } from './uiTypes';
@@ -65,6 +73,8 @@ import {
   setExportImportConfirmReplace,
   setExportImportError,
   connectLocalService,
+  pairLocalService,
+  captureLocalServiceTransport,
   resolveLocalServiceConnection,
   observeLocalServiceSync,
   markUnsavedBrowserEdits,
@@ -555,12 +565,17 @@ function renderPracticeView(model: AppModel): HTMLElement {
     });
     prepareButton.addEventListener('click', async () => {
       if (!currentCue || !hasNativeInputPath(model, snippet.mediaPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+      const transport = captureUiServiceOwner(model); if (!transport) return;
+      const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
+      transport.onInvalidate(() => releaseSourceAudioSnippet(snippet));
       snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
       try {
-        await prepareSourceAudioSnippet({ baseUrl: model.localService.baseUrl, pathPolicy: model.localService.pathPolicy, mediaPath: snippet.mediaPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
+        await prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: snippet.mediaPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
+        if (!stillOwned()) return;
         snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
       } catch (error) {
-        snippet.status = 'failed'; snippet.message = error instanceof Error ? error.message : 'Source audio preparation failed.';
+        if (!stillOwned()) return;
+        snippet.status = 'failed'; snippet.message = redactSourceAudioSnippetError(error);
       }
       rerenderApp(model);
     });
@@ -2271,6 +2286,9 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
     const operationRange = model.player.sourceRange;
     const operationPath = snippet.mediaPath;
     if (!operationRange || operationRange.endMs - operationRange.startMs > 30_000 || !hasNativeInputPath(model, operationPath) || !hasExtractableCurrentMedia(model) || model.localService.status !== 'connected') return;
+    const transport = captureUiServiceOwner(model); if (!transport) return;
+    const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
+    transport.onInvalidate(() => releaseSourceAudioSnippet(snippet));
     releaseSourceAudioSnippet(snippet);
     const generation = ++snippet.generation;
     const contextKey = sourceRangeContextKey(model, snippet);
@@ -2280,13 +2298,13 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
     const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
     rerenderApp(model);
     void prepareSourceAudioSnippet({
-      baseUrl: model.localService.baseUrl, pathPolicy: model.localService.pathPolicy,
+      transport, pathPolicy: model.localService.pathPolicy,
       mediaPath: operationPath,
       startMs: operationRange.startMs,
       endMs: operationRange.endMs,
       lifecycle: operationLifecycle,
     }).then(() => {
-      if (snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) {
+      if (!stillOwned() || snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) {
         releaseSourceAudioSnippet(operationLifecycle);
         return;
       }
@@ -2297,7 +2315,7 @@ function renderSourceRangePanel(model: AppModel): HTMLElement {
       rerenderApp(model);
     }).catch((error: unknown) => {
       releaseSourceAudioSnippet(operationLifecycle);
-      if (snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) return;
+      if (!stillOwned() || snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) return;
       snippet.status = 'failed';
       snippet.message = redactSourceAudioSnippetError(error);
       rerenderApp(model);
@@ -2845,26 +2863,32 @@ function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   listButton.disabled = !readNativePathPolicy(model.localService.pathPolicy) || state.listingStatus === 'listing' || state.extractionStatus === 'extracting';
   if (!readNativePathPolicy(model.localService.pathPolicy)) boundary.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   listButton.addEventListener('click', () => {
+    const transport = captureUiServiceOwner(model); if (!transport) return;
     void listEmbeddedSubtitleTracksFromService(model)
       .then(() => {
+        if (!uiOwnerCurrent(transport)) return;
         model.importError = null;
         rerenderApp(model);
       })
       .catch((error: unknown) => {
+        if (!uiOwnerCurrent(transport)) return;
         if (isStaleEmbeddedSubtitleOperationError(error)) return;
         model.importError = error instanceof Error ? error.message : String(error);
         rerenderApp(model);
       });
   });
   extractButton.addEventListener('click', () => {
+    const transport = captureUiServiceOwner(model); if (!transport) return;
     extractButton.disabled = true;
     void extractSelectedEmbeddedSubtitleDraft(model)
       .then(() => {
+        if (!uiOwnerCurrent(transport)) return;
         model.importError = null;
         model.transcriptLifecycle.lastMessage = state.statusMessage;
         rerenderApp(model);
       })
       .catch((error: unknown) => {
+        if (!uiOwnerCurrent(transport)) return;
         if (isStaleEmbeddedSubtitleOperationError(error)) return;
         model.importError = error instanceof Error ? error.message : String(error);
         rerenderApp(model);
@@ -3006,7 +3030,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   publicImportBtn.className = 'btn-secondary';
   publicImportBtn.textContent = 'Import public YouTube caption draft';
   publicImportBtn.addEventListener('click', () => {
-    const provider = makeLocalServiceYouTubeCaptionProvider(model.localService.baseUrl, {
+    const transport = captureUiServiceOwner(model); if (!transport) return;
+    const provider = makeLocalServiceYouTubeCaptionProvider(transport, {
       allowPublicRead: model.transcriptLifecycle.publicReadAuthorized,
     });
     void importYouTubeCaptionCandidate(model, {
@@ -3015,6 +3040,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       allowPublicRead: model.transcriptLifecycle.publicReadAuthorized,
     }, provider)
       .then(() => {
+        if (!uiOwnerCurrent(transport)) return;
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
@@ -3023,6 +3049,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((err: unknown) => {
+        if (!uiOwnerCurrent(transport)) return;
         model.importError = err instanceof Error ? err.message : String(err);
         rerenderApp(model);
       });
@@ -3034,13 +3061,15 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   asrBtn.textContent = 'Generate local ASR draft';
   asrBtn.disabled = !model.currentMedia || !hasNativeInputPath(model, model.transcriptLifecycle.localAsrMediaPath || currentMediaPath);
   asrBtn.addEventListener('click', () => {
-    const provider = makeLocalServiceAsrProvider(model.localService.baseUrl, {
+    const transport = captureUiServiceOwner(model); if (!transport) return;
+    const provider = makeLocalServiceAsrProvider(transport, {
       mediaPath: model.transcriptLifecycle.localAsrMediaPath,
       pathPolicy: model.localService.pathPolicy,
       alignWords: true,
     });
     void generateLocalAsrDraft(model, provider, model.transcriptLifecycle.youtubeLanguage)
       .then(() => {
+        if (!uiOwnerCurrent(transport)) return;
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
@@ -3049,6 +3078,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((err: unknown) => {
+        if (!uiOwnerCurrent(transport)) return;
         model.importError = err instanceof Error ? err.message : String(err);
         rerenderApp(model);
       });
@@ -3060,7 +3090,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   scribeBtn.textContent = 'Generate ElevenLabs Scribe v2 draft';
   scribeBtn.disabled = !model.currentMedia || !hasNativeInputPath(model, model.transcriptLifecycle.localAsrMediaPath || currentMediaPath);
   scribeBtn.addEventListener('click', () => {
-    const provider = makeLocalServiceElevenLabsScribeProvider(model.localService.baseUrl, {
+    const transport = captureUiServiceOwner(model); if (!transport) return;
+    const provider = makeLocalServiceElevenLabsScribeProvider(transport, {
       mediaPath: model.transcriptLifecycle.localAsrMediaPath,
       pathPolicy: model.localService.pathPolicy,
       modelId: 'scribe_v2',
@@ -3071,6 +3102,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       allowOnlineProvider: model.transcriptLifecycle.elevenLabsAuthorized,
     })
       .then(() => {
+        if (!uiOwnerCurrent(transport)) return;
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
@@ -3079,6 +3111,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((err: unknown) => {
+        if (!uiOwnerCurrent(transport)) return;
         model.importError = err instanceof Error ? err.message : String(err);
         rerenderApp(model);
       });
@@ -3969,13 +4002,25 @@ function renderSettingsView(model: AppModel): HTMLElement {
   urlInput.id = 'local-service-url';
   urlInput.name = 'local-service-url';
   urlInput.type = 'url';
-  urlInput.value = model.localService.baseUrl;
+  urlInput.value = model.localService.baseUrl === '/' ? window.location.origin : model.localService.baseUrl;
   urlInput.addEventListener('input', () => {
+    capabilityInput.value = '';
     setLocalServiceBaseUrl(model, urlInput.value);
   });
   urlLabel.appendChild(urlInput);
   servicePanel.appendChild(urlLabel);
 
+  const capabilityLabel = document.createElement('label');
+  capabilityLabel.textContent = 'Session capability (private pairing)';
+  const capabilityInput = document.createElement('input');
+  capabilityInput.id = 'local-service-capability';
+  capabilityInput.type = 'password';
+  capabilityInput.autocomplete = 'off';
+  capabilityLabel.appendChild(capabilityInput);
+  servicePanel.appendChild(capabilityLabel);
+  const warning = document.createElement('p');
+  warning.textContent = 'Pair only with the exact selected origin on an operator-trusted private network. HTTP sends capability and learner data unencrypted; no public internet use. Reload requires fresh pairing.';
+  servicePanel.appendChild(warning);
   const buttonRow = document.createElement('div');
   buttonRow.className = 'button-row';
   const connectButton = document.createElement('button');
@@ -3983,10 +4028,18 @@ function renderSettingsView(model: AppModel): HTMLElement {
   connectButton.textContent = 'Connect local service';
   connectButton.disabled = model.localService.status === 'connecting';
   connectButton.addEventListener('click', () => {
+    const capability = capabilityInput.value;
+    capabilityInput.value = '';
+    try { pairLocalService(model, capability, urlInput.value); }
+    catch { model.localService.lastMessage = 'Select an exact HTTP origin and enter its private session capability.'; rerenderApp(model); return; }
     void connectLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
     rerenderApp(model);
   });
   buttonRow.appendChild(connectButton);
+  const disconnect = document.createElement('button');
+  disconnect.textContent = 'Disconnect local service';
+  disconnect.addEventListener('click', () => { capabilityInput.value = ''; setLocalServiceBaseUrl(model, model.localService.baseUrl); rerenderApp(model); });
+  buttonRow.appendChild(disconnect);
 
   const saveButton = document.createElement('button');
   saveButton.className = 'btn-secondary';

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createAppModel, importFixtureMediaAndSubtitles, saveModelToLocalService, connectLocalService, saveSentenceFromCue, setLocalServiceAutosave } from '../../apps/web/src/model';
+import { createAppModel, pairLocalService, importFixtureMediaAndSubtitles, saveModelToLocalService, connectLocalService, saveSentenceFromCue, setLocalServiceAutosave } from '../../apps/web/src/model';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server';
 
 async function makeTempConfig() {
@@ -20,6 +20,12 @@ async function makeTempConfig() {
   } as const;
 }
 
+async function startPrivateService(config: Parameters<typeof startLingotorteLocalService>[0]) {
+  let capability = '';
+  const service = await startLingotorteLocalService(config, { receiveCapability(value) { capability = value; } });
+  return { ...service, pair(model: ReturnType<typeof createAppModel>) { pairLocalService(model, capability, service.origin); } };
+}
+
 describe('web model local-service sync', () => {
   const cleanups: (() => Promise<void>)[] = [];
 
@@ -31,12 +37,12 @@ describe('web model local-service sync', () => {
 
   it('preserves a stale browser writer and reports a real SQLite/API revision conflict', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPrivateService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
-    const seed = createAppModel();
+    const seed = createAppModel(); service.pair(seed);
     await importFixtureMediaAndSubtitles(seed, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
     expect((await saveModelToLocalService(seed, service.origin)).ok).toBe(true);
-    const first = createAppModel(); const stale = createAppModel();
+    const first = createAppModel(); const stale = createAppModel(); service.pair(first); service.pair(stale);
     await connectLocalService(first, service.origin); await connectLocalService(stale, service.origin);
     await saveSentenceFromCue(first, first.cues[0]!);
     expect((await saveModelToLocalService(first)).ok).toBe(true);
@@ -44,14 +50,14 @@ describe('web model local-service sync', () => {
     expect((await saveModelToLocalService(stale)).ok).toBe(false);
     expect(stale.localService.syncState).toBe('conflict'); expect(stale.store.snapshot()).toEqual(prior);
     expect(stale.localService.lastSavedAt).toBeNull();
-    const durable = createAppModel(); await connectLocalService(durable, service.origin);
+    const durable = createAppModel(); service.pair(durable); await connectLocalService(durable, service.origin);
     expect(durable.store.snapshot()).toEqual(first.store.snapshot());
   });
 
   it('reports a lost acknowledgement honestly even when SQLite committed, then conflicts on retry', async () => {
-    const { root, config } = await makeTempConfig(); const service = await startLingotorteLocalService(config);
+    const { root, config } = await makeTempConfig(); const service = await startPrivateService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
-    const model = createAppModel();
+    const model = createAppModel(); service.pair(model);
     await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
     await connectLocalService(model, service.origin);
     const realFetch = globalThis.fetch;
@@ -63,9 +69,10 @@ describe('web model local-service sync', () => {
     }));
     try {
       expect((await saveModelToLocalService(model)).ok).toBe(false);
-      expect(model.localService.lastSavedAt).toBeNull(); expect(model.localService.lastMessage).toContain('Acknowledgement lost');
+      expect(model.localService.lastSavedAt).toBeNull(); expect(model.localService.lastMessage).toContain('Local service unreachable');
     } finally { vi.unstubAllGlobals(); }
-    const durable = await realFetch(`${service.origin}/api/state`).then(r => r.json());
+    const durableModel = createAppModel(); service.pair(durableModel); await connectLocalService(durableModel);
+    const durable = { snapshot: durableModel.store.snapshot() };
     expect(durable.snapshot).toEqual(model.store.snapshot());
     expect((await saveModelToLocalService(model)).ok).toBe(false);
     expect(model.localService.syncState).toBe('conflict'); expect(model.localService.lastSavedAt).toBeNull();
@@ -73,13 +80,13 @@ describe('web model local-service sync', () => {
 
   it('saves learner state to the loopback service and hydrates a fresh model from SQLite', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPrivateService(config);
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const model = createAppModel();
+    const model = createAppModel(); service.pair(model);
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -92,7 +99,7 @@ describe('web model local-service sync', () => {
     expect(saved.ok).toBe(true);
     expect(model.localService.status).toBe('connected');
 
-    const fresh = createAppModel();
+    const fresh = createAppModel(); service.pair(fresh);
     const connected = await connectLocalService(fresh, service.origin);
 
     expect(connected.ok).toBe(true);
@@ -104,13 +111,13 @@ describe('web model local-service sync', () => {
 
   it('autosaves supported study-state changes after a service connection', async () => {
     const { root, config } = await makeTempConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPrivateService(config);
     cleanups.push(async () => {
       await service.close();
       await rm(root, { recursive: true, force: true });
     });
 
-    const model = createAppModel();
+    const model = createAppModel(); service.pair(model);
     await importFixtureMediaAndSubtitles(
       model,
       'fixtures/media/synthetic-polish-dialogue.webm',
@@ -125,7 +132,7 @@ describe('web model local-service sync', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
-    const fresh = createAppModel();
+    const fresh = createAppModel(); service.pair(fresh);
     await connectLocalService(fresh, service.origin);
     expect(Object.values(fresh.store.snapshot().savedItems).map((item) => item.displayText)).toContain('Cześć, to jest lokalny test.');
   });

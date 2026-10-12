@@ -1,3 +1,4 @@
+import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 import { nativeFixture } from '../helpers/nativeFixtures.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -8,7 +9,6 @@ import {
   extractEmbeddedSubtitleTrack,
   listEmbeddedSubtitleTracks,
 } from '../../packages/local-transcription/src/index.ts';
-import { startLingotorteLocalService } from '../../apps/local-service/src/server';
 
 const DUMMY_MEDIA = nativeFixture('media/lingotorte-b7-test-media.mp4');
 
@@ -258,7 +258,7 @@ async function makeTempServiceConfig() {
 
 async function waitForJob(origin: string, id: string): Promise<Record<string, unknown>> {
   for (let i = 0; i < 40; i++) {
-    const body = await fetch(`${origin}/api/jobs/${id}`).then((r) => r.json()) as Record<string, unknown>;
+    const body = await pairedFetch(`${origin}/api/jobs/${id}`).then((r) => r.json()) as Record<string, unknown>;
     const job = body.job as Record<string, unknown> | undefined;
     if (job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled') return body;
     await new Promise((p) => setTimeout(p, 10));
@@ -296,10 +296,10 @@ describe('Lingotorte embedded-subtitle local service jobs', () => {
       };
     };
 
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }),
@@ -339,10 +339,10 @@ describe('Lingotorte embedded-subtitle local service jobs', () => {
     await writeFile(mediaPath, 'private bytes');
 
     const runner: CommandRunner = async () => ({ exitCode: 1, stdout: '', stderr: `ffprobe error in ${mediaPath}` });
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }),
@@ -358,10 +358,10 @@ describe('Lingotorte embedded-subtitle local service jobs', () => {
 
   it('embedded-subtitle-list: rejects a relative media path', async () => {
     const { root, config } = await makeTempServiceConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath: 'relative/path.mkv' } }),
@@ -396,10 +396,10 @@ Druga linia dialogu.
       return { exitCode: 0, stdout: '', stderr: '' };
     };
 
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -474,10 +474,10 @@ Druga linia dialogu.
       return { exitCode: 0, stdout: '', stderr: '' };
     };
 
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -496,10 +496,10 @@ Druga linia dialogu.
 
   it('embedded-subtitle-extract: rejects a relative media path', async () => {
     const { root, config } = await makeTempServiceConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -514,10 +514,10 @@ Druga linia dialogu.
 
   it('embedded-subtitle-extract: rejects invalid outputFormat', async () => {
     const { root, config } = await makeTempServiceConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -533,10 +533,10 @@ Druga linia dialogu.
 
   it('embedded-subtitle-extract: rejects invalid streamIndex', async () => {
     const { root, config } = await makeTempServiceConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -551,10 +551,10 @@ Druga linia dialogu.
 
   it('embedded-subtitle-extract: rejects invalid role', async () => {
     const { root, config } = await makeTempServiceConfig();
-    const service = await startLingotorteLocalService(config);
+    const service = await startPairedService(config);
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const created = await fetch(`${service.origin}/api/jobs`, {
+    const created = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -589,17 +589,17 @@ Druga linia dialogu.
       return { exitCode: 0, stdout: '', stderr: '' };
     };
 
-    const service = await startLingotorteLocalService(config, { commandRunner: runner });
+    const service = await startPairedService(config, { commandRunner: runner });
     cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
 
-    const listCreated = await fetch(`${service.origin}/api/jobs`, {
+    const listCreated = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'embedded-subtitle-list', payload: { mediaPath } }),
     }).then((r) => r.json());
     await waitForJob(service.origin, listCreated.job.id);
 
-    const extractCreated = await fetch(`${service.origin}/api/jobs`, {
+    const extractCreated = await pairedFetch(`${service.origin}/api/jobs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'embedded-subtitle-extract', payload: { mediaPath, streamIndex: 0, outputFormat: 'srt', language: 'pl', role: 'target' } }),
@@ -607,7 +607,7 @@ Druga linia dialogu.
     await waitForJob(service.origin, extractCreated.job.id);
 
     // Verify state is unchanged
-    const state = await fetch(`${service.origin}/api/state`).then((r) => r.json());
+    const state = await pairedFetch(`${service.origin}/api/state`).then((r) => r.json());
     // No media assets or tracks were persisted — extraction produces draft in scratch, not in DB
     expect(Object.keys(state.snapshot?.mediaAssets ?? {})).toHaveLength(0);
     expect(Object.keys(state.snapshot?.subtitleTracks ?? {})).toHaveLength(0);

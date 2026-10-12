@@ -127,7 +127,15 @@ function rotateRight32(value: number, bits: number): number {
 }
 
 function sha256HexUtf8(text: string): string {
-  const bytes = new TextEncoder().encode(text);
+  return sha256HexBytes(new TextEncoder().encode(text));
+}
+
+/** Full portable SHA-256; hashes only the supplied view and copies into owned padding. */
+export function sha256HexBytes(input: ArrayBuffer | Uint8Array): string {
+  if (!(input instanceof Uint8Array) && !(input instanceof ArrayBuffer)) {
+    throw new TypeError('SHA-256 input must be an ArrayBuffer or Uint8Array.');
+  }
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const bitLength = bytes.length * 8;
   const paddedLength = Math.ceil((bytes.length + 1 + 8) / 64) * 64;
   const padded = new Uint8Array(paddedLength);
