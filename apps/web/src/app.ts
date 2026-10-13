@@ -30,6 +30,7 @@ import {
   importFixtureMediaAndSubtitles,
   importBrowserLocalFiles,
   importBrowserLocalFileHandles,
+  BrowserMediaNameConflictError,
   listReviewBuckets,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
@@ -1724,6 +1725,54 @@ function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   return placeholder;
 }
 
+// lt-n31: explicit learner choice when a selected file shares a name with existing media but differs in content.
+type PendingMediaNameConflict = Readonly<{ message: string; importAsNew: () => Promise<void> }>;
+let pendingMediaNameConflict: PendingMediaNameConflict | null = null;
+
+function handleMediaImportError(model: AppModel, err: unknown, importAsNew: () => Promise<void>): void {
+  if (err instanceof BrowserMediaNameConflictError) {
+    pendingMediaNameConflict = { message: err.message, importAsNew };
+    model.importError = null;
+  } else {
+    pendingMediaNameConflict = null;
+    model.importError = err instanceof Error ? err.message : String(err);
+  }
+  rerenderApp(model);
+}
+
+function renderMediaNameConflict(model: AppModel): HTMLElement | null {
+  const conflict = pendingMediaNameConflict;
+  if (!conflict) return null;
+  const box = document.createElement('div');
+  box.className = 'status-banner warning media-name-conflict';
+  // An inline alert with ordinary buttons; not a modal alertdialog, so no focus trap or accessible-name requirement.
+  box.setAttribute('role', 'alert');
+  const text = document.createElement('p');
+  text.id = 'media-name-conflict-message';
+  text.textContent = conflict.message;
+  const asNew = document.createElement('button');
+  asNew.type = 'button';
+  asNew.className = 'btn-primary';
+  asNew.textContent = 'Import as new media';
+  asNew.addEventListener('click', () => {
+    pendingMediaNameConflict = null;
+    void conflict.importAsNew()
+      .then(() => { model.importError = null; setView(model, 'player'); rerenderApp(model); })
+      .catch((err: unknown) => { model.importError = err instanceof Error ? err.message : String(err); rerenderApp(model); });
+  });
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn-secondary';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    pendingMediaNameConflict = null;
+    model.importError = 'Import cancelled. Existing media was not changed.';
+    rerenderApp(model);
+  });
+  box.append(text, asNew, cancel);
+  return box;
+}
+
 function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder video-placeholder-relink';
@@ -1799,15 +1848,18 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
           rerenderApp(model);
           return;
         }
-        return importBrowserLocalFileHandles(model, { mediaHandle });
+        return importBrowserLocalFileHandles(model, { mediaHandle })
+          .catch((err: unknown) => {
+            handleMediaImportError(model, err, () => importBrowserLocalFileHandles(model, { mediaHandle }, { onNameConflict: 'import-new' }));
+            throw null;
+          });
       })
       .then(() => {
-        if (!model.importError) {
-          model.importError = null;
-        }
+        pendingMediaNameConflict = null;
         rerenderApp(model);
       })
       .catch((err: unknown) => {
+        if (err === null) return;
         model.importError = err instanceof Error ? err.message : String(err);
         rerenderApp(model);
       });
@@ -1822,6 +1874,15 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   });
   actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
   placeholder.append(icon, heading, body, permission, boundary, actions);
+  if (model.importError) {
+    const banner = document.createElement('p');
+    banner.className = 'status-banner error relink-error';
+    banner.setAttribute('role', 'alert');
+    banner.textContent = model.importError;
+    placeholder.appendChild(banner);
+  }
+  const conflictBox = renderMediaNameConflict(model);
+  if (conflictBox) placeholder.appendChild(conflictBox);
   return placeholder;
 }
 
@@ -3604,13 +3665,13 @@ function renderLibraryView(model: AppModel): HTMLElement {
       : { mediaFile, nativeSubtitleFile };
     void importBrowserLocalFiles(model, importInput)
       .then(() => {
+        pendingMediaNameConflict = null;
         setView(model, 'player');
         model.importError = null;
         rerenderApp(model);
       })
       .catch((err: unknown) => {
-        model.importError = err instanceof Error ? err.message : String(err);
-        rerenderApp(model);
+        handleMediaImportError(model, err, () => importBrowserLocalFiles(model, importInput, { onNameConflict: 'import-new' }));
       });
   });
   const localImportActions = document.createElement('div');
@@ -3619,6 +3680,7 @@ function renderLibraryView(model: AppModel): HTMLElement {
 
   const showOpenFilePicker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
   if (typeof showOpenFilePicker === 'function') {
+    let lastPickedHandle: BrowserFileHandleLike | null = null;
     const persistentImportBtn = document.createElement('button');
     persistentImportBtn.className = 'btn-secondary';
     persistentImportBtn.textContent = 'Import persistent media handle';
@@ -3643,18 +3705,21 @@ function renderLibraryView(model: AppModel): HTMLElement {
             rerenderApp(model);
             return;
           }
-          return importBrowserLocalFileHandles(model, { mediaHandle });
-        })
-        .then(() => {
-          if (!model.importError) {
-            setView(model, 'player');
-            model.importError = null;
-          }
-          rerenderApp(model);
+          lastPickedHandle = mediaHandle;
+          return importBrowserLocalFileHandles(model, { mediaHandle }).then(() => {
+            pendingMediaNameConflict = null;
+            if (!model.importError) {
+              setView(model, 'player');
+              model.importError = null;
+            }
+            rerenderApp(model);
+          });
         })
         .catch((err: unknown) => {
-          model.importError = err instanceof Error ? err.message : String(err);
-          rerenderApp(model);
+          handleMediaImportError(model, err, () => {
+            const retryHandle = lastPickedHandle;
+            return retryHandle ? importBrowserLocalFileHandles(model, { mediaHandle: retryHandle }, { onNameConflict: 'import-new' }) : Promise.reject(err);
+          });
         });
     });
     localImportActions.appendChild(persistentImportBtn);
@@ -3670,6 +3735,8 @@ function renderLibraryView(model: AppModel): HTMLElement {
     form.appendChild(current);
   }
 
+  const conflictBox = renderMediaNameConflict(model);
+  if (conflictBox) form.appendChild(conflictBox);
   if (model.importError) {
     const banner = document.createElement('div');
     banner.className = 'status-banner error';
