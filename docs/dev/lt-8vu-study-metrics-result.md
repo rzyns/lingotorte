@@ -57,3 +57,16 @@ Flake note: earlier full runs of an equivalent candidate sometimes failed with a
 - `studyMetrics` takes an optional `dayKey`, but nothing in the app uses it yet. The UI relies on the browser zone. There is no user preference for time zone.
 - If the browser zone changes, past events are bucketed again under the new zone, because metrics are derived and not stored.
 - The DST case covers the US fall-back transition through Intl. Spring-forward is not tested separately; it uses the same calendar-key logic.
+
+## Integrated candidate (SPEC PASS + QUALITY APPROVED `deleg_784433a4/task1`)
+
+Quality note 5 was applied before merge: the rail `title` now derives its seconds from `STUDY_ESTIMATE_MS_PER_ACTION`. The branch was committed and merged with main `1555ed4` (lt-q3d), producing `4f1eed6`. Image `sha256:467934ad4556366f4b15831ebad4a006f927a65705d2752f4c999886f718a56d`, run with `--network none`:
+
+- Full suite: 3/3 runs passed, 1360 passed and 1 skipped (the skip is pre-existing).
+- Full suite under `TZ=Pacific/Auckland`: 1360 passed.
+- tsc, build, no-network and privacy checks all exit 0.
+
+Remaining follow-ups:
+- Cache day keys per instant.
+- Add a spring-forward test.
+- Inject the zone instead of mutating `process.env.TZ` in the test.
