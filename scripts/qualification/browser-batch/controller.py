@@ -22,6 +22,7 @@ CDP_METHODS = frozenset((
     'Page.reload', 'Page.enable', 'Runtime.evaluate', 'Runtime.callFunctionOn', 'Runtime.releaseObject',
     'DOM.enable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.setFileInputFiles', 'Browser.getVersion',
     'Input.dispatchKeyEvent', 'Input.insertText', 'Emulation.setDeviceMetricsOverride', 'Emulation.clearDeviceMetricsOverride',
+    'Page.bringToFront', 'Emulation.setFocusEmulationEnabled',
 ))
 CATEGORIES = frozenset(('timeout', 'transport', 'javascript', 'rejected'))
 # Fixed element ids mirrored from dom-batch.mjs BUTTON_LABELS / SELECTOR_LABELS keys (test-enforced).

@@ -28,7 +28,7 @@ One fresh store, one service, one tab `J` (plus `JF` on the owned foreign origin
 | journey-04-save-word-sentence | Player: real text selection + `mouseup` on cue 0 for `zamek` and `kota` (the app's selection-save path; it renders no "Saved" preview, so only the gesture is asserted page-side) → ⌨ **Save sentence** → Saved view, tabs **My Vocab** / **My Sentences**: ⌨ **Create review card** for each item. | Approved corrected cue shown with Save enabled and no draft banner. Exactly 3 occurrences, all on the corrected track/media, char spans exactly {zamek 5–10, kota 13–17, whole cue 0–18}; **no** card before the explicit create; then 3 distinct cards, all `new`. | Live server |
 | journey-05-review-due-keyboard | ⌨ nav **Review** → ⌨ **Show answer / context** → ⌨ **Rate good**. | Prompt shown; 4 rating buttons; exactly one card has 1 review event, reps 1, state ≠ new. Due mechanism: **live** (new cards are created with `dueAt = now`). No review-state seeding. | Live server |
 | journey-06-practice-two-modes-keyboard | ⌨ nav **Practice**. Typed input: `Input.insertText` of the exact saved text → ⌨ **Submit attempt**. Then ⌨ ArrowDown on `#practice-mode` → multiple choice → ⌨ a **wrong** choice. | Card order is derived from server `dueAt`; on a tie the phase FAILS rather than guessing. Typed: feedback success, attempt `typed-input` pass, FSRS reps 1 + 1 review event. Choice: feedback error, attempt `multiple-choice` `fail`, FSRS applied. Modes = {typed-input, multiple-choice}; no microphone; providers 0. | Live server |
-| journey-07-morphology-ui-narrow | Player: ⌨ **Analyse words** on the corrected cue; select the ambiguous token; CDP `Emulation.setDeviceMetricsOverride` 375 px (always cleared). | ≥1 POST `/api/language/morphology` from the UI origin with 200; label `Local morphology (Morfeusz)`; `#morphology-status` is `role=status` + `aria-live=polite`; meanings-unavailable text; ambiguous flag + "Several readings, check" + ≥2 alternatives; at 375 px `#morphology-panel` has no horizontal overflow (page overflow recorded, not asserted). | Live server + browser layout |
+| journey-07-morphology-ui-narrow | Player: ⌨ **Analyse words** on the corrected cue; select the ambiguous token; CDP `Emulation.setDeviceMetricsOverride` 375 px (always cleared). | ≥1 POST `/api/language/morphology` from the UI origin with 200; label `Local morphology (Morfeusz)`; `#morphology-status` is `role=status` + `aria-live=polite`; meanings-unavailable text; ambiguous flag + "Several readings, check" + ≥1 item in `.morphology-alternatives` (the primary reading is shown separately, so `mamy` → mieć primary + mama alternative); at 375 px `#morphology-panel` has no horizontal overflow (page overflow recorded, not asserted). | Live server + browser layout |
 | journey-08-morphology-origin-denial | From the owned foreign origin: plain foreign frame and sandboxed (null) frame × {JSON fetch with bearer, text/plain form}: 4 attempts on `/api/language/morphology` (A24–A26 style). | Per attempt: gate trace 401/403, no CORS or credentials grant, table SHA and revision unchanged → PASS. No wire request but unchanged → `OBSERVED_BROWSER_BLOCK` (never PASS). | Live server |
 | journey-09-persist-reload-repair | Save, reload the page, re-pair ("Load service state"). | Journey projection (IDs, card states, review events, attempts, anchors) and revision identical; anchors equal journey-04's; Saved lists ≥3 occurrences. | Live server |
 | journey-10-relink-restart-reselect | Restart the service (capability rotates), reload, re-pair, reselect the same media + SRTs through the file inputs. | Re-paired after rotation; no name conflict; media and track sets identical; occurrences, cards and attempts identical. | Live server |
@@ -118,10 +118,21 @@ print(result)   # sanitized only
 
 ## Run results
 
-_(empty — no live run has been executed)_
+See "Live run 1 and 2 results" below.
 
 ## Gap resolution before the first live run (2026-10-13)
 
 - **G2** became `lt-r4k.1`, which is merged. The Player shows a `role=alert` message on media errors; after the first render it uses `role=status`.
 - **G3** became `lt-r4k.2`, which is merged. `requestFocusAfterRender` moves focus to a successor after Approve, Rate, Submit, multiple-choice and Skip.
 - **G1** (the gated demo draft creates its own `youtube:` media item) remains a documented gap pending Janusz's choice, together with F1.
+
+## Live run 1 and 2 results
+
+**Run 1** (rows `3cb3d50e7df8`): journey-02 failed because the harness compared the media fingerprint as bare hex while the app stores `sha256:<hex>`. Harness defect, fixed in `9d37b33`; dependents were skipped by cascade.
+
+**Run 2** (rows `dce63836e81d`):
+
+- PASS: journey-01, 02, 03, 08 and cleanup. The live focus ring was present after Approve. `focus-after-apply` was OBSERVED on `body` (expected; apply is not asserted).
+- journey-04 FAILED from a product bug: Enter on **Save sentence** is swallowed by the cue row's keydown handler (tracked as `lt-r4k.3`). The oracle was re-checked: word selections are saved with kind `phrase` (`saveSelectedPhraseFromCue`), the anchor check does not require `lexeme`, and `renderSavedView` lists `lexeme` and `phrase` under **My Vocab** and `sentence` under **My Sentences**, so `saved-items-listed` (vocab == 2, sentences == 1) is correct.
+- journey-07 FAILED from a harness oracle: it required ≥2 alternatives, but `morphologyPanel.ts` lists only the other readings (`.morphology-alternatives li`) and shows the primary reading separately. The oracle is now ≥1 and counts only `.morphology-alternatives li`; the ambiguous flag and the "Several readings, check" text are still required.
+- journey-12 FAILED from a harness precondition: tab J was created with `background=True`, so the page was hidden and the undecodable `<video>` never fired `error` (errorCode null). Tab J now gets `Emulation.setFocusEmulationEnabled` + `Page.bringToFront`; journey-01 records `journey-tab-visible` as OBSERVED, and journey-12 asserts `precondition-page-visible` before judging feedback. Batch-gate tabs are unchanged. Residual risk: if visible-page media errors re-render the stage in a loop (`lt-r4k.4`), journey-12 may still fail on the product side.

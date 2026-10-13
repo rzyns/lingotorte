@@ -149,7 +149,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
         const panel = document.querySelector('#morphology-panel'); const status = document.querySelector('#morphology-status'); const t = panel?.textContent ?? '';
         const flagged = [...(panel?.querySelectorAll('button.morphology-token') ?? [])].filter((b) => (b.getAttribute('aria-label') ?? '').includes('several readings'));
         let alternatives = 0;
-        if (flagged[0]) { flagged[0].click(); await new Promise((r) => setTimeout(r, 30)); const p2 = document.querySelector('#morphology-panel'); alternatives = p2 ? p2.querySelectorAll('#morphology-detail li, #morphology-detail button').length : 0; }
+        if (flagged[0]) { flagged[0].click(); await new Promise((r) => setTimeout(r, 30)); const p2 = document.querySelector('#morphology-panel'); alternatives = p2 ? p2.querySelectorAll('#morphology-detail .morphology-alternatives li').length : 0; }
         const p3 = document.querySelector('#morphology-panel'); const t3 = p3?.textContent ?? '';
         return { panel: !!panel, statusRole: status?.getAttribute('role') === 'status', statusLive: status?.getAttribute('aria-live') === 'polite', sourceService: t.includes(J.sourceService) || t3.includes(J.sourceService), ambiguousFlag: flagged.length > 0, ambiguousQuality: t3.includes(J.ambiguousQuality), alternatives, meaningsUnavailable: t.includes(J.meaningsUnavailable), tokens: panel?.querySelectorAll('button.morphology-token').length ?? 0 };
       }

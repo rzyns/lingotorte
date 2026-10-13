@@ -312,6 +312,58 @@ class SourceTraceTests(unittest.TestCase):
         self.assertIn('media-error-alert', stage)
         self.assertIn('export function requestFocusAfterRender', app)
 
+    def test_journey_tab_made_visible_batch_tabs_unchanged(self):
+        """Live run 2: a background target is hidden; tab J must get focus emulation and bringToFront."""
+        calls = []
+
+        class D(live.BatchDriver):
+            def __init__(self):
+                self.tabs, self.cur = {}, None
+
+            def call(self, method, tab=None, **params):
+                calls.append((method, self.cur and next(k for k, v in self.tabs.items() if v is self.cur)))
+                if method == 'Target.createTarget':
+                    return {'targetId': 't'}
+                if method == 'Target.attachToTarget':
+                    return {'sessionId': 's'}
+                if method == 'Runtime.evaluate':
+                    return {'result': {'value': 'visible'}}
+                return {}
+
+        d = D()
+        d.tab('J')
+        self.assertTrue(d.make_visible())
+        self.assertIn(('Emulation.setFocusEmulationEnabled', 'J'), calls)
+        self.assertIn(('Page.bringToFront', 'J'), calls)
+        for m in ('Page.bringToFront', 'Emulation.setFocusEmulationEnabled'):
+            self.assertIn(m, c.CDP_METHODS)
+        self.assertEqual(live.VISIBLE_TABS, ('J',))
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        pg = src[src.index('    def page(self, key'):src.index('    def make_visible')]
+        self.assertIn('if key in VISIBLE_TABS:', pg)
+        self.assertIn('self.make_visible()', pg)
+        p1 = src[src.index('def phase_journey_01_pair'):src.index('def phase_journey_02')]
+        self.assertIn("'journey-tab-visible'", p1)
+        p12 = src[src.index('def phase_journey_12'):src.index('def phase_journey_13')]
+        self.assertLess(p12.index("'precondition-page-visible', self.make_visible()"), p12.index("self.invoke('media-feedback')"))
+
+    def test_morphology_alternatives_oracle(self):
+        """Live run 2: the panel lists only the other readings, so an ambiguous word has >= 1 alternative."""
+        panel = (APP / 'morphologyPanel.ts').read_text(encoding='utf8')
+        self.assertIn("el('ul', 'morphology-alternatives')", panel)
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        self.assertIn("m['ambiguousFlag'] and m['ambiguousQuality'] and m['alternatives'] >= 1", src)
+        js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')
+        self.assertIn("'#morphology-detail .morphology-alternatives li'", js)
+        self.assertNotIn('#morphology-detail button', js)
+
+    def test_saved_vocab_tab_lists_phrases(self):
+        """Word selections save as kind 'phrase'; renderSavedView lists lexeme+phrase under My Vocab."""
+        app = (APP / 'app.ts').read_text(encoding='utf8')
+        self.assertIn("{ id: 'vocab', label: 'My Vocab', kinds: ['lexeme', 'phrase'] }", app)
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        p4 = src[src.index('def phase_journey_04'):src.index('def phase_journey_05')]
+        self.assertNotIn("'lexeme'", p4)
 
 if __name__ == '__main__':
     unittest.main()
