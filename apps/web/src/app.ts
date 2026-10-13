@@ -1745,6 +1745,10 @@ function renderVideoStage(model: AppModel): HTMLElement {
   video.addEventListener('error', () => {
     if (!isCurrentVideo()) return;
     const code = video.error?.code ?? 0;
+    // lt-r4k.4: a re-rendered <video> with the same src fails again in real browsers. An error already
+    // recorded for this media/source/code is a repeat: no state replacement, no rerender, no re-announce.
+    const existing = model.player.mediaError;
+    if (existing && existing.mediaId === mediaId && existing.source === mediaSource && existing.code === code) return;
     model.player.mediaError = { mediaId, source: mediaSource, code, message: mediaErrorMessage(code) };
     model.player.isPlaying = false;
     rerenderApp(model);
@@ -2830,6 +2834,8 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     };
     row.addEventListener('click', seek);
     row.addEventListener('keydown', (e) => {
+      // lt-r4k.3: only handle keys aimed at the row itself; nested buttons keep native activation.
+      if (e.target !== row) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         seek();
