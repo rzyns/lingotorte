@@ -288,9 +288,13 @@ class BatchDriver:
             raise DE('DOMBridgeObjectMissing')
         t.origin = origin
 
+    # Page-side deadlines for restore-commit sum to ~19 s (refresh 8 + enable 3 + commit 8); keep CDP above them
+    # so slow paths surface as precise DomDeadline/DomButton tags rather than a transport timeout.
+    OP_TIMEOUTS = {'restore-commit': 35}
+
     def invoke(self, op, **arg):
         fn = INVOKE_FN
-        r = self.call('Runtime.callFunctionOn', objectId=self.cur.object, functionDeclaration=fn, arguments=[{'value': op}, {'value': arg}], awaitPromise=True, returnByValue=True, _response_timeout=20)
+        r = self.call('Runtime.callFunctionOn', objectId=self.cur.object, functionDeclaration=fn, arguments=[{'value': op}, {'value': arg}], awaitPromise=True, returnByValue=True, _response_timeout=self.OP_TIMEOUTS.get(op, 20))
         v = r.get('result', {}).get('value')
         if not isinstance(v, dict):
             raise DE('DOMResultType')
