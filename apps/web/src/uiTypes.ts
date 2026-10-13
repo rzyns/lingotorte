@@ -20,6 +20,8 @@ export type PlayerState = {
   sourceRange: { startMs: number; endMs: number } | null;
   activeCueId: string | null;
   lastTokenPreview?: string;
+  /** Last playback error for the current media item (lt-r4k.1); cleared on load success or media change. */
+  mediaError?: { mediaId: string; source: string; code: number; message: string; announced?: boolean } | null;
 };
 
 export type Selection = {

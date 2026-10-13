@@ -509,6 +509,8 @@ function renderPracticeView(model: AppModel): HTMLElement {
   if (last) {
     const feedback = document.createElement('div');
     feedback.className = `practice-feedback ${last.correct ? 'success' : 'error'}`;
+    feedback.id = 'practice-feedback';
+    feedback.tabIndex = -1;
     feedback.setAttribute('role', 'status');
     const verdict = last.correct ? `Result: ${last.result} ✓` : `Result: ${last.result}`;
     feedback.textContent = last.expected !== undefined ? `Previous card — ${verdict}. Expected: ${last.expected}` : verdict;
@@ -518,6 +520,8 @@ function renderPracticeView(model: AppModel): HTMLElement {
   if (!active) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
+    empty.id = 'practice-empty';
+    empty.tabIndex = -1;
     empty.textContent = 'No cards due right now. Add more saved items or wait for scheduled reviews.';
     section.appendChild(empty);
     return section;
@@ -532,6 +536,8 @@ function renderPracticeView(model: AppModel): HTMLElement {
 
   const prompt = document.createElement('div');
   prompt.className = 'practice-prompt';
+  prompt.id = 'practice-prompt';
+  prompt.tabIndex = -1;
   prompt.setAttribute('role', 'alert');
   prompt.setAttribute('aria-live', 'polite');
   prompt.textContent = contract ? contract.prompt : PRACTICE_SPEAKING_UNAVAILABLE;
@@ -591,6 +597,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
       choiceBtn.setAttribute('aria-label', `Answer choice ${i + 1}`);
       choiceBtn.addEventListener('click', () => {
         submitPracticeAttempt(model, choices[i]!, model.clock());
+        requestFocusAfterRender(model, ...PRACTICE_SUCCESSORS);
         rerenderApp(model);
       });
       choiceGroup.appendChild(choiceBtn);
@@ -809,6 +816,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   skipBtn.disabled = !contract;
   skipBtn.addEventListener('click', () => {
     submitPracticeAttempt(model, '', model.clock());
+    requestFocusAfterRender(model, ...PRACTICE_SUCCESSORS);
     rerenderApp(model);
   });
   controls.appendChild(skipBtn);
@@ -823,11 +831,13 @@ function renderPracticeView(model: AppModel): HTMLElement {
   if (model.practice.mode === 'sentence-builder') {
     submitBtn.addEventListener('click', () => {
       submitSentenceBuilderAttempt(model, model.practice.sentenceBuilder.orderedTokens, model.clock());
+      requestFocusAfterRender(model, ...PRACTICE_SUCCESSORS);
       rerenderApp(model);
     });
   } else {
     submitBtn.addEventListener('click', () => {
       submitPracticeAttempt(model, model.practice.pendingAnswer, model.clock());
+      requestFocusAfterRender(model, ...PRACTICE_SUCCESSORS);
       rerenderApp(model);
     });
   }
@@ -847,11 +857,14 @@ function renderPracticeView(model: AppModel): HTMLElement {
       const revealButton = document.createElement('button');
       revealButton.type = 'button'; revealButton.className = 'btn-secondary'; revealButton.textContent = 'Reveal answer';
       revealButton.setAttribute('aria-label', 'Reveal answer (a later submission counts as fail)');
-      revealButton.addEventListener('click', () => { revealPracticeAnswer(model); rerenderApp(model); });
+      revealButton.addEventListener('click', () => { revealPracticeAnswer(model); requestFocusAfterRender(model, 'practice-revealed-answer'); rerenderApp(model); });
       context.appendChild(revealButton);
     } else {
       const targetContext = document.createElement('p');
       targetContext.className = 'review-target-context';
+      targetContext.id = 'practice-revealed-answer';
+      targetContext.tabIndex = -1;
+      targetContext.setAttribute('aria-label', `Revealed answer: ${currentCue.text}`);
       targetContext.textContent = currentCue.text;
       context.appendChild(targetContext);
       if (nativeText) {
@@ -1722,7 +1735,25 @@ function renderVideoStage(model: AppModel): HTMLElement {
       video.currentTime = loopJump / 1000;
     }
   });
+  const mediaId = model.currentMedia.id;
+  const mediaSource = mediaPlaybackUrl(model);
+  // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
+  const isCurrentVideo = () => video.isConnected
+    && model.currentMedia?.id === mediaId
+    && mediaPlaybackUrl(model) === mediaSource
+    && document.querySelector('.video-stage video') === video;
+  video.addEventListener('error', () => {
+    if (!isCurrentVideo()) return;
+    const code = video.error?.code ?? 0;
+    model.player.mediaError = { mediaId, source: mediaSource, code, message: mediaErrorMessage(code) };
+    model.player.isPlaying = false;
+    rerenderApp(model);
+  });
   video.addEventListener('loadedmetadata', () => {
+    if (isCurrentVideo() && model.player.mediaError) {
+      model.player.mediaError = null;
+      stage.querySelector('.media-error-alert')?.remove();
+    }
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
     video.playbackRate = model.player.playbackRate;
     if (model.player.isPlaying) {
@@ -1740,6 +1771,20 @@ function renderVideoStage(model: AppModel): HTMLElement {
   });
   stage.appendChild(video);
 
+  const mediaError = model.player.mediaError;
+  if (mediaError && (mediaError.mediaId !== mediaId || mediaError.source !== mediaSource)) {
+    model.player.mediaError = null;
+  } else if (mediaError) {
+    const alert = document.createElement('p');
+    alert.className = 'status-banner error media-error-alert';
+    // Assertive role=alert only on the first render after the error; later re-renders use role=status so
+    // unrelated rerenders don't re-announce it.
+    alert.setAttribute('role', mediaError.announced ? 'status' : 'alert');
+    mediaError.announced = true;
+    alert.textContent = mediaError.message;
+    stage.appendChild(alert);
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'subtitle-overlay';
   overlay.setAttribute('aria-live', 'polite');
@@ -1752,6 +1797,18 @@ function renderVideoStage(model: AppModel): HTMLElement {
   updateOverlay(stage, model, initialCue);
 
   return stage;
+}
+
+// MediaError codes: 1 ABORTED, 2 NETWORK, 3 DECODE, 4 SRC_NOT_SUPPORTED. The codec is never guessed.
+function mediaErrorMessage(code: number): string {
+  const advice = ' The imported record is kept; relink or choose another file.';
+  switch (code) {
+    case 1: return `This media file could not load: playback was aborted before the browser finished reading it.${advice}`;
+    case 2: return `This media file could not load: the browser could not read the file (it may have moved or become unavailable).${advice}`;
+    case 3: return `This media file could not be played: the browser could not decode it (the file may be corrupt or use an unsupported codec).${advice}`;
+    case 4: return `This media file could not be played: the browser does not support its format or codec.${advice}`;
+    default: return `This media file could not be played: the browser reported an unknown media error.${advice}`;
+  }
 }
 
 function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
@@ -3338,6 +3395,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   if (model.transcriptLifecycle.lastMessage) {
     const status = document.createElement('div');
     status.className = 'status-banner success';
+    status.id = 'transcript-lifecycle-status';
+    status.tabIndex = -1;
     status.setAttribute('role', 'status');
     status.textContent = model.transcriptLifecycle.lastMessage;
     panel.appendChild(status);
@@ -3705,6 +3764,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     }
     model.transcriptLifecycle.lastMessage = 'Transcript approved for study';
     model.importError = null;
+    requestFocusAfterRender(model, 'transcript-lifecycle-status');
     rerenderApp(model);
   });
   panel.appendChild(approvalGate);
@@ -4079,6 +4139,8 @@ function renderReviewView(model: AppModel): HTMLElement {
   if (!active) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
+    empty.id = 'review-empty';
+    empty.tabIndex = -1;
     empty.textContent = 'No cards due right now. All cards, including mastered cards, return when scheduled.';
     section.appendChild(empty);
     return section;
@@ -4148,6 +4210,7 @@ function renderReviewView(model: AppModel): HTMLElement {
 
   const revealBtn = document.createElement('button');
   revealBtn.className = 'btn-secondary';
+  revealBtn.id = 'review-reveal-toggle';
   revealBtn.textContent = model.review.revealed ? 'Hide answer' : 'Show answer / context';
   revealBtn.addEventListener('click', () => {
     toggleReviewReveal(model);
@@ -4189,6 +4252,7 @@ function renderReviewView(model: AppModel): HTMLElement {
         submitReviewRating(model, card.id, rating, model.clock());
         model.review.activeCardId = null;
         model.review.revealed = false;
+        requestFocusAfterRender(model, 'review-reveal-toggle', 'review-empty');
         rerenderApp(model);
       });
       buttons.appendChild(btn);
@@ -4401,7 +4465,22 @@ function scheduleLearningWake(model: AppModel): void {
   (learningWakeTimer as { unref?: () => void }).unref?.();
 }
 
+// lt-r4k.2: actions that remove or replace the activated control request an explicit focus successor.
+// Only user-action handlers call this; timer/wake/autosave renders never set it, so they never move focus.
+const pendingFocusRequests = new WeakMap<AppModel, readonly string[]>();
+const PRACTICE_SUCCESSORS = ['practice-feedback', 'practice-empty', 'practice-prompt'] as const;
+
+/** Ask the next rerenderApp(model) to focus the first of `ids` that exists after rendering. */
+// Callers must request immediately before a synchronous rerenderApp. If a request is ever made before an
+// await, add an activeElement check so focus is not pulled away from where the user has since moved.
+export function requestFocusAfterRender(model: AppModel, ...ids: string[]): void {
+  pendingFocusRequests.set(model, ids);
+}
+
 export function rerenderApp(model: AppModel): void {
+  // Consume the one-time focus request first, so it can never survive to a later, unrelated render.
+  const requested = pendingFocusRequests.get(model);
+  pendingFocusRequests.delete(model);
   const app = document.getElementById('app');
   if (!app) return;
   const previousView = model.view;
@@ -4413,7 +4492,10 @@ export function rerenderApp(model: AppModel): void {
   const nav = currentRoot.querySelector('.lingotorte-nav');
   if (nav) setActiveNav(nav as HTMLElement, previousView);
   app.appendChild(currentRoot);
-  if (focused) {
+  const successor = requested?.map((id) => document.getElementById(id)).find((el): el is HTMLElement => el !== null);
+  if (successor) {
+    successor.focus();
+  } else if (focused) {
     const el = document.getElementById(focused);
     el?.focus();
   }
