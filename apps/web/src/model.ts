@@ -142,6 +142,9 @@ export function createAppModel(): AppModel {
       pendingAnswer: '',
       lastAttemptResult: null,
       typedAttemptsEnabled: true,
+      cardId: null,
+      revealed: false,
+      choices: null,
       sentenceBuilder: {
         orderedTokens: [],
         poolTokens: [],
@@ -2564,10 +2567,27 @@ export async function createCorrectedTranscriptVersion(
   parentTrackId: string,
   edits: readonly TranscriptCorrectionEdit[],
 ): Promise<TranscriptImportResult> {
+  return withTranscriptCorrectionPending(model, () => createCorrectedTranscriptVersionNow(model, parentTrackId, edits));
+}
+
+async function createCorrectedTranscriptVersionNow(
+  model: AppModel,
+  parentTrackId: string,
+  edits: readonly TranscriptCorrectionEdit[],
+): Promise<TranscriptImportResult> {
   const parent = model.store.getSubtitleTrack(parentTrackId);
   if (!parent) throw new TypeError(`Cannot correct missing transcript track ${parentTrackId}`);
   const parentCues = model.store.listCuesForTrack(parentTrackId);
   if (parentCues.length === 0) throw new TypeError('Cannot correct transcript track with no cues.');
+  // Validate word edits before any store write so a rejected word edit cannot leave a partial corrected version.
+  for (const edit of edits) {
+    for (const word of edit.wordTimings ?? []) {
+      if (!normalizeBrowserCueText(word.text)) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
+      if (!Number.isFinite(word.startMs) || !Number.isFinite(word.endMs) || word.endMs <= word.startMs) {
+        throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
+      }
+    }
+  }
   const editsByCueId = new Map(edits.map((edit) => [edit.cueId, edit]));
   const segments = parentCues.map((cue) => {
     const edit = editsByCueId.get(cue.id);
@@ -2663,6 +2683,15 @@ async function createStructuralCorrectedTranscriptVersion(
   segments: readonly TranscriptSegmentDraft[],
   manualCorrectionCount: number,
 ): Promise<TranscriptImportResult> {
+  return withTranscriptCorrectionPending(model, () => createStructuralCorrectedTranscriptVersionNow(model, parentTrackId, segments, manualCorrectionCount));
+}
+
+async function createStructuralCorrectedTranscriptVersionNow(
+  model: AppModel,
+  parentTrackId: string,
+  segments: readonly TranscriptSegmentDraft[],
+  manualCorrectionCount: number,
+): Promise<TranscriptImportResult> {
   const parent = model.store.getSubtitleTrack(parentTrackId);
   if (!parent) throw new TypeError(`Cannot correct missing transcript track ${parentTrackId}`);
   const warningFlags: TranscriptWarningFlag[] = ['qualityUnreviewed'];
@@ -2742,9 +2771,60 @@ export async function mergeTranscriptCueWithNextInCorrectedVersion(
   return createStructuralCorrectedTranscriptVersion(model, parentTrackId, segments, 1);
 }
 
+const transcriptCorrectionsInFlight = new WeakMap<AppModel, number>();
+async function withTranscriptCorrectionPending<T>(model: AppModel, operation: () => Promise<T>): Promise<T> {
+  transcriptCorrectionsInFlight.set(model, (transcriptCorrectionsInFlight.get(model) ?? 0) + 1);
+  try {
+    return await operation();
+  } finally {
+    transcriptCorrectionsInFlight.set(model, Math.max(0, (transcriptCorrectionsInFlight.get(model) ?? 1) - 1));
+  }
+}
+
+/** True while a corrected/structural transcript version is being created for this model. */
+export function transcriptCorrectionPending(model: AppModel): boolean {
+  return (transcriptCorrectionsInFlight.get(model) ?? 0) > 0;
+}
+
+/**
+ * True when pending editor values differ from the persisted cue text/boundaries or word text/boundaries of
+ * `trackId`. Reverted values are clean. Pending entries that do not belong to `trackId` (for example edits made
+ * against a previous version) and non-finite numbers are treated as dirty (fail closed).
+ */
+export function hasDirtyTranscriptEdits(model: AppModel, trackId: string): boolean {
+  const lifecycle = model.transcriptLifecycle;
+  const cues = new Map(model.store.listCuesForTrack(trackId).map((cue) => [cue.id, cue]));
+  for (const [cueId, text] of Object.entries(lifecycle.pendingCueEdits)) {
+    const cue = cues.get(cueId);
+    if (!cue || text !== cue.text) return true;
+  }
+  for (const [cueId, timing] of Object.entries(lifecycle.pendingCueTimingEdits)) {
+    const cue = cues.get(cueId);
+    if (!cue || timing.startMs !== cue.startMs || timing.endMs !== cue.endMs) return true;
+  }
+  const wordEntries = Object.entries(lifecycle.pendingWordTimingEdits);
+  if (wordEntries.length > 0) {
+    const words = new Map(model.store.listTranscriptWordTimingsForTrack(trackId).map((word) => [word.id, word]));
+    for (const [wordId, edit] of wordEntries) {
+      const word = words.get(wordId);
+      if (!word || edit.text !== word.text || edit.startMs !== word.startMs || edit.endMs !== word.endMs) return true;
+    }
+  }
+  return false;
+}
+
+/** Returns null when explicit approval of `trackId` is allowed, else the reason it is blocked. */
+export function transcriptApprovalBlockReason(model: AppModel, trackId: string): string | null {
+  if (transcriptCorrectionPending(model)) return 'Cannot approve while a transcript correction is pending. Wait for it to finish, inspect the result, then approve.';
+  if (hasDirtyTranscriptEdits(model, trackId)) return 'Cannot approve with pending transcript edits. Use “Create corrected transcript version”, inspect the corrected version, then approve it.';
+  return null;
+}
+
 export function approveTranscriptTrack(model: AppModel, trackId: string, approvedAt = new Date().toISOString()): SubtitleTrack {
   const track = model.store.getSubtitleTrack(trackId);
   if (!track) throw new TypeError(`Cannot approve missing transcript track ${trackId}`);
+  const blocked = transcriptApprovalBlockReason(model, trackId);
+  if (blocked) throw new TypeError(blocked);
   const segments = model.store.listCuesForTrack(trackId).map((cue) => ({ startMs: cue.startMs, endMs: cue.endMs, text: cue.text }));
   const qualityReport = {
     ...(track.qualityReport ?? qualityReportForSegments(segments, track.provenance.warningFlags)),
@@ -3143,84 +3223,182 @@ export function submitReviewRating(model: AppModel, cardId: string, rating: Rati
 
 export type TokenInfo = { tokenIndex: number; charStart: number; charEnd: number; surface: string };
 
-export function projectPracticeAttempt(
-  active: NonNullable<ReturnType<typeof pickNextDueCard>>,
-  answer: string,
-): {
-  result: import('@lingotorte/domain').PracticeResult;
-  correct: boolean;
-  expected: string;
-} {
-  const expected = active.savedItem.displayText;
-  const normalizedAnswer = answer.trim().toLowerCase();
-  const normalizedExpected = expected.trim().toLowerCase();
-  const exact = normalizedAnswer === normalizedExpected;
-  const contains = normalizedAnswer.length > 0 && normalizedExpected.includes(normalizedAnswer);
+type ActiveDueCard = NonNullable<ReturnType<typeof pickNextDueCard>>;
+type PracticeResult = import('@lingotorte/domain').PracticeResult;
+type PracticeModeName = import('@lingotorte/domain').PracticeMode;
 
-  let result: import('@lingotorte/domain').PracticeResult;
-  let correct: boolean;
-  if (exact) {
-    result = 'pass';
-    correct = true;
-  } else if (contains && normalizedAnswer.length >= Math.min(3, normalizedExpected.length)) {
-    result = 'pass-with-hesitation';
-    correct = true;
-  } else if (answer.trim().length === 0) {
-    result = 'skipped';
-    correct = false;
-  } else {
-    result = 'fail';
-    correct = false;
-  }
-  return { result, correct, expected };
+/**
+ * lt-0g9 per-mode practice contract. `prompt` is what is shown before submission and never contains
+ * `expected`; `expected` is what the answer is graded against and what is stored as expectedAnswer.
+ * - typed-input / multiple-choice: recall the saved item (`savedItem.displayText`) from its meaning,
+ *   native cue, or the source cue with the saved span masked.
+ * - audio-recall: transcribe the heard source cue (`cue.text`), not the saved item.
+ * - sentence-builder: order the shuffled tokens of the source cue (`cue.text`).
+ * - speaking: unavailable (no microphone); there is no contract and submission is refused.
+ * Grading → FSRS (PracticeService.resultToRating): pass→good, pass-with-hesitation→hard, fail→again,
+ * skipped→no FSRS update. A submission after a pre-answer reveal is graded fail.
+ */
+export type PracticeContract = Readonly<{
+  mode: Exclude<PracticeModeName, 'speaking'>;
+  prompt: string;
+  expected: string;
+  expectedSource: 'saved-item' | 'cue-transcription';
+  hesitationAllowed: boolean;
+}>;
+
+export const PRACTICE_SPEAKING_UNAVAILABLE = 'Speaking practice is unavailable: Lingotorte does not request microphone access. Choose another mode.';
+const MASK = '____';
+
+function practiceCueContext(model: AppModel, active: ActiveDueCard): { cue: Cue | null; native: string | undefined } {
+  const cue = model.store.getCue(active.occurrence.cueId) ?? null;
+  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+  return { cue, native: cue ? nativeTextForCue(cue, nativeTrack, nativeCues) : undefined };
 }
 
-export function submitPracticeAttempt(model: AppModel, answer: string, reviewedAt: Date): import('@lingotorte/domain').PracticeAttempt {
+function leaks(part: string, expected: string): boolean {
+  const e = expected.trim().toLowerCase();
+  return e.length > 0 && part.toLowerCase().includes(e);
+}
+
+export function practiceContractFor(model: AppModel, active: ActiveDueCard, mode: PracticeModeName = model.practice.mode): PracticeContract | null {
+  if (mode === 'speaking') return null;
+  const { cue, native } = practiceCueContext(model, active);
+  const cueText = cue?.text ?? active.savedItem.displayText;
+  if (mode === 'audio-recall' || mode === 'sentence-builder') {
+    const expected = cueText;
+    const lead = mode === 'audio-recall'
+      ? 'Listen to the owned source cue, then type what you hear.'
+      : 'Build the source cue from the shuffled words.';
+    const hint = native && !leaks(native, expected) ? ` Native cue: ${native}` : '';
+    return { mode, prompt: `${lead}${hint}`, expected, expectedSource: 'cue-transcription', hesitationAllowed: mode === 'audio-recall' };
+  }
+  const expected = active.savedItem.displayText;
+  const parts: string[] = [];
+  if (active.savedItem.meaning) parts.push(`Meaning: ${active.savedItem.meaning}`);
+  if (native) parts.push(`Native cue: ${native}`);
+  const span = active.occurrence.sourceContext.charSpan;
+  if (cue && span && (span.start > 0 || span.end < cue.text.length)) {
+    parts.push(`Context: ${cue.text.slice(0, span.start)}${MASK}${cue.text.slice(span.end)}`);
+  }
+  const safe = parts.filter((part) => !leaks(part, expected));
+  const lead = mode === 'multiple-choice' ? 'Choose the saved text.' : 'Type the saved text.';
+  const hint = safe.length > 0 ? ` ${safe.join(' • ')}` : ' Replay the source cue for a hint.';
+  return { mode, prompt: `${lead}${hint}`, expected, expectedSource: 'saved-item', hesitationAllowed: mode === 'typed-input' };
+}
+
+export function gradePracticeAnswer(contract: Pick<PracticeContract, 'expected' | 'hesitationAllowed'>, answer: string): { result: PracticeResult; correct: boolean } {
+  const normalize = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+  const a = normalize(answer);
+  const e = normalize(contract.expected);
+  if (a.length === 0) return { result: 'skipped', correct: false };
+  if (a === e) return { result: 'pass', correct: true };
+  if (contract.hesitationAllowed && e.includes(a) && a.length >= Math.min(3, e.length)) return { result: 'pass-with-hesitation', correct: true };
+  return { result: 'fail', correct: false };
+}
+
+export function projectPracticeAttempt(
+  active: ActiveDueCard,
+  answer: string,
+  contract: Pick<PracticeContract, 'expected' | 'hesitationAllowed'> = { expected: active.savedItem.displayText, hesitationAllowed: true },
+): { result: PracticeResult; correct: boolean; expected: string } {
+  return { ...gradePracticeAnswer(contract, answer), expected: contract.expected };
+}
+
+/** Reset per-card practice UI state when the presented card changes; keep one render of prior feedback. */
+export function syncPracticeCard(model: AppModel, cardId: string | null): void {
+  const p = model.practice;
+  if (p.cardId === cardId && cardId !== null) return;
+  if (p.cardId !== cardId) {
+    p.pendingAnswer = '';
+    p.sentenceBuilder.orderedTokens = [];
+    p.sentenceBuilder.poolTokens = [];
+    p.choices = null;
+    p.revealed = false;
+    p.cardId = cardId;
+  }
+  const last = p.lastAttemptResult;
+  if (!last) return;
+  if (last.nextCardId === undefined) last.nextCardId = cardId;
+  else if (last.nextCardId !== cardId) p.lastAttemptResult = null;
+}
+
+function recordPracticeAttempt(model: AppModel, mode: PracticeModeName, answer: string, reviewedAt: Date): import('@lingotorte/domain').PracticeAttempt {
   const active = resolveActiveDueCard(model, reviewedAt);
   if (!active) throw new TypeError('No active card for practice attempt');
-  const { result, expected } = projectPracticeAttempt(active, answer);
-  const responseMs = 0;
+  const contract = practiceContractFor(model, active, mode);
+  if (!contract) throw new TypeError(PRACTICE_SPEAKING_UNAVAILABLE);
+  const given = answer.replace(/\s+/g, ' ').trim();
+  let { result } = gradePracticeAnswer(contract, given);
+  if (model.practice.revealed && model.practice.cardId === active.card.id && result !== 'skipped') result = 'fail';
   const { attempt } = model.practiceService.submitAttempt({
     cardId: active.card.id,
-    mode: model.practice.mode,
+    mode,
     result,
-    ...(answer.trim().length > 0 ? { givenAnswer: answer.trim() } : {}),
-    expectedAnswer: expected,
-    responseMs,
+    ...(given.length > 0 ? { givenAnswer: given } : {}),
+    expectedAnswer: contract.expected,
+    responseMs: 0,
     sourceContext: active.occurrence.sourceContext,
     reviewedAt: reviewedAt.toISOString(),
     updateFsrs: true,
   });
-  model.practice.lastAttemptResult = { result, correct: result === 'pass' || result === 'pass-with-hesitation' };
+  model.practice.lastAttemptResult = { result, correct: result === 'pass' || result === 'pass-with-hesitation', cardId: active.card.id, expected: contract.expected };
   model.practice.pendingAnswer = '';
+  model.practice.sentenceBuilder.orderedTokens = [];
+  model.practice.sentenceBuilder.poolTokens = [];
+  model.practice.choices = null;
+  model.practice.revealed = false;
+  model.practice.cardId = null;
   model.review.activeCardId = null;
   recordStudyActivity(model, 45_000);
   persistIfLocalServiceAutosaveEnabled(model);
   return attempt;
 }
 
+export function submitPracticeAttempt(model: AppModel, answer: string, reviewedAt: Date): import('@lingotorte/domain').PracticeAttempt {
+  return recordPracticeAttempt(model, model.practice.mode, answer, reviewedAt);
+}
+
 export function setPracticeMode(model: AppModel, mode: import('@lingotorte/domain').PracticeMode): void {
+  if (model.practice.mode === mode) return;
   model.practice.mode = mode;
+  model.practice.pendingAnswer = '';
+  model.practice.sentenceBuilder.orderedTokens = [];
+  model.practice.sentenceBuilder.poolTokens = [];
+  model.practice.choices = null;
+}
+
+function shuffled<T>(values: readonly T[]): T[] {
+  const out = [...values];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
 }
 
 export function generateMultipleChoices(model: AppModel, correctText: string): string[] {
-  const savedItems = Object.values(model.store.snapshot().savedItems)
-    .map((item) => item.displayText)
-    .filter((text) => text.trim().toLowerCase() !== correctText.trim().toLowerCase())
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3);
-  const cues = model.store.snapshot().cues
-    ? Object.values(model.store.snapshot().cues)
-        .map((cue) => cue.text)
-        .filter((text) => text.trim().toLowerCase() !== correctText.trim().toLowerCase())
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3)
-    : [];
-  const distractors = [...savedItems, ...cues]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3);
-  const allChoices = [correctText, ...distractors].sort(() => Math.random() - 0.5);
-  return allChoices;
+  const key = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+  const seen = new Set([key(correctText)]);
+  const pool: string[] = [];
+  const snapshot = model.store.snapshot();
+  for (const text of [...Object.values(snapshot.savedItems).map((item) => item.displayText), ...Object.values(snapshot.cues ?? {}).map((cue) => cue.text)]) {
+    if (text.trim().length === 0 || seen.has(key(text))) continue;
+    seen.add(key(text));
+    pool.push(text);
+  }
+  return shuffled([correctText, ...shuffled(pool).slice(0, 3)]);
+}
+
+/** Multiple-choice options generated once per presented card, stable across rerenders and wake timers. */
+export function practiceChoicesFor(model: AppModel, cardId: string, correctText: string): string[] {
+  syncPracticeCard(model, cardId);
+  if (!model.practice.choices) model.practice.choices = generateMultipleChoices(model, correctText);
+  return model.practice.choices;
+}
+
+export function revealPracticeAnswer(model: AppModel): void {
+  model.practice.revealed = true;
 }
 
 export function setPracticePendingAnswer(model: AppModel, value: string): void {
@@ -3235,9 +3413,13 @@ export function sentenceTokensForCue(cueText: string): string[] {
   return cueText.split(/\s+/).filter((token) => token.length > 0);
 }
 
+/** Shuffled pool that is never already in answer order when another order exists. */
 export function prepareSentenceBuilderForCue(cueText: string): { poolTokens: string[]; orderedTokens: string[] } {
   const tokens = sentenceTokensForCue(cueText);
-  const poolTokens = [...tokens].sort(() => Math.random() - 0.5);
+  let poolTokens = shuffled(tokens);
+  if (poolTokens.join('\u0000') === tokens.join('\u0000') && new Set(tokens).size > 1) {
+    poolTokens = [...tokens.slice(1), tokens[0]!];
+  }
   return { poolTokens, orderedTokens: [] };
 }
 
@@ -3246,34 +3428,7 @@ export function submitSentenceBuilderAttempt(
   orderedTokens: readonly string[],
   reviewedAt: Date,
 ): import('@lingotorte/domain').PracticeAttempt {
-  const active = resolveActiveDueCard(model, reviewedAt);
-  if (!active) throw new TypeError('No active card for sentence builder attempt');
-  const currentCue = model.store.getCue(active.occurrence.cueId);
-  const expectedText = currentCue ? currentCue.text : active.savedItem.displayText;
-  const joined = orderedTokens.join(' ');
-  const normalizedJoined = joined.replace(/\s+/g, ' ').trim().toLowerCase();
-  const normalizedExpected = expectedText.replace(/\s+/g, ' ').trim().toLowerCase();
-  const exact = normalizedJoined === normalizedExpected;
-  const result: import('@lingotorte/domain').PracticeResult = exact ? 'pass' : 'fail';
-  const responseMs = 0;
-  const { attempt } = model.practiceService.submitAttempt({
-    cardId: active.card.id,
-    mode: 'sentence-builder',
-    result,
-    ...(joined.length > 0 ? { givenAnswer: joined } : {}),
-    expectedAnswer: expectedText,
-    responseMs,
-    sourceContext: active.occurrence.sourceContext,
-    reviewedAt: reviewedAt.toISOString(),
-    updateFsrs: true,
-  });
-  model.practice.lastAttemptResult = { result, correct: exact };
-  model.practice.pendingAnswer = '';
-  model.practice.sentenceBuilder.orderedTokens = [];
-  model.review.activeCardId = null;
-  recordStudyActivity(model, 45_000);
-  persistIfLocalServiceAutosaveEnabled(model);
-  return attempt;
+  return recordPracticeAttempt(model, 'sentence-builder', orderedTokens.join(' '), reviewedAt);
 }
 
 export function setSentenceBuilderTokens(model: AppModel, poolTokens: string[], orderedTokens: string[]): void {
@@ -3443,6 +3598,7 @@ function clearStaleLearnerUi(model: AppModel): void {
   model.review.currentCardId = null; model.review.activeCardId = null; model.review.revealed = false;
   model.practice.pendingAnswer = ''; model.practice.lastAttemptResult = null;
   model.practice.sentenceBuilder.orderedTokens = []; model.practice.sentenceBuilder.poolTokens = [];
+  model.practice.cardId = null; model.practice.revealed = false; model.practice.choices = null;
   model.selection = null; model.pendingMeaning = ''; model.pendingNotes = '';
 }
 function finishRestore(model: AppModel, manifest: import('@lingotorte/domain').LearnerExportManifest, receipt: ReturnType<RestoreService['restoreWithReceipt']>['receipt'] | (Omit<ReturnType<RestoreService['restoreWithReceipt']>['receipt'], 'durability' | 'durablySaved'> & { durability: string; durablySaved: boolean }), preview: import('@lingotorte/domain').RestorePreview): void {
