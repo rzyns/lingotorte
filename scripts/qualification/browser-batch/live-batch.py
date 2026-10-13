@@ -36,6 +36,11 @@ def seed_modes():
     return ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder']
 
 
+def app_digest(hexdigest):
+    """The app stores content fingerprints as 'sha256:<hex>' (model.ts sha256Bytes); host hashes are bare hex."""
+    return 'sha256:' + hexdigest
+
+
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -786,7 +791,7 @@ class BatchDriver:
         media = [m for m in j['media'] if not m['caption']]
         tracks = [t for t in j['tracks'] if media and t['mediaId'] == media[0]['id']]
         roles = sorted(t['role'] for t in tracks)
-        self.ok(P, 'imported-one-media-two-tracks', v['imported'] and len(media) == 1 and media[0]['sha'] == f['mediaSha256'] and roles == ['native', 'target'], counts={'media': len(media), 'tracks': len(tracks)})
+        self.ok(P, 'imported-one-media-two-tracks', v['imported'] and len(media) == 1 and media[0]['sha'] == app_digest(f['mediaSha256']) and roles == ['native', 'target'], counts={'media': len(media), 'tracks': len(tracks)})
         # F1 (observation for Janusz): the user's own subtitle files enter as approved target/native tracks.
         self.journal.append('checkpoint', P, 'f1-user-subtitles-status', ok=True, disposition=controller.OBSERVED,
                             value={'targetApproved': any(t['role'] == 'target' and t['status'] == 'approved' for t in tracks)})

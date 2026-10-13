@@ -295,6 +295,15 @@ class SourceTraceTests(unittest.TestCase):
         self.assertNotIn('apps/web/src', js)
         self.assertNotIn('__lingotorte', js)
 
+    def test_media_digest_uses_app_fingerprint_format(self):
+        """Live run 1: the app stores contentSha256 as 'sha256:<hex>'; journey-02 compared it to bare hex."""
+        app = (APP / 'model.ts').read_text(encoding='utf8')
+        self.assertIn('return `sha256:${', app)
+        self.assertEqual(live.app_digest('ab' * 32), 'sha256:' + 'ab' * 32)
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        self.assertIn("media[0]['sha'] == app_digest(f['mediaSha256'])", src)
+        self.assertNotIn("media[0]['sha'] == f['mediaSha256']", src)
+
     def test_g2_g3_fixes_present(self):
         """G2/G3 were fixed by lt-r4k.1/.2 before the live run; journey-12/13 now assert the fixed behaviour."""
         app = (APP / 'app.ts').read_text(encoding='utf8')
