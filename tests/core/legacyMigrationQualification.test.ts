@@ -10,6 +10,10 @@ import { ExportService, LocalStore, RestoreService } from '../../packages/storag
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import type { PracticeAttempt, PracticeMode, ReviewEvent, ImportJobEvent } from '../../packages/domain/src';
 
+// File-backed SQLite migrations do real disk I/O (~0.3-0.5 s per test alone); under full-suite parallel load
+// they occasionally exceeded vitest's default 5 s (observed on main 8d82a99, 2/3 runs). Raise the budget only.
+vi.setConfig({ testTimeout: 30_000 });
+
 type Migration = { version: number; name: string; sql: string; checksum: string };
 const frozen = JSON.parse(readFileSync(new URL('../fixtures/sqlite-v7-migrations.json', import.meta.url), 'utf8')) as { migrations: Migration[] };
 const AT = '2026-06-21T12:00:00.000Z';

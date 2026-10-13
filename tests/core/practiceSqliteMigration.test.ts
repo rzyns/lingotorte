@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { LocalStore, PracticeService } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { makeSavedItem, makeSavedOccurrence, makeReviewCard, makeReviewCardState, validateSavedOccurrenceSourceContext, type PracticeMode } from '../../packages/domain/src';
+
+// File-backed SQLite migrations do real disk I/O (~0.3-0.5 s per test alone); under full-suite parallel load
+// they occasionally exceeded vitest's default 5 s (observed on main 8d82a99, 2/3 runs). Raise the budget only.
+vi.setConfig({ testTimeout: 30_000 });
 
 const legacy = JSON.parse(readFileSync(new URL('../fixtures/sqlite-v7-migrations.json', import.meta.url), 'utf8'));
 const modes = ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'] as const satisfies readonly PracticeMode[];
