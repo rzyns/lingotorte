@@ -418,7 +418,8 @@ class BatchDriver:
         self.ok(P, 'no-resurrection', after['learner'] == before['learner'] and after['revision'] == before['revision'] and after['tablesSha256'] == before['tablesSha256'], oracle={'revision': after['revision']})
         # Explicit 'Keep browser work' re-pair refreshes B's revision by design; the server must still refuse to
         # reactivate history that step 5's replace made inactive (ordinary save cannot resurrect; explicit restore required).
-        self.pair('B', choice='browser')
+        kb = self.pair('B', choice='browser')
+        self.ok(P, 'keep-browser-repaired', not kb['pairAgain'], value={'sync': kb['sync']})
         k = self.invoke('save')
         kept = self.oracle()
         self.ok(P, 'keep-browser-resurrection-refused', k['putStatus'] == 400 and k['sync'] == 'error', status=k['putStatus'])
