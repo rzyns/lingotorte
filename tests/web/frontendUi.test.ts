@@ -131,9 +131,8 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
     expect(importButton).toBeTruthy();
     importButton!.click();
-    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    // The import awaits real file reads and a WebCrypto digest; a fixed tick count raced under full-suite load.
+    await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
 
     const app = document.getElementById('app')!;
     const video = document.querySelector('video') as HTMLVideoElement | null;
@@ -191,9 +190,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
     expect(persistentButton).toBeTruthy();
     persistentButton!.click();
-    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
     rerenderApp(model);
 
     const video = document.querySelector('video') as HTMLVideoElement | null;
@@ -262,9 +259,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
     expect(persistentButton).toBeTruthy();
     persistentButton!.click();
-    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
     rerenderApp(model);
 
     expect(model.currentMedia?.originalPath).toBe('browser-file-handle:persisted-clip.webm');
@@ -519,9 +514,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
     expect(importButton).toBeTruthy();
     importButton!.click();
-    for (let i = 0; i < 10 && !model.currentMedia && !model.importError; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
 
     const app = document.getElementById('app')!;
     const video = document.querySelector('video') as HTMLVideoElement | null;
@@ -558,9 +551,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
     importButton!.click();
-    for (let i = 0; i < 10 && !model.importError; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await vi.waitFor(() => { if (!model.importError) throw new Error('import error pending'); }, { timeout: 5_000, interval: 5 });
 
     expect(model.currentMedia).toBeNull();
     expect(model.importError).toMatch(/SRT block|Invalid SRT|missing numeric cue id/);
