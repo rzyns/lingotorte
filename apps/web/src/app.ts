@@ -30,6 +30,7 @@ import {
   importFixtureMediaAndSubtitles,
   importBrowserLocalFiles,
   importBrowserLocalFileHandles,
+  BrowserMediaNameConflictError,
   listReviewBuckets,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
@@ -87,6 +88,8 @@ import {
   setLocalServiceBaseUrl,
   approveTranscriptTrack,
   createCorrectedTranscriptVersion,
+  transcriptApprovalBlockReason,
+  transcriptCorrectionPending,
   splitTranscriptCueInCorrectedVersion,
   mergeTranscriptCueWithNextInCorrectedVersion,
   generateElevenLabsScribeDraft,
@@ -124,6 +127,7 @@ export function renderApp(model: AppModel): HTMLElement {
       invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned after leaving Player.');
     }
   }
+  if (practiceSnippetStates.has(model)) synchronizePracticeSnippet(model);
   const root = document.createElement('div');
   root.className = 'lingotorte-app';
   root.appendChild(renderHeader(model));
@@ -359,6 +363,8 @@ type PracticeSnippetUiState = SourceAudioSnippetLifecycle & {
   mediaPath: string;
   status: 'path-required' | 'unavailable' | 'preparing' | 'ready' | 'playing' | 'failed' | 'cleaned';
   message: string;
+  generation: number;
+  contextKey: string;
 };
 
 const practiceSnippetStates = new WeakMap<AppModel, PracticeSnippetUiState>();
@@ -448,9 +454,41 @@ function synchronizeSourceRangeSnippet(model: AppModel): SourceRangeSnippetUiSta
 function practiceSnippetState(model: AppModel): PracticeSnippetUiState {
   const existing = practiceSnippetStates.get(model);
   if (existing) return existing;
-  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.' };
+  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.', generation: 0, contextKey: '' };
+  created.contextKey = practiceSnippetContextKey(model, created);
   practiceSnippetStates.set(model, created);
   return created;
+}
+
+// lt-q3d: everything a prepared Practice snippet is bound to; any change revokes/invalidates it.
+function practiceSnippetContextKey(model: AppModel, state: PracticeSnippetUiState): string {
+  // Read-only: the card id fixes the cue bounds; never resolve/advance the queue here.
+  return JSON.stringify([
+    model.view, model.practice.mode, model.practice.cardId ?? '',
+    // A submit/skip that re-presents the same card is still a new presentation.
+    model.practice.cardId ? model.store.listPracticeAttemptsForCard(model.practice.cardId).length : 0,
+    state.mediaPath.trim(), model.localService.baseUrl, model.localService.status, model.localService.pathPolicy ?? null,
+  ]);
+}
+
+function invalidatePracticeSnippet(model: AppModel, message: string): PracticeSnippetUiState {
+  const state = practiceSnippetState(model);
+  state.generation += 1;
+  releaseSourceAudioSnippet(state);
+  state.status = state.mediaPath.trim() ? 'cleaned' : 'path-required';
+  state.message = message;
+  state.contextKey = practiceSnippetContextKey(model, state);
+  return state;
+}
+
+function synchronizePracticeSnippet(model: AppModel): PracticeSnippetUiState {
+  const state = practiceSnippetState(model);
+  if (state.contextKey !== practiceSnippetContextKey(model, state)) {
+    return invalidatePracticeSnippet(model, state.objectUrl || state.status === 'preparing'
+      ? 'Card, mode, view, media path or service changed; transient browser audio cleaned.'
+      : state.message);
+  }
+  return state;
 }
 
 function renderPracticeView(model: AppModel): HTMLElement {
@@ -464,6 +502,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   // lt-0g9: per-card answer/tokens/choices/reveal never carry over to a different card; the previous
   // submission's feedback is shown only until the next card changes or is submitted.
   syncPracticeCard(model, active?.card.id ?? null);
+  if (practiceSnippetStates.has(model)) synchronizePracticeSnippet(model);
 
   const last = model.practice.lastAttemptResult;
   if (last) {
@@ -559,7 +598,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   } else if (model.practice.mode === 'audio-recall') {
     const audioGroup = document.createElement('div');
     audioGroup.className = 'practice-audio-recall';
-    const snippet = practiceSnippetState(model);
+    const snippet = synchronizePracticeSnippet(model);
     const pathLabel = document.createElement('label');
     pathLabel.htmlFor = 'practice-audio-media-path';
     pathLabel.textContent = 'Owned local media path';
@@ -569,7 +608,12 @@ function renderPracticeView(model: AppModel): HTMLElement {
     pathInput.type = 'text';
     pathInput.value = snippet.mediaPath;
     pathInput.placeholder = 'Absolute path (kept only in this session)';
-    pathInput.addEventListener('input', () => { snippet.mediaPath = pathInput.value; snippet.status = pathInput.value.trim() ? 'cleaned' : 'path-required'; });
+    pathInput.addEventListener('input', () => {
+      const hadAudio = snippet.objectUrl !== null || snippet.status === 'preparing';
+      snippet.mediaPath = pathInput.value;
+      invalidatePracticeSnippet(model, pathInput.value.trim() ? 'Media path changed; prepare fresh source audio.' : 'Provide an explicit absolute owned local media path.');
+      if (hadAudio) rerenderApp(model);
+    });
     pathLabel.appendChild(pathInput);
     audioGroup.appendChild(pathLabel);
     const prepareButton = document.createElement('button');
@@ -580,26 +624,37 @@ function renderPracticeView(model: AppModel): HTMLElement {
     pathInput.addEventListener('input', () => {
       prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, pathInput.value);
     });
-    prepareButton.addEventListener('click', async () => {
-      if (!currentCue || !hasNativeInputPath(model, snippet.mediaPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+    prepareButton.addEventListener('click', () => {
+      const operationPath = snippet.mediaPath;
+      if (!currentCue || !hasNativeInputPath(model, operationPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
       const transport = captureUiServiceOwner(model); if (!transport) return;
       const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
-      transport.onInvalidate(() => releaseSourceAudioSnippet(snippet));
+      transport.onInvalidate(() => invalidatePracticeSnippet(model, 'Local service pairing changed; transient browser audio cleaned.'));
+      releaseSourceAudioSnippet(snippet);
+      const generation = ++snippet.generation;
+      const contextKey = practiceSnippetContextKey(model, snippet);
+      snippet.contextKey = contextKey;
+      const current = () => stillOwned() && snippet.generation === generation && practiceSnippetContextKey(model, snippet) === contextKey;
+      const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
       snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
-      try {
-        await prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: snippet.mediaPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
-        if (!stillOwned()) return;
+      void prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: operationPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: operationLifecycle }).then(() => {
+        if (!current()) { releaseSourceAudioSnippet(operationLifecycle); return; }
+        snippet.objectUrl = operationLifecycle.objectUrl;
+        operationLifecycle.objectUrl = null;
         snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
-      } catch (error) {
-        if (!stillOwned()) return;
+        rerenderApp(model);
+      }).catch((error: unknown) => {
+        releaseSourceAudioSnippet(operationLifecycle);
+        if (!current()) return;
         snippet.status = 'failed'; snippet.message = redactSourceAudioSnippetError(error);
-      }
-      rerenderApp(model);
+        rerenderApp(model);
+      });
     });
     audioGroup.appendChild(prepareButton);
     if (snippet.objectUrl) {
       const audio = document.createElement('audio');
       audio.controls = true;
+      audio.autoplay = false;
       audio.src = snippet.objectUrl;
       audio.addEventListener('play', () => { snippet.status = 'playing'; });
       audioGroup.appendChild(audio);
@@ -1745,6 +1800,54 @@ function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   return placeholder;
 }
 
+// lt-n31: explicit learner choice when a selected file shares a name with existing media but differs in content.
+type PendingMediaNameConflict = Readonly<{ message: string; importAsNew: () => Promise<void> }>;
+let pendingMediaNameConflict: PendingMediaNameConflict | null = null;
+
+function handleMediaImportError(model: AppModel, err: unknown, importAsNew: () => Promise<void>): void {
+  if (err instanceof BrowserMediaNameConflictError) {
+    pendingMediaNameConflict = { message: err.message, importAsNew };
+    model.importError = null;
+  } else {
+    pendingMediaNameConflict = null;
+    model.importError = err instanceof Error ? err.message : String(err);
+  }
+  rerenderApp(model);
+}
+
+function renderMediaNameConflict(model: AppModel): HTMLElement | null {
+  const conflict = pendingMediaNameConflict;
+  if (!conflict) return null;
+  const box = document.createElement('div');
+  box.className = 'status-banner warning media-name-conflict';
+  // An inline alert with ordinary buttons; not a modal alertdialog, so no focus trap or accessible-name requirement.
+  box.setAttribute('role', 'alert');
+  const text = document.createElement('p');
+  text.id = 'media-name-conflict-message';
+  text.textContent = conflict.message;
+  const asNew = document.createElement('button');
+  asNew.type = 'button';
+  asNew.className = 'btn-primary';
+  asNew.textContent = 'Import as new media';
+  asNew.addEventListener('click', () => {
+    pendingMediaNameConflict = null;
+    void conflict.importAsNew()
+      .then(() => { model.importError = null; setView(model, 'player'); rerenderApp(model); })
+      .catch((err: unknown) => { model.importError = err instanceof Error ? err.message : String(err); rerenderApp(model); });
+  });
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'btn-secondary';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => {
+    pendingMediaNameConflict = null;
+    model.importError = 'Import cancelled. Existing media was not changed.';
+    rerenderApp(model);
+  });
+  box.append(text, asNew, cancel);
+  return box;
+}
+
 function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder video-placeholder-relink';
@@ -1820,15 +1923,18 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
           rerenderApp(model);
           return;
         }
-        return importBrowserLocalFileHandles(model, { mediaHandle });
+        return importBrowserLocalFileHandles(model, { mediaHandle })
+          .catch((err: unknown) => {
+            handleMediaImportError(model, err, () => importBrowserLocalFileHandles(model, { mediaHandle }, { onNameConflict: 'import-new' }));
+            throw null;
+          });
       })
       .then(() => {
-        if (!model.importError) {
-          model.importError = null;
-        }
+        pendingMediaNameConflict = null;
         rerenderApp(model);
       })
       .catch((err: unknown) => {
+        if (err === null) return;
         model.importError = err instanceof Error ? err.message : String(err);
         rerenderApp(model);
       });
@@ -1843,6 +1949,15 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   });
   actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
   placeholder.append(icon, heading, body, permission, boundary, actions);
+  if (model.importError) {
+    const banner = document.createElement('p');
+    banner.className = 'status-banner error relink-error';
+    banner.setAttribute('role', 'alert');
+    banner.textContent = model.importError;
+    placeholder.appendChild(banner);
+  }
+  const conflictBox = renderMediaNameConflict(model);
+  if (conflictBox) placeholder.appendChild(conflictBox);
   return placeholder;
 }
 
@@ -3219,6 +3334,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   trackMeta.textContent = `Current transcript: ${targetTrack.transcriptStatus} • ${targetTrack.transcriptSourceKind} • warnings: ${targetTrack.provenance.warningFlags.join(', ') || 'none'}`;
   panel.appendChild(trackMeta);
 
+  // Dirty/pending edits block approval and structural/offset actions; refreshed in place to keep focus/value.
+  const editGuardedButtons: HTMLButtonElement[] = [];
+  let refreshApprovalGate = (): void => {};
+  const editorBlocked = (): boolean => transcriptApprovalBlockReason(model, targetTrack.id) !== null;
+
   if (targetTrack.transcriptStatus !== 'approved') {
     const offsetGroup = document.createElement('div');
     offsetGroup.className = 'track-offset-editor';
@@ -3258,7 +3378,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     const applyOffsetBtn = document.createElement('button');
     applyOffsetBtn.className = 'btn-secondary';
     applyOffsetBtn.textContent = 'Apply offset to all cues';
+    editGuardedButtons.push(applyOffsetBtn);
     applyOffsetBtn.addEventListener('click', () => {
+      if (editorBlocked()) { refreshApprovalGate(); return; }
       const offsetMs = Number(offsetInput.value);
       if (!Number.isFinite(offsetMs) || offsetMs === 0) {
         model.importError = 'Select a non-zero offset before applying.';
@@ -3299,6 +3421,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       textarea.addEventListener('input', () => {
         model.transcriptLifecycle.pendingCueEdits[cue.id] = textarea.value;
         markUnsavedBrowserEdits(model);
+        refreshApprovalGate();
       });
       label.appendChild(textarea);
       const sourceComparison = renderCueSourceComparison(model, cue, targetTrack.id);
@@ -3332,6 +3455,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           endMs: Number(endInput.value),
         };
         markUnsavedBrowserEdits(model);
+        refreshApprovalGate();
       };
       startInput.addEventListener('input', updateTimingEdit);
       endInput.addEventListener('input', updateTimingEdit);
@@ -3383,6 +3507,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             startMs: Number(wordStart.value),
             endMs: Number(wordEnd.value),
           };
+          refreshApprovalGate();
         };
         wordText.addEventListener('input', updateWordTimingEdit);
         wordStart.addEventListener('input', updateWordTimingEdit);
@@ -3396,7 +3521,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const splitCueButton = document.createElement('button');
       splitCueButton.type = 'button';
       splitCueButton.textContent = `Split cue ${cue.cueIndex}`;
+      editGuardedButtons.push(splitCueButton);
       splitCueButton.addEventListener('click', () => {
+        if (editorBlocked()) { refreshApprovalGate(); return; }
         splitCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Splitting cue ${cue.cueIndex}…`;
         rerenderApp(model);
@@ -3417,8 +3544,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const mergeCueButton = document.createElement('button');
       mergeCueButton.type = 'button';
       mergeCueButton.textContent = `Merge cue ${cue.cueIndex} with next`;
-      mergeCueButton.disabled = !model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
+      const mergeHasNext = model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
+      mergeCueButton.disabled = !mergeHasNext;
+      if (mergeHasNext) editGuardedButtons.push(mergeCueButton);
       mergeCueButton.addEventListener('click', () => {
+        if (!mergeHasNext || editorBlocked()) { refreshApprovalGate(); return; }
         mergeCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Merging cue ${cue.cueIndex} with next…`;
         rerenderApp(model);
@@ -3450,6 +3580,12 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     correctBtn.className = 'btn-secondary';
     correctBtn.textContent = 'Create corrected transcript version';
     correctBtn.addEventListener('click', () => {
+      if (transcriptCorrectionPending(model) || model.targetTrackId !== targetTrack.id) { refreshApprovalGate(); return; }
+      const submitted = structuredClone({
+        cue: model.transcriptLifecycle.pendingCueEdits,
+        timing: model.transcriptLifecycle.pendingCueTimingEdits,
+        word: model.transcriptLifecycle.pendingWordTimingEdits,
+      });
       const edits = model.cues
         .map((cue) => {
           const timing = model.transcriptLifecycle.pendingCueTimingEdits[cue.id] ?? { startMs: cue.startMs, endMs: cue.endMs };
@@ -3477,14 +3613,39 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             endMs: timing.endMs,
             ...(wordTimings.length > 0 ? { wordTimings } : {}),
           };
-        })
-        .filter((edit) => edit.text.trim().length > 0);
-      void createCorrectedTranscriptVersion(model, targetTrack.id, edits)
-        .then(() => {
-          model.transcriptLifecycle.pendingCueEdits = {};
-          model.transcriptLifecycle.pendingCueTimingEdits = {};
-          model.transcriptLifecycle.pendingWordTimingEdits = {};
-          model.transcriptLifecycle.lastMessage = 'Corrected transcript version created';
+        });
+      const parentCues = model.cues.slice();
+      const parentWords = parentCues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+      const applying = createCorrectedTranscriptVersion(model, targetTrack.id, edits);
+      refreshApprovalGate();
+      void applying
+        .then((corrected) => {
+          // Consume only the edits that were submitted; edits made while Apply was pending are retained and
+          // re-keyed onto the new version so they stay visible and keep approval blocked.
+          const lifecycle = model.transcriptLifecycle;
+          const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+          const cueIdMap = new Map(parentCues.map((cue, index) => [cue.id, corrected.cues[index]?.id]));
+          const childWords = corrected.cues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+          const wordIdMap = new Map(parentWords.map((word) => {
+            const childCueId = cueIdMap.get(word.cueId);
+            return [word.id, childWords.find((child) => child.cueId === childCueId && child.wordIndex === word.wordIndex)?.id];
+          }));
+          const retain = <T>(current: Record<string, T>, sent: Record<string, T>, ids: Map<string, string | undefined>): Record<string, T> => {
+            const next: Record<string, T> = {};
+            for (const [id, value] of Object.entries(current)) {
+              if (Object.hasOwn(sent, id) && same(sent[id], value)) continue;
+              next[ids.get(id) ?? id] = value;
+            }
+            return next;
+          };
+          lifecycle.pendingCueEdits = retain(lifecycle.pendingCueEdits, submitted.cue, cueIdMap);
+          lifecycle.pendingCueTimingEdits = retain(lifecycle.pendingCueTimingEdits, submitted.timing, cueIdMap);
+          lifecycle.pendingWordTimingEdits = retain(lifecycle.pendingWordTimingEdits, submitted.word, wordIdMap);
+          const retained = [lifecycle.pendingCueEdits, lifecycle.pendingCueTimingEdits, lifecycle.pendingWordTimingEdits]
+            .some((value) => Object.keys(value).length > 0);
+          model.transcriptLifecycle.lastMessage = retained
+            ? 'Corrected transcript version created; edits made during Apply were kept and still need to be applied'
+            : 'Corrected transcript version created';
           model.importError = null;
           rerenderApp(model);
         })
@@ -3499,14 +3660,38 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const approveBtn = document.createElement('button');
   approveBtn.className = 'btn-primary';
   approveBtn.textContent = 'Approve transcript for study';
-  approveBtn.disabled = targetTrack.transcriptStatus === 'approved';
+  const approvalGate = document.createElement('p');
+  approvalGate.className = 'gate-note transcript-approval-gate';
+  approvalGate.id = 'transcript-approval-gate';
+  approvalGate.setAttribute('role', 'status');
+  approvalGate.setAttribute('aria-live', 'polite');
+  approveBtn.setAttribute('aria-describedby', approvalGate.id);
+  refreshApprovalGate = () => {
+    const reason = transcriptApprovalBlockReason(model, targetTrack.id);
+    approveBtn.disabled = targetTrack.transcriptStatus === 'approved' || reason !== null;
+    approvalGate.textContent = targetTrack.transcriptStatus === 'approved' ? '' : reason ?? '';
+    approvalGate.hidden = !approvalGate.textContent;
+    for (const guarded of editGuardedButtons) guarded.disabled = reason !== null;
+    const applyBtn = Array.from(panel.querySelectorAll('button')).find((candidate) => candidate.textContent === 'Create corrected transcript version');
+    if (applyBtn) applyBtn.disabled = transcriptCorrectionPending(model);
+  };
   approveBtn.addEventListener('click', () => {
-    approveTranscriptTrack(model, targetTrack.id);
+    // Bind approval to the selected track/version rendered by this panel and re-check the guard at dispatch.
+    if (model.targetTrackId !== targetTrack.id) { rerenderApp(model); return; }
+    try {
+      approveTranscriptTrack(model, targetTrack.id);
+    } catch (err: unknown) {
+      model.importError = err instanceof Error ? err.message : String(err);
+      refreshApprovalGate();
+      return;
+    }
     model.transcriptLifecycle.lastMessage = 'Transcript approved for study';
     model.importError = null;
     rerenderApp(model);
   });
+  panel.appendChild(approvalGate);
   panel.appendChild(approveBtn);
+  refreshApprovalGate();
 
   return panel;
 }
@@ -3625,13 +3810,13 @@ function renderLibraryView(model: AppModel): HTMLElement {
       : { mediaFile, nativeSubtitleFile };
     void importBrowserLocalFiles(model, importInput)
       .then(() => {
+        pendingMediaNameConflict = null;
         setView(model, 'player');
         model.importError = null;
         rerenderApp(model);
       })
       .catch((err: unknown) => {
-        model.importError = err instanceof Error ? err.message : String(err);
-        rerenderApp(model);
+        handleMediaImportError(model, err, () => importBrowserLocalFiles(model, importInput, { onNameConflict: 'import-new' }));
       });
   });
   const localImportActions = document.createElement('div');
@@ -3640,6 +3825,7 @@ function renderLibraryView(model: AppModel): HTMLElement {
 
   const showOpenFilePicker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
   if (typeof showOpenFilePicker === 'function') {
+    let lastPickedHandle: BrowserFileHandleLike | null = null;
     const persistentImportBtn = document.createElement('button');
     persistentImportBtn.className = 'btn-secondary';
     persistentImportBtn.textContent = 'Import persistent media handle';
@@ -3664,18 +3850,21 @@ function renderLibraryView(model: AppModel): HTMLElement {
             rerenderApp(model);
             return;
           }
-          return importBrowserLocalFileHandles(model, { mediaHandle });
-        })
-        .then(() => {
-          if (!model.importError) {
-            setView(model, 'player');
-            model.importError = null;
-          }
-          rerenderApp(model);
+          lastPickedHandle = mediaHandle;
+          return importBrowserLocalFileHandles(model, { mediaHandle }).then(() => {
+            pendingMediaNameConflict = null;
+            if (!model.importError) {
+              setView(model, 'player');
+              model.importError = null;
+            }
+            rerenderApp(model);
+          });
         })
         .catch((err: unknown) => {
-          model.importError = err instanceof Error ? err.message : String(err);
-          rerenderApp(model);
+          handleMediaImportError(model, err, () => {
+            const retryHandle = lastPickedHandle;
+            return retryHandle ? importBrowserLocalFileHandles(model, { mediaHandle: retryHandle }, { onNameConflict: 'import-new' }) : Promise.reject(err);
+          });
         });
     });
     localImportActions.appendChild(persistentImportBtn);
@@ -3691,6 +3880,8 @@ function renderLibraryView(model: AppModel): HTMLElement {
     form.appendChild(current);
   }
 
+  const conflictBox = renderMediaNameConflict(model);
+  if (conflictBox) form.appendChild(conflictBox);
   if (model.importError) {
     const banner = document.createElement('div');
     banner.className = 'status-banner error';
