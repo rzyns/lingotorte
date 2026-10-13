@@ -65,6 +65,7 @@ const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 export function routeMethods(path: string): readonly string[] | undefined {
   if (path === '/api/health' || path === '/api/status') return ['GET'];
   if (path === '/api/state') return ['GET', 'PUT'];
+  if (path === '/api/restore/preview' || path === '/api/restore/commit') return ['POST'];
   if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
   if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
   if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];

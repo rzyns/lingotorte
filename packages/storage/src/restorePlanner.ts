@@ -1,5 +1,6 @@
-import { canonicalJson, validateLearnerExportManifest, buildRestorePreview, defaultPrivacyWarnings, type LearnerExportManifest, type ReviewEvent, type PracticeAttempt } from '@lingotorte/domain';
+import { validateLearnerExportManifest, buildRestorePreview, defaultPrivacyWarnings, type LearnerExportManifest, type ReviewEvent, type PracticeAttempt } from '@lingotorte/domain';
 import type { LocalStoreSnapshot } from './localStore.ts';
+import { sameHistoryPayload } from './learnerAudit.ts';
 
 export type RestoreMode = 'merge' | 'replace-active';
 export type RestoreAudit = { reviewEvents: ReviewEvent[]; practiceAttempts: PracticeAttempt[] };
@@ -7,10 +8,10 @@ const collections = ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCar
 type Collection = typeof collections[number];
 type RecordValue = { id?: string; cardId?: string; [key: string]: unknown };
 const key = (r: RecordValue, name: Collection): string => (name === 'reviewCardStates' ? r.cardId : r.id) as string;
-const equal = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
+const equal = sameHistoryPayload;
 
 /** Pure, detached preflight. No store writes, rerating or provider calls. */
-export function planLearnerRestore(input: unknown, mode: RestoreMode, active: LocalStoreSnapshot, audit: RestoreAudit = { reviewEvents: [], practiceAttempts: [] }) {
+export function planLearnerRestore(input: unknown, mode: RestoreMode, active: LocalStoreSnapshot, audit: RestoreAudit = active.learnerAudit ?? { reviewEvents: [], practiceAttempts: [] }) {
   if (mode !== 'merge' && mode !== 'replace-active') throw new TypeError('Unknown restore mode');
   const validated = validateLearnerExportManifest(input);
   const content = structuredClone(validated.content);
@@ -70,5 +71,6 @@ export function planLearnerRestore(input: unknown, mode: RestoreMode, active: Lo
     reviewEvents: { appended: retained.reviewEvents.length - new Set([...audit.reviewEvents, ...active.reviewEvents].map(e => e.id)).size, retained: retained.reviewEvents.length, inactiveAfter: retained.reviewEvents.filter(e => !candidate.reviewEvents.some(a => a.id === e.id)).length },
     practiceAttempts: { appended: retained.practiceAttempts.length - new Set([...audit.practiceAttempts, ...active.practiceAttempts].map(e => e.id)).size, retained: retained.practiceAttempts.length, inactiveAfter: retained.practiceAttempts.filter(e => !candidate.practiceAttempts.some(a => a.id === e.id)).length },
   };
-  return { candidate, audit: retained, auditEffects, preview: { ...preview, warnings, mode, effects, auditEffects, coalesced, durability: 'preview-only' as const, integrity: 'semantic-hash-verified' as const }, mode, effects, coalesced, integrity: 'semantic-hash-verified' as const, durability: 'preview-only' as const };
+  const authoritative = { ...candidate, learnerAudit: { version: 1 as const, ...retained } };
+  return { candidate: authoritative, audit: retained, auditEffects, preview: { ...preview, warnings, mode, effects, auditEffects, coalesced, durability: 'preview-only' as const, integrity: 'semantic-hash-verified' as const }, mode, effects, coalesced, integrity: 'semantic-hash-verified' as const, durability: 'preview-only' as const };
 }

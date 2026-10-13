@@ -16,6 +16,7 @@ import type {
   TranscriptWordTiming,
   UUID,
 } from '@lingotorte/domain';
+import { normalizeLearnerAudit, unionHistory, type LearnerAudit } from './learnerAudit.ts';
 
 // In-memory local persistence layer for P1/P4/P5 domain core. All writes are synchronous
 // and return immutable copies so that consumers cannot accidentally mutate internal state.
@@ -32,6 +33,7 @@ export type LocalStoreSnapshot = Readonly<{
   reviewCardStates: Record<UUID, ReviewCardState>;
   reviewEvents: ReviewEvent[];
   practiceAttempts: PracticeAttempt[];
+  learnerAudit?: LearnerAudit;
   exportJobs: Record<UUID, ExportJob>;
   providerPolicies: Record<UUID, ProviderPolicyEntry>;
   importJobs: Record<UUID, ImportJob>;
@@ -51,6 +53,7 @@ export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
     reviewCardStates: {},
     reviewEvents: [],
     practiceAttempts: [],
+    learnerAudit: { version: 1, reviewEvents: [], practiceAttempts: [] },
     exportJobs: {},
     providerPolicies: {},
     importJobs: {},
@@ -88,6 +91,7 @@ export function normalizeLocalStoreSnapshot(value: unknown): LocalStoreSnapshot 
     reviewCardStates: recordOrEmpty<ReviewCardState>(value.reviewCardStates),
     reviewEvents: arrayOrEmpty<ReviewEvent>(value.reviewEvents),
     practiceAttempts: arrayOrEmpty<PracticeAttempt>(value.practiceAttempts),
+    learnerAudit: normalizeLearnerAudit(value.learnerAudit, { reviewEvents: arrayOrEmpty<ReviewEvent>(value.reviewEvents), practiceAttempts: arrayOrEmpty<PracticeAttempt>(value.practiceAttempts) }),
     exportJobs: recordOrEmpty<ExportJob>(value.exportJobs),
     providerPolicies: recordOrEmpty<ProviderPolicyEntry>(value.providerPolicies),
     importJobs: recordOrEmpty<ImportJob>(value.importJobs),
@@ -102,19 +106,25 @@ export class LocalStore {
 
   snapshotPendingRestoreIntent() { return structuredClone(this.pendingRestoreIntent); }
 
-  private restoreAudit: { reviewEvents: ReviewEvent[]; practiceAttempts: PracticeAttempt[] } = { reviewEvents: [], practiceAttempts: [] };
+
 
   snapshotRestoreAudit() {
-    return structuredClone(this.restoreAudit);
+    const audit = normalizeLearnerAudit(this.state.learnerAudit, this.state);
+    return { reviewEvents: audit.reviewEvents, practiceAttempts: audit.practiceAttempts };
   }
 
+  listAuditReviewEvents(): ReviewEvent[] { return this.snapshotRestoreAudit().reviewEvents; }
+
+  listAuditPracticeAttempts(): PracticeAttempt[] { return this.snapshotRestoreAudit().practiceAttempts; }
+
   installRestoreCandidate(snapshot: LocalStoreSnapshot, audit: { reviewEvents: ReviewEvent[]; practiceAttempts: PracticeAttempt[] }, intent?: { mode: 'merge' | 'replace-active'; manifest: unknown }): LocalStoreSnapshot {
-    const next = cloneSnapshot(snapshot);
-    const nextAudit = structuredClone(audit);
+    const retained = this.snapshotRestoreAudit();
+    const nextAudit = { reviewEvents: unionHistory('reviewEvents', retained.reviewEvents, audit.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', retained.practiceAttempts, audit.practiceAttempts) };
+    const next = cloneSnapshot(normalizeLocalStoreSnapshot({ ...snapshot, learnerAudit: { version: 1, ...nextAudit } }));
     const nextIntent = structuredClone(intent);
     const result = cloneSnapshot(next);
     this.state = next;
-    this.restoreAudit = nextAudit;
+
     this.pendingRestoreIntent = nextIntent;
     return result;
   }
@@ -124,7 +134,9 @@ export class LocalStore {
   }
 
   replaceSnapshot(snapshot: LocalStoreSnapshot): LocalStoreSnapshot {
-    this.state = cloneSnapshot(normalizeLocalStoreSnapshot(snapshot));
+    const retained = this.snapshotRestoreAudit();
+    const incoming = normalizeLocalStoreSnapshot(snapshot);
+    this.state = cloneSnapshot({ ...incoming, learnerAudit: { version: 1, reviewEvents: unionHistory('reviewEvents', retained.reviewEvents, incoming.learnerAudit!.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', retained.practiceAttempts, incoming.learnerAudit!.practiceAttempts) } });
     return this.clone();
   }
 
@@ -133,7 +145,7 @@ export class LocalStore {
   }
 
   snapshot(): LocalStoreSnapshot {
-    return this.clone();
+    return cloneSnapshot({ ...this.state, learnerAudit: { version: 1, ...this.snapshotRestoreAudit() } });
   }
 
   putMediaAsset(asset: MediaAsset): LocalStoreSnapshot {
@@ -250,7 +262,12 @@ export class LocalStore {
   }
 
   addReviewEvent(event: ReviewEvent): LocalStoreSnapshot {
-    this.state.reviewEvents.push(event);
+    const audit = this.snapshotRestoreAudit();
+    const reviewEvents = unionHistory('reviewEvents', audit.reviewEvents, [event]);
+    if (audit.reviewEvents.some(e => e.id === event.id) && !this.state.reviewEvents.some(e => e.id === event.id)) throw new TypeError('Explicit restore required to reactivate history');
+    const learnerAudit = normalizeLearnerAudit({ version: 1, ...audit, reviewEvents }, this.state);
+    this.state = { ...this.state, learnerAudit };
+    if (!this.state.reviewEvents.some(e => e.id === event.id)) this.state.reviewEvents.push(structuredClone(event));
     return this.clone();
   }
 
@@ -259,7 +276,12 @@ export class LocalStore {
   }
 
   addPracticeAttempt(attempt: PracticeAttempt): LocalStoreSnapshot {
-    this.state.practiceAttempts.push(attempt);
+    const audit = this.snapshotRestoreAudit();
+    const practiceAttempts = unionHistory('practiceAttempts', audit.practiceAttempts, [attempt]);
+    if (audit.practiceAttempts.some(a => a.id === attempt.id) && !this.state.practiceAttempts.some(a => a.id === attempt.id)) throw new TypeError('Explicit restore required to reactivate history');
+    const learnerAudit = normalizeLearnerAudit({ version: 1, ...audit, practiceAttempts }, this.state);
+    this.state = { ...this.state, learnerAudit };
+    if (!this.state.practiceAttempts.some(a => a.id === attempt.id)) this.state.practiceAttempts.push(structuredClone(attempt));
     return this.clone();
   }
 

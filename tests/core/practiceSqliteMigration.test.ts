@@ -52,14 +52,18 @@ describe('SQLite practice mode forward migration', () => {
       db.prepare('INSERT INTO schema_migration VALUES (?, ?, ?, ?, ?)').run(migration.version, migration.name, '2026-10-10T00:00:00.000Z', migration.checksum, 'applied');
     }
     const insert = db.prepare('INSERT INTO practice_attempt VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    for (const [i, mode] of modes.slice(0, 4).entries()) insert.run(`legacy-${i}`, 'card', mode, 'pass-with-hesitation', i === 0 ? null : 'answer', 'expected', i === 0 ? null : 12, '{"synthetic":true}', 'reviewed', 'created', '{"reviewEventId":"legacy-event"}');
+    const sourceContext = fixture().sourceContext;
+    for (const [i, mode] of modes.slice(0, 4).entries()) insert.run(`legacy-${i}`, 'card', mode, 'pass-with-hesitation', i === 0 ? null : 'answer', 'expected', i === 0 ? null : 12, JSON.stringify(sourceContext), 'reviewed', 'created', '{"reviewEventId":"legacy-event"}');
     db.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 7, JSON.stringify(new LocalStore().snapshot()), 'unchanged');
     const before = rows(db); const ledger = db.prepare('SELECT * FROM schema_migration ORDER BY version').all(); db.close();
     const migrated = SqliteLocalPersistence.open(file);
-    try { expect(migrated.status().schemaVersion).toBe(8); expect(migrated.listMigrations()).toHaveLength(8); } finally { migrated.close(); }
+    try { expect(migrated.status().schemaVersion).toBe(9); expect(migrated.listMigrations()).toHaveLength(9); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
     const check = new DatabaseSync(file);
     try {
-      expect(rows(check)).toEqual(before);
+      const after = rows(check);
+      for (const name of Object.keys(before).filter(name => name !== 'lingotorte_snapshots')) expect(after[name]).toEqual(before[name]);
+      const normalized = JSON.parse((check.prepare('SELECT snapshot_json FROM lingotorte_snapshots').get() as { snapshot_json: string }).snapshot_json);
+      expect(normalized.learnerAudit.version).toBe(1); expect(normalized.learnerAudit.practiceAttempts).toHaveLength(4);
       expect(check.prepare('SELECT * FROM schema_migration WHERE version <= 7 ORDER BY version').all()).toEqual(ledger);
       expect(check.prepare('PRAGMA integrity_check').get()).toMatchObject({ integrity_check: 'ok' });
       expect(check.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_practice_attempt_card_time'").get()).toBeDefined();
@@ -68,7 +72,7 @@ describe('SQLite practice mode forward migration', () => {
       invalidMode.run('new-sentence-builder', 'sentence-builder');
       expect(check.prepare("SELECT mode FROM practice_attempt WHERE id = 'new-sentence-builder'").get()).toMatchObject({ mode: 'sentence-builder' });
     } finally { check.close(); }
-    const reopened = SqliteLocalPersistence.open(file); try { expect(reopened.listMigrations()).toHaveLength(8); } finally { reopened.close(); }
+    const reopened = SqliteLocalPersistence.open(file); try { expect(reopened.listMigrations()).toHaveLength(9); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
   });
   it.each(['mode', 'result', 'responseMs'] as const)('rolls back the entire snapshot and projections for invalid %s', field => {
     const f = fixture(); submit(f, 'typed-input'); const file = path(); const persistence = SqliteLocalPersistence.open(file);
@@ -78,7 +82,7 @@ describe('SQLite practice mode forward migration', () => {
       try {
         submit(f, 'sentence-builder'); const snapshot = f.store.snapshot();
         const invalid = { ...snapshot.practiceAttempts[1]!, [field]: field === 'responseMs' ? -1 : 'invalid' };
-        expect(() => persistence.saveSnapshot({ ...snapshot, practiceAttempts: [snapshot.practiceAttempts[0]!, invalid] } as typeof snapshot)).toThrow(/CHECK constraint failed/);
+        expect(() => persistence.saveSnapshot({ ...snapshot, practiceAttempts: [snapshot.practiceAttempts[0]!, invalid] } as typeof snapshot)).toThrow(/Invalid active learner history payload/);
         expect(persistence.loadSnapshot()).toEqual(baseline); expect(rows(reader)).toEqual(before);
       } finally { reader.close(); }
     } finally { persistence.close(); }

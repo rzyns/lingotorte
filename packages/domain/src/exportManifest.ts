@@ -380,7 +380,7 @@ function validateReviewCardState(value: unknown): ReviewCardState {
   return result;
 }
 
-function validateReviewEvent(value: unknown): ReviewEvent {
+export function validateReviewEvent(value: unknown): ReviewEvent {
   const record = asRecord(value, 'reviewEvent');
   requireKnownFields(record, ["id", "cardId", "rating", "reviewedAt", "responseMs", "previousStateJson", "nextStateJson", "createdAt", "deviceId"], 'reviewEvent');
   const responseMs = record.responseMs === undefined ? undefined : requireNonNegativeInteger(record, 'responseMs');
@@ -400,9 +400,9 @@ function validateReviewEvent(value: unknown): ReviewEvent {
   return result;
 }
 
-function validatePracticeAttempt(
+export function validatePracticeAttempt(
   value: unknown,
-  sourceContexts: Record<string, SavedOccurrenceSourceContext>,
+  sourceContexts: Record<string, SavedOccurrenceSourceContext> = {},
 ): PracticeAttempt {
   const record = asRecord(value, 'practiceAttempt');
   requireKnownFields(record, ["id", "cardId", "mode", "result", "givenAnswer", "expectedAnswer", "responseMs", "sourceContext", "sourceContextId", "eventLink", "eventLink_reviewEventId", "reviewedAt", "createdAt"], 'practiceAttempt');

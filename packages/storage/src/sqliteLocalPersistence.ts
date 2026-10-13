@@ -34,8 +34,11 @@ import type {
   TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
 import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
+import { sameHistoryPayload, unionHistory, normalizeLearnerAudit, type LearnerAudit } from './learnerAudit.ts';
+import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
+import { requireRestoreConfirmation, type RestoreConfirmation } from '@lingotorte/domain';
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
@@ -349,8 +352,19 @@ const EXPAND_PRACTICE_MODES_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+const ACTIVE_AUDIT_SQL = `
+  CREATE TABLE active_review_event (id TEXT PRIMARY KEY REFERENCES review_event(id));
+  CREATE TABLE active_practice_attempt (id TEXT PRIMARY KEY REFERENCES practice_attempt(id));
+  CREATE TABLE learner_audit_format (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL CHECK (version = 1), recovery_json TEXT NOT NULL);
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 9)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
+export type DurableRestoreRequest = { manifest: unknown; mode: RestoreMode; expectedRevision: string; confirmation: RestoreConfirmation; learnerAudit?: LearnerAudit };
+
 type SnapshotRow = Readonly<{
   snapshot_json: string;
+  schema_version?: number;
 }>;
 
 type SchemaVersionRow = Readonly<{
@@ -574,6 +588,7 @@ export type SqliteLocalPersistenceStatus = Readonly<{
   schemaVersion: number;
   hasSnapshot: boolean;
   appliedMigrations: readonly SqliteSchemaMigration[];
+  learnerAuditRecovery: Record<string, number>;
 }>;
 
 type MigrationDefinition = Readonly<{
@@ -608,19 +623,6 @@ function reviewEventFromRow(row: ReviewEventRow): ReviewEvent {
   };
 }
 
-function sameReviewEventPayload(a: ReviewEvent, b: ReviewEvent): boolean {
-  return (
-    a.id === b.id &&
-    a.cardId === b.cardId &&
-    a.reviewedAt === b.reviewedAt &&
-    a.rating === b.rating &&
-    (a.responseMs ?? null) === (b.responseMs ?? null) &&
-    a.previousStateJson === b.previousStateJson &&
-    a.nextStateJson === b.nextStateJson &&
-    (a.deviceId ?? null) === (b.deviceId ?? null) &&
-    a.createdAt === b.createdAt
-  );
-}
 
 function importJobEventFromRow(row: ImportJobEventRow): ImportJobEvent {
   const event: ImportJobEvent = {
@@ -696,6 +698,7 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
     sql: EXPAND_PRACTICE_MODES_SQL,
     checksum: migrationChecksum(EXPAND_PRACTICE_MODES_SQL),
   },
+  { version: 9, name: 'active_learner_audit_membership', sql: ACTIVE_AUDIT_SQL, checksum: migrationChecksum(ACTIVE_AUDIT_SQL) },
 ];
 
 export class SqliteLocalPersistence {
@@ -703,7 +706,7 @@ export class SqliteLocalPersistence {
 
   private constructor(db: DatabaseSync) {
     this.db = db;
-    this.initialize();
+    try { this.initialize(); } catch (error) { this.db.close(); throw error; }
   }
 
   static open(databasePath: string): SqliteLocalPersistence {
@@ -714,6 +717,7 @@ export class SqliteLocalPersistence {
   private initialize(): void {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS schema_migration (
         version INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
@@ -722,6 +726,18 @@ export class SqliteLocalPersistence {
         result TEXT NOT NULL CHECK (result = 'applied')
       );
     `);
+    const ledger = this.db.prepare('SELECT version, name, applied_at, checksum, result FROM schema_migration ORDER BY version').all() as SchemaMigrationRow[];
+    if (ledger.some((row, index) => row.version !== index + 1)) throw new Error('Incomplete SQLite migration ledger');
+    for (const row of ledger) {
+      const expected = MIGRATIONS.find(m => m.version === row.version);
+      if (!expected || row.name !== expected.name || row.checksum !== expected.checksum || row.result !== 'applied') throw new Error('Unsupported or changed SQLite migration ledger');
+    }
+    const schema = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lingotorte_schema'").get();
+    if (schema) {
+      const version = this.db.prepare('SELECT schema_version FROM lingotorte_schema WHERE id=1').get() as SchemaVersionRow | undefined;
+      if (version && (version.schema_version ?? 0) > CURRENT_SCHEMA_VERSION) throw new Error('Unsupported future SQLite schema');
+      if (ledger.length && version?.schema_version !== ledger.length) throw new Error('SQLite schema and ledger disagree');
+    }
     for (const migration of MIGRATIONS) {
       this.applyMigration(migration);
     }
@@ -741,6 +757,7 @@ export class SqliteLocalPersistence {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.exec(migration.sql);
+      if (migration.version === 9) this.initializeActiveAudit();
       this.db
         .prepare('INSERT INTO schema_migration (version, name, applied_at, checksum, result) VALUES (?, ?, ?, ?, ?)')
         .run(migration.version, migration.name, new Date().toISOString(), migration.checksum, 'applied');
@@ -1028,6 +1045,12 @@ export class SqliteLocalPersistence {
   }
 
   listReviewEvents(): readonly ReviewEvent[] {
+    this.assertAuditFormat();
+    const ids = new Set((this.db.prepare('SELECT id FROM active_review_event').all() as { id: string }[]).map(r => r.id));
+    return this.listAuditReviewEvents().filter(e => ids.has(e.id));
+  }
+
+  listAuditReviewEvents(): readonly ReviewEvent[] {
     const rows = this.db
       .prepare(`
         SELECT id, card_id, reviewed_at, rating, response_ms,
@@ -1040,6 +1063,12 @@ export class SqliteLocalPersistence {
   }
 
   listPracticeAttempts(): readonly PracticeAttempt[] {
+    this.assertAuditFormat();
+    const ids = new Set((this.db.prepare('SELECT id FROM active_practice_attempt').all() as { id: string }[]).map(r => r.id));
+    return this.listAuditPracticeAttempts().filter(a => ids.has(a.id));
+  }
+
+  listAuditPracticeAttempts(): readonly PracticeAttempt[] {
     const rows = this.db
       .prepare(`
         SELECT id, card_id, mode, result, given_answer, expected_answer,
@@ -1338,7 +1367,7 @@ export class SqliteLocalPersistence {
 
   private saveReviewPracticeJobProjections(snapshot: LocalStoreSnapshot): void {
     this.db.prepare('DELETE FROM import_job').run();
-    this.db.prepare('DELETE FROM practice_attempt').run();
+
     this.db.prepare('DELETE FROM review_card_state').run();
     this.db.prepare('DELETE FROM review_card').run();
 
@@ -1385,6 +1414,11 @@ export class SqliteLocalPersistence {
       );
     }
 
+    this.appendLearnerAudit(snapshot.learnerAudit ?? normalizeLearnerAudit(undefined, snapshot));
+    this.saveImportJobs(snapshot);
+  }
+
+  private appendLearnerAudit(snapshot: { reviewEvents: readonly ReviewEvent[]; practiceAttempts: readonly PracticeAttempt[] }): void {
     const selectReviewEvent = this.db.prepare(`
       SELECT id, card_id, reviewed_at, rating, response_ms,
              previous_state_json, next_state_json, device_id, created_at
@@ -1401,7 +1435,7 @@ export class SqliteLocalPersistence {
     for (const event of snapshot.reviewEvents) {
       const existing = selectReviewEvent.get(event.id) as ReviewEventRow | undefined;
       if (existing !== undefined) {
-        if (!sameReviewEventPayload(reviewEventFromRow(existing), event)) {
+        if (!sameHistoryPayload(reviewEventFromRow(existing), event)) {
           throw new Error(`Cannot rewrite append-only review event ${event.id}.`);
         }
         continue;
@@ -1426,7 +1460,13 @@ export class SqliteLocalPersistence {
         event_link_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const existingAttempts = new Map(this.listAuditPracticeAttempts().map(a => [a.id, a]));
     for (const attempt of snapshot.practiceAttempts) {
+      const prior = existingAttempts.get(attempt.id);
+      if (prior) {
+        if (!sameHistoryPayload(prior, attempt)) throw new TypeError('Immutable history conflict: practiceAttempts');
+        continue;
+      }
       insertPracticeAttempt.run(
         attempt.id,
         attempt.cardId,
@@ -1442,6 +1482,9 @@ export class SqliteLocalPersistence {
       );
     }
 
+  }
+
+  private saveImportJobs(snapshot: LocalStoreSnapshot): void {
     const insertImportJob = this.db.prepare(`
       INSERT INTO import_job (
         id, status, source_kind, started_at, completed_at,
@@ -1547,17 +1590,33 @@ export class SqliteLocalPersistence {
       schemaVersion: schemaRow.schema_version ?? CURRENT_SCHEMA_VERSION,
       hasSnapshot,
       appliedMigrations: this.listMigrations(),
+      learnerAuditRecovery: JSON.parse((this.db.prepare('SELECT recovery_json FROM learner_audit_format WHERE id=1').get() as { recovery_json: string }).recovery_json),
     };
   }
 
   loadSnapshot(): LocalStoreSnapshot {
     const row = this.db
-      .prepare('SELECT snapshot_json FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
+      .prepare('SELECT snapshot_json, schema_version FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
       .get(SNAPSHOT_KEY) as SnapshotRow | undefined;
-    const snapshot = row ? normalizeLocalStoreSnapshot(JSON.parse(row.snapshot_json)) : createEmptyLocalStoreSnapshot();
+    let snapshot = createEmptyLocalStoreSnapshot();
+    if (row) {
+      if (row.schema_version !== CURRENT_SCHEMA_VERSION) throw new Error('Unsupported durable snapshot schema');
+      let raw: unknown;
+      try { raw = JSON.parse(row.snapshot_json); } catch { throw new Error('Corrupt durable snapshot'); }
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Corrupt durable snapshot');
+      const record = raw as Record<string, unknown>;
+      for (const [name, empty] of Object.entries(createEmptyLocalStoreSnapshot())) {
+        const value = record[name];
+        if (name === 'learnerAudit') { if (value === undefined) throw new Error('Missing internal learner audit'); continue; }
+        if (Array.isArray(empty) ? !Array.isArray(value) : !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Corrupt durable snapshot collection');
+      }
+      snapshot = normalizeLocalStoreSnapshot(raw);
+    }
     return {
       ...snapshot,
       reviewEvents: [...this.listReviewEvents()],
+      practiceAttempts: [...this.listPracticeAttempts()],
+      learnerAudit: { version: 1, reviewEvents: [...this.listAuditReviewEvents()], practiceAttempts: [...this.listAuditPracticeAttempts()] },
       importJobEvents: [...this.listImportJobEvents()],
     };
   }
@@ -1572,36 +1631,146 @@ export class SqliteLocalPersistence {
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
+  private assertAuditFormat(): void {
+    const marker = this.db.prepare('SELECT version FROM learner_audit_format WHERE id=1').get() as { version: number } | undefined;
+    if (marker?.version !== 1) throw new Error('Missing or unsupported initialized learner audit format');
+    if (this.db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Invalid active history membership');
+  }
+
+  private writeSnapshot(snapshot: LocalStoreSnapshot, updatedAt: string): void {
+    this.db.prepare(`INSERT INTO lingotorte_snapshots (snapshot_key, schema_version, snapshot_json, updated_at)
+      VALUES (?, ?, ?, ?) ON CONFLICT(snapshot_key) DO UPDATE SET schema_version=excluded.schema_version,
+      snapshot_json=excluded.snapshot_json, updated_at=excluded.updated_at`)
+      .run(SNAPSHOT_KEY, CURRENT_SCHEMA_VERSION, JSON.stringify(snapshot), updatedAt);
+  }
+
+  private selectHistory(snapshot: LocalStoreSnapshot): void {
+    this.db.prepare('DELETE FROM active_review_event').run();
+    this.db.prepare('DELETE FROM active_practice_attempt').run();
+    const review = this.db.prepare('INSERT INTO active_review_event (id) VALUES (?)');
+    const practice = this.db.prepare('INSERT INTO active_practice_attempt (id) VALUES (?)');
+    for (const e of snapshot.reviewEvents) review.run(e.id);
+    for (const a of snapshot.practiceAttempts) practice.run(a.id);
+  }
+
+  private initializeActiveAudit(): void {
+    const row = this.db.prepare('SELECT snapshot_json, schema_version FROM lingotorte_snapshots WHERE snapshot_key=?').get(SNAPSHOT_KEY) as SnapshotRow | undefined;
+    if (row && (row.schema_version ?? 0) > CURRENT_SCHEMA_VERSION) throw new Error('Unsupported future snapshot schema');
+    let raw: unknown;
+    try { raw = row ? JSON.parse(row.snapshot_json) : undefined; } catch { throw new Error('Corrupt legacy snapshot'); }
+    if (row && (!raw || typeof raw !== 'object' || Array.isArray(raw))) throw new Error('Corrupt legacy snapshot');
+    if (row) {
+      const record = raw as Record<string, unknown>;
+      for (const name of ['reviewEvents', 'practiceAttempts', 'importJobEvents']) if (record[name] !== undefined && !Array.isArray(record[name])) throw new Error('Corrupt legacy snapshot history');
+      if (!record.mediaAssets || typeof record.mediaAssets !== 'object' || Array.isArray(record.mediaAssets)) throw new Error('Corrupt legacy snapshot');
+      for (const name of ['mediaAssets', 'savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates']) if (record[name] !== undefined && (!record[name] || typeof record[name] !== 'object' || Array.isArray(record[name]))) throw new Error('Corrupt legacy snapshot collection');
+    }
+    const snapshot = row ? normalizeLocalStoreSnapshot(raw) : createEmptyLocalStoreSnapshot();
+    const tableReviews = [...this.listAuditReviewEvents()]; const tableAttempts = [...this.listAuditPracticeAttempts()];
+    const recovery = {
+      snapshotOnlyReviews: snapshot.reviewEvents.filter(e => !tableReviews.some(t => t.id === e.id)).length,
+      tableOnlyReviews: tableReviews.filter(e => !snapshot.reviewEvents.some(t => t.id === e.id)).length,
+      snapshotOnlyAttempts: snapshot.practiceAttempts.filter(e => !tableAttempts.some(t => t.id === e.id)).length,
+      tableOnlyAttempts: tableAttempts.filter(e => !snapshot.practiceAttempts.some(t => t.id === e.id)).length,
+    };
+    const audit = normalizeLearnerAudit(snapshot.learnerAudit, {
+      reviewEvents: unionHistory('reviewEvents', tableReviews, snapshot.reviewEvents),
+      practiceAttempts: unionHistory('practiceAttempts', tableAttempts, snapshot.practiceAttempts),
+    });
+    const inconsistencies = {
+      orphanReviews: audit.reviewEvents.filter(e => !Object.hasOwn(snapshot.reviewCards, e.cardId)).length,
+      orphanAttempts: audit.practiceAttempts.filter(a => !Object.hasOwn(snapshot.reviewCards, a.cardId)).length,
+      unresolvedAttemptLinks: audit.practiceAttempts.filter(a => a.eventLink.reviewEventId !== undefined && !audit.reviewEvents.some(e => e.id === a.eventLink.reviewEventId && e.cardId === a.cardId)).length,
+    };
+    this.appendLearnerAudit(audit);
+    const active = { ...snapshot, reviewEvents: audit.reviewEvents, practiceAttempts: audit.practiceAttempts, learnerAudit: audit };
+    // Backfill only append-only import-job events; do not rewrite unrelated projections.
+    const insert = this.db.prepare('INSERT INTO import_job_event (id, job_id, level, message, created_at, data_json) VALUES (?, ?, ?, ?, ?, ?)');
+    const existing = new Map(this.listImportJobEvents().map(e => [e.id, e]));
+    for (const event of snapshot.importJobEvents) {
+      const prior = existing.get(event.id);
+      if (prior && !sameImportJobEventPayload(prior, event)) throw new Error('Conflicting legacy import-job event');
+      if (!prior) { insert.run(event.id, event.jobId, event.level, event.message, event.createdAt, event.dataJson ?? null); existing.set(event.id, event); }
+    }
+    this.selectHistory(active);
+    this.db.prepare('INSERT INTO learner_audit_format (id, version, recovery_json) VALUES (1, 1, ?)').run(JSON.stringify({ ...recovery, ...inconsistencies }));
+    if (row) this.writeSnapshot({ ...active, importJobEvents: [...this.listImportJobEvents()] }, new Date().toISOString());
+  }
+
+  private writeCandidate(snapshot: LocalStoreSnapshot, updatedAt: string): LocalStoreSnapshot {
+    this.appendLearnerAudit(snapshot.learnerAudit!);
+    this.selectHistory(snapshot);
+    this.saveMediaAssetProjection(snapshot);
+    this.saveTranscriptProjections(snapshot);
+    this.saveLearnerSourceProjections(snapshot);
+    this.saveReviewPracticeJobProjections(snapshot);
+    this.saveExportJobProjection(snapshot);
+    this.saveProviderPolicyProjection(snapshot);
+    this.writeSnapshot(snapshot, updatedAt);
+    const authoritative = this.loadSnapshot();
+    this.writeSnapshot(authoritative, updatedAt);
+    if (!sameHistoryPayload(authoritative, this.loadSnapshot())) throw new Error('Durable candidate readback mismatch');
+    return authoritative;
+  }
+
   saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString(), expectedRevision?: string): string {
     const normalized = normalizeLocalStoreSnapshot(snapshot);
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (expectedRevision !== undefined && expectedRevision !== revisionOf(this.loadSnapshot())) {
-        throw new SnapshotRevisionConflictError();
+      const current = this.loadSnapshot();
+      if (expectedRevision !== undefined && expectedRevision !== revisionOf(current)) throw new SnapshotRevisionConflictError();
+      const audit = normalizeLearnerAudit(current.learnerAudit, current);
+      for (const name of ['reviewEvents', 'practiceAttempts'] as const) {
+        const active = new Set(current[name].map(e => e.id)); const retained = new Set(audit[name].map(e => e.id));
+        if (normalized[name].some(e => retained.has(e.id) && !active.has(e.id))) throw new TypeError('Explicit restore required to reactivate inactive history');
       }
-      this.db
-        .prepare(`
-          INSERT INTO lingotorte_snapshots (snapshot_key, schema_version, snapshot_json, updated_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(snapshot_key) DO UPDATE SET
-            schema_version = excluded.schema_version,
-            snapshot_json = excluded.snapshot_json,
-            updated_at = excluded.updated_at
-        `)
-        .run(SNAPSHOT_KEY, CURRENT_SCHEMA_VERSION, JSON.stringify(normalized), updatedAt);
-      this.saveMediaAssetProjection(normalized);
-      this.saveTranscriptProjections(normalized);
-      this.saveLearnerSourceProjections(normalized);
-      this.saveReviewPracticeJobProjections(normalized);
-      this.saveExportJobProjection(normalized);
-      this.saveProviderPolicyProjection(normalized);
-      const revision = revisionOf(this.loadSnapshot());
-      this.db.exec('COMMIT');
-      return revision;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+      const candidate = { ...normalized,
+        reviewEvents: unionHistory('reviewEvents', current.reviewEvents, normalized.reviewEvents),
+        practiceAttempts: unionHistory('practiceAttempts', current.practiceAttempts, normalized.practiceAttempts),
+        learnerAudit: { version: 1 as const,
+          reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, normalized.learnerAudit!.reviewEvents),
+          practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, normalized.learnerAudit!.practiceAttempts) },
+      };
+      const revision = revisionOf(this.writeCandidate(candidate, updatedAt));
+      this.db.exec('COMMIT'); return revision;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  private restorePlan(manifest: unknown, mode: RestoreMode, expectedRevision: string, stagedAudit?: LearnerAudit) {
+    if (typeof expectedRevision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(expectedRevision)) throw new TypeError('Invalid durable state revision');
+    const current = this.loadSnapshot();
+    if (expectedRevision !== revisionOf(current)) throw new SnapshotRevisionConflictError();
+    const audit = normalizeLearnerAudit(current.learnerAudit, current);
+    const staged = stagedAudit === undefined ? audit : normalizeLearnerAudit(stagedAudit, { reviewEvents: [], practiceAttempts: [] });
+    const combined = { reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, staged.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, staged.practiceAttempts) };
+    const plan = planLearnerRestore(manifest, mode, current, combined);
+    for (const name of ['reviewEvents', 'practiceAttempts'] as const) plan.auditEffects[name].appended = plan.audit[name].length - audit[name].length;
+    return plan;
+  }
+
+  previewRestore(manifest: unknown, mode: RestoreMode, expectedRevision: string, learnerAudit?: LearnerAudit) {
+    this.db.exec('BEGIN');
+    try {
+      const plan = this.restorePlan(manifest, mode, expectedRevision, learnerAudit);
+      const result = { revision: expectedRevision, capability: 'active-audit-restore-v1' as const, preview: plan.preview };
+      this.db.exec('COMMIT'); return result;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  commitRestore(request: DurableRestoreRequest) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const plan = this.restorePlan(request.manifest, request.mode, request.expectedRevision, request.learnerAudit);
+      const confirmation = requireRestoreConfirmation(request.confirmation);
+      if (confirmation.confirmReplace !== (request.mode === 'replace-active') || confirmation.confirmOverwrite !== (request.mode === 'merge')) throw new TypeError('Restore mode confirmation mismatch');
+      for (const warning of plan.preview.warnings) if (!confirmation.acknowledgedWarnings.includes(warning.kind)) throw new TypeError('Restore warning not acknowledged');
+      const snapshot = this.writeCandidate(plan.candidate, new Date().toISOString());
+      if (!sameHistoryPayload(snapshot, { ...plan.candidate, importJobEvents: snapshot.importJobEvents })) throw new Error('Restore result reconciliation mismatch');
+      const revision = revisionOf(snapshot);
+      const receipt = { mode: plan.mode, effects: plan.effects, auditEffects: plan.auditEffects, coalesced: plan.coalesced,
+        integrity: plan.integrity, durability: 'durable-committed/readback-verified' as const, durablySaved: true as const };
+      this.db.exec('COMMIT'); return { snapshot, revision, receipt, capability: 'active-audit-restore-v1' as const };
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
   saveStore(store: LocalStore, updatedAt?: string): void {

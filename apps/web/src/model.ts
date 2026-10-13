@@ -1,5 +1,7 @@
 import { requireServiceNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE, type NativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
 import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/src/localStore';
+import { planLearnerRestore } from '../../../packages/storage/src/restorePlanner.ts';
+import { sameHistoryPayload, unionHistory } from '../../../packages/storage/src/learnerAudit.ts';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
@@ -184,6 +186,7 @@ function normalizeLocalServiceBaseUrl(baseUrl: string): string {
 }
 
 export function pairLocalService(model: AppModel, capability: string, baseUrl = model.localService.baseUrl): void {
+  if (restoreStates.get(model)?.committing) throw new TypeError('Restore pending; wait for acknowledgement/readback before pairing.');
   const origin = exactServiceOrigin(baseUrl);
   setLocalServiceBaseUrl(model, origin);
   pairTransport(model, origin, capability, () => {
@@ -200,7 +203,25 @@ export function pairLocalService(model: AppModel, capability: string, baseUrl = 
   });
 }
 export function captureLocalServiceTransport(model: AppModel): PairedTransport {
-  return capturedTransport(model, model.localService.baseUrl);
+  const transport = capturedTransport(model, model.localService.baseUrl);
+  transportModels.set(transport, model);
+  return transport;
+}
+const transportModels = new WeakMap<PairedTransport, AppModel>();
+function serializeServiceJob<T>(transport: PairedTransport, work: () => Promise<T>): Promise<T> {
+  const model = transportModels.get(transport);
+  if (!model) return work();
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) return Promise.reject(new TypeError('Restore unresolved; service job not sent.'));
+  const owner = syncOwner(model); const generation = owner.generation;
+  const run = async () => {
+    transport.assertCurrent();
+    if (generation !== owner.generation || restoreStates.get(model)?.unknown) throw new TypeError('Service job superseded or restore unresolved.');
+    const result = await work();
+    transport.assertCurrent();
+    if (generation !== owner.generation) throw new TypeError('Service job superseded.');
+    return result;
+  };
+  const result = owner.tail.then(run, run); owner.tail = result; return result;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -238,7 +259,9 @@ function chooseActiveTrack(tracks: SubtitleTrack[], role: 'target' | 'native'): 
 }
 
 function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
-  return Object.entries(snapshot).some(([key, value]) => key !== 'schemaVersion' && value !== null && typeof value === 'object' && Object.keys(value).length > 0);
+  return Object.entries(snapshot).some(([key, value]) => key === 'learnerAudit'
+    ? (snapshot.learnerAudit?.reviewEvents.length ?? 0) + (snapshot.learnerAudit?.practiceAttempts.length ?? 0) > 0
+    : key !== 'schemaVersion' && value !== null && typeof value === 'object' && Object.keys(value).length > 0);
 }
 
 function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
@@ -268,6 +291,7 @@ function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreS
 
 type SyncOwner = {
   generation: number;
+  editGeneration: number;
   tail: Promise<unknown>;
   baseline: string | null;
   choice: { snapshot: LocalStoreSnapshot; revision: string; comparison: string } | null;
@@ -276,13 +300,13 @@ type SyncOwner = {
 const syncOwners = new WeakMap<AppModel, SyncOwner>();
 function syncOwner(model: AppModel): SyncOwner {
   let owner = syncOwners.get(model);
-  if (!owner) { owner = { generation: 0, tail: Promise.resolve(), baseline: null, choice: null }; syncOwners.set(model, owner); }
+  if (!owner) { owner = { generation: 0, editGeneration: 0, tail: Promise.resolve(), baseline: null, choice: null }; syncOwners.set(model, owner); }
   return owner;
 }
 export function observeLocalServiceSync(model: AppModel, notify: () => void): void { syncOwner(model).notify = notify; }
 function notifySync(model: AppModel): void { syncOwner(model).notify?.(); }
 function browserComparison(model: AppModel): string {
-  return JSON.stringify({ snapshot: model.store.snapshot(), media: model.currentMedia?.id,
+  return JSON.stringify({ editGeneration: syncOwner(model).editGeneration, pendingRestoreIntent: model.store.snapshotPendingRestoreIntent(), snapshot: model.store.snapshot(), media: model.currentMedia?.id,
     browser: model.browserLocalMedia, cueEdits: model.transcriptLifecycle.pendingCueEdits,
     timingEdits: model.transcriptLifecycle.pendingCueTimingEdits, wordEdits: model.transcriptLifecycle.pendingWordTimingEdits });
 }
@@ -298,6 +322,9 @@ const supersededSync = (): LocalServiceSyncResult => ({ ok: false, message: 'Loc
 
 export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const owner = syncOwner(model);
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing || model.store.snapshotPendingRestoreIntent()) {
+    return { ok: false, message: 'Explicit restore required: preview and confirm pending restore; outcome unknown must be read back before retry.' };
+  }
   let transport: PairedTransport;
   let url: string;
   try { url = normalizeLocalServiceBaseUrl(baseUrl); transport = capturedTransport(model, url); }
@@ -312,6 +339,7 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
     if (!current()) return supersededSync();
     if (!model.localService.revision) return supersededSync();
     if (owner.choice || model.localService.syncState === 'conflict') return { ok: false, message: model.localService.lastMessage ?? 'Reconnect and choose a state before saving.' };
+    if (restoreStates.get(model)?.unknown || model.store.snapshotPendingRestoreIntent()) return { ok: false, message: 'Explicit restore required; no ordinary save was sent.' };
     const snapshot = model.store.snapshot();
     const serialized = JSON.stringify(snapshot);
     const expectedRevision = model.localService.revision;
@@ -355,6 +383,9 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
 }
 
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
+  // Reconnect must not revoke the commit owner or hydrate its unacknowledged result.
+  // Unknown outcomes may reconnect only after the pending operation has settled.
+  if (restoreStates.get(model)?.committing) return { ok: false, message: 'Restore pending; wait for acknowledgement/readback before reconnecting.' };
   const owner = syncOwner(model);
   let transport: PairedTransport;
   let url: string;
@@ -377,7 +408,9 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
     const state = await fetchLocalServiceJson(transport, '/api/state');
     if (!current()) return supersededSync();
+    model.localService.restoreCapability = state.restoreCapability === RESTORE_CAPABILITY ? RESTORE_CAPABILITY : null;
     const revision = stateRevision(state.revision);
+    if (restoreStates.get(model)?.unknown) return reconcileRestoreState(model, state);
     const serviceSnapshot = new LocalStore(state.snapshot as LocalStoreSnapshot).snapshot();
     const serialized = JSON.stringify(model.store.snapshot());
     const remote = JSON.stringify(serviceSnapshot);
@@ -385,11 +418,11 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const dirty = hasPendingTranscriptEdits(model) || (owner.baseline !== null
       ? owner.baseline !== serialized : snapshotHasDurableContent(model.store.snapshot()));
     model.localService.pathPolicy = pathPolicy;
-    if (changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(serviceSnapshot)) || hasPendingTranscriptEdits(model)) {
+    if (model.store.snapshotPendingRestoreIntent() || changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(serviceSnapshot)) || hasPendingTranscriptEdits(model)) {
       model.localService.status = 'connected';
       owner.choice = { snapshot: serviceSnapshot, revision, comparison: browserComparison(model) };
       model.localService.syncState = 'choice';
-      model.localService.lastMessage = 'Browser work differs from durable state. Choose Keep browser work or Load service state (discard browser edits), or cancel. Nothing has been replaced or saved.';
+      model.localService.lastMessage = 'Browser work differs from durable state. Choose Keep browser work or Load service state (discard browser edits and pending restore intent, retain local audit), or cancel. Nothing has been replaced or saved.';
       notifySync(model);
       return { ok: false, message: model.localService.lastMessage };
     }
@@ -422,6 +455,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
 }
 
 export function resolveLocalServiceConnection(model: AppModel, choice: 'browser' | 'service' | 'cancel'): LocalServiceSyncResult {
+  if (restoreIsBusy(model)) return { ok: false, message: 'Restore unresolved; reconnect/read back after the pending operation settles before choosing state.' };
   const owner = syncOwner(model);
   const pending = owner.choice;
   if (!pending) return { ok: false, message: 'No pending comparison. Reconnect to compare state.' };
@@ -438,6 +472,10 @@ export function resolveLocalServiceConnection(model: AppModel, choice: 'browser'
     return { ok: false, message: model.localService.lastMessage };
   }
   if (choice === 'service') {
+    if (model.store.snapshotPendingRestoreIntent()) {
+      model.store.installRestoreCandidate(pending.snapshot, pending.snapshot.learnerAudit!);
+      sessionRestoreBaselines.delete(model);
+    }
     projectHydratedSnapshotIntoModel(model, pending.snapshot);
     model.transcriptLifecycle.pendingCueEdits = {};
     model.transcriptLifecycle.pendingCueTimingEdits = {};
@@ -460,6 +498,7 @@ export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
   owner.baseline = null;
   model.localService.baseUrl = baseUrl;
   model.localService.pathPolicy = null;
+  model.localService.restoreCapability = null;
   model.localService.revision = null;
   model.localService.lastSavedAt = null;
   model.localService.status = 'disconnected';
@@ -471,6 +510,7 @@ export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
 export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void { model.localService.autosaveEnabled = enabled; }
 
 export function markUnsavedBrowserEdits(model: AppModel): void {
+  ++syncOwner(model).editGeneration;
   if (!['choice', 'conflict', 'error', 'saving'].includes(model.localService.syncState ?? '')) {
     model.localService.syncState = 'unsaved';
     model.localService.lastMessage = 'Browser changes are unsaved (transcript form drafts are not saved until applied).';
@@ -1725,7 +1765,10 @@ export function selectEmbeddedSubtitleTrack(model: AppModel, streamIndex: number
   state.extractionStatus = 'idle';
 }
 
-export async function listEmbeddedSubtitleTracksFromService(
+export function listEmbeddedSubtitleTracksFromService(model: AppModel, options: EmbeddedSubtitleJobOptions = {}): Promise<EmbeddedSubtitleTrackState[]> {
+  return serializeServiceJob(captureLocalServiceTransport(model), () => listEmbeddedSubtitleTracksFromServiceImpl(model, options));
+}
+async function listEmbeddedSubtitleTracksFromServiceImpl(
   model: AppModel,
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<EmbeddedSubtitleTrackState[]> {
@@ -1807,7 +1850,10 @@ function embeddedWarningFlags(value: unknown): TranscriptWarningFlag[] {
   return flags as TranscriptWarningFlag[];
 }
 
-export async function extractSelectedEmbeddedSubtitleDraft(
+export function extractSelectedEmbeddedSubtitleDraft(model: AppModel, options: EmbeddedSubtitleJobOptions = {}): Promise<TranscriptImportResult> {
+  return serializeServiceJob(captureLocalServiceTransport(model), () => extractSelectedEmbeddedSubtitleDraftImpl(model, options));
+}
+async function extractSelectedEmbeddedSubtitleDraftImpl(
   model: AppModel,
   options: EmbeddedSubtitleJobOptions = {},
 ): Promise<TranscriptImportResult> {
@@ -1937,6 +1983,7 @@ export function makeLocalServiceAsrProvider(transport: PairedTransport, options:
       return callCount;
     },
     async transcribe(input) {
+      return serializeServiceJob(transport, async () => {
       callCount += 1;
       const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
       const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
@@ -1970,6 +2017,7 @@ export function makeLocalServiceAsrProvider(transport: PairedTransport, options:
         if (delayMs > 0) await sleep(delayMs);
       }
       throw new TypeError(`Local service transcription job ${jobId} did not finish before the polling deadline.`);
+      });
     },
   };
 }
@@ -1984,6 +2032,7 @@ export function makeLocalServiceElevenLabsScribeProvider(transport: PairedTransp
       return callCount;
     },
     async transcribe(input) {
+      return serializeServiceJob(transport, async () => {
       callCount += 1;
       const mediaPath = requireServiceNativePath(options.mediaPath === '' || options.mediaPath === undefined ? input.media.originalPath : options.mediaPath, options.pathPolicy);
       const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
@@ -2023,6 +2072,7 @@ export function makeLocalServiceElevenLabsScribeProvider(transport: PairedTransp
         if (delayMs > 0) await sleep(delayMs);
       }
       throw new TypeError(`Local service ElevenLabs Scribe job ${jobId} did not finish before the polling deadline.`);
+      });
     },
   };
 }
@@ -2037,6 +2087,7 @@ export function makeLocalServiceYouTubeCaptionProvider(transport: PairedTranspor
       return callCount;
     },
     async fetchCaptions(input) {
+      return serializeServiceJob(transport, async () => {
       callCount += 1;
       const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
         method: 'POST',
@@ -2068,6 +2119,7 @@ export function makeLocalServiceYouTubeCaptionProvider(transport: PairedTranspor
         if (delayMs > 0) await sleep(delayMs);
       }
       throw new TypeError(`Local service YouTube caption job ${jobId} did not finish before the polling deadline.`);
+      });
     },
   };
 }
@@ -3179,6 +3231,8 @@ export function exportLearnerState(model: AppModel): { manifest: import('@lingot
 }
 
 export function clearRestorePreview(model: AppModel): void {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  restoreStates.delete(model);
   model.exportImport.manifestJson = null;
   model.exportImport.preview = null;
   model.exportImport.acknowledgedWarnings = [];
@@ -3193,10 +3247,13 @@ export function verifyExportIntegrity(manifest: import('@lingotorte/domain').Lea
 }
 
 export function previewRestoreManifest(model: AppModel, manifestJson: string): import('@lingotorte/domain').RestorePreview {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  restoreStates.delete(model);
+  model.exportImport.manifestJson = manifestJson;
+  model.exportImport.preview = null;
   const parsed = JSON.parse(manifestJson) as unknown;
   const manifest = RestoreService.validateManifest(parsed);
   const preview = model.restoreService.preview(manifest);
-  model.exportImport.manifestJson = manifestJson;
   model.exportImport.preview = preview;
   model.exportImport.lastError = null;
   model.exportImport.acknowledgedWarnings = [];
@@ -3206,45 +3263,163 @@ export function previewRestoreManifest(model: AppModel, manifestJson: string): i
   return preview;
 }
 
-export function confirmRestore(model: AppModel): void {
-  const preview = model.exportImport.preview;
-  if (!preview) throw new TypeError('No restore preview available');
-  const manifestJson = model.exportImport.manifestJson;
-  if (!manifestJson) throw new TypeError('No restore manifest JSON available');
-  const manifest = RestoreService.validateManifest(JSON.parse(manifestJson) as unknown);
-  const confirmation = RestoreService.requireConfirmation({
-    confirmedAt: new Date().toISOString(),
-    confirmOverwrite: model.exportImport.confirmOverwrite,
-    confirmReplace: model.exportImport.confirmReplace,
-    acknowledgedWarnings: model.exportImport.acknowledgedWarnings,
-  });
-  model.restoreService.restore(manifest, confirmation);
-  const restoredAt = new Date().toISOString();
-  const recompute = computeExportIntegrity(manifest.content);
-  const manifestIntegrityVerified = recompute.rootHash === manifest.integrity.rootHash && recompute.recordCount === manifest.integrity.recordCount;
-  const mode: import('@lingotorte/domain').RestoreMode = confirmation.confirmReplace
-    ? 'replace-all'
-    : preview.overwriteConfirmationRequired
-      ? 'merge-update'
-      : 'initial';
+const RESTORE_CAPABILITY = 'active-audit-restore-v1';
+type RestorePlan = ReturnType<RestoreService['plan']>;
+type RestoreBinding = {
+  wire: string; mode: 'merge' | 'replace-active'; comparison: string; generation: number;
+  revision: string; transport: PairedTransport; before: LocalStoreSnapshot; intended: LocalStoreSnapshot;
+  audit: LocalStoreSnapshot['learnerAudit']; plan: RestorePlan; committing: boolean; unknown: boolean;
+  acknowledgedRevision?: string;
+};
+const restoreStates = new WeakMap<AppModel, RestoreBinding>();
+const sessionRestoreBaselines = new WeakMap<AppModel, string>();
+export function restoreIsBusy(model: AppModel): boolean { return Boolean(restoreStates.get(model)?.committing || restoreStates.get(model)?.unknown); }
+export function hasCurrentDurableRestorePreview(model: AppModel): boolean {
+  const b = restoreStates.get(model);
+  try { return Boolean(b && !b.committing && !b.unknown && b.generation === syncOwner(model).generation && b.comparison === browserComparison(model) && b.wire === model.exportImport.manifestJson && b.mode === selectedRestoreMode(model) && b.revision === model.localService.revision); } catch { return false; }
+}
+const restoreUnknown = 'Restore outcome unknown; reconnect/read back before retry. Input and browser before-state are retained; no blind retry was sent.';
+function selectedRestoreMode(model: AppModel): 'merge' | 'replace-active' {
+  if (model.exportImport.confirmOverwrite === model.exportImport.confirmReplace) throw new TypeError('Choose exactly one restore mode.');
+  return model.exportImport.confirmReplace ? 'replace-active' : 'merge';
+}
+function clearStaleLearnerUi(model: AppModel): void {
+  model.review.currentCardId = null; model.review.activeCardId = null; model.review.revealed = false;
+  model.practice.pendingAnswer = ''; model.practice.lastAttemptResult = null;
+  model.practice.sentenceBuilder.orderedTokens = []; model.practice.sentenceBuilder.poolTokens = [];
+  model.selection = null; model.pendingMeaning = ''; model.pendingNotes = '';
+}
+function finishRestore(model: AppModel, manifest: import('@lingotorte/domain').LearnerExportManifest, receipt: ReturnType<RestoreService['restoreWithReceipt']>['receipt'] | (Omit<ReturnType<RestoreService['restoreWithReceipt']>['receipt'], 'durability' | 'durablySaved'> & { durability: string; durablySaved: boolean }), preview: import('@lingotorte/domain').RestorePreview): void {
   model.exportImport.lastRestore = {
-    restoredAt,
-    mode,
-    manifestIntegrityVerified,
-    manifestRecordCount: manifest.integrity.recordCount,
-    manifestRootHash: manifest.integrity.rootHash,
-    operationCounts: preview.operations,
-    acknowledgedWarningKinds: [...confirmation.acknowledgedWarnings],
-    mediaCopied: false,
+    restoredAt: new Date().toISOString(), mode: receipt.mode === 'replace-active' ? 'replace-all' : preview.overwriteConfirmationRequired ? 'merge-update' : 'initial',
+    manifestIntegrityVerified: true, manifestRecordCount: manifest.integrity.recordCount,
+    manifestRootHash: manifest.integrity.rootHash, operationCounts: preview.operations,
+    acknowledgedWarningKinds: [...model.exportImport.acknowledgedWarnings], mediaCopied: false,
+    effects: receipt.effects, auditEffects: receipt.auditEffects, coalesced: receipt.coalesced,
+    durability: receipt.durability, durablySaved: receipt.durablySaved,
   };
-  model.exportImport.manifestJson = null;
-  model.exportImport.preview = null;
-  model.exportImport.lastError = null;
-  model.exportImport.acknowledgedWarnings = [];
-  model.exportImport.confirmOverwrite = false;
-  model.exportImport.confirmReplace = false;
-  model.exportImport.lastExport = null;
-  persistIfLocalServiceAutosaveEnabled(model);
+  model.exportImport.manifestJson = null; model.exportImport.preview = null; model.exportImport.lastError = null;
+  model.exportImport.acknowledgedWarnings = []; model.exportImport.confirmOverwrite = false; model.exportImport.confirmReplace = false;
+  model.exportImport.lastExport = null; clearStaleLearnerUi(model);
+}
+function installDurableRestore(model: AppModel, binding: RestoreBinding, snapshot: LocalStoreSnapshot, revision: string): void {
+  model.store.installRestoreCandidate(snapshot, snapshot.learnerAudit!);
+  syncOwner(model).baseline = JSON.stringify(model.store.snapshot());
+  model.localService.revision = revision; model.localService.status = 'connected'; model.localService.syncState = 'saved';
+  model.localService.lastMessage = 'Explicit restore committed; authoritative active/audit state and revision read back.';
+  finishRestore(model, RestoreService.validateManifest(JSON.parse(binding.wire)), { mode: binding.mode, effects: binding.plan.effects, auditEffects: binding.plan.auditEffects, coalesced: binding.plan.coalesced, integrity: binding.plan.integrity, durability: 'durable-committed/readback-verified', durablySaved: true }, binding.plan.preview);
+  restoreStates.delete(model); sessionRestoreBaselines.delete(model); notifySync(model);
+}
+function authoritativeRestoreSnapshot(value: unknown): LocalStoreSnapshot {
+  if (!isPlainObject(value) || !isPlainObject(value.learnerAudit) || value.learnerAudit.version !== 1) throw new TypeError('Invalid authoritative active/audit snapshot.');
+  const snapshot = new LocalStore(value as LocalStoreSnapshot).snapshot();
+  if (!sameHistoryPayload(value, snapshot)) throw new TypeError('Incomplete authoritative active/audit snapshot.');
+  return snapshot;
+}
+function reconcileRestoreState(model: AppModel, state: Record<string, unknown>): LocalServiceSyncResult {
+  const binding = restoreStates.get(model)!;
+  const revision = stateRevision(state.revision);
+  const snapshot = authoritativeRestoreSnapshot(state.snapshot);
+  // A different service/session is never evidence for the captured operation.
+  if (binding.transport.origin !== normalizeLocalServiceBaseUrl(model.localService.baseUrl) || state.ok !== true || state.restoreCapability !== RESTORE_CAPABILITY
+    || binding.comparison !== browserComparison(model)) {
+    model.localService.lastMessage = restoreUnknown; return { ok: false, message: restoreUnknown };
+  }
+  if (sameHistoryPayload(snapshot, binding.intended) && (binding.acknowledgedRevision === undefined || revision === binding.acknowledgedRevision)) {
+    installDurableRestore(model, binding, snapshot, revision); return { ok: true, message: model.localService.lastMessage! };
+  }
+  // Do not convert an unchanged or third-party state into a retry authorization.
+  model.localService.revision = revision; model.localService.syncState = 'conflict'; model.localService.lastMessage = restoreUnknown;
+  notifySync(model); return { ok: false, message: restoreUnknown };
+}
+export async function previewDurableRestore(model: AppModel): Promise<import('@lingotorte/domain').RestorePreview> {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  if (model.localService.restoreCapability !== RESTORE_CAPABILITY) throw new TypeError('Restore capability missing; update/pair the service. No snapshot PUT fallback is permitted.');
+  const mode = selectedRestoreMode(model); const wire = model.exportImport.manifestJson;
+  if (!wire) throw new TypeError('No restore input.');
+  RestoreService.validateManifest(JSON.parse(wire));
+  const owner = syncOwner(model); const generation = owner.generation;
+  const comparison = browserComparison(model); const transport = capturedTransport(model, model.localService.baseUrl);
+  const current = () => { transport.assertCurrent(); if (owner.generation !== generation || browserComparison(model) !== comparison || wire !== model.exportImport.manifestJson || selectedRestoreMode(model) !== mode) throw new TypeError('Restore preview changed; refresh and confirm again.'); };
+  const run = async () => {
+    current();
+    if (owner.choice || !model.localService.revision || model.localService.syncState === 'conflict' || hasPendingTranscriptEdits(model)) throw new TypeError('Resolve browser/service state choice and pending edits before restore.');
+    const pending = model.store.snapshotPendingRestoreIntent();
+    if (pending && sessionRestoreBaselines.get(model) !== JSON.stringify(model.store.snapshot())) throw new TypeError('Learner edits changed after session restore. Resolve those edits explicitly before importing pending intent.');
+    if (!pending && owner.baseline !== null && owner.baseline !== JSON.stringify(model.store.snapshot())) throw new TypeError('Unsaved browser state: save or explicitly load service state before restore.');
+    const revision = model.localService.revision;
+    const state = await fetchLocalServiceJson(transport, '/api/state'); current();
+    if (state.restoreCapability !== RESTORE_CAPABILITY || stateRevision(state.revision) !== revision) throw new TypeError('Service revision/capability changed; reconnect and refresh preview.');
+    const before = model.store.snapshot(); const remote = authoritativeRestoreSnapshot(state.snapshot);
+    const audit = before.learnerAudit!;
+    const combined = { reviewEvents: unionHistory('reviewEvents', remote.learnerAudit!.reviewEvents, audit.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', remote.learnerAudit!.practiceAttempts, audit.practiceAttempts) };
+    const plan = planLearnerRestore(JSON.parse(wire), mode, remote, combined);
+    for (const name of ['reviewEvents', 'practiceAttempts'] as const) plan.auditEffects[name].appended = plan.audit[name].length - remote.learnerAudit![name].length;
+    const reply = await fetchLocalServiceJson(transport, '/api/restore/preview', { method: 'POST', body: JSON.stringify({ manifest: JSON.parse(wire), mode, expectedRevision: revision, learnerAudit: audit }) }); current();
+    if (reply.ok !== true || reply.capability !== RESTORE_CAPABILITY || stateRevision(reply.revision) !== revision || !sameHistoryPayload(reply.preview, plan.preview)) throw new TypeError('Invalid authoritative restore preview.');
+    restoreStates.set(model, { wire, mode, comparison, generation, revision, transport, before, intended: plan.candidate, audit, plan, committing: false, unknown: false });
+    model.exportImport.preview = reply.preview as RestorePlan['preview']; model.exportImport.acknowledgedWarnings = [];
+    model.exportImport.lastRestore = null; model.exportImport.lastError = null; notifySync(model); return model.exportImport.preview;
+  };
+  const result = owner.tail.then(run, run); owner.tail = result; return result;
+}
+export function previewPendingSessionRestore(model: AppModel): import('@lingotorte/domain').RestorePreview {
+  const intent = model.store.snapshotPendingRestoreIntent();
+  if (!intent) throw new TypeError('No pending session restore.');
+  if (sessionRestoreBaselines.get(model) !== JSON.stringify(model.store.snapshot())) throw new TypeError('Learner edits changed since session restore; resolve them explicitly.');
+  const preview = previewRestoreManifest(model, JSON.stringify(intent.manifest));
+  model.exportImport.confirmReplace = intent.mode === 'replace-active'; model.exportImport.confirmOverwrite = intent.mode === 'merge';
+  return preview;
+}
+export function confirmRestore(model: AppModel): void | Promise<void> {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  const preview = model.exportImport.preview; const wire = model.exportImport.manifestJson;
+  if (!preview || !wire) throw new TypeError('No restore preview/input available.');
+  const mode = selectedRestoreMode(model);
+  const manifest = RestoreService.validateManifest(JSON.parse(wire));
+  const confirmation = RestoreService.requireConfirmation({ confirmedAt: new Date().toISOString(), confirmOverwrite: mode === 'merge', confirmReplace: mode === 'replace-active', acknowledgedWarnings: model.exportImport.acknowledgedWarnings });
+  if (model.localService.status === 'disconnected' && !model.localService.revision) {
+    const result = model.restoreService.restoreWithReceipt(manifest, confirmation);
+    sessionRestoreBaselines.set(model, JSON.stringify(model.store.snapshot()));
+    finishRestore(model, manifest, result.receipt, preview);
+    markUnsavedBrowserEdits(model); return;
+  }
+  if (model.localService.restoreCapability !== RESTORE_CAPABILITY) throw new TypeError('Restore capability missing; update the service.');
+  const binding = restoreStates.get(model);
+  const owner = syncOwner(model);
+  if (!binding || binding.unknown || binding.committing || binding.wire !== wire || binding.mode !== mode || binding.revision !== model.localService.revision || binding.generation !== owner.generation || binding.comparison !== browserComparison(model)) throw new TypeError('Fresh service-backed preview required; refresh and confirm again.');
+  for (const warning of binding.plan.preview.warnings) if (!confirmation.acknowledgedWarnings.includes(warning.kind)) throw new TypeError(`Restore warning ${warning.kind} not acknowledged.`);
+  binding.committing = true;
+  const current = () => { binding.transport.assertCurrent(); if (binding.generation !== owner.generation || binding.comparison !== browserComparison(model) || binding.wire !== model.exportImport.manifestJson || selectedRestoreMode(model) !== mode) throw new TypeError('Restore owner/input changed.'); };
+  const run = async () => {
+    let dispatched = false;
+    let commitResponseReceived = false;
+    try {
+      current(); if (binding.revision !== model.localService.revision || owner.choice) throw new TypeError('Restore revision changed; refresh preview.');
+      model.localService.syncState = 'saving'; model.localService.lastMessage = 'Restore pending; live learner state has not changed.'; notifySync(model);
+      dispatched = true;
+      const ack = await fetchLocalServiceJson(binding.transport, '/api/restore/commit', { method: 'POST', body: JSON.stringify({ manifest: JSON.parse(wire), mode, expectedRevision: binding.revision, learnerAudit: binding.audit, confirmation }) }); commitResponseReceived = true; current();
+      const revision = stateRevision(ack.revision);
+      const snapshot = authoritativeRestoreSnapshot(ack.snapshot);
+      const expectedReceipt = { mode, effects: binding.plan.effects, auditEffects: binding.plan.auditEffects, coalesced: binding.plan.coalesced, integrity: 'semantic-hash-verified', durability: 'durable-committed/readback-verified', durablySaved: true };
+      if (ack.ok !== true || ack.capability !== RESTORE_CAPABILITY || !sameHistoryPayload(ack.receipt, expectedReceipt) || !sameHistoryPayload(snapshot, binding.intended)) throw new TypeError('Invalid restore acknowledgement.');
+      binding.acknowledgedRevision = revision;
+      const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); current();
+      if (readback.ok !== true || readback.restoreCapability !== RESTORE_CAPABILITY || stateRevision(readback.revision) !== revision || !sameHistoryPayload(authoritativeRestoreSnapshot(readback.snapshot), snapshot)) throw new TypeError('Restore readback mismatch.');
+      installDurableRestore(model, binding, snapshot, revision);
+    } catch (error) {
+      binding.committing = false;
+      const rejected = !commitResponseReceived && error instanceof LocalServiceRequestError && [400, 409, 428, 500].includes(error.status);
+      binding.unknown = dispatched && !rejected;
+      // Keep recovery evidence even when UI/transport ownership is revoked. Do not publish stale completion.
+      if (binding.generation === owner.generation) {
+        model.exportImport.lastRestore = null; model.exportImport.lastError = binding.unknown ? restoreUnknown : error instanceof Error ? error.message : 'Restore failed before commit.';
+        model.localService.syncState = binding.unknown || rejected ? 'conflict' : 'unsaved'; notifySync(model);
+      }
+      throw new TypeError(binding.unknown ? restoreUnknown : error instanceof Error ? error.message : 'Restore failed before commit.');
+    }
+  };
+  const result = owner.tail.then(run, run); owner.tail = result; return result;
 }
 
 export function setExportImportAcknowledgedWarning(model: AppModel, kind: import('@lingotorte/domain').PrivacyWarningKind, acknowledged: boolean): void {
@@ -3258,11 +3433,16 @@ export function setExportImportAcknowledgedWarning(model: AppModel, kind: import
 }
 
 export function setExportImportConfirmOverwrite(model: AppModel, value: boolean): void {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  restoreStates.delete(model);
   model.exportImport.confirmOverwrite = value;
   if (value) model.exportImport.confirmReplace = false;
 }
 
 export function setExportImportConfirmReplace(model: AppModel, value: boolean): void {
+  if (restoreStates.get(model)?.unknown || restoreStates.get(model)?.committing) throw new TypeError(restoreUnknown);
+  restoreStates.delete(model);
+  if (model.exportImport.manifestJson) model.exportImport.preview = model.restoreService.preview(RestoreService.validateManifest(JSON.parse(model.exportImport.manifestJson)), value ? 'replace-active' : 'merge');
   model.exportImport.confirmReplace = value;
   if (value) model.exportImport.confirmOverwrite = false;
 }

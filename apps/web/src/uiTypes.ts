@@ -124,7 +124,7 @@ export type AppModel = {
   };
   exportImport: {
     manifestJson: string | null;
-    preview: import('@lingotorte/domain').RestorePreview | null;
+    preview: (import('@lingotorte/domain').RestorePreview & Partial<Pick<ReturnType<import('@lingotorte/storage').RestoreService['plan']>['preview'], 'effects' | 'auditEffects' | 'coalesced' | 'mode'>>) | null;
     lastError: string | null;
     acknowledgedWarnings: import('@lingotorte/domain').PrivacyWarningKind[];
     confirmOverwrite: boolean;
@@ -141,7 +141,7 @@ export type AppModel = {
       manifestIntegrityVerified: boolean;
     } | null;
     lastSaveVerified: { fileName: string; verifiedAt: string } | null;
-    lastRestore: import('@lingotorte/domain').RestoreReceipt | null;
+    lastRestore: (import('@lingotorte/domain').RestoreReceipt & Partial<Pick<ReturnType<import('@lingotorte/storage').RestoreService['restoreWithReceipt']>['receipt'], 'effects' | 'auditEffects' | 'coalesced'>> & { durability?: string; durablySaved?: boolean }) | null;
   };
   localService: {
     pathPolicy?: import('../../../packages/domain/src/nativePaths.ts').NativePathPolicy | null;
@@ -152,6 +152,7 @@ export type AppModel = {
     autosaveEnabled: boolean;
     syncState?: 'idle' | 'saving' | 'unsaved' | 'choice' | 'conflict' | 'error' | 'saved';
     revision?: string | null;
+    restoreCapability?: string | null;
   };
 };
 
