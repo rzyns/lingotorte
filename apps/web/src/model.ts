@@ -2448,10 +2448,27 @@ export async function createCorrectedTranscriptVersion(
   parentTrackId: string,
   edits: readonly TranscriptCorrectionEdit[],
 ): Promise<TranscriptImportResult> {
+  return withTranscriptCorrectionPending(model, () => createCorrectedTranscriptVersionNow(model, parentTrackId, edits));
+}
+
+async function createCorrectedTranscriptVersionNow(
+  model: AppModel,
+  parentTrackId: string,
+  edits: readonly TranscriptCorrectionEdit[],
+): Promise<TranscriptImportResult> {
   const parent = model.store.getSubtitleTrack(parentTrackId);
   if (!parent) throw new TypeError(`Cannot correct missing transcript track ${parentTrackId}`);
   const parentCues = model.store.listCuesForTrack(parentTrackId);
   if (parentCues.length === 0) throw new TypeError('Cannot correct transcript track with no cues.');
+  // Validate word edits before any store write so a rejected word edit cannot leave a partial corrected version.
+  for (const edit of edits) {
+    for (const word of edit.wordTimings ?? []) {
+      if (!normalizeBrowserCueText(word.text)) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
+      if (!Number.isFinite(word.startMs) || !Number.isFinite(word.endMs) || word.endMs <= word.startMs) {
+        throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
+      }
+    }
+  }
   const editsByCueId = new Map(edits.map((edit) => [edit.cueId, edit]));
   const segments = parentCues.map((cue) => {
     const edit = editsByCueId.get(cue.id);
@@ -2547,6 +2564,15 @@ async function createStructuralCorrectedTranscriptVersion(
   segments: readonly TranscriptSegmentDraft[],
   manualCorrectionCount: number,
 ): Promise<TranscriptImportResult> {
+  return withTranscriptCorrectionPending(model, () => createStructuralCorrectedTranscriptVersionNow(model, parentTrackId, segments, manualCorrectionCount));
+}
+
+async function createStructuralCorrectedTranscriptVersionNow(
+  model: AppModel,
+  parentTrackId: string,
+  segments: readonly TranscriptSegmentDraft[],
+  manualCorrectionCount: number,
+): Promise<TranscriptImportResult> {
   const parent = model.store.getSubtitleTrack(parentTrackId);
   if (!parent) throw new TypeError(`Cannot correct missing transcript track ${parentTrackId}`);
   const warningFlags: TranscriptWarningFlag[] = ['qualityUnreviewed'];
@@ -2626,9 +2652,60 @@ export async function mergeTranscriptCueWithNextInCorrectedVersion(
   return createStructuralCorrectedTranscriptVersion(model, parentTrackId, segments, 1);
 }
 
+const transcriptCorrectionsInFlight = new WeakMap<AppModel, number>();
+async function withTranscriptCorrectionPending<T>(model: AppModel, operation: () => Promise<T>): Promise<T> {
+  transcriptCorrectionsInFlight.set(model, (transcriptCorrectionsInFlight.get(model) ?? 0) + 1);
+  try {
+    return await operation();
+  } finally {
+    transcriptCorrectionsInFlight.set(model, Math.max(0, (transcriptCorrectionsInFlight.get(model) ?? 1) - 1));
+  }
+}
+
+/** True while a corrected/structural transcript version is being created for this model. */
+export function transcriptCorrectionPending(model: AppModel): boolean {
+  return (transcriptCorrectionsInFlight.get(model) ?? 0) > 0;
+}
+
+/**
+ * True when pending editor values differ from the persisted cue text/boundaries or word text/boundaries of
+ * `trackId`. Reverted values are clean. Pending entries that do not belong to `trackId` (for example edits made
+ * against a previous version) and non-finite numbers are treated as dirty (fail closed).
+ */
+export function hasDirtyTranscriptEdits(model: AppModel, trackId: string): boolean {
+  const lifecycle = model.transcriptLifecycle;
+  const cues = new Map(model.store.listCuesForTrack(trackId).map((cue) => [cue.id, cue]));
+  for (const [cueId, text] of Object.entries(lifecycle.pendingCueEdits)) {
+    const cue = cues.get(cueId);
+    if (!cue || text !== cue.text) return true;
+  }
+  for (const [cueId, timing] of Object.entries(lifecycle.pendingCueTimingEdits)) {
+    const cue = cues.get(cueId);
+    if (!cue || timing.startMs !== cue.startMs || timing.endMs !== cue.endMs) return true;
+  }
+  const wordEntries = Object.entries(lifecycle.pendingWordTimingEdits);
+  if (wordEntries.length > 0) {
+    const words = new Map(model.store.listTranscriptWordTimingsForTrack(trackId).map((word) => [word.id, word]));
+    for (const [wordId, edit] of wordEntries) {
+      const word = words.get(wordId);
+      if (!word || edit.text !== word.text || edit.startMs !== word.startMs || edit.endMs !== word.endMs) return true;
+    }
+  }
+  return false;
+}
+
+/** Returns null when explicit approval of `trackId` is allowed, else the reason it is blocked. */
+export function transcriptApprovalBlockReason(model: AppModel, trackId: string): string | null {
+  if (transcriptCorrectionPending(model)) return 'Cannot approve while a transcript correction is pending. Wait for it to finish, inspect the result, then approve.';
+  if (hasDirtyTranscriptEdits(model, trackId)) return 'Cannot approve with pending transcript edits. Use “Create corrected transcript version”, inspect the corrected version, then approve it.';
+  return null;
+}
+
 export function approveTranscriptTrack(model: AppModel, trackId: string, approvedAt = new Date().toISOString()): SubtitleTrack {
   const track = model.store.getSubtitleTrack(trackId);
   if (!track) throw new TypeError(`Cannot approve missing transcript track ${trackId}`);
+  const blocked = transcriptApprovalBlockReason(model, trackId);
+  if (blocked) throw new TypeError(blocked);
   const segments = model.store.listCuesForTrack(trackId).map((cue) => ({ startMs: cue.startMs, endMs: cue.endMs, text: cue.text }));
   const qualityReport = {
     ...(track.qualityReport ?? qualityReportForSegments(segments, track.provenance.warningFlags)),
