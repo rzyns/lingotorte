@@ -161,3 +161,33 @@ Root causes and fixes:
 
 Residual for run 2: the commit path is source-traced and not yet browser-proven. If cleanup still fails, the new `stop` receipt names the failing closure.
 
+## Run 2 result and corrections
+
+Run 2 (journal `live-7c5f2b2f5b6e`; image `lingotorte:bqb-run2`): PASS restore-01/02/03/09, relink-01/02/03, transcript-01 and cleanup (strict). relink-04 OBSERVED. **No product defect was found.** All four failures were harness defects. Each was reproduced offline in JSDOM with the real `apps/web` modules, the real `dom-batch.mjs` and an in-memory SQLite service (`docker run --network none`, no listener).
+
+| Phase | Run 2 | Root cause | Defect |
+|---|---|---|---|
+| restore-04, 05 | FAILED DomButton previewRestore disabled | `restore-commit` returned while the commit was still in flight | harness (DOM bridge) |
+| restore-08 | FAILED readback-reconciles | merged the seeded export into identical state; the oracle also compared `sha256:` revisions as ints | harness (precondition, oracle) |
+| restore-10 | FAILED no-commit-no-effect | tab A's cumulative `commitsSent` (includes 08's commit) compared with 0 | harness (bookkeeping) |
+| transcript-02 | FAILED apply-then-approve | `save` navigates to Settings, so the Approve button was not rendered | harness (DOM bridge) |
+
+* **restore-04/05.** `restoreIsBusy` (model.ts:3635) is `committing || unknown`. `app.ts:1027` disables 'Preview restore' while it is true. In restore-03, the conflict preview renders a 'Restore requires one of the options above…' note with class `status-banner error` (app.ts:1151). The note stays in the DOM and is hidden with `display:none` once a mode is ticked. The old `restore-commit`/`restore-settle` wait accepted any `.status-banner.error` under the restore panel, so it returned immediately after clicking 'Restore now' while `binding.committing` was still true (model.ts:3752).
+  * The next `restore-preview` click then hit the disabled button: in restore-04, iteration 2.
+  * The CDP timeout then made the app record outcome-unknown. Its commit settled successfully later, so restore-05 also started while the app was busy.
+  * The JSDOM replay with the run-2 `dom-batch.mjs` reproduces exactly `DomButton|previewRestore|disabled` with `busy:true, sync:'saving'`. Once the commit settles, the app becomes idle and installs the durable receipt, so it is not stuck.
+  * Fix: a restore error is now only the `role="alert"` lastError banner (`restoreAlert`), and commit/settle wait on `receipt || outcomeUnknown || alert`. A new `restore-idle` op waits finitely for 'Preview restore' to be enabled before restore-04/05/08. A busy app that stays busy now fails as `DomDeadline|previewRestore|disabled`. The product gate is correct.
+* **restore-08.** Because 04/05 never ran, the active state already equalled the seeded manifest, and an idempotent merge leaves the content-digest revision unchanged. Fixes:
+  * DEPENDS now requires restore-05 (empties the active set) and restore-06 (re-pairs tab A after the service restart).
+  * The phase asserts a new `precondition-active-empty` before committing.
+  * The `rev_ok` check now compares opaque `sha256:` strings for inequality. The old `int` check could never pass against the real oracle.
+  * The upstream-200, single-commit and exact 5×6 count assertions are unchanged. JSDOM: merging the seeded manifest into the emptied state yields 5 active records each and a new revision.
+* **restore-10.** The oracle was unchanged. `commitsSent` counts every `/api/restore/commit` start since tab A's page install (03→08). The phase now takes a `commit-count` baseline and asserts a zero delta, and the oracle requires both `tablesSha256` and the revision to be unchanged. restore-03 uses the same delta form.
+* **transcript-02.** The Apply step was correct: lt-aur.1 clears the submitted edits (JSDOM: pending maps empty after Apply) and `targetTrackId` switches to the corrected version. `save` then navigates to Settings, and `transcript-approve` looked up the Approve button there (JSDOM: `missing`). The op now navigates to Library, clicks Approve on the displayed (corrected) track, and requires the app message 'Transcript approved for study' (`APPROVED_DONE`, app.ts:3688) plus the button disabled afterwards. JSDOM: approved, and the track status is `approved`.
+
+Offline: `test_browser_batch_harness.py` 51 tests OK (new `Run2CorrectionTests`), `live-batch.py` inventory OK (`browserExecuted:false`), `test_lt_sor_harness.py` OK, `node --check` on the kit `.mjs` OK.
+
+Residual for run 3:
+* The restore commit and approve paths are JSDOM-proven, not browser-proven.
+* restore-08 now cascades if 05 or 06 fails.
+* The real fixture's drop-ack kill may leave tab A's binding `unknown` after restore-08. restore-10 re-pairs and only previews, but a still-unknown binding would surface there as `DomButton|previewRestore|disabled` (product-correct outcome-unknown gate). If that happens, decide whether reconnect/readback reconciliation (model.ts `reconcileRestoreState`) ran during the restore-08 re-pair.

@@ -360,15 +360,19 @@ class BatchDriver:
         self.invoke('export')
         manifest = self.runtime.request('manifest-seeded')['manifestJson']
         before = self.oracle()
+        base = self.invoke('commit-count')['commits']
         v = self.invoke('restore-preview', manifestJson=manifest)
         after = self.oracle()
-        self.ok(P, 'preview-shown-no-commit', v['preview'] and v['integrity'] and v['commitsSent'] == 0, value={'conflictChoice': v['conflictChoice']})
+        self.ok(P, 'preview-shown-no-commit', v['preview'] and v['integrity'] and v['commitsSent'] - base == 0, value={'conflictChoice': v['conflictChoice']})
         self.ok(P, 'server-unchanged', before['tablesSha256'] == after['tablesSha256'] and before['revision'] == after['revision'], oracle={'tablesSha256': after['tablesSha256'], 'revision': after['revision']})
         self.state['manifest'] = True
 
     def phase_restore_04_merge_twice_idempotent(self):
         P = 'restore-04-merge-twice-idempotent'
         manifest = self.runtime.request('manifest-seeded')['manifestJson']
+        # Precondition (not a workaround): no restore may be in flight. A stuck-busy app fails here as
+        # DomDeadline|previewRestore|disabled after a finite wait, distinct from a DomButton click refusal.
+        self.invoke('restore-idle')
         results = []
         for i in range(2):
             self.invoke('restore-preview', manifestJson=manifest)
@@ -382,6 +386,7 @@ class BatchDriver:
         P = 'restore-05-empty-replace-readback'
         manifest = self.runtime.request('manifest-empty')['manifestJson']
         pre = self.oracle()
+        self.invoke('restore-idle')
         self.invoke('restore-preview', manifestJson=manifest)
         r = self.invoke('restore-commit', mode='replace')
         o = self.oracle()
@@ -416,7 +421,12 @@ class BatchDriver:
         P = 'restore-08-kill-during-commit-unknown'
         self.tab('A')
         before = self.oracle()
+        # Self-contained: the merge must change server state, or 'revision advanced' is vacuous. restore-05
+        # (DEPENDS) left the active learner set empty; prove that here instead of assuming it.
+        empty = all(before['learner'].get(k) == 0 for k in ('savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'reviewEvents', 'practiceAttempts'))
+        self.ok(P, 'precondition-active-empty', empty, oracle={'revision': before['revision'], 'counts': before['learner']})
         manifest = self.runtime.request('manifest-seeded')['manifestJson']
+        self.invoke('restore-idle')
         self.invoke('restore-preview', manifestJson=manifest)
         base_commits = self.invoke('commit-count')['commits']
         self.runtime.request('commit-mode', mode='drop-ack-after-commit')
@@ -443,7 +453,8 @@ class BatchDriver:
         # Seeded merge manifest = 5 linked chains (one per mode): post-commit active state carries exactly them.
         expected = {'savedItems': 5, 'savedOccurrences': 5, 'reviewCards': 5, 'reviewCardStates': 5, 'reviewEvents': 5, 'practiceAttempts': 5}
         counts_ok = all(o['learner'].get(k) == n for k, n in expected.items()) and o['learner'].get('modes') == sorted(seed_modes())
-        rev_ok = isinstance(o['revision'], int) and isinstance(before['revision'], int) and o['revision'] > before['revision']
+        # Revisions are opaque 'sha256:<hex>' content digests (run 2 journal), not counters: 'advanced' == differs.
+        rev_ok = isinstance(o['revision'], str) and isinstance(before['revision'], str) and o['revision'] != before['revision']
         self.ok(P, 'readback-reconciles', not v['pairAgain'] and rev_ok and counts_ok, oracle={'revision': o['revision'], 'before': before['revision'], 'counts': o['learner']})
 
     def phase_restore_09_foreign_null_origin(self):
@@ -473,13 +484,19 @@ class BatchDriver:
         P = 'restore-10-wrong-capability-generic'
         before = self.oracle()
         manifest = self.runtime.request('manifest-seeded')['manifestJson']
+        # Fresh page: no restore in flight from restore-08, so this phase tests only the wrong-capability path
+        # (restore-08's own readback oracle still catches a stuck outcome-unknown state).
+        self.page('A', self.dev(), reload=True)
         v = self.pair('A', capability='A' * 43)
         self.page('A', self.dev())
+        # Tab A's request observer is cumulative since page install (restore-04/05/08 commits): count a delta.
+        base = self.invoke('commit-count')['commits']
         p = self.invoke('restore-preview', manifestJson=manifest)
         after = self.oracle()
         generic = v['pairAgain'] or v['pairingInputError']
+        unchanged = before['tablesSha256'] == after['tablesSha256'] and before['revision'] == after['revision']
         self.ok(P, 'generic-pairing-error', generic and v['cleared'], masked=v['masked'], cleared=v['cleared'])
-        self.ok(P, 'no-commit-no-effect', p['commitsSent'] == 0 and before['tablesSha256'] == after['tablesSha256'], oracle={'unchanged': before['tablesSha256'] == after['tablesSha256']})
+        self.ok(P, 'no-commit-no-effect', p['commitsSent'] - base == 0 and unchanged, oracle={'unchanged': unchanged}, counts={'commits': p['commitsSent'] - base})
         self.pair('A', choice='service')
 
     # ---- lt-n31 relink ----
@@ -559,7 +576,7 @@ class BatchDriver:
         self.state['corrected'] = new[0]
         self.state['v1Tracks'] = before['trackIds']
         ap = self.invoke('transcript-approve')
-        self.ok(P, 'apply-then-approve', ap['approved'] and ap['nowDisabled'])
+        self.ok(P, 'apply-then-approve', ap['approved'] and ap['nowDisabled'], value={'present': ap.get('present'), 'enabled': ap.get('enabled')})
 
     def phase_transcript_03_save_reload_anchors(self):
         P = 'transcript-03-save-reload-anchors'

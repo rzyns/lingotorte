@@ -72,7 +72,8 @@ DEPENDS = {
     'restore-06-reload-restart-repair': ('restore-05-empty-replace-readback',),
     # Step 7's oracle (stale tab B save -> 409) is only meaningful after restores 04/05 advanced the revision.
     'restore-07-second-tab-stale-409': ('restore-01-pair', 'restore-02-seed-five-modes', 'restore-04-merge-twice-idempotent', 'restore-05-empty-replace-readback'),
-    'restore-08-kill-during-commit-unknown': ('restore-01-pair',),
+    # Step 8 needs a merge that changes state: restore-05 empties the active set and restore-06 re-pairs tab A.
+    'restore-08-kill-during-commit-unknown': ('restore-01-pair', 'restore-05-empty-replace-readback', 'restore-06-reload-restart-repair'),
     'restore-09-foreign-null-origin': ('restore-01-pair',),
     'restore-10-wrong-capability-generic': ('restore-01-pair',),
     'relink-02-restart-repair-reselect': ('relink-01-import-save',),

@@ -5,6 +5,7 @@
 // Exact app strings (web app source, app.ts). Tested against the checkout at test time.
 export const CHOICE_LABELS = Object.freeze({ service: 'Load service state (discard browser edits)', browser: 'Keep browser work' });
 export const APPLY_DONE = 'Corrected transcript version created';
+export const APPROVED_DONE = 'Transcript approved for study';
 // Fixed-vocabulary element ids for diagnostics. Errors carry `Tag|labelKey|state`; never free text.
 export const BUTTON_LABELS = Object.freeze({ previewRestore: 'Preview restore', refreshServicePreview: 'Refresh authoritative service preview', restoreNow: 'Restore now', connectLocalService: 'Connect local service', saveStateNow: 'Save state now', generateLocalExport: 'Generate local export', importLocalMedia: 'Import local media', importAsNewMedia: 'Import as new media', cancel: 'Cancel', chooseMediaAgain: 'Choose media again', createCorrectedTranscript: 'Create corrected transcript version', approveTranscript: 'Approve transcript for study', choiceService: CHOICE_LABELS.service, choiceBrowser: CHOICE_LABELS.browser, navLibrary: 'Library', navPlayer: 'Player', navSettings: 'Settings', navSaved: 'Saved', navExportImport: 'Export / Import' });
 export const SELECTOR_LABELS = Object.freeze({ nav: '.lingotorte-nav', importManifest: '#import-manifest', serviceUrl: '#local-service-url', serviceCapability: '#local-service-capability', autosave: '#local-service-autosave', mediaFile: '#local-media-file', nameConflict: '.media-name-conflict', confirmMerge: '#restore-confirm-overwrite', confirmReplace: '#restore-confirm-replace', confirmSingle: '#restore-confirm', cueText: '#transcript-correction-cue-0', cueStart: '#transcript-correction-cue-0-start-ms', cueEnd: '#transcript-correction-cue-0-end-ms', wordText: '#transcript-word-timing-cue-0-word-0-text', wordStart: '[name="transcript-word-timing-cue-0-word-0-start-ms"]', wordEnd: '[name="transcript-word-timing-cue-0-word-0-end-ms"]' });
@@ -32,10 +33,16 @@ export async function installBatchDriver(requireUi = true) {
   if (requireUi) await wait(() => document.querySelector('.lingotorte-nav'));
 
   const restorePanel = () => document.querySelector('.export-import-card');
+  // Only the role=alert lastError banner (app.ts renderExportImportView) is a restore error. The conflict
+  // note '.status-banner.error' (app.ts ~1151) is ALWAYS present in a conflict preview (display:none once a
+  // mode is ticked); matching it made restore-commit return while the commit was still in flight (run 2).
+  const restoreAlert = () => restorePanel()?.querySelector('[role="alert"].status-banner.error') ?? null;
+  const restoreBusy = () => btn(BUTTON_LABELS.previewRestore)?.disabled === true; // app.ts: previewBtn.disabled = restoreIsBusy(model)
+  const settled = () => receipt().present || status().outcomeUnknown || !!restoreAlert();
   const receipt = () => { const r = document.querySelector('[data-testid="restore-receipt"]'); return { present: !!r, durable: !!r && (r.querySelector('h3,h4')?.textContent ?? '').includes('durable readback verified') }; };
   const previewRestore = async (manifestJson) => {
     nav('Export / Import'); fill('#import-manifest', manifestJson); const before = count('POST', '/api/restore/preview', 'finish');
-    click('Preview restore'); await wait(() => document.querySelector('.restore-preview') && count('POST', '/api/restore/preview', 'finish') > before || restorePanel()?.querySelector('.status-banner.error'));
+    click('Preview restore'); await wait(() => document.querySelector('.restore-preview') || restoreAlert());
     return { preview: !!document.querySelector('.restore-preview'), integrity: document.querySelector('[data-testid="restore-integrity"]')?.dataset.integrityVerified === 'true', conflictChoice: !!document.querySelector('#restore-confirm-overwrite'), commitsSent: count('POST', '/api/restore/commit', 'start') };
   };
   // app.ts renderExportImportView: with a paired service, 'Restore now' stays disabled until (a) exactly one
@@ -51,7 +58,7 @@ export async function installBatchDriver(requireUi = true) {
     if (btn(BUTTON_LABELS.refreshServicePreview)) {
       const before = count('POST', '/api/restore/preview', 'finish');
       click(BUTTON_LABELS.refreshServicePreview);
-      await wait(() => (count('POST', '/api/restore/preview', 'finish') > before && btn(BUTTON_LABELS.refreshServicePreview) && !btn(BUTTON_LABELS.refreshServicePreview).disabled) || restorePanel()?.querySelector('[role="alert"].status-banner.error'));
+      await wait(() => (count('POST', '/api/restore/preview', 'finish') > before && btn(BUTTON_LABELS.refreshServicePreview) && !btn(BUTTON_LABELS.refreshServicePreview).disabled) || restoreAlert());
     }
     for (let i = 0; i < 16; i++) { const w = [...document.querySelectorAll('input[name="restore-warning"]')].find((n) => !n.checked); if (!w) break; w.click(); }
     try { await wait(() => { const b = btn(BUTTON_LABELS.restoreNow); return b && !b.disabled; }, 3000); } catch { const b = btn(BUTTON_LABELS.restoreNow); throw diagnostic('DomButton', 'restoreNow', b ? 'disabled' : 'missing'); }
@@ -69,9 +76,10 @@ export async function installBatchDriver(requireUi = true) {
       case 'autosave': { nav('Settings'); const n = find('#local-service-autosave'); if (n.checked !== (arg.enabled !== false)) n.click(); return status(); }
       case 'export': { nav('Export / Import'); click('Generate local export'); await wait(() => document.querySelector('.export-summary')); return { exported: true }; }
       case 'restore-preview': return await previewRestore(arg.manifestJson);
-      case 'restore-commit': { const c = await confirmRestore(arg.mode); await wait(() => receipt().present || status().outcomeUnknown || restorePanel()?.querySelector('.status-banner.error'), arg.ms ?? 8000); const last = events.filter((e) => e.method === 'POST' && e.path === '/api/restore/commit' && e.stage !== 'start').at(-1); const readbackAfter = events.findIndex((e, i) => i > events.lastIndexOf(last) && e.method === 'GET' && e.path === '/api/state' && e.stage === 'finish') >= 0; return { ...receipt(), commitStatus: last?.status ?? null, commitFailed: last?.stage === 'failed', readbackAfterCommit: readbackAfter, commits: count('POST', '/api/restore/commit', 'start') - c.commitStartedBefore, outcomeUnknown: status().outcomeUnknown, errorShown: !!restorePanel()?.querySelector('.status-banner.error') }; }
+      case 'restore-commit': { const c = await confirmRestore(arg.mode); await wait(settled, arg.ms ?? 8000); const last = events.filter((e) => e.method === 'POST' && e.path === '/api/restore/commit' && e.stage !== 'start').at(-1); const readbackAfter = events.findIndex((e, i) => i > events.lastIndexOf(last) && e.method === 'GET' && e.path === '/api/state' && e.stage === 'finish') >= 0; return { ...receipt(), commitStatus: last?.status ?? null, commitFailed: last?.stage === 'failed', readbackAfterCommit: readbackAfter, commits: count('POST', '/api/restore/commit', 'start') - c.commitStartedBefore, outcomeUnknown: status().outcomeUnknown, errorShown: !!restoreAlert(), busy: restoreBusy() }; }
       case 'restore-commit-start': { const c = await confirmRestore(arg.mode); await wait(() => count('POST', '/api/restore/commit', 'start') > c.commitStartedBefore, 3000); return { started: true }; }
-      case 'restore-settle': { await wait(() => receipt().present || status().outcomeUnknown || restorePanel()?.querySelector('.status-banner.error'), arg.ms ?? 10000); return { ...receipt(), outcomeUnknown: status().outcomeUnknown, commitsSent: count('POST', '/api/restore/commit', 'start'), restoreNowEnabled: !!btn('Restore now') && !btn('Restore now').disabled }; }
+      case 'restore-settle': { await wait(settled, arg.ms ?? 10000); return { ...receipt(), outcomeUnknown: status().outcomeUnknown, commitsSent: count('POST', '/api/restore/commit', 'start'), restoreNowEnabled: !!btn('Restore now') && !btn('Restore now').disabled }; }
+      case 'restore-idle': { nav('Export / Import'); await wait(() => btn(BUTTON_LABELS.previewRestore) && !restoreBusy(), arg.ms ?? 10000).catch(() => { throw diagnostic('DomDeadline', 'previewRestore', 'disabled'); }); return { busy: restoreBusy() }; }
       case 'commit-count': return { commits: count('POST', '/api/restore/commit', 'start'), previews: count('POST', '/api/restore/preview', 'start') };
       case 'import-files': {
         // Files are supplied by the parent via CDP DOM.setFileInputFiles on #local-media-file before this op.
@@ -104,7 +112,13 @@ export async function installBatchDriver(requireUi = true) {
         return { ...blocked, handlerRefused, dispatchReasonVisible, reverted: !!arg.revert, approveEnabledAfterRevert: arg.revert ? !btn('Approve transcript for study')?.disabled : null };
       }
       case 'transcript-apply': { click('Create corrected transcript version'); await wait(() => (document.body.textContent ?? '').includes(APPLY_DONE) || document.querySelector('.status-banner.error')); return { applied: (document.body.textContent ?? '').includes(APPLY_DONE) && !document.querySelector('.status-banner.error'), gateText: !!document.querySelector('#transcript-approval-gate') && !document.querySelector('#transcript-approval-gate').hidden }; }
-      case 'transcript-approve': { const a = btn('Approve transcript for study'); if (!a || a.disabled) return { approved: false, enabled: false }; a.click(); await new Promise((r) => setTimeout(r, 50)); return { approved: true, enabled: true, nowDisabled: btn('Approve transcript for study')?.disabled === true }; }
+      case 'transcript-approve': {
+        // 'save' navigates to Settings; the approval panel only exists in Library (run 2 found Approve missing).
+        nav('Library'); await wait(() => document.querySelector('.transcript-lifecycle-panel'));
+        const a = btn(BUTTON_LABELS.approveTranscript); if (!a || a.disabled) return { approved: false, enabled: false, present: !!a, nowDisabled: false };
+        a.click(); await wait(() => (document.body.textContent ?? '').includes(APPROVED_DONE) || document.querySelector('.status-banner.error'), 3000).catch(() => null);
+        return { approved: (document.body.textContent ?? '').includes(APPROVED_DONE), enabled: true, present: true, nowDisabled: btn(BUTTON_LABELS.approveTranscript)?.disabled === true };
+      }
       case 'events': return { events: events.slice(arg.from ?? 0).map((e) => ({ stage: e.stage, method: e.method, path: e.path, status: e.status ?? null })) };
       case 'context-attempt': {
         // Foreign or null-origin attempt against /api/restore/{preview,commit}. Same shapes as lt-sor matrix:

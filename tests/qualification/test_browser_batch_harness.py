@@ -280,33 +280,39 @@ class DriverTests(Base):
             live.time.sleep = orig
         self.assertNotIn(SECRET, j.path.read_text())
 
+    def empty(self, rev):
+        return self.oracle(rev=rev, learner={k: 0 for k in ('savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'reviewEvents', 'practiceAttempts')} | {'modes': []})
+
     def test_kill_during_commit_requires_unknown_and_single_commit(self):
+        R1, R2 = 'sha256:' + '1' * 64, 'sha256:' + '2' * 64
         counts = iter([{'commits': 3}, {'commits': 4}])
-        res = {'restore-preview': {}, 'restore-commit-start': {}, 'restore-settle': {'outcomeUnknown': True, 'present': False},
+        res = {'restore-idle': {'busy': False}, 'restore-preview': {}, 'restore-commit-start': {}, 'restore-settle': {'outcomeUnknown': True, 'present': False},
                'commit-count': lambda kw: next(counts), 'pair': {'pairAgain': False, 'masked': True, 'cleared': True, 'statusOk': True, 'stateOk': True}}
         barrier = {'seen': 1, 'upstreamStatus': 200, 'dropped': 1}
         orig = live.time.sleep; live.time.sleep = lambda s: None
         try:
-            d, _ = self.driver(self.fake_runtime([self.oracle(rev=1), self.oracle(rev=2)], barrier=barrier), res)
+            d, _ = self.driver(self.fake_runtime([self.empty(R1), self.oracle(rev=R2)], barrier=barrier), res)
             d.phase_restore_08_kill_during_commit_unknown()
             # Non-200 upstream is a hard failure (no vacuous pass)
             for st in (None, 500, 409):
-                dx, jx = self.driver(self.fake_runtime([self.oracle(rev=1), self.oracle(rev=2)], barrier=dict(barrier, upstreamStatus=st)), dict(res, **{'commit-count': (lambda it: lambda kw: next(it))(iter([{'commits': 3}, {'commits': 4}]))}))
+                dx, jx = self.driver(self.fake_runtime([self.empty(R1), self.oracle(rev=R2)], barrier=dict(barrier, upstreamStatus=st)), dict(res, **{'commit-count': (lambda it: lambda kw: next(it))(iter([{'commits': 3}, {'commits': 4}]))}))
                 with self.subTest(upstream=st), self.assertRaises(AssertionError): dx.phase_restore_08_kill_during_commit_unknown()
-            # Revision not advanced -> fail; wrong counts -> fail
-            for olds in ([self.oracle(rev=2), self.oracle(rev=2)], [self.oracle(rev=1), self.oracle(rev=2, learner={'practiceAttempts': 5})]):
+            # Revision not advanced -> fail; wrong counts -> fail; non-empty precondition (run 2: idempotent
+            # merge into identical state) -> fail before commit; int (non-digest) revisions -> fail
+            for olds in ([self.empty(R2), self.oracle(rev=R2)], [self.empty(R1), self.oracle(rev=R2, learner={'practiceAttempts': 5})],
+                         [self.oracle(rev=R1), self.oracle(rev=R2)], [self.empty(1), self.oracle(rev=2)]):
                 dy, _ = self.driver(self.fake_runtime(olds, barrier=barrier), dict(res, **{'commit-count': (lambda it: lambda kw: next(it))(iter([{'commits': 3}, {'commits': 4}]))}))
                 with self.assertRaises(AssertionError): dy.phase_restore_08_kill_during_commit_unknown()
             # False success shown -> fail
             res2 = dict(res, **{'restore-settle': {'outcomeUnknown': False, 'present': True}, 'commit-count': lambda kw: {'commits': 0}})
-            d2, _ = self.driver(self.fake_runtime([self.oracle()], barrier=barrier), res2)
+            d2, _ = self.driver(self.fake_runtime([self.empty(R1)], barrier=barrier), res2)
             with self.assertRaises(AssertionError): d2.phase_restore_08_kill_during_commit_unknown()
             # Blind replay (2 commits) -> fail
             seq = iter([{'commits': 0}, {'commits': 2}])
-            d3, _ = self.driver(self.fake_runtime([self.oracle()], barrier=barrier), dict(res, **{'commit-count': lambda kw: next(seq)}))
+            d3, _ = self.driver(self.fake_runtime([self.empty(R1)], barrier=barrier), dict(res, **{'commit-count': lambda kw: next(seq)}))
             with self.assertRaises(AssertionError): d3.phase_restore_08_kill_during_commit_unknown()
             # Barrier never reached -> fixed tag, not a pass
-            d4, _ = self.driver(self.fake_runtime([self.oracle()], barrier={'seen': 0, 'upstreamStatus': None, 'dropped': 0}), dict(res, **{'commit-count': {'commits': 0}}))
+            d4, _ = self.driver(self.fake_runtime([self.empty(R1)], barrier={'seen': 0, 'upstreamStatus': None, 'dropped': 0}), dict(res, **{'commit-count': {'commits': 0}}))
             live.time.monotonic, om = iter([0, 100, 200, 300]).__next__, live.time.monotonic
             try:
                 with self.assertRaises(c.DiagnosticError) as cm: d4.phase_restore_08_kill_during_commit_unknown()
@@ -542,6 +548,78 @@ class Run1CorrectionTests(Base):
         self.assertIn('await settle(socketSets.get(label), 500)', rt)
         self.assertIn("errorStage: 'shutdown'", rt)
         self.assertIn('reply({ ...v, seq }); break;', rt)
+
+
+class Run2CorrectionTests(DriverTests):
+    # Reuses DriverTests fixtures (driver/oracle/fake_runtime); inherited tests also rerun here (offline, cheap).
+    """Regression tests for run-2 failures: restore-04/05 DomButton previewRestore disabled, restore-08
+    vacuous revision oracle, restore-10 cumulative commit count, transcript-02 Approve missing after save."""
+
+    def dom(self):
+        return (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
+
+    def test_restore_settle_ignores_always_present_conflict_banner(self):
+        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        # Product fact: the conflict note is a '.status-banner.error' (role=status), present whenever a merge
+        # conflict preview renders; only lastError uses role=alert.
+        self.assertIn("conflictError.className = 'status-banner error';", app)
+        self.assertIn("errorBanner.setAttribute('role', 'alert');", app)
+        dom = self.dom()
+        self.assertNotIn("querySelector('.status-banner.error')", dom.split('const restorePanel', 1)[1].split("case 'import-files'", 1)[0])
+        self.assertIn("const restoreAlert = () => restorePanel()?.querySelector('[role=\"alert\"].status-banner.error')", dom)
+        for op in ("case 'restore-commit':", "case 'restore-settle':"):
+            line = [l for l in dom.splitlines() if op in l][0]
+            self.assertIn('await wait(settled', line, op)
+
+    def test_restore_idle_precedes_preview_in_04_05_08(self):
+        dom = self.dom()
+        self.assertIn("case 'restore-idle':", dom)
+        self.assertIn("throw diagnostic('DomDeadline', 'previewRestore', 'disabled')", dom)
+        ops = []
+        res = {'restore-idle': lambda kw: ops.append('idle') or {'busy': False}, 'restore-preview': lambda kw: ops.append('preview') or {},
+               'restore-commit': lambda kw: ops.append('commit') or {'durable': True, 'readbackAfterCommit': True, 'commits': 1, 'commitStatus': 200}}
+        o = self.oracle(auditCounts={'practice_attempt': 5, 'review_event': 5, 'active_practice_attempt': 0, 'active_review_event': 0}, tableCounts={'review_event': 5})
+        d, _ = self.driver(self.fake_runtime([o]), res)
+        d.phase_restore_04_merge_twice_idempotent()
+        self.assertEqual(ops[:2], ['idle', 'preview'])
+        ops.clear()
+        try: d.phase_restore_05_empty_replace_readback()
+        except AssertionError: pass
+        self.assertEqual(ops[:2], ['idle', 'preview'])
+
+    def test_restore08_depends_on_state_changing_precondition(self):
+        deps = c.DEPENDS['restore-08-kill-during-commit-unknown']
+        self.assertIn('restore-05-empty-replace-readback', deps)
+        self.assertIn('restore-06-reload-restart-repair', deps)
+
+    def test_restore10_counts_commit_delta_and_revision(self):
+        res = {'pair': {'pairAgain': True, 'pairingInputError': False, 'masked': True, 'cleared': True},
+               'commit-count': {'commits': 4}, 'restore-preview': {'commitsSent': 4}}
+        d, j = self.driver(self.fake_runtime([self.oracle()]), res)
+        d.phase_restore_10_wrong_capability_generic()  # 4 earlier commits in tab A no longer fail the phase
+        row = [r for r in self.rows(j) if r.get('stage') == 'no-commit-no-effect'][0]
+        self.assertEqual(row['counts'], {'commits': 0})
+        d2, _ = self.driver(self.fake_runtime([self.oracle()]), dict(res, **{'restore-preview': {'commitsSent': 5}}))
+        with self.assertRaises(AssertionError): d2.phase_restore_10_wrong_capability_generic()
+        d3, _ = self.driver(self.fake_runtime([self.oracle(rev='a'), self.oracle(rev='b')]), res)
+        with self.assertRaises(AssertionError): d3.phase_restore_10_wrong_capability_generic()
+
+    def test_restore03_commit_delta(self):
+        res = {'export': {}, 'commit-count': {'commits': 2}, 'restore-preview': {'preview': True, 'integrity': True, 'commitsSent': 2, 'conflictChoice': True}}
+        d, _ = self.driver(self.fake_runtime([self.oracle()]), res); d.phase_restore_03_export_merge_preview_no_effect()
+        d2, _ = self.driver(self.fake_runtime([self.oracle()]), dict(res, **{'restore-preview': dict(res['restore-preview'], commitsSent=3)}))
+        with self.assertRaises(AssertionError): d2.phase_restore_03_export_merge_preview_no_effect()
+
+    def test_transcript_approve_returns_to_library_and_requires_message(self):
+        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        dom = self.dom()
+        done = __import__('re').search(r"APPROVED_DONE = '([^']+)'", dom).group(1)
+        self.assertIn("model.transcriptLifecycle.lastMessage = '" + done + "';", app)
+        body = dom.split("case 'transcript-approve': {", 1)[1].split("case 'events'", 1)[0]
+        self.assertLess(body.index("nav('Library')"), body.index('a.click()'))
+        self.assertIn('approved: (document.body.textContent', body)
+        save = [l for l in dom.splitlines() if "case 'save':" in l][0]
+        self.assertIn("nav('Settings')", save)  # why approve must navigate back
 
 
 if __name__ == '__main__':
