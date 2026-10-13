@@ -7,7 +7,7 @@ export function unionHistory<T extends { id: string }>(name: string, ...groups: 
   const records = new Map<string, T>();
   for (const group of groups) for (const record of group) {
     const prior = records.get(record.id);
-    if (prior && !sameHistoryPayload(prior, record)) throw new TypeError(`Immutable history conflict: ${name === 'reviewEvents' ? 'append-only review event' : name}`);
+    if (prior && !sameHistoryPayload(prior, record)) throw new TypeError(`Immutable history conflict: ${name === 'reviewEvents' ? 'append-only review event' : name} ${record.id}`);
     records.set(record.id, record);
   }
   return structuredClone([...records.values()]);
