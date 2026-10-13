@@ -1,0 +1,182 @@
+# lt-3kk daily-driver journey — plan (gate `lt-3kk`)
+
+Status: **offline-prepared only.** No browser, compose stack or fixture service was launched, and `run_live` was never called. This plan does not authorize a run, and it closes no gate.
+
+Source: `docs/review/plan-review-2026-10-10.md` §3 (daily-driver acceptance). The journey extends the reviewed browser-batch kit (`scripts/qualification/browser-batch/`, run 4 passed all 16 phases). It reuses that run's fixture service, pairing, private runtime, journal sanitization, strict cleanup, authorization guard and CDP file-input mechanism.
+
+## What was added
+
+| File | Change |
+| --- | --- |
+| `controller.py` | 13 `journey-*` phases (bead `lt-3kk`), their `DEPENDS`, the new fixed vocabulary (DOM element keys, `Input.*`/`Emulation.*` CDP methods, `SourceRevisionMismatch`/`FocusDeadline` tags), plus a gate rule: `lt-3kk` must run **alone** and needs `review['revision']` (40-hex). The default gate selection is unchanged, so the journey only runs when selected explicitly. |
+| `live-batch.py` | `revision_guard`, `journey_files`, keyboard helpers (`key`, `press`), 13 `phase_journey_*` methods, and `run_live` wiring (guard before any container or tab; re-checked after the run; the receipt carries `candidateRevision`, `image` and `sourceSha256`). `set_files` now also accepts the two subtitle inputs. |
+| `dom-journey.mjs` | New DOM-only ops layered on `dom-batch.mjs`. Journey tabs (`J`, `JF`) load both modules; the other gates' tabs are unchanged. |
+| `runtime-batch.mjs` | The oracle adds a `journey` projection; the gate classifies `/api/language/morphology`. |
+| `seed-batch.mjs` | `journeyProjection(snapshot)`: fixed fields only. Nothing is seeded for the journey. |
+| `tests/qualification/test_lt3kk_journey_harness.py` | 16 offline tests (see below). |
+| `tests/qualification/test_browser_batch_harness.py` | Phase count 17 → 30; the bead set includes `lt-3kk`. |
+
+## Phase table
+
+One fresh store, one service, one tab `J` (plus `JF` on the owned foreign origin). Every phase goes through the UI. The oracle is the in-container server state (SQLite + `/api/state`), never page claims.
+
+| Phase | UI action (keyboard where marked ⌨) | Oracle (all must hold) | Evidence level |
+| --- | --- | --- | --- |
+| journey-01-pair | Pair through the masked Settings field ("Load service state"); autosave on. | Store empty (no media/cards/occurrences); masked + cleared; status/state GETs; providers = commands = 0. | Live server |
+| journey-02-import-media-subtitles | Library: CDP `DOM.setFileInputFiles` on `#local-media-file`, `#local-target-subtitle-file`, `#local-native-subtitle-file` (repo fixtures, read-only) → **Import local media** → Save. | One media item (sha = fixture sha), tracks with roles {target, native}. **F1** is recorded as `OBSERVED` (`targetApproved`). | Live server |
+| journey-03-draft-correct-apply-approve | Library: tick the public-read authorization → ⌨ **Import gated demo caption draft** (fake in-browser provider) → edit cue 0 to `Mamy zamek i kota.` → ⌨ **Create corrected transcript version** → Save → ⌨ **Approve transcript for study**. | Draft track `youtube-auto-caption`/`draft` persisted; providers = commands = 0; Approve disabled while dirty; exactly one new corrected track, persisted unapproved; then `approved` server-side with V1 still `draft`. Focus after Apply/Approve is journalled. Draft media placement is recorded as `OBSERVED` (see G1). | Live server |
+| journey-04-save-word-sentence | Player: real text selection + `mouseup` on cue 0 for `zamek` and `kota` (the app's selection-save path; it renders no "Saved" preview, so only the gesture is asserted page-side) → ⌨ **Save sentence** → Saved view, tabs **My Vocab** / **My Sentences**: ⌨ **Create review card** for each item. | Approved corrected cue shown with Save enabled and no draft banner. Exactly 3 occurrences, all on the corrected track/media, char spans exactly {zamek 5–10, kota 13–17, whole cue 0–18}; **no** card before the explicit create; then 3 distinct cards, all `new`. | Live server |
+| journey-05-review-due-keyboard | ⌨ nav **Review** → ⌨ **Show answer / context** → ⌨ **Rate good**. | Prompt shown; 4 rating buttons; exactly one card has 1 review event, reps 1, state ≠ new. Due mechanism: **live** (new cards are created with `dueAt = now`). No review-state seeding. | Live server |
+| journey-06-practice-two-modes-keyboard | ⌨ nav **Practice**. Typed input: `Input.insertText` of the exact saved text → ⌨ **Submit attempt**. Then ⌨ ArrowDown on `#practice-mode` → multiple choice → ⌨ a **wrong** choice. | Card order is derived from server `dueAt`; on a tie the phase FAILS rather than guessing. Typed: feedback success, attempt `typed-input` pass, FSRS reps 1 + 1 review event. Choice: feedback error, attempt `multiple-choice` `fail`, FSRS applied. Modes = {typed-input, multiple-choice}; no microphone; providers 0. | Live server |
+| journey-07-morphology-ui-narrow | Player: ⌨ **Analyse words** on the corrected cue; select the ambiguous token; CDP `Emulation.setDeviceMetricsOverride` 375 px (always cleared). | ≥1 POST `/api/language/morphology` from the UI origin with 200; label `Local morphology (Morfeusz)`; `#morphology-status` is `role=status` + `aria-live=polite`; meanings-unavailable text; ambiguous flag + "Several readings, check" + ≥1 item in `.morphology-alternatives` (the primary reading is shown separately, so `mamy` → mieć primary + mama alternative); at 375 px `#morphology-panel` has no horizontal overflow (page overflow recorded, not asserted). | Live server + browser layout |
+| journey-08-morphology-origin-denial | From the owned foreign origin: plain foreign frame and sandboxed (null) frame × {JSON fetch with bearer, text/plain form}: 4 attempts on `/api/language/morphology` (A24–A26 style). | Per attempt: gate trace 401/403, no CORS or credentials grant, table SHA and revision unchanged → PASS. No wire request but unchanged → `OBSERVED_BROWSER_BLOCK` (never PASS). | Live server |
+| journey-09-persist-reload-repair | Save, reload the page, re-pair ("Load service state"). | Journey projection (IDs, card states, review events, attempts, anchors) and revision identical; anchors equal journey-04's; Saved lists ≥3 occurrences. | Live server |
+| journey-10-relink-restart-reselect | Restart the service (capability rotates), reload, re-pair, reselect the same media + SRTs through the file inputs. | Re-paired after rotation; no name conflict; media and track sets identical; occurrences, cards and attempts identical. | Live server |
+| journey-11-export-restore-merge | **Generate local export** → **Download export JSON** (blob text captured in page memory only) → paste into `#import-manifest` → **Preview restore** → Merge → **Refresh authoritative service preview** → acknowledge warnings → **Restore now**. | Export captured; preview integrity verified; durable receipt, commit 200, readback GET after the commit, exactly 1 commit, no `role=alert` banner; the post-merge journey projection equals both pre-merge and post-relink. | Live server |
+| journey-12-unsupported-codec-feedback | Library: import a 64-byte local file named `.webm` that is not a media container (built in owned scratch, no download), then open Player. | `<video>` error code is OBSERVED. Assertion: visible **and** accessible (`role=alert/status`) media-error feedback. G2 fixed by lt-r4k.1 (merged before the live run). | Live browser |
+| journey-13-keyboard-focus | From nav **Player**, 40 × CDP Tab. | Tab reaches {Library, Review, Practice, Settings, Analyse words, Save sentence}; every focus stop matches `:focus-visible` with a computed outline or box-shadow; focus was not on `body` after Apply, Approve, grade, practice submit, practice choice or Analyse (≥5 recorded). | Live browser (live-only) |
+| cleanup | Unchanged: page cleanup → release → close own targets → `Target.getTargets` readback; fixture `stop` (graceful per listener, 0 sockets); exact-name `docker ps -a` readback. A forced closure is a strict failure. | | Live |
+
+DEPENDS (a failed phase marks its dependents `SKIPPED_CASCADE`; they are never run):
+02←01; 03←02; 04←03; 05←04; 06←04,05; 07←03; 08←01; 09←05,06; 10←09; 11←10; 12←02; 13←03,05,06,07.
+
+No retries anywhere: each op runs once, and every wait is a finite page-side deadline that is shorter than its CDP timeout (`OP_TIMEOUTS`: `restore-commit` 35 s, `restore-preview-captured` 25, `morphology-state` 25, `media-feedback` 20).
+
+## Product gaps and observations (evidence; production code unchanged)
+
+- **F1 (observation for Janusz).** Subtitle files imported through Library → Import local media become **approved** target tracks: `makeSubtitleTrack` defaults `transcriptStatus` to `'approved'` (`packages/domain/src/factories.ts:49`), and the correction editor only renders for non-approved tracks. This is current design (the user's own subtitle files are trusted; provider/ASR outputs stay draft per DECISIONS.md). The journey therefore uses path (a) for correct/approve: **Import gated demo caption draft**. It is a real UI path that uses the fake in-browser provider `makeFakeYouTubeCaptionProvider` (`apps/web/src/model.ts:1584`), which makes no `fetch` and needs no provider env. It does require the public-read checkbox (`importYouTubeCaptionCandidate`, model.ts:2412).
+- **G1 (journey composition, medium).** The gated demo draft does **not** attach to the imported media. `importYouTubeCaptionCandidate` creates a new `caption-candidate` media item (`originalPath: youtube:abcdefghijk`, model.ts:2424–2433) and makes it `currentMedia`. As a result, the corrected/approved track, the saved occurrences, and therefore the review and practice cards are anchored to that caption-candidate media, not to `synthetic-polish-dialogue.webm`. The journey still runs every step through the UI, and the oracles assert that anchors sit on the corrected track (journey-04) and that the relink of the imported media preserves everything (journey-10). However, "correct → save from the *same* imported media" is not exercised, because no offline UI path gives a draft on an imported local file. Local ASR needs the service plus a real ASR engine; embedded-subtitle extraction needs ffmpeg plus an absolute path. **Decision for review:** accept G1 as a documented composition gap, or approve a seeded draft on the imported media (path (b), `seed-batch.mjs` `transcriptStore`-style) as a separate variant.
+- **G2 (unsupported codec feedback): fixed by lt-r4k.1.** `renderVideoStage` now registers a `<video>` `error` listener and renders `.video-stage .media-error-alert` (role `alert`, then `status`) with the `mediaErrorMessage(code)` text. journey-12 asserts that scoped alert and the code-specific wording; verified live by this run.
+- **F2 (export/restore after relink): no blocker found by source reading.** `buildLearnerExportContent` (`packages/domain/src/exportManifest.ts:470`) exports only learner collections plus their `sourceContexts` (by value). Media and tracks are not exported, and relink (`relinkExistingBrowserMedia`, model.ts:1198) keeps the media ID and reuses tracks by content digest. Merging the same learner records back into a store where the media and tracks exist should therefore be a no-op on the projection, which journey-11 asserts. Whether the restore preview flags these as conflicts is recorded (`conflictChoice`), not assumed. This is confirmed only by the live run.
+
+- **G3 (keyboard focus loss): fixed by lt-r4k.2.** `requestFocusAfterRender` gives Approve, Rate, Submit and the practice choice a focus successor. journey-13 `focus-not-lost-after-actions` asserts approve, grade, practice-submit, practice-choice and analyse; Apply re-renders asynchronously with no successor and is recorded OBSERVED only. Verified live by this run.
+
+## Revision guard (how it works)
+
+`review` for this gate must carry `gates: ['lt-3kk']` and `revision: '<40-hex commit>'`; otherwise `require_authorization` refuses before anything starts. In `run_live`, before any port bind result is used, container start or tab:
+
+1. `git -C <repo> rev-parse HEAD` must equal `review['revision']` (`SourceRevisionMismatch`).
+2. `git status --porcelain --untracked-files=all` must be empty (`DirtyWorktree`).
+3. `git ls-files` over exactly what the Dockerfile copies (`apps packages vendor fixtures scripts tests` + root configs) gives the file list. The host digest is SHA-256 over `path\0sha256(bytes)\n`.
+4. `docker run --rm --network none --log-driver none -i <image> node -e <hash script>` hashes the same list under `/app` (no mounts; the list goes in on stdin). It must equal the host digest (`ImageSourceMismatch`).
+
+The guard is re-run after the journey, so `sourceAndKitUnchanged` covers the tree, the image and the kit/media bindings. The receipt records `candidateRevision`, `image` and `sourceSha256`. The kit itself lives in `scripts/` and so is part of the hashed tree: the image must be built **after** the kit is committed.
+
+## Offline qualification (this change)
+
+| Command | Result |
+| --- | --- |
+| `BQB_SCRATCH=…/scratch/lt3kk python -I -B tests/qualification/test_lt3kk_journey_harness.py` | 16 tests OK, exit 0 |
+| `BQB_SCRATCH=…/scratch/lt3kk python -I -B tests/qualification/test_browser_batch_harness.py` | 52 tests OK, exit 0 |
+| `python -I -B scripts/qualification/browser-batch/live-batch.py` | 30 phases, `unboundPhases: []`, `authorizationGuard: true`, `browserExecuted: false`, exit 0 |
+| `LT_SOR_SCRATCH=…/scratch/lt-sor-lt3kk python -I -B tests/qualification/test_lt_sor_harness.py` | 10 tests OK, exit 0 |
+| `node --check` on all 5 kit `.mjs` in `lingotorte:lt3kk` (`--network none`) | all OK, exit 0 |
+| JSDOM probe (real app modules + real `dom-batch.mjs` + `dom-journey.mjs`, in-memory SQLite, no listener) in Docker `--network none` | 1/1 pass, exit 0 (see below) |
+
+New tests cover: phase binding and order; DEPENDS that point only backwards and stay inside the journey; a cascade that never runs dependents and has no hidden retry; the journey excluded from the default selection and required to run alone; exact-revision syntax; unauthorized `run_live` → `PermissionError` with zero spawned processes; revision guard accept and refusals (HEAD drift, dirty tree, image mismatch); an image-hash container with no mounts; a locally built undecodable fixture; capability, free text and non-ASCII refused by the journal; no typed answer or cue text in any journal call; no `'PASS'` literal in journey code; strict cleanup and the no-prune check unchanged; every UI string in `dom-journey.mjs` present in the app sources; no production imports; G2/G3 fixes present.
+
+**JSDOM probe result** (scratch `lt3kk/probe/lt3kkProbe.test.ts`; `activate-fallback` = click on the focused control replaces CDP Enter). It runs the full sequence pair → import (1 media; target and native both `approved`, F1) → gated draft (`draft`/`youtube-auto-caption`) → edit → Apply → Approve (corrected `manual-edit` track `approved`, V1 stays `draft`) → word ×2 + sentence (spans 5–10, 13–17, 0–18) → 3 cards via Create review card → Review reveal + Good (1 card `learning`, reps 1) → typed pass + multiple-choice fail (both persisted with FSRS) → Analyse (status role/live, meanings text; source = browser estimate because the probe has no Morfeusz service) → UI export captured (14.6 KB) → preview (integrity, conflict choice shown) → merge commit 200 with durable receipt and readback → projection unchanged. Defects it found and that are now fixed in the kit: cue editor ids follow `cueIndex` (provider drafts start at 1, not 0); `save` navigates away from Library/Practice; the selection gesture shows no preview; cards need an explicit **Create review card** on two Saved tabs.
+
+**JSDOM-only / live-only.** Codec feedback (G2), focus rings/`:focus-visible`, the 375 px layout, CDP key events and file inputs, origin denial, and service-side Morfeusz are **live-only**. The JSDOM probe exercises selectors and op sequencing only.
+
+## Parent live-run procedure (only after review and fresh authorization)
+
+1. Commit the reviewed candidate. From a **clean** checkout at that commit: `docker build --target contributor -t lingotorte:lt3kk .`, then record `docker image inspect -f '{{.Id}}' lingotorte:lt3kk`.
+2. In the parent `browser_exec` session (never a terminal):
+
+```python
+# Run lt-3kk daily-driver journey
+import importlib.util, os, pathlib, sys
+os.environ['BQB_IMAGE'] = 'sha256:<reviewed contributor image id>'
+os.environ['BQB_SCRATCH'] = r'C:/Users/jmdzi/AppData/Local/hermes/cache/scratch/lt3kk'
+path = pathlib.Path('C:/Users/jmdzi/workspace/lingotorte/.worktrees/lt-3kk-journey/scripts/qualification/browser-batch/live-batch.py')
+spec = importlib.util.spec_from_file_location('bqb_live', path); m = importlib.util.module_from_spec(spec); sys.modules[spec.name] = m; spec.loader.exec_module(m)
+review = {'image': os.environ['BQB_IMAGE'], 'revision': '<40-hex candidate commit>', 'specApproved': <recorded>, 'qualityApproved': <recorded>, 'browserAuthorized': <recorded>, 'gates': ['lt-3kk']}
+result = m.run_live(cdp, review, new_tab=new_tab)
+print(result)   # sanitized only
+```
+
+3. Afterwards, `docker image rm lingotorte:lt3kk` (never prune). Record `rows.jsonl` sha, dispositions, and the cleanup row.
+
+## Explicit gaps (not covered by this gate)
+
+- **Edge**, **plain-HTTP private-LAN origin**, and the **native file-chooser/persistent-handle permission prompt** remain human checks (`docs/review/final-human-acceptance-checklist.md`). Files are supplied via CDP.
+- **Service restart is an in-process kill/boot** inside the fixture (`restart`), not a hard crash or power loss of a separate process.
+- **Real ASR/STT and online providers are not exercised.** The draft comes from the fake in-browser caption provider; provider fetches are forced off and counted.
+- **G1:** correction is on caption-candidate media, not on the imported file.
+- Review grading uses one rating (Good) and practice uses two modes (typed pass, choice fail). Audio recall, sentence builder and speaking are out of scope (speaking needs no microphone and shows the unavailable status).
+- JSDOM results are selector and sequence evidence only.
+
+## Residual risks for the first live run
+
+- **journey-12:** G2 was fixed by lt-r4k.1 and is verified live by this run (scoped `.media-error-alert`, code-specific text).
+- **Practice card order.** If two `new` cards share a `dueAt` millisecond (word saves in quick succession), journey-06 fails with `active-card-determinable` rather than guessing. That is a harness limitation, not a product defect.
+- **journey-13:** G3 was fixed by lt-r4k.2 and is verified live by this run (Apply is OBSERVED only). It also needs `:focus-visible` to match after programmatic `focus()` + Tab. Chrome sets focus-visible on keyboard navigation, but the first stop after a programmatic focus may differ.
+- **Restore preview** shows a conflict choice when merging the journey's own records (JSDOM: `conflictChoice: true`). `restore-commit` ticks Merge, and the merge result equalled the pre-merge projection in JSDOM.
+- **Revision guard:** if the Dockerfile's install step rewrites any tracked file under `/app` (for example `vendor/**/dist`), `ImageSourceMismatch` refuses the run. That is the intended behaviour, but it needs a one-time check against a real build.
+- `Input.insertText` / `dispatchKeyEvent` require that the `cdp()` helper routes `session_id` for `Input.*` (it does for all non-`Target.`/`Browser.` methods).
+
+## Run results
+
+See "Live run 1 and 2 results" below.
+
+## Gap resolution before the first live run (2026-10-13)
+
+- **G2** became `lt-r4k.1`, which is merged. The Player shows a `role=alert` message on media errors; after the first render it uses `role=status`.
+- **G3** became `lt-r4k.2`, which is merged. `requestFocusAfterRender` moves focus to a successor after Approve, Rate, Submit, multiple-choice and Skip.
+- **G1** (the gated demo draft creates its own `youtube:` media item) remains a documented gap pending Janusz's choice, together with F1.
+
+## Live run 1 and 2 results
+
+**Run 1** (rows `3cb3d50e7df8`): journey-02 failed because the harness compared the media fingerprint as bare hex while the app stores `sha256:<hex>`. Harness defect, fixed in `9d37b33`; dependents were skipped by cascade.
+
+**Run 2** (rows `dce63836e81d`):
+
+- PASS: journey-01, 02, 03, 08 and cleanup. The live focus ring was present after Approve. `focus-after-apply` was OBSERVED on `body` (expected; apply is not asserted).
+- journey-04 FAILED from a product bug: Enter on **Save sentence** is swallowed by the cue row's keydown handler (tracked as `lt-r4k.3`). The oracle was re-checked: word selections are saved with kind `phrase` (`saveSelectedPhraseFromCue`), the anchor check does not require `lexeme`, and `renderSavedView` lists `lexeme` and `phrase` under **My Vocab** and `sentence` under **My Sentences**, so `saved-items-listed` (vocab == 2, sentences == 1) is correct.
+- journey-07 FAILED from a harness oracle: it required ≥2 alternatives, but `morphologyPanel.ts` lists only the other readings (`.morphology-alternatives li`) and shows the primary reading separately. The oracle is now ≥1 and counts only `.morphology-alternatives li`; the ambiguous flag and the "Several readings, check" text are still required.
+- journey-12 FAILED from a harness precondition: tab J was created with `background=True`, so the page was hidden and the undecodable `<video>` never fired `error` (errorCode null). Tab J now gets `Emulation.setFocusEmulationEnabled` + `Page.bringToFront`; journey-01 records `journey-tab-visible` as OBSERVED, and journey-12 asserts `precondition-page-visible` before judging feedback. Batch-gate tabs are unchanged. Residual risk: if visible-page media errors re-render the stage in a loop (`lt-r4k.4`), journey-12 may still fail on the product side.
+
+## Live run 3 results
+
+**Run 3** (rows `9b6462b2d0d0`): 11 of 13 phases passed. Harness fixes were made offline afterwards.
+
+- PASS: journey-01, 02, 03, 04, 05, 06, 07, 08, 09, 12 and cleanup. This includes keyboard **Save sentence** after `lt-r4k.3`, the media-error alert after `lt-r4k.4`, the morphology UI at 375 px, review and practice by keyboard with FSRS effects, and persist/reload.
+- journey-10 FAILED from a harness save race: after the restart, re-pair, autosave on and re-import, `jsave()` clicked **Save state now** while it was disabled (`DomButton|saveStateNow|disabled`). The most likely cause is the autosave PUT that the import started (sync `saving`), but the run did not record the sync state. `jsave()` now uses the journey-only op `save-when-ready`. It waits up to 10 s for the button to become enabled, and a `conflict`, `choice` or `pairAgain` state fails immediately with that fixed state key. A timeout reports `saving`, `connecting`, `disabled` or `missing`. Batch gates keep the shared `save` op unchanged. The oracle checks afterwards (`identity-preserved`, `learner-state-unchanged`) are unchanged.
+- journey-13 FAILED from a harness precondition: journey-12 makes the undecodable media current, which has no cues, so Tab reached only the nav buttons. journey-13 now re-selects the approved media through the Saved occurrence link (`reselect-media`). If there are no cue rows with **Save sentence** and **Analyse words**, it fails with `DomSelector|cueRow|missing`. It then presses Tab up to 120 times and stops early once every primary control has been seen. Rings are counted only for the stops actually visited. `FOCUS_ASSERTED` and focus-not-lost are unchanged. Re-selecting was chosen over reordering 12 and 13 because it keeps the step numbers and DEPENDS honest and does not depend on what an earlier phase left current.
+- journey-11 was skipped by cascade and has not been exercised live yet.
+
+## Live run 4 result (qualifying receipt)
+
+| Field | Value |
+|---|---|
+| Candidate revision | `d59710686557375a038324b54b2d476d7a477570` (main `422b0c5` plus this harness) |
+| Image | `sha256:b01140b0a3694bccfe41ce25b41937f0c2f3f9676b282efcd2a6260999947359`, built from a clean tree at that revision |
+| Source digest | `sourceSha256` `876dd8b546a72ca9018bc7701d74b16c83592b594000317d52dcc43c1492143b`; `sourceAndKitUnchanged` true |
+| Journal | `rows.jsonl` sha256 `948cacf9c543efc63ca896506dec0fa21fa746a01ddf86a778680ecdfc785a4e`, scratch `lt3kk/browser-batch/live-72d49d41f271` |
+| Browser | Real Chrome over CDP on the Windows host; loopback dev origin; journey tab visible |
+
+**Result: ok = true.** All 13 journey phases and cleanup passed, with 0 failures, 0 skips and no retries.
+
+- **01 pair:** fresh store, capability masked and cleared, providers off.
+- **02 import:** media plus target/native subtitles through the Library file inputs, with the server-side fingerprint and both track roles. F1 was observed: user subtitles are approved on import.
+- **03 draft → correct → approve, by keyboard:** the draft stays a draft, there is one corrected approved track, and Approve leaves a visible focus ring. G1 was observed: the draft lives on its own caption media item, not on the imported file.
+- **04 save:** two words and a sentence, saved by keyboard (Save sentence by Enter works after lt-r4k.3). Exact anchors 5–10, 13–17 and 0–18 on the corrected track. Three cards appear only after an explicit Create review card.
+- **05 review** and **06 practice (typed pass, multiple-choice fail)**, by keyboard. FSRS effects are checked server-side. No microphone.
+- **07 morphology UI:** POST from the UI origin, Morfeusz source label, `role=status` with `aria-live`, meanings-unavailable text, ambiguous warning with alternatives, and no panel overflow at 375 px.
+- **08 morphology route:** foreign and null origins, over fetch and form, all get 403 from the server, with the oracle unchanged.
+- **09 persist/reload/re-pair:** IDs, history, anchors and revision are identical.
+- **10 restart → re-pair → reselect same files:** media, tracks and learner state are identical.
+- **11 UI export → preview → merge → refresh authoritative preview → Restore now:** durable receipt, commit 200 and readback, with journey state unchanged.
+- **12 undecodable file:** Chrome reports MediaError 4, and the app shows its visible, accessible media-error message (lt-r4k.1/.4).
+- **13 keyboard:** Tab reaches every primary control, all 26 visited stops show a focus ring, and focus is not lost after Approve, Rate, practice Submit, the multiple-choice answer, or Analyse words.
+
+**Recorded observations (not PASS claims):**
+- Focus after Apply (Create corrected transcript version) lands on `body`. Apply has no focus successor yet; this is follow-up `lt-5lb.1`.
+- The journey-12 import check reports `imported: false` because the media-error banner itself is a `.status-banner.error`. That's the expected feedback, not an import failure.
+
+**Gaps that remain for human acceptance** (see `docs/review/final-human-acceptance-checklist.md`):
+- **G1/F1:** correcting and approving a transcript on your *own* imported file isn't exercised, because user subtitle files are trusted and approved on import.
+- **Platform:** Edge, the plain-HTTP LAN origin, and the native file-permission prompt weren't tested.
+- **Restart:** the service restart is in-process, not a hard crash.
+- **Providers:** real ASR/STT and online providers weren't exercised (all off).

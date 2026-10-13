@@ -8,13 +8,15 @@ Successor of scripts/qualification/lt-sor/live-controller-v2.py (PrivateRuntime/
   capability and must never reach tool output.
 * Nothing returned/written may contain the capability, CDP payloads, expressions or exception text.
 """
-import base64, hashlib, importlib.util, json, os, pathlib, queue, subprocess, threading, time, uuid
+import base64, hashlib, re, importlib.util, json, os, pathlib, queue, subprocess, threading, time, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
 MEDIA_DIR = REPO / 'fixtures' / 'media'
 MEDIA_NAME = 'synthetic-polish-dialogue.webm'
-ARTIFACTS = ('live-batch.py', 'controller.py', 'runtime-batch.mjs', 'dom-batch.mjs', 'seed-batch.mjs')
+ARTIFACTS = ('live-batch.py', 'controller.py', 'runtime-batch.mjs', 'dom-batch.mjs', 'seed-batch.mjs', 'dom-journey.mjs')
+SUBTITLE_DIR = REPO / 'fixtures' / 'subtitles'
+SUBTITLE_STEM = 'synthetic-polish-dialogue'
 CONTAINER_PREFIX = 'lt-bqb-live-'
 DEFAULT_PORTS = (18442, 18449)  # dev origin, owned foreign origin. Service/gate stay unpublished.
 
@@ -32,6 +34,11 @@ DE = controller.DiagnosticError
 
 def seed_modes():
     return ['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder']
+
+
+def app_digest(hexdigest):
+    """The app stores content fingerprints as 'sha256:<hex>' (model.ts sha256Bytes); host hashes are bare hex."""
+    return 'sha256:' + hexdigest
 
 
 def sha(data):
@@ -84,6 +91,120 @@ def binding(image):
     media = sorted(p for p in MEDIA_DIR.iterdir() if p.is_file())
     return {'image': image, 'artifacts': {f: sha((ROOT / f).read_bytes()) for f in ARTIFACTS},
             'media': {p.name: sha(p.read_bytes()) for p in media}}
+
+
+# ---- lt-3kk exact-revision guard ----
+# Files whose bytes must be identical in the host checkout (clean, at review['revision']) and in the image's
+# /app. git ls-files at HEAD (plus gitignored files present on disk) restricted to what the Dockerfile COPYs
+# and .dockerignore admits; the image side is hashed by node inside
+# a --network none container from the same list. Any mismatch, dirty tree or HEAD drift refuses the run.
+# Actions whose post-press focus is asserted (apply is OBSERVED only: async re-render, no successor).
+FOCUS_ASSERTED = ('approve', 'grade', 'practice-submit', 'practice-choice', 'analyse')
+SOURCE_ROOTS = ('apps', 'packages', 'vendor', 'fixtures', 'scripts', 'tests')
+SOURCE_FILES = ('package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts')
+IMAGE_HASH_JS = ("const{createHash}=require('node:crypto');const{readFileSync}=require('node:fs');let s='';"
+                 "process.stdin.on('data',d=>s+=d).on('end',()=>{const h=createHash('sha256');for(const f of JSON.parse(s)){let b;"
+                 "try{b=readFileSync('/app/'+f)}catch{b=Buffer.from('MISSING')}h.update(f+'\\0'+createHash('sha256').update(b).digest('hex')+'\\n')}"
+                 "process.stdout.write(h.digest('hex'))})")
+
+
+def _git(args, run=subprocess.run):
+    r = run(['git', '-C', str(REPO)] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+    if r.returncode != 0:
+        raise PermissionError('SourceRevisionMismatch')
+    return r.stdout
+
+
+def _dockerignore_rules(text=None):
+    if text is None:
+        text = (REPO / '.dockerignore').read_text(encoding='utf8')
+    rules = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        neg = line.startswith('!')
+        pat = line[1:].strip() if neg else line
+        pat = pat.strip('/')
+        rx, i = '', 0
+        while i < len(pat):
+            if pat.startswith('**/', i):
+                rx += '(?:.*/)?'; i += 3
+            elif pat.startswith('**', i):
+                rx += '.*'; i += 2
+            elif pat[i] == '*':
+                rx += '[^/]*'; i += 1
+            elif pat[i] == '?':
+                rx += '[^/]'; i += 1
+            else:
+                rx += re.escape(pat[i]); i += 1
+        rules.append((neg, re.compile(rx + r'\Z')))
+    return rules
+
+
+def dockerignore_excluded(path, rules):
+    """Docker semantics: a rule matches the path or any parent directory; the last matching rule wins."""
+    parts = path.split('/')
+    prefixes = ['/'.join(parts[:i]) for i in range(1, len(parts) + 1)]
+    excluded = False
+    for neg, rx in rules:
+        if any(rx.match(x) for x in prefixes):
+            excluded = not neg
+    return excluded
+
+
+def source_file_list(run=subprocess.run, rules=None):
+    """Every file the Dockerfile COPY roots carry into /app: tracked files plus gitignored-but-present files
+    (e.g. vendor dicts, coverage/, .vite/), filtered through .dockerignore so both sides hash the same set."""
+    roots = list(SOURCE_ROOTS) + list(SOURCE_FILES)
+    tracked = _git(['ls-files', '-z', '--'] + roots, run).decode('utf8')
+    ignored = _git(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--'] + roots, run).decode('utf8')
+    rules = _dockerignore_rules() if rules is None else rules
+    files = sorted({f for f in (tracked + '\0' + ignored).split('\0') if f})
+    return [f for f in files if not dockerignore_excluded(f, rules)]
+
+
+def host_source_digest(files):
+    h = hashlib.sha256()
+    for f in files:
+        h.update((f + '\0' + sha((REPO / f).read_bytes()) + '\n').encode())
+    return h.hexdigest()
+
+
+def revision_guard(review, image, run=subprocess.run):
+    """Exact candidate revision + clean tree + image built from that tree. Raises PermissionError."""
+    rev = review.get('revision') if isinstance(review, dict) else None
+    if not isinstance(rev, str) or len(rev) != 40:
+        raise PermissionError('ExactCandidateRevisionRequired')
+    head = _git(['rev-parse', 'HEAD'], run).decode().strip()
+    if head != rev:
+        raise PermissionError('SourceRevisionMismatch')
+    if _git(['status', '--porcelain', '--untracked-files=all'], run).strip():
+        raise PermissionError('DirtyWorktree')
+    files = source_file_list(run)
+    host = host_source_digest(files)
+    r = run(['docker', 'run', '--rm', '--network', 'none', '--log-driver', 'none', '-i', image, 'node', '-e', IMAGE_HASH_JS],
+            input=json.dumps(files).encode(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=120)
+    if r.returncode != 0 or r.stdout.decode().strip() != host:
+        raise PermissionError('ImageSourceMismatch')
+    return {'revision': head, 'clean': True, 'files': len(files), 'sourceSha256': host}
+
+
+def journey_files(out):
+    """lt-3kk fixtures: the repo media + target/native SRT (read-only, in place) and a synthetic undecodable
+    file built in owned scratch (no download): 64 bytes that are not a media container, named .webm."""
+    media = MEDIA_DIR / MEDIA_NAME
+    target = SUBTITLE_DIR / (SUBTITLE_STEM + '.target.srt')
+    native = SUBTITLE_DIR / (SUBTITLE_STEM + '.native.srt')
+    for f in (media, target, native):
+        if not f.is_file():
+            raise DE('FileFixtureMissing')
+    bad_dir = out / 'undecodable'
+    bad_dir.mkdir(exist_ok=True)
+    bad = bad_dir / 'lt3kk-undecodable.webm'
+    bad.write_bytes(b'LT3KK-NOT-A-MEDIA-CONTAINER-' + bytes(range(36)))
+    return {'media': str(media), 'target': str(target), 'native': str(native), 'undecodable': str(bad),
+            'mediaSha256': sha(media.read_bytes()), 'undecodableSha256': sha(bad.read_bytes())}
 
 
 def file_fixtures(out):
@@ -219,6 +340,10 @@ INVOKE_FN = ("async function(op,arg){try{return await this.invoke(op,arg);}catch
              "return tag==='UnexpectedException'?{diagnosticTag:tag}:{diagnosticTag:tag,element:p[1]??'none',elementState:p[2]??'none'};}}")
 
 
+JOURNEY_TABS = ('J', 'JF')
+VISIBLE_TABS = ('J',)
+
+
 class Tab:
     def __init__(self):
         self.target = self.session = self.object = self.origin = None
@@ -282,15 +407,34 @@ class BatchDriver:
         else:
             raise DE('BrowserNavigationDeadline')
         uri = 'data:text/javascript;base64,' + base64.b64encode((ROOT / 'dom-batch.mjs').read_bytes()).decode()
-        expr = '(async()=>{const m=await import(' + json.dumps(uri) + ');return await m.installBatchDriver(' + str(origin != self.runtime.foreign).lower() + ');})()'
+        ui = str(origin != self.runtime.foreign).lower()
+        if key in JOURNEY_TABS:
+            juri = 'data:text/javascript;base64,' + base64.b64encode((ROOT / 'dom-journey.mjs').read_bytes()).decode()
+            expr = '(async()=>{const b=await import(' + json.dumps(uri) + ');const j=await import(' + json.dumps(juri) + ');return await j.installJourneyDriver(b,' + ui + ');})()'
+        else:
+            expr = '(async()=>{const m=await import(' + json.dumps(uri) + ');return await m.installBatchDriver(' + ui + ');})()'
         t.object = self.call('Runtime.evaluate', expression=expr, awaitPromise=True, returnByValue=False).get('result', {}).get('objectId')
         if not t.object:
             raise DE('DOMBridgeObjectMissing')
         t.origin = origin
+        if key in VISIBLE_TABS:
+            self.make_visible()
+
+    def make_visible(self):
+        """Live run 2: Target.createTarget(background=True) leaves the page document.visibilityState 'hidden', where an
+        undecodable <video> never fires 'error' (journey-12 errorCode null). Only the journey tab J is brought to the
+        front with focus emulation; batch-gate tabs keep their background behaviour."""
+        self.call('Emulation.setFocusEmulationEnabled', enabled=True)
+        self.call('Page.bringToFront')
+        return self.page_visible()
+
+    def page_visible(self):
+        r = self.call('Runtime.evaluate', expression='document.visibilityState', returnByValue=True)['result'].get('value')
+        return r == 'visible'
 
     # Page-side deadlines for restore-commit sum to ~19 s (refresh 8 + enable 3 + commit 8); keep CDP above them
     # so slow paths surface as precise DomDeadline/DomButton tags rather than a transport timeout.
-    OP_TIMEOUTS = {'restore-commit': 35}
+    OP_TIMEOUTS = {'restore-commit': 35, 'restore-preview-captured': 25, 'morphology-state': 25, 'media-feedback': 20, 'save-when-ready': 30, 'reselect-media': 20}
 
     def invoke(self, op, **arg):
         fn = INVOKE_FN
@@ -302,14 +446,16 @@ class BatchDriver:
             raise DE(v['diagnosticTag'], 'Runtime.callFunctionOn', 'javascript', v.get('element'), v.get('elementState'))
         return v
 
-    def set_files(self, paths):
-        """Supply host fixture files to #local-media-file through CDP (no native chooser dialog)."""
+    def set_files(self, paths, selector='#local-media-file'):
+        """Supply host fixture files to a Library file input through CDP (no native chooser dialog)."""
+        if selector not in ('#local-media-file', '#local-target-subtitle-file', '#local-native-subtitle-file'):
+            raise DE('DomSelector')
         for p in paths:
             if not pathlib.Path(p).is_file():
                 raise DE('FileFixtureMissing')
         self.call('DOM.enable')
         root = self.call('DOM.getDocument', depth=1)['root']['nodeId']
-        node = self.call('DOM.querySelector', nodeId=root, selector='#local-media-file').get('nodeId')
+        node = self.call('DOM.querySelector', nodeId=root, selector=selector).get('nodeId')
         if not node:
             raise DE('DomSelector')
         self.call('DOM.setFileInputFiles', nodeId=node, files=list(paths))
@@ -599,6 +745,333 @@ class BatchDriver:
         self.ok(P, 'approval-persisted-server', o['trackStatus'].get(cid) == 'approved' and approved == [cid], counts={'approvedNew': len(approved)})
         self.ok(P, 'v1-retained', all(t in o['trackIds'] for t in self.state['v1Tracks']) and 'bqt-track' in o['trackIds'])
 
+    # ---- lt-3kk daily-driver journey (one fresh store, one service, UI path wherever one exists) ----
+    # Corrected cue text: 'Mamy' is ambiguous in Morfeusz SGJP (lt-e8z quality fixture: mieć + mama).
+    JOURNEY_CUE = 'Mamy zamek i kota.'
+    JOURNEY_WORDS = ('zamek', 'kota')
+    KEYS = {'Enter': (13, '\r'), 'Space': (32, ' '), 'Tab': (9, None), 'ArrowDown': (40, None)}
+
+    def key(self, name, shift=False):
+        code, text = self.KEYS[name]
+        k = {'Enter': 'Enter', 'Space': ' ', 'Tab': 'Tab', 'ArrowDown': 'ArrowDown'}[name]
+        c = {'Enter': 'Enter', 'Space': 'Space', 'Tab': 'Tab', 'ArrowDown': 'ArrowDown'}[name]
+        mods = 8 if shift else 0
+        down = {'type': 'keyDown' if text is None else 'keyDown', 'key': k, 'code': c, 'windowsVirtualKeyCode': code, 'modifiers': mods}
+        if text is not None:
+            down['text'] = text
+        self.call('Input.dispatchKeyEvent', **down)
+        self.call('Input.dispatchKeyEvent', type='keyUp', key=k, code=c, windowsVirtualKeyCode=code, modifiers=mods)
+        time.sleep(.05)
+
+    def press(self, target, keyname='Enter', index=None):
+        """Keyboard-only activation: focus the control (fixed key), then a real CDP key event."""
+        f = self.invoke('focus', target=target, **({'index': index} if index is not None else {}))
+        if not f['focused']:
+            raise DE('FocusDeadline', element=target, element_state='none')
+        self.key(keyname)
+        time.sleep(.15)
+        return self.invoke('focus-info')
+
+    def jsave(self):
+        # Journey-only readiness wait (live run 3); batch gates keep the shared 'save' op.
+        s = self.invoke('save-when-ready')
+        if s['putStatus'] != 200:
+            raise AssertionError('QualificationAssertion')
+        return self.oracle()
+
+    def note_focus(self, phase, action, info):
+        self.state.setdefault('focusAfter', {})[action] = {'onBody': info['onBody'], 'key': info['key']}
+        self.journal.append('checkpoint', phase, 'focus-after-' + action, ok=not info['onBody'], disposition=controller.OBSERVED,
+                            value={'onBody': info['onBody'], 'focusVisible': info['focusVisible'], 'ring': info['ring']}, element=info['key'] if info['key'] in controller.DOM_ELEMENTS else 'unlisted')
+
+    def phase_journey_01_pair(self):
+        P = 'journey-01-pair'
+        o0 = self.oracle()
+        empty = not o0['journey']['cards'] and not o0['journey']['media'] and not o0['journey']['occurrences']
+        self.ok(P, 'fresh-store', empty, counts={'media': len(o0['journey']['media']), 'cards': len(o0['journey']['cards'])})
+        v = self.pair('J', choice='service')
+        self.journal.append('checkpoint', P, 'journey-tab-visible', ok=True, disposition=controller.OBSERVED,
+                            value={'visible': self.page_visible()})
+        self.invoke('autosave', enabled=True)
+        self.ok(P, 'masked-cleared-paired', v['masked'] and v['cleared'] and not v['pairAgain'] and v['statusOk'] and v['stateOk'], masked=v['masked'], cleared=v['cleared'])
+        self.ok(P, 'providers-off', o0['providers'] == 0 and o0['commands'] == 0, oracle={'providers': o0['providers'], 'revision': o0['revision']})
+
+    def phase_journey_02_import_media_subtitles(self):
+        P = 'journey-02-import-media-subtitles'
+        self.invoke('nav', view='Library')
+        f = self.files
+        self.set_files([f['media']])
+        self.set_files([f['target']], '#local-target-subtitle-file')
+        self.set_files([f['native']], '#local-native-subtitle-file')
+        v = self.invoke('import-files')
+        o = self.jsave()
+        j = o['journey']
+        media = [m for m in j['media'] if not m['caption']]
+        tracks = [t for t in j['tracks'] if media and t['mediaId'] == media[0]['id']]
+        roles = sorted(t['role'] for t in tracks)
+        self.ok(P, 'imported-one-media-two-tracks', v['imported'] and len(media) == 1 and media[0]['sha'] == app_digest(f['mediaSha256']) and roles == ['native', 'target'], counts={'media': len(media), 'tracks': len(tracks)})
+        # F1 (observation for Janusz): the user's own subtitle files enter as approved target/native tracks.
+        self.journal.append('checkpoint', P, 'f1-user-subtitles-status', ok=True, disposition=controller.OBSERVED,
+                            value={'targetApproved': any(t['role'] == 'target' and t['status'] == 'approved' for t in tracks)})
+        self.state['jMedia'] = media[0]['id']
+        self.state['jMediaTracks'] = sorted(t['id'] for t in tracks)
+
+    def phase_journey_03_draft_correct_apply_approve(self):
+        P = 'journey-03-draft-correct-apply-approve'
+        g = self.invoke('gated-draft')
+        self.ok(P, 'public-read-authorized', g['authorized'] and g['buttonPresent'])
+        before = self.oracle()
+        self.press('importGatedDraft')
+        d = self.invoke('gated-draft-settle')
+        o = self.jsave()
+        drafts = [t for t in o['journey']['tracks'] if t['status'] == 'draft' and t['source'] == 'youtube-auto-caption']
+        self.ok(P, 'draft-imported-offline', d['imported'] and d['cueEditor'] and len(drafts) == 1 and o['providers'] == 0 and o['commands'] == 0,
+                counts={'drafts': len(drafts), 'providers': o['providers']})
+        # Gated demo draft creates its own caption-candidate media (model.ts importYouTubeCaptionCandidate), not a
+        # draft on the imported file: recorded, not hidden.
+        self.journal.append('checkpoint', P, 'draft-media-is-caption-candidate', ok=True, disposition=controller.OBSERVED,
+                            value={'draftOnImportedMedia': drafts[0]['mediaId'] == self.state['jMedia']})
+        e = self.invoke('edit-cue0', text=self.JOURNEY_CUE)
+        self.ok(P, 'dirty-blocks-approve', e['approveDisabledWhileDirty'])
+        f1 = self.press('createCorrectedTranscript')
+        a = self.invoke('apply-settle')
+        # Apply has no focus successor and re-renders asynchronously (app.ts createCorrectedTranscript): the 0.15 s
+        # post-press read precedes apply-settle, so it is recorded as OBSERVED only, never asserted.
+        self.journal.append('checkpoint', P, 'focus-after-apply', ok=True, disposition=controller.OBSERVED,
+                            value={'onBody': f1['onBody'], 'key': f1['key']})
+        mid = self.jsave()
+        new = sorted({t['id'] for t in mid['journey']['tracks']} - {t['id'] for t in o['journey']['tracks']})
+        self.ok(P, 'corrected-version-unapproved', a['applied'] and len(new) == 1 and mid['trackStatus'].get(new[0]) != 'approved', counts={'newTracks': len(new)})
+        self.invoke('nav', view='Library')
+        f2 = self.press('approveTranscript')
+        self.note_focus(P, 'approve', f2)
+        ap = self.invoke('approve-settle')
+        after = self.jsave()
+        self.ok(P, 'approved-server-side', ap['approved'] and after['trackStatus'].get(new[0]) == 'approved' and after['trackStatus'].get(drafts[0]['id']) == 'draft',
+                value={'approved': after['trackStatus'].get(new[0]) == 'approved'})
+        self.state['jTrack'] = new[0]
+        self.state['jDraftMedia'] = drafts[0]['mediaId']
+
+    def phase_journey_04_save_word_sentence(self):
+        P = 'journey-04-save-word-sentence'
+        c = self.invoke('player-cues', text=self.JOURNEY_CUE)
+        self.ok(P, 'approved-corrected-cue-shown', c['cue0Matches'] and c['saveEnabled'] and not c['draftBanner'], counts={'cues': c['cues']})
+        for w in self.JOURNEY_WORDS:
+            r = self.invoke('select-word', word=w)
+            self.ok(P, 'word-gesture-' + str(self.JOURNEY_WORDS.index(w)), r['gesture'])  # saved state asserted server-side below
+        self.invoke('player-cues', text=self.JOURNEY_CUE)
+        self.press('saveSentence')
+        o = self.jsave()
+        occ = o['journey']['occurrences']
+        cue_text = self.JOURNEY_CUE
+        want = {(cue_text.index(w), cue_text.index(w) + len(w)) for w in self.JOURNEY_WORDS} | {(0, len(cue_text))}
+        spans = {(x['charStart'], x['charEnd']) for x in occ}
+        anchored = len(occ) == 3 and all(x['track'] == self.state['jTrack'] and x['mediaId'] == self.state['jDraftMedia'] for x in occ) and spans == want
+        kinds = sorted(x['kind'] for x in occ)
+        self.ok(P, 'anchors-on-approved-corrected-track', anchored, counts={'occurrences': len(occ)}, value={'kinds': kinds})
+        self.ok(P, 'no-card-before-explicit-create', not o['journey']['cards'], counts={'cards': len(o['journey']['cards'])})
+        # Cards are created explicitly per saved item: Saved view 'Create review card' (app.ts renderSavedView),
+        # which navigates to Review after each press; the Saved list is re-opened for the next item.
+        vocab = self.invoke('saved-count', tab='vocab')['createButtons']
+        sentences = self.invoke('saved-count', tab='sentences')['createButtons']
+        self.ok(P, 'saved-items-listed', vocab == 2 and sentences == 1, counts={'vocab': vocab, 'sentences': sentences})
+        for tab, n in (('vocab', vocab), ('sentences', sentences)):
+            for i in range(n):
+                self.invoke('saved-count', tab=tab)
+                self.press('createReviewCard', index=i)
+        o = self.jsave()
+        cards = o['journey']['cards']
+        self.ok(P, 'three-new-cards-due-now', len(cards) == 3 and len({x['text'] for x in cards}) == 3 and all(x['state'] == 'new' for x in cards), counts={'cards': len(cards)})
+        self.state['jAnchors'] = occ
+        self.state['jCards'] = {x['id']: x for x in cards}
+
+    def phase_journey_05_review_due_keyboard(self):
+        P = 'journey-05-review-due-keyboard'
+        # Live mechanism: makeReviewCardState creates new cards with dueAt=now, so they are due without seeding.
+        self.press('navReview')
+        r0 = self.invoke('review-state')
+        self.ok(P, 'due-card-presented', r0['prompt'] and not r0['empty'])
+        self.press('showAnswer')
+        r1 = self.invoke('review-state')
+        self.ok(P, 'revealed-four-ratings', r1['revealed'] and r1['rateButtons'] == 4)
+        fr = self.press('rateGood')
+        self.note_focus(P, 'grade', fr)
+        o = self.jsave()
+        moved = [x for x in o['journey']['cards'] if x['reviewEvents'] == 1 and x['reps'] == 1 and x['state'] != 'new']
+        self.ok(P, 'fsrs-good-applied-server', len(moved) == 1 and sum(x['reviewEvents'] for x in o['journey']['cards']) == 1, counts={'reviewed': len(moved)},
+                value={'state': moved[0]['state'] if moved else None})
+        self.state['jReviewed'] = moved[0]['id'] if moved else None
+        self.state['jAfterReview'] = o['journey']
+
+    def _active_new_card(self, journey):
+        due = sorted((x for x in journey['cards'] if x['state'] == 'new'), key=lambda x: x['dueAt'])
+        if len(due) >= 2 and due[0]['dueAt'] == due[1]['dueAt']:
+            return None  # order not determinable: never guess an answer
+        return due[0] if due else None
+
+    def phase_journey_06_practice_two_modes_keyboard(self):
+        P = 'journey-06-practice-two-modes-keyboard'
+        self.press('navPractice')
+        j0 = self.state['jAfterReview']
+        first = self._active_new_card(j0)
+        self.ok(P, 'active-card-determinable', first is not None)
+        p0 = self.invoke('practice-state')
+        self.ok(P, 'typed-mode-default', p0['mode'] == 'typed-input' and p0['answerInput'] and not p0['empty'])
+        self.invoke('focus', target='practiceAnswer')
+        self.call('Input.insertText', text=first['text'])  # honest: the exact saved text, typed by keyboard events
+        fs = self.press('submitAttempt')
+        self.note_focus(P, 'practice-submit', fs)
+        p1 = self.invoke('practice-state')
+        o1 = self.jsave()
+        a1 = [a for a in o1['journey']['attempts'] if a['cardId'] == first['id']]
+        c1 = next(x for x in o1['journey']['cards'] if x['id'] == first['id'])
+        self.ok(P, 'typed-pass-fsrs', p1['feedback'] == 'success' and [a['mode'] for a in a1] == ['typed-input'] and a1[0]['result'] in ('pass', 'pass-with-hesitation') and c1['reps'] == 1 and c1['reviewEvents'] == 1 and c1['state'] != 'new',
+                value={'result': a1[0]['result'] if a1 else None, 'state': c1['state']})
+        second = self._active_new_card(o1['journey'])
+        self.ok(P, 'second-card-due', second is not None)
+        self.press('navPractice')  # 'save' navigated to Settings
+        self.invoke('focus', target='practiceMode')
+        self.key('ArrowDown')  # option order (app.ts): typed-input, multiple-choice, ...
+        time.sleep(.2)
+        p2 = self.invoke('practice-state', expected=second['text'])
+        self.ok(P, 'multiple-choice-by-keyboard', p2['mode'] == 'multiple-choice' and p2['choices'] >= 2 and p2['wrongChoiceIndex'] >= 0, counts={'choices': p2['choices']})
+        fc = self.press('practiceChoice', index=p2['wrongChoiceIndex'])  # honest wrong answer -> fail
+        self.note_focus(P, 'practice-choice', fc)
+        p3 = self.invoke('practice-state')
+        o2 = self.jsave()
+        a2 = [a for a in o2['journey']['attempts'] if a['cardId'] == second['id']]
+        c2 = next(x for x in o2['journey']['cards'] if x['id'] == second['id'])
+        self.ok(P, 'choice-fail-fsrs', p3['feedback'] == 'error' and [a['mode'] for a in a2] == ['multiple-choice'] and a2[0]['result'] == 'fail' and c2['reviewEvents'] == 1 and c2['reps'] == 1,
+                value={'result': a2[0]['result'] if a2 else None, 'state': c2['state']})
+        modes = sorted({a['mode'] for a in o2['journey']['attempts']})
+        self.ok(P, 'two-modes-no-microphone', modes == ['multiple-choice', 'typed-input'] and o2['providers'] == 0, value={'modes': modes})
+
+    def phase_journey_07_morphology_ui_narrow(self):
+        P = 'journey-07-morphology-ui-narrow'
+        self.invoke('nav', view='Player')
+        base = self.invoke('morph-events')
+        fa = self.press('analyseWords')
+        self.note_focus(P, 'analyse', fa)
+        m = self.invoke('morphology-state')
+        ev = self.invoke('morph-events')
+        self.ok(P, 'service-post-from-ui-origin', ev['posts'] - base['posts'] >= 1 and ev['ok200'] - base['ok200'] >= 1, counts={'posts': ev['posts'] - base['posts']})
+        self.ok(P, 'morfeusz-label-status-region', m['panel'] and m['sourceService'] and m['statusRole'] and m['statusLive'] and m['meaningsUnavailable'] and m['tokens'] >= 3)
+        self.ok(P, 'ambiguous-warning-alternatives', m['ambiguousFlag'] and m['ambiguousQuality'] and m['alternatives'] >= 1, counts={'alternatives': m['alternatives']})
+        try:
+            self.call('Emulation.setDeviceMetricsOverride', width=375, height=812, deviceScaleFactor=1, mobile=False)
+            time.sleep(.3)
+            n = self.invoke('overflow')
+        finally:
+            self.call('Emulation.clearDeviceMetricsOverride')
+        self.ok(P, 'narrow-375-no-panel-overflow', n['panelPresent'] and n['width'] == 375 and not n['panelOverflow'], value={'pageOverflow': n['pageOverflow']})
+
+    def phase_journey_08_morphology_origin_denial(self):
+        P = 'journey-08-morphology-origin-denial'
+        body = json.dumps({'text': 'Mamy zamek.', 'language': 'pl'})
+        rows = []
+        for fault in ('foreign', 'null'):
+            for channel in ('fetch', 'form'):
+                path = '/api/language/morphology'
+                self.page('JF', self.runtime.foreign)
+                before = self.oracle()
+                idx = self.runtime.request('trace-count')['traceCount']
+                b = self.invoke('context-attempt', id=f'{fault}-{channel}-morph', fault=fault, channel=channel, origin=self.dev(), path=path, body=body, auth=self.runtime.capability() if channel == 'fetch' else None)
+                time.sleep(.3)
+                trace = [t for t in self.runtime.request('trace-since', index=idx)['trace'] if t['path'] == path]
+                after = self.oracle()
+                unchanged = before['tablesSha256'] == after['tablesSha256'] and before['revision'] == after['revision']
+                denied = bool(trace) and all(t['status'] in (401, 403) and not t['corsGranted'] and not t['credentialsGrant'] for t in trace)
+                disp = 'PASS' if denied and unchanged else ('OBSERVED_BROWSER_BLOCK' if not trace and unchanged and not b['deadline'] else 'FAILED')
+                rows.append(disp)
+                self.journal.append('checkpoint', P, f'{fault}-{channel}-morphology', ok=disp != 'FAILED', disposition=disp, fault=fault, path=path, status=trace[-1]['status'] if trace else None, oracle={'unchanged': unchanged})
+        self.tab('J')
+        self.ok(P, 'all-attempts-denied-zero-effect', 'FAILED' not in rows, counts={'PASS': rows.count('PASS'), 'OBSERVED_BROWSER_BLOCK': rows.count('OBSERVED_BROWSER_BLOCK')})
+
+    def phase_journey_09_persist_reload_repair(self):
+        P = 'journey-09-persist-reload-repair'
+        o1 = self.jsave()
+        self.page('J', self.dev(), reload=True)
+        v = self.pair('J', choice='service')
+        self.invoke('autosave', enabled=True)
+        o2 = self.oracle()
+        self.ok(P, 'repaired', not v['pairAgain'])
+        self.ok(P, 'ids-history-anchors-unchanged', o2['journey'] == o1['journey'] and o2['revision'] == o1['revision'] and o2['journey']['occurrences'] == self.state['jAnchors'],
+                oracle={'revision': o2['revision']}, counts={'cards': len(o2['journey']['cards']), 'attempts': len(o2['journey']['attempts'])})
+        s = self.invoke('saved-count', tab='vocab')['links'] + self.invoke('saved-count', tab='sentences')['links']
+        self.ok(P, 'saved-view-lists-occurrences', s == 3, counts={'links': s})
+        self.state['jPersisted'] = o2['journey']
+
+    def phase_journey_10_relink_restart_reselect(self):
+        P = 'journey-10-relink-restart-reselect'
+        self.runtime.request('restart')
+        self.page('J', self.dev(), reload=True)
+        v = self.pair('J', choice='service')
+        self.invoke('autosave', enabled=True)
+        self.ok(P, 'repaired-after-rotation', not v['pairAgain'] and len(self.runtime.capabilities()) >= 2)
+        self.invoke('nav', view='Library')
+        f = self.files
+        self.set_files([f['media']])
+        self.set_files([f['target']], '#local-target-subtitle-file')
+        self.set_files([f['native']], '#local-native-subtitle-file')
+        r = self.invoke('import-files')
+        o = self.jsave()
+        prev = self.state['jPersisted']
+        self.ok(P, 'identity-preserved', r['imported'] and not r['nameConflict'] and o['journey']['media'] == prev['media'] and o['journey']['tracks'] == prev['tracks'], counts={'media': len(o['journey']['media'])})
+        self.ok(P, 'learner-state-unchanged', o['journey']['occurrences'] == prev['occurrences'] and o['journey']['cards'] == prev['cards'] and o['journey']['attempts'] == prev['attempts'])
+        self.state['jRelinked'] = o['journey']
+
+    def phase_journey_11_export_restore_merge(self):
+        P = 'journey-11-export-restore-merge'
+        before = self.oracle()
+        self.invoke('export')
+        c = self.invoke('capture-export')
+        self.ok(P, 'ui-export-captured', c['captured'], bytes=c['bytes'])
+        self.invoke('restore-idle')
+        pv = self.invoke('restore-preview-captured')
+        self.ok(P, 'preview-integrity-no-commit', pv['preview'] and pv['integrity'], value={'conflictChoice': pv['conflictChoice']})
+        r = self.invoke('restore-commit', mode='merge')  # includes 'Refresh authoritative service preview'
+        after = self.oracle()
+        self.ok(P, 'durable-receipt-readback', r['durable'] and r['commitStatus'] == 200 and r['readbackAfterCommit'] and r['commits'] == 1 and not r['errorShown'], status=r['commitStatus'])
+        self.ok(P, 'merge-readback-equal', after['journey'] == before['journey'] and after['journey'] == self.state['jRelinked'], oracle={'revision': after['revision']})
+
+    def phase_journey_12_unsupported_codec_feedback(self):
+        P = 'journey-12-unsupported-codec-feedback'
+        # A hidden page never decodes media, so no error fires: that is a harness precondition, not product evidence.
+        self.ok(P, 'precondition-page-visible', self.make_visible(), value={'visible': True})
+        self.invoke('nav', view='Library')
+        self.set_files([self.files['undecodable']])
+        v = self.invoke('import-files')
+        m = self.invoke('media-feedback')
+        self.journal.append('checkpoint', P, 'media-element', ok=True, disposition=controller.OBSERVED, value={'imported': v['imported'], 'videoPresent': m['videoPresent'], 'errorCode': m['videoErrorCode']})
+        # lt-r4k.1 added the <video> 'error' listener and .media-error-alert (app.ts renderVideoStage/mediaErrorMessage).
+        self.ok(P, 'visible-accessible-error', m['feedbackVisible'] and m['feedbackAccessible'], value={'visible': m['feedbackVisible'], 'accessible': m['feedbackAccessible']})
+
+    def phase_journey_13_keyboard_focus(self):
+        P = 'journey-13-keyboard-focus'
+        # Live run 3: journey-12 leaves the undecodable media current (no cue rows). Re-select approved media first.
+        m = self.invoke('reselect-media')
+        if not (m['cues'] > 0 and m['saveSentence'] and m['analyseWords']):
+            raise DE('DomSelector', element='cueRow', element_state='missing')  # harness precondition, not product evidence
+        self.invoke('nav', view='Player')
+        self.invoke('focus', target='navPlayer')
+        primary = {'navLibrary', 'navReview', 'navPractice', 'navSettings', 'analyseWords', 'saveSentence'}
+        seen, rings = [], []
+        for _ in range(120):
+            self.key('Tab')
+            fi = self.invoke('focus-info')
+            seen.append(fi['key'])
+            if fi['key'] != 'body':
+                rings.append(fi['focusVisible'] is True and fi['ring'])
+            if primary <= set(seen):
+                break
+        reached = sorted(primary & set(seen))
+        self.ok(P, 'tab-reaches-primary-controls', set(reached) == primary, value={'reached': reached})
+        self.ok(P, 'focus-visible-ring', bool(rings) and all(rings), counts={'stops': len(rings), 'ringed': sum(rings)})
+        fa = self.state.get('focusAfter', {})
+        lost = sorted(k for k, v in fa.items() if v['onBody'])
+        missing = sorted(set(FOCUS_ASSERTED) - set(fa))
+        self.ok(P, 'focus-not-lost-after-actions', not lost and not missing, value={'lostAfter': lost, 'missing': missing})
+
     # ---- cleanup (lt-sor: page cleanup, release, close target, readback; runtime independent) ----
     def cleanup(self):
         issues = []
@@ -678,18 +1151,29 @@ def run_live(cdp, review, new_tab=None):
     finally:
         for s in held:
             s.close()
+    journey = controller.JOURNEY_GATE in (review.get('gates') or ())
+    # lt-3kk: exact candidate revision, clean tree and image-from-that-tree, before any container/tab exists.
+    source = revision_guard(review, image) if journey else None
     bound = binding(image)
+    if source:
+        bound['source'] = source
     out = scratch_root() / ('live-' + uuid.uuid4().hex[:12])
     out.mkdir()
     (out / 'binding.json').write_text(json.dumps(bound, indent=2))
-    files = file_fixtures(out)
+    files = journey_files(out) if journey else file_fixtures(out)
     runtime = PrivateRuntime(image, out, live=True, ports=ports)
     journal, ok = start_and_run(cdp, runtime, out, files, review, image)
-    unchanged = binding(image) == bound
+    unchanged = binding(image) == {k: v for k, v in bound.items() if k != 'source'}
+    if source:
+        try:
+            unchanged = unchanged and revision_guard(review, image) == source
+        except PermissionError:
+            unchanged = False
     rows = [json.loads(x) for x in journal.path.read_text().splitlines()]
     ends = {r['phase']: r.get('disposition') for r in rows if r['type'] == 'phase-end'}
     result = {'browserExecuted': True, 'ok': ok and unchanged, 'phases': ends, 'failures': journal.failures, 'skipped': journal.skipped, 'observed': journal.observed,
-              'sourceAndKitUnchanged': unchanged, 'directory': str(out), 'rowsSha256': sha(journal.path.read_bytes())}
+              'sourceAndKitUnchanged': unchanged, 'directory': str(out), 'rowsSha256': sha(journal.path.read_bytes()),
+              'candidateRevision': source['revision'] if source else None, 'image': image, 'sourceSha256': source['sourceSha256'] if source else None}
     (out / 'execution.json').write_text(json.dumps(result, indent=2))
     return result
 
@@ -706,6 +1190,11 @@ def offline_selfcheck():
         guard = False
     except PermissionError:
         guard = True
+    try:
+        run_live(None, {'specApproved': True, 'qualityApproved': True, 'browserAuthorized': True, 'gates': ['lt-3kk'], 'image': 'sha256:' + '0' * 64})
+        guard = False
+    except PermissionError:
+        pass
     return {'phases': len(controller.PHASES), 'unboundPhases': missing, 'unlistedPhaseMethods': extra, 'authorizationGuard': guard, 'browserExecuted': False}
 
 

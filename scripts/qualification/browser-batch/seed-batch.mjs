@@ -63,3 +63,20 @@ export function learnerCounts(snapshot) {
   counts.modes = [...new Set(attempts.map((a) => a.mode))].sort();
   return counts;
 }
+
+// lt-3kk: fixed-field projection of the journey's own learner records (no free text except the synthetic
+// item text, which the controller keeps in memory to type an honest answer and never journals).
+export function journeyProjection(snapshot) {
+  const vals = (v) => (Array.isArray(v) ? v : Object.values(v ?? {}));
+  const items = new Map(vals(snapshot?.savedItems).map((i) => [i.id, i]));
+  const states = new Map(vals(snapshot?.reviewCardStates).map((s) => [s.cardId, s]));
+  const events = vals(snapshot?.reviewEvents); const attempts = vals(snapshot?.practiceAttempts);
+  const occ = vals(snapshot?.savedOccurrences);
+  return {
+    cards: vals(snapshot?.reviewCards).map((c) => { const s = states.get(c.cardId ?? c.id) ?? {}; const it = items.get(c.savedItemId) ?? {}; return { id: c.id, kind: it.kind ?? null, text: it.displayText ?? null, state: s.state ?? null, dueAt: s.dueAt ?? null, reps: s.reps ?? null, lapses: s.lapses ?? null, stability: s.stability ?? null, reviewEvents: events.filter((e) => e.cardId === c.id).length }; }).sort((a, b) => (a.id < b.id ? -1 : 1)),
+    attempts: attempts.map((a) => ({ cardId: a.cardId, mode: a.mode, result: a.result })).sort((a, b) => (a.cardId + a.mode < b.cardId + b.mode ? -1 : 1)),
+    occurrences: occ.map((o) => ({ id: o.id, kind: o.selectionKind, mediaId: o.mediaId, track: o.sourceContext?.subtitleTrackId ?? null, cueId: o.cueId, startMs: o.startMs, endMs: o.endMs, charStart: o.sourceContext?.charSpan?.start ?? null, charEnd: o.sourceContext?.charSpan?.end ?? null })).sort((a, b) => (a.id < b.id ? -1 : 1)),
+    media: vals(snapshot?.mediaAssets).map((m) => ({ id: m.id, sha: m.contentSha256, container: m.container, caption: String(m.originalPath ?? '').startsWith('youtube:') })).sort((a, b) => (a.id < b.id ? -1 : 1)),
+    tracks: vals(snapshot?.subtitleTracks).map((t) => ({ id: t.id, mediaId: t.mediaId, role: t.role, status: t.transcriptStatus ?? null, source: t.transcriptSourceKind ?? null })).sort((a, b) => (a.id < b.id ? -1 : 1)),
+  };
+}

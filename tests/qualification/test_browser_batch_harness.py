@@ -62,8 +62,8 @@ class AuthorizationTests(Base):
         self.assertEqual(r['unboundPhases'], [])
         self.assertEqual(r['unlistedPhaseMethods'], [])
         self.assertTrue(r['authorizationGuard'])
-        self.assertEqual(r['phases'], 17)
-        self.assertEqual({b for _, b, _ in c.PHASES}, {'lt-2t4', 'lt-n31', 'lt-13i'})
+        self.assertEqual(r['phases'], 30)  # 17 batch + 13 lt-3kk journey
+        self.assertEqual({b for _, b, _ in c.PHASES}, {'lt-2t4', 'lt-n31', 'lt-13i', 'lt-3kk'})
         self.assertEqual(sorted(s for _, b, s in c.PHASES if b == 'lt-2t4'), list(range(1, 11)))
 
     def test_incomplete_dispatch_refused(self):
