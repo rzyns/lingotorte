@@ -867,8 +867,12 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Restore complete');
-    expect(app.textContent).toContain('Replace all (destructive');
-    expect(app.textContent).toContain('cannot be undone');
+    expect(app.textContent).toContain('Replace active learner data');
+    expect(app.textContent).toContain('review/practice audit retained locally');
+    expect(app.textContent).toContain('not erasure or full undo');
+    expect(app.textContent).toContain('session-only / not durably saved');
+    expect(model.exportImport.lastRestore!.effects!.savedItems.removedFromActive).toBe(1);
+    expect(model.store.snapshotPendingRestoreIntent()?.mode).toBe('replace-active');
     expect(app.textContent).toContain('No media files were copied or restored');
     expect(model.exportImport.lastRestore!.mode).toBe('replace-all');
   });

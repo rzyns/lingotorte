@@ -1008,7 +1008,28 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/state') {
-        sendJson(response, 200, { ok: true, ...persistence.loadVersionedSnapshot() });
+        sendJson(response, 200, { ok: true, ...persistence.loadVersionedSnapshot(), restoreCapability: 'active-audit-restore-v1' });
+        return;
+      }
+
+      if (request.method === 'POST' && (path === '/api/restore/preview' || path === '/api/restore/commit')) {
+        const body = objectBody(admittedBody);
+        const allowed = path.endsWith('/commit') ? ['manifest', 'mode', 'expectedRevision', 'learnerAudit', 'confirmation'] : ['manifest', 'mode', 'expectedRevision', 'learnerAudit'];
+        if (Object.keys(body).some(key => !allowed.includes(key)) || !('manifest' in body) || typeof body.mode !== 'string' || !['merge', 'replace-active'].includes(body.mode)) {
+          sendError(response, 400, 'Invalid restore envelope.'); return;
+        }
+        if (body.expectedRevision === undefined) { sendError(response, 428, 'A durable state revision is required.'); return; }
+        try {
+          const input = body as unknown as Parameters<typeof persistence.commitRestore>[0];
+          const result = path.endsWith('/preview')
+            ? persistence.previewRestore(input.manifest, input.mode, input.expectedRevision, input.learnerAudit)
+            : persistence.commitRestore(input);
+          sendJson(response, 200, { ok: true, ...result });
+        } catch (error) {
+          if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
+          else if (error instanceof TypeError) sendError(response, 400, 'Restore rejected: invalid input, immutable conflict, or missing confirmation.');
+          else sendError(response, 500, 'Restore failed before commit.');
+        }
         return;
       }
 

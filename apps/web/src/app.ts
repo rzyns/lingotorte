@@ -66,6 +66,10 @@ import {
   submitSentenceBuilderAttempt,
   exportLearnerState,
   previewRestoreManifest,
+  previewDurableRestore,
+  restoreIsBusy,
+  hasCurrentDurableRestorePreview,
+  previewPendingSessionRestore,
   confirmRestore,
   clearRestorePreview,
   setExportImportAcknowledgedWarning,
@@ -933,23 +937,36 @@ function renderExportImportView(model: AppModel): HTMLElement {
   importTextarea.name = 'import-manifest';
   importTextarea.placeholder = '{"schemaVersion":"lingotorte.learner-export.v1",...}';
   importTextarea.setAttribute('aria-label', 'Export manifest JSON');
+  importTextarea.value = model.exportImport.manifestJson ?? '';
+  importTextarea.disabled = restoreIsBusy(model);
+  importTextarea.addEventListener('input', () => {
+    try { clearRestorePreview(model); model.exportImport.manifestJson = importTextarea.value; setExportImportError(model, 'Restore input changed; preview and confirm again.');
+      for (const button of importGroup.querySelectorAll<HTMLButtonElement>('.restore-preview button')) button.disabled = true;
+    } catch (err) { setExportImportError(model, err instanceof Error ? err.message : 'Restore unresolved.'); }
+  });
   importGroup.appendChild(importTextarea);
 
   const previewBtn = document.createElement('button');
   previewBtn.className = 'btn-secondary';
   previewBtn.textContent = 'Preview restore';
   previewBtn.setAttribute('aria-label', 'Preview restore from manifest JSON');
+  previewBtn.disabled = restoreIsBusy(model);
   previewBtn.addEventListener('click', () => {
     try {
       previewRestoreManifest(model, importTextarea.value);
       setExportImportError(model, null);
     } catch (err: unknown) {
-      clearRestorePreview(model);
+      if (!restoreIsBusy(model)) { model.exportImport.preview = null; model.exportImport.manifestJson = importTextarea.value; model.exportImport.lastRestore = null; }
       setExportImportError(model, err instanceof Error ? err.message : String(err));
     }
     rerenderApp(model);
   });
   importGroup.appendChild(previewBtn);
+  if (model.store.snapshotPendingRestoreIntent()) {
+    const resume = document.createElement('button'); resume.textContent = 'Preview pending session restore for durable save';
+    resume.addEventListener('click', () => { try { previewPendingSessionRestore(model); } catch (err) { setExportImportError(model, err instanceof Error ? err.message : 'Pending intent changed.'); } rerenderApp(model); });
+    importGroup.appendChild(resume);
+  }
 
   if (model.exportImport.preview) {
     const previewManifest = readPreviewManifest(model);
@@ -1021,7 +1038,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
       const conflictNote = document.createElement('p');
       conflictNote.className = 'meta';
-      conflictNote.textContent = 'Local learner state already exists. Choose one of the two mutually exclusive modes below: Merge/update preserves unrelated local records and adds/updates matching records; Replace all clears all current local learner metadata (saved items, occurrences, review cards/states/events, practice attempts) before importing — this is destructive and cannot be undone.';
+      conflictNote.textContent = 'Choose exactly one mode. Merge/update preserves unrelated active learner records. Replace active learner data removes current active learner records absent from this file. Prior review/practice history is retained locally as inactive audit; this does not erase private data and is not a complete undo archive. Library, media, jobs and provider policy are not replaced.';
       previewPanel.appendChild(conflictNote);
 
       const overwriteLabel = document.createElement('label');
@@ -1053,7 +1070,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
       replaceLabel.appendChild(replaceCheckbox);
-      replaceLabel.append(' Replace all (destructive): clear all existing local learner metadata before importing this backup. Unrelated local records are also cleared. This cannot be undone.');
+      replaceLabel.append(' Replace active learner data: remove active learner records absent from this file. Retain review/practice payloads as inactive local audit, not in normal learner export. This does not erase private data.');
       previewPanel.appendChild(replaceLabel);
 
       const conflictError = document.createElement('p');
@@ -1115,16 +1132,27 @@ function renderExportImportView(model: AppModel): HTMLElement {
     restoreBtn.className = 'btn-primary';
     restoreBtn.textContent = 'Restore now';
     restoreBtn.setAttribute('aria-label', 'Restore learner state from manifest');
-    restoreBtn.disabled = !canRestore;
+    restoreBtn.disabled = !canRestore || restoreIsBusy(model) || (model.localService.status !== 'disconnected' && !hasCurrentDurableRestorePreview(model));
     restoreBtn.addEventListener('click', () => {
       try {
-        confirmRestore(model);
-        setExportImportError(model, null);
+        const completion = confirmRestore(model);
+        if (completion) {
+          restoreBtn.disabled = true;
+          void completion.then(() => { setExportImportError(model, null); rerenderApp(model); }, err => { setExportImportError(model, err instanceof Error ? err.message : 'Restore failed.'); rerenderApp(model); });
+        } else setExportImportError(model, null);
       } catch (err: unknown) {
         setExportImportError(model, err instanceof Error ? err.message : String(err));
       }
       rerenderApp(model);
     });
+    if (model.localService.status !== 'disconnected') {
+      const refresh = document.createElement('button'); refresh.textContent = 'Refresh authoritative service preview'; refresh.disabled = restoreIsBusy(model);
+      refresh.addEventListener('click', () => {
+        refresh.disabled = true;
+        void previewDurableRestore(model).then(() => rerenderApp(model), err => { setExportImportError(model, err instanceof Error ? err.message : 'Preview failed.'); rerenderApp(model); });
+      });
+      previewPanel.appendChild(refresh);
+    }
     previewPanel.appendChild(restoreBtn);
 
     importGroup.appendChild(previewPanel);
@@ -1153,11 +1181,11 @@ function renderRestoreReceipt(receipt: NonNullable<AppModel['exportImport']['las
   container.dataset.testid = 'restore-receipt';
 
   const heading = document.createElement('h3');
-  heading.textContent = 'Restore complete';
+  heading.textContent = receipt.durablySaved ? 'Restore complete — durable readback verified' : 'Restore complete — session-only / not durably saved';
   container.appendChild(heading);
 
   const modeLabel = receipt.mode === 'replace-all'
-    ? 'Replace all (destructive: existing local learner metadata was cleared before import; this cannot be undone)'
+    ? 'Replace active learner data (omitted learner records removed from active state; review/practice audit retained locally; not erasure or full undo)'
     : receipt.mode === 'merge-update'
       ? 'Merge/update (unrelated local records preserved; matched records added or updated)'
       : 'Initial import (local learner state was empty)';
@@ -1190,10 +1218,14 @@ function renderRestoreReceipt(receipt: NonNullable<AppModel['exportImport']['las
   for (const row of operationRows) {
     const counts = receipt.operationCounts[row.key];
     const li = document.createElement('li');
-    li.textContent = `${row.label}: ${counts.added} added, ${counts.updated} updated, ${counts.skippedIdentical} skipped identical`;
+    const effects = row.key === 'sourceContexts' ? undefined : receipt.effects?.[row.key];
+    li.textContent = effects ? `${row.label}: ${effects.added} added, ${effects.updated} updated, ${effects.skippedIdentical} skipped identical, ${effects.removedFromActive} removed from active, ${effects.reactivated} reactivated, ${effects.activeAfter} active after; ${receipt.coalesced?.[row.key as keyof NonNullable<typeof receipt.coalesced>] ?? 0} duplicate inputs coalesced` : `${row.label}: ${counts.added} supporting context records (not learner events)`;
     operationList.appendChild(li);
   }
   container.appendChild(operationList);
+  if (receipt.auditEffects) for (const [name, audit] of Object.entries(receipt.auditEffects)) {
+    const note = document.createElement('p'); note.textContent = `${name} audit: ${audit.appended} newly appended, ${audit.retained} total retained, ${audit.inactiveAfter} inactive after. Nothing deleted from audit.`; container.appendChild(note);
+  }
 
   const warningPara = document.createElement('p');
   warningPara.className = 'meta';
@@ -1214,6 +1246,9 @@ function renderRestoreOperationPreview(preview: NonNullable<AppModel['exportImpo
   const heading = document.createElement('h4');
   heading.textContent = 'Restore operation preview';
   container.appendChild(heading);
+  if (preview.auditEffects) for (const [name, audit] of Object.entries(preview.auditEffects)) {
+    const note = document.createElement('p'); note.textContent = `${name} audit preview: ${audit.appended} newly appended, ${audit.retained} total retained, ${audit.inactiveAfter} inactive after; retained locally, excluded from normal learner export.`; container.appendChild(note);
+  }
 
   const operationList = document.createElement('ul');
   const operationRows: { key: keyof typeof preview.operations; label: string }[] = [
@@ -1228,7 +1263,8 @@ function renderRestoreOperationPreview(preview: NonNullable<AppModel['exportImpo
   for (const row of operationRows) {
     const counts = preview.operations[row.key];
     const li = document.createElement('li');
-    li.textContent = `${row.label}: ${counts.added} added, ${counts.updated} updated, ${counts.skippedIdentical} skipped identical`;
+    const effects = row.key === 'sourceContexts' ? undefined : preview.effects?.[row.key];
+    li.textContent = effects ? `${row.label}: ${effects.added} added, ${effects.updated} updated, ${effects.skippedIdentical} skipped identical, ${effects.removedFromActive} removed from active, ${effects.reactivated} reactivated, ${effects.activeAfter} active after; ${preview.coalesced?.[row.key as keyof NonNullable<typeof preview.coalesced>] ?? 0} duplicate inputs coalesced` : `${row.label}: ${counts.added} supporting context records (not learner events)`;
     operationList.appendChild(li);
   }
   container.appendChild(operationList);
