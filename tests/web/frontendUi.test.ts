@@ -671,7 +671,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     generateBtn!.click();
 
     let app = document.getElementById('app')!;
-    expect(app.textContent).toContain('Metadata backup v1 ready');
+    expect(app.textContent).toContain('Learner-state export v1 ready');
     expect(app.textContent).toContain('no media files copied');
     expect(app.textContent).toContain('Schema');
     expect(app.textContent).toContain('lingotorte.learner-export.v1');
@@ -755,7 +755,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.exportImport.lastError).toBeNull();
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Verified');
-    expect(app.textContent).toContain('JSON backup file only');
+    expect(app.textContent).toContain('learner-state JSON file only');
   });
 
   it('shows a post-restore receipt with mode, integrity, counts, and no-media note after merge restore', () => {
