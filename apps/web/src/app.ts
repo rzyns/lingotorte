@@ -2830,6 +2830,8 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     };
     row.addEventListener('click', seek);
     row.addEventListener('keydown', (e) => {
+      // lt-r4k.3: only handle keys aimed at the row itself; nested buttons keep native activation.
+      if (e.target !== row) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         seek();
