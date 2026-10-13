@@ -201,15 +201,18 @@ Suggested next request: **“Reconcile PLAN.md and its current entry-point refer
 
 ## Reproduction and validation record
 
-Diagnostic artifact: [plan-review-2026-10-10.mjs](probes/plan-review-2026-10-10.mjs).
+**Superseded 2026-10-13 (lt-3bi).** The four observed defects were fixed (lt-04i durable replace / restore coalescing, the practice-mode SQLite migration, lt-3wr mature due). The diagnostic probe `docs/review/probes/plan-review-2026-10-10.mjs`, which asserted the *defective* observations, has been removed. Re-run at base `5874245` before removal, it exited 1 at its first assertion (identical merge: reviews 1, expected the defect's 2), confirming the defects no longer reproduce. Positive regressions that fail if a defect returns:
 
-Run from this checkout after dependencies are installed:
+| Probe | Positive regression(s) |
+| --- | --- |
+| Identical manifest merge | `tests/web/lt3biReviewProbeRegressions.test.ts` (probe 1); `tests/core/restorePlanner.test.ts` "serialized linked practice merges twice without rerating or context loss" |
+| Replace with empty manifest | `tests/web/lt3biReviewProbeRegressions.test.ts` (probe 2); `tests/core/restorePlanner.test.ts` "retains audit on empty session replacement…"; `tests/core/durableReplace.test.ts` "empty replacement -> ordinary save -> file-backed close/reopen…" |
+| Sentence-builder SQLite save | `tests/web/lt3biReviewProbeRegressions.test.ts` (probe 3); `tests/core/practiceSqliteMigration.test.ts` "submits sentence-builder … survives close/reopen" |
+| Overdue mature card | `tests/web/lt3biReviewProbeRegressions.test.ts` (probe 4); `tests/web/matureDue.test.ts`; journey `tests/web/lt3biLearningLoop.test.ts` |
 
-`node docs/review/probes/plan-review-2026-10-10.mjs`
+See `docs/dev/lt-3bi-learning-loop-result.md`. The table below is the **historical** observation on the 2026-10-10 revision, not current behaviour.
 
-This probe **asserts the current defective observations**, so exit zero means the review findings reproduced, not that the application passed correctness tests. When defects are fixed, replace these observations with ordinary red-to-green regression tests; do not preserve the defects to keep this diagnostic green.
-
-Observed output on Node `v26.7.0`:
+Historical observed output on Node `v26.7.0` (2026-10-10, defects since fixed):
 
 | Probe | Observation |
 | --- | --- |
@@ -220,4 +223,4 @@ Observed output on Node `v26.7.0`:
 
 Existing baseline command: `npm test -- --run tests/core/localPersistence.test.ts tests/core/p6PracticeExport.test.ts tests/web/p5ReviewFrontend.test.ts tests/web/p6PracticeFrontend.test.ts` → **4 files / 56 tests passed**. This demonstrates concrete gaps in those assertions, not a contradiction in the test runner.
 
-Review deliverables are this report and its diagnostic script only. No source fixes, real data mutation, dependency additions, commit, push or deployment occurred in this review.
+Review deliverables were this report and its diagnostic script only (the script was removed on 2026-10-13 by lt-3bi and replaced by positive regressions). No source fixes, real data mutation, dependency additions, commit, push or deployment occurred in this review.
