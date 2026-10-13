@@ -106,7 +106,11 @@ import {
   selectEmbeddedSubtitleTrack,
   setEmbeddedSubtitleMediaPath,
   learnerProgress,
-  generateMultipleChoices,
+  practiceChoicesFor,
+  practiceContractFor,
+  syncPracticeCard,
+  revealPracticeAnswer,
+  PRACTICE_SPEAKING_UNAVAILABLE,
   studyMetrics,
   formatCompactDurationMs,
 } from './model';
@@ -456,14 +460,17 @@ function renderPracticeView(model: AppModel): HTMLElement {
   section.appendChild(h2);
 
   const active = resolveActiveDueCard(model, model.clock());
+  // lt-0g9: per-card answer/tokens/choices/reveal never carry over to a different card; the previous
+  // submission's feedback is shown only until the next card changes or is submitted.
+  syncPracticeCard(model, active?.card.id ?? null);
 
-  if (model.practice.lastAttemptResult) {
+  const last = model.practice.lastAttemptResult;
+  if (last) {
     const feedback = document.createElement('div');
-    feedback.className = `practice-feedback ${model.practice.lastAttemptResult.correct ? 'success' : 'error'}`;
+    feedback.className = `practice-feedback ${last.correct ? 'success' : 'error'}`;
     feedback.setAttribute('role', 'status');
-    feedback.textContent = model.practice.lastAttemptResult.correct
-      ? `Result: ${model.practice.lastAttemptResult.result} ✓`
-      : `Result: ${model.practice.lastAttemptResult.result}`;
+    const verdict = last.correct ? `Result: ${last.result} ✓` : `Result: ${last.result}`;
+    feedback.textContent = last.expected !== undefined ? `Previous card — ${verdict}. Expected: ${last.expected}` : verdict;
     section.appendChild(feedback);
   }
 
@@ -476,6 +483,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   }
 
   const { occurrence, state, card } = active;
+  const contract = practiceContractFor(model, active);
   const currentCue = model.store.getCue(occurrence.cueId);
   const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
   const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
@@ -485,9 +493,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   prompt.className = 'practice-prompt';
   prompt.setAttribute('role', 'alert');
   prompt.setAttribute('aria-live', 'polite');
-  prompt.textContent = model.practice.mode === 'audio-recall' && !model.practice.lastAttemptResult
-    ? 'Listen to the owned source cue, then type the target text.'
-    : card.promptTemplate;
+  prompt.textContent = contract ? contract.prompt : PRACTICE_SPEAKING_UNAVAILABLE;
   section.appendChild(prompt);
 
   const modeRow = document.createElement('div');
@@ -523,8 +529,14 @@ function renderPracticeView(model: AppModel): HTMLElement {
 
   const typedEnabled = model.practice.mode === 'typed-input' || model.practice.typedAttemptsEnabled;
 
-  if (model.practice.mode === 'multiple-choice') {
-    const choices = generateMultipleChoices(model, active.savedItem.displayText);
+  if (!contract) {
+    const unavailable = document.createElement('p');
+    unavailable.className = 'practice-unavailable';
+    unavailable.setAttribute('role', 'status');
+    unavailable.textContent = 'Speaking is not available. No microphone is requested or used.';
+    section.appendChild(unavailable);
+  } else if (model.practice.mode === 'multiple-choice') {
+    const choices = practiceChoicesFor(model, card.id, contract.expected);
     const choiceGroup = document.createElement('div');
     choiceGroup.className = 'practice-choices';
     choiceGroup.setAttribute('role', 'group');
@@ -610,8 +622,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
     answerLabel.appendChild(answerInput); audioGroup.appendChild(answerLabel);
     section.appendChild(audioGroup);
   } else if (model.practice.mode === 'sentence-builder') {
-    const currentCue = model.store.getCue(active.occurrence.cueId);
-    const expectedText = currentCue ? currentCue.text : active.savedItem.displayText;
+    const expectedText = contract.expected;
     if (model.practice.sentenceBuilder.poolTokens.length === 0 && model.practice.sentenceBuilder.orderedTokens.length === 0 && expectedText.trim().length > 0) {
       const initial = prepareSentenceBuilderForCue(expectedText);
       setSentenceBuilderTokens(model, initial.poolTokens, initial.orderedTokens);
@@ -737,7 +748,8 @@ function renderPracticeView(model: AppModel): HTMLElement {
   const skipBtn = document.createElement('button');
   skipBtn.className = 'btn-secondary';
   skipBtn.textContent = 'Skip';
-  skipBtn.setAttribute('aria-label', 'Skip this practice attempt');
+  skipBtn.setAttribute('aria-label', 'Skip this practice attempt (no schedule change)');
+  skipBtn.disabled = !contract;
   skipBtn.addEventListener('click', () => {
     submitPracticeAttempt(model, '', model.clock());
     rerenderApp(model);
@@ -748,6 +760,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   submitBtn.className = 'btn-primary';
   submitBtn.textContent = 'Submit attempt';
   submitBtn.setAttribute('aria-label', 'Submit practice attempt');
+  submitBtn.disabled = !contract;
   section.appendChild(controls);
 
   if (model.practice.mode === 'sentence-builder') {
@@ -770,11 +783,14 @@ function renderPracticeView(model: AppModel): HTMLElement {
     time.className = 'meta';
     time.textContent = `Source: ${formatTimeMs(currentCue.startMs)} – ${formatTimeMs(currentCue.endMs)}`;
     context.appendChild(time);
-    const hideAudioRecallAnswer = model.practice.mode === 'audio-recall' && !model.practice.lastAttemptResult && !model.review.revealed;
-    if (hideAudioRecallAnswer) {
+    // lt-0g9: the source cue (and native line, which may translate it) is hidden before submission in
+    // every mode because it contains or determines the expected answer; revealing grades a later submit as fail.
+    const hideAnswer = !model.practice.revealed;
+    if (hideAnswer) {
       const revealButton = document.createElement('button');
       revealButton.type = 'button'; revealButton.className = 'btn-secondary'; revealButton.textContent = 'Reveal answer';
-      revealButton.addEventListener('click', () => { model.review.revealed = true; rerenderApp(model); });
+      revealButton.setAttribute('aria-label', 'Reveal answer (a later submission counts as fail)');
+      revealButton.addEventListener('click', () => { revealPracticeAnswer(model); rerenderApp(model); });
       context.appendChild(revealButton);
     } else {
       const targetContext = document.createElement('p');
@@ -3855,6 +3871,8 @@ function renderReviewView(model: AppModel): HTMLElement {
   }
 
   const { card, savedItem, occurrence, state } = active;
+  // lt-0g9: a reveal belongs to the card it was made on, never to the next presented card.
+  if (model.review.currentCardId !== card.id) { model.review.currentCardId = card.id; model.review.revealed = false; }
   const currentCue = model.store.getCue(occurrence.cueId);
   const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
   const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
@@ -3956,6 +3974,7 @@ function renderReviewView(model: AppModel): HTMLElement {
       btn.addEventListener('click', () => {
         submitReviewRating(model, card.id, rating, model.clock());
         model.review.activeCardId = null;
+        model.review.revealed = false;
         rerenderApp(model);
       });
       buttons.appendChild(btn);

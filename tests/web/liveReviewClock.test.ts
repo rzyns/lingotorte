@@ -137,7 +137,9 @@ describe('lt-2rl live review/practice clock', () => {
       expect(document.querySelector('.practice-prompt')).toBeNull();
 
       vi.advanceTimersByTime(due - Date.now());
-      expect(document.querySelector('.practice-prompt')?.textContent).toBe(model.store.getReviewCard(card!)!.promptTemplate);
+      // lt-0g9: the practice prompt no longer echoes promptTemplate (it leaked the answer); identify the shown card instead.
+      expect(document.querySelector('.practice-prompt')).not.toBeNull();
+      expect(model.review.activeCardId).toBe(card);
       vi.advanceTimersByTime(2_000);
       const secondSubmit = new Date();
       failCurrentPracticeCard();
@@ -181,7 +183,9 @@ describe('lt-2rl live review/practice clock', () => {
     model.store.putReviewCardState({ ...laterState, state: 'learning', dueAt: new Date(T0.valueOf() + 5_000).toISOString() });
     setView(model, 'practice');
     rerenderApp(model);
-    expect(document.querySelector('.practice-prompt')?.textContent).toBe(model.store.getReviewCard(shown!)!.promptTemplate);
+    // lt-0g9: identify the shown card without relying on the answer-leaking promptTemplate.
+    expect(document.querySelector('.practice-prompt')).not.toBeNull();
+    expect(model.review.activeCardId).toBe(shown);
     vi.setSystemTime(T0.valueOf() + 10_000);
     button('Skip').click();
     expect(model.store.listPracticeAttemptsForCard(shown!)).toHaveLength(1);

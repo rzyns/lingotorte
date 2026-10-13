@@ -91,8 +91,11 @@ describe('lt-7lq learner-subset export limits (frontend)', () => {
     });
     for (const view of ['practice', 'review'] as const) {
       setView(fresh, view);
-      fresh.review.revealed = true;
       rerenderApp(fresh);
+      // lt-0g9 resets reveal state when a card is first shown, so reveal through the UI.
+      if (view === 'review') {
+        (Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Show answer / context') as HTMLButtonElement).click();
+      }
       const app = document.getElementById('app')!;
       const missing = app.querySelector('[data-testid="source-unresolved"]');
       expect(missing, view).toBeTruthy();
