@@ -3808,9 +3808,7 @@ function renderReviewView(model: AppModel): HTMLElement {
   if (!active) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = counts.mastered > 0
-      ? 'No cards due right now. Mastered cards are hidden until their next review.'
-      : 'No cards ready for review.';
+    empty.textContent = 'No cards due right now. All cards, including mastered cards, return when scheduled.';
     section.appendChild(empty);
     return section;
   }

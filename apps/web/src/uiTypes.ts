@@ -160,7 +160,8 @@ export type ReviewBucketName = 'newCards' | 'learning' | 'review' | 'relearning'
 export type ReviewBucketConfig = Readonly<{
   // A card is displayed in the mastered bucket when its scheduled interval in
   // days is at least this threshold. This is a UI projection only; the FSRS
-  // card core state is unchanged and recomputable from review events.
+  // card core state is unchanged and recomputable from review events. Mastered
+  // cards still enter automatic review/practice and due counts when scheduled.
   masteredIntervalDays: number;
 }>;
 

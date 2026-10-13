@@ -2882,7 +2882,7 @@ export function listReviewBuckets(model: AppModel, asOf: Date, bucketConfig?: Re
   const isMastered = (state: ReviewCardState) => state.scheduledDays >= config.masteredIntervalDays;
 
   return {
-    newCards: enrich(base.newCards),
+    newCards: enrich(base.newCards).filter((cs) => !isMastered(cs.state)),
     learning: enrich(base.learning).filter((cs) => !isMastered(cs.state)),
     review: enrich(base.review).filter((cs) => !isMastered(cs.state)),
     relearning: enrich(base.relearning).filter((cs) => !isMastered(cs.state)),
@@ -2916,13 +2916,18 @@ export function learnerProgress(model: AppModel, asOf: Date): LearnerProgress {
   const totalReviews = snapshot.reviewEvents.length;
   const practiceAttempts = snapshot.practiceAttempts.length;
   const bucketCounts = projectReviewBucketCounts(model, asOf);
-  const dueCards = bucketCounts.newCards + bucketCounts.learning + bucketCounts.review + bucketCounts.relearning;
+  // Mastered is a disjoint presentation bucket of genuinely due cards, not retirement.
+  const dueCards = bucketCounts.newCards + bucketCounts.learning + bucketCounts.review + bucketCounts.relearning + bucketCounts.mastered;
   return { savedItems, reviewCards, dueCards, totalReviews, practiceAttempts };
 }
 
 export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard; state: ReviewCardState; savedItem: SavedItem; occurrence: SavedOccurrence } | null {
   const buckets = listReviewBuckets(model, asOf);
-  const candidates = [...buckets.newCards, ...buckets.learning, ...buckets.relearning, ...buckets.review];
+  const candidates = [...buckets.newCards, ...buckets.learning, ...buckets.relearning, ...buckets.review, ...buckets.mastered];
+  // Preserve FSRS-state priority and due order regardless of the presentation label.
+  const priority = { new: 0, learning: 1, relearning: 2, review: 3 };
+  candidates.sort((a, b) => priority[a.state.state] - priority[b.state.state]
+    || new Date(a.state.dueAt).valueOf() - new Date(b.state.dueAt).valueOf());
   return candidates[0] ?? null;
 }
 
