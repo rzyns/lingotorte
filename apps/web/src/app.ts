@@ -35,7 +35,6 @@ import {
   MIN_PLAYBACK_RATE,
   nativeTextForCue,
   nextCue,
-  pickNextDueCard,
   PLAYBACK_RATE_STEP,
   previousCue,
   saveSelection,
@@ -49,10 +48,11 @@ import {
   setVisualSourceRange,
   setPendingMeaning,
   setPendingNotes,
-  setReviewBucketAsOf,
   setTranscriptQuery,
   setView,
   submitReviewRating,
+  resolveActiveDueCard,
+  nextReviewDueAfter,
   toggleLoopCue,
   toggleLoopRange,
   togglePlay,
@@ -455,7 +455,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   h2.textContent = 'Practice';
   section.appendChild(h2);
 
-  const active = pickNextDueCard(model, model.review.bucketAsOf);
+  const active = resolveActiveDueCard(model, model.clock());
 
   if (model.practice.lastAttemptResult) {
     const feedback = document.createElement('div');
@@ -537,7 +537,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
       choiceBtn.textContent = choices[i]!;
       choiceBtn.setAttribute('aria-label', `Answer choice ${i + 1}`);
       choiceBtn.addEventListener('click', () => {
-        submitPracticeAttempt(model, choices[i]!, model.review.bucketAsOf);
+        submitPracticeAttempt(model, choices[i]!, model.clock());
         rerenderApp(model);
       });
       choiceGroup.appendChild(choiceBtn);
@@ -739,7 +739,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   skipBtn.textContent = 'Skip';
   skipBtn.setAttribute('aria-label', 'Skip this practice attempt');
   skipBtn.addEventListener('click', () => {
-    submitPracticeAttempt(model, '', model.review.bucketAsOf);
+    submitPracticeAttempt(model, '', model.clock());
     rerenderApp(model);
   });
   controls.appendChild(skipBtn);
@@ -752,12 +752,12 @@ function renderPracticeView(model: AppModel): HTMLElement {
 
   if (model.practice.mode === 'sentence-builder') {
     submitBtn.addEventListener('click', () => {
-      submitSentenceBuilderAttempt(model, model.practice.sentenceBuilder.orderedTokens, model.review.bucketAsOf);
+      submitSentenceBuilderAttempt(model, model.practice.sentenceBuilder.orderedTokens, model.clock());
       rerenderApp(model);
     });
   } else {
     submitBtn.addEventListener('click', () => {
-      submitPracticeAttempt(model, model.practice.pendingAnswer, model.review.bucketAsOf);
+      submitPracticeAttempt(model, model.practice.pendingAnswer, model.clock());
       rerenderApp(model);
     });
   }
@@ -1386,7 +1386,7 @@ function renderStudyStatusRail(model: AppModel): HTMLElement {
   const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
   rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
 
-  const progress = learnerProgress(model, new Date());
+  const progress = learnerProgress(model, model.clock());
   const progressParts: string[] = [];
   if (progress.savedItems > 0) progressParts.push(`${progress.savedItems} saved`);
   if (progress.dueCards > 0) progressParts.push(`${progress.dueCards} due`);
@@ -3796,7 +3796,6 @@ function renderSavedView(model: AppModel): HTMLElement {
       if (occurrence) {
         createReviewCardForSavedItem(model, item, occurrence, 'recognition');
         setView(model, 'review');
-        setReviewBucketAsOf(model, new Date());
         model.review.activeCardId = null;
         rerenderApp(model);
       }
@@ -3816,7 +3815,8 @@ function renderReviewView(model: AppModel): HTMLElement {
   h2.textContent = 'Review';
   section.appendChild(h2);
 
-  const buckets = listReviewBuckets(model, model.review.bucketAsOf);
+  const asOf = model.clock();
+  const buckets = listReviewBuckets(model, asOf);
   const counts = {
     newCards: buckets.newCards.length,
     learning: buckets.learning.length,
@@ -3827,19 +3827,7 @@ function renderReviewView(model: AppModel): HTMLElement {
 
   section.appendChild(renderBucketTabs(model, counts));
 
-  const activeCardId = model.review.activeCardId;
-  let active = activeCardId
-    ? [...buckets.newCards, ...buckets.learning, ...buckets.review, ...buckets.relearning, ...buckets.mastered].find(
-        (cs) => cs.card.id === activeCardId,
-      )
-    : null;
-
-  if (!active) {
-    active = pickNextDueCard(model, model.review.bucketAsOf);
-    if (active) {
-      model.review.activeCardId = active.card.id;
-    }
-  }
+  const active = resolveActiveDueCard(model, asOf);
 
   if (!active) {
     const empty = document.createElement('p');
@@ -3947,7 +3935,7 @@ function renderReviewView(model: AppModel): HTMLElement {
       btn.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
       btn.setAttribute('aria-label', `Rate ${rating}`);
       btn.addEventListener('click', () => {
-        submitReviewRating(model, card.id, rating, model.review.bucketAsOf);
+        submitReviewRating(model, card.id, rating, model.clock());
         model.review.activeCardId = null;
         rerenderApp(model);
       });
@@ -4137,6 +4125,29 @@ function renderSettingsView(model: AppModel): HTMLElement {
 }
 
 let currentRoot: HTMLElement | null = null;
+let learningWakeTimer: ReturnType<typeof setTimeout> | null = null;
+// Re-check at least this often so sleep/clock jumps cannot strand an open queue.
+const LEARNING_WAKE_MAX_DELAY_MS = 60_000;
+
+function scheduleLearningWake(model: AppModel): void {
+  if (learningWakeTimer !== null) {
+    clearTimeout(learningWakeTimer);
+    learningWakeTimer = null;
+  }
+  if (model.view !== 'review' && model.view !== 'practice') return;
+  const nextDue = nextReviewDueAfter(model, model.clock());
+  if (!nextDue) return;
+  const delay = Math.min(Math.max(nextDue.valueOf() - model.clock().valueOf(), 0), LEARNING_WAKE_MAX_DELAY_MS);
+  learningWakeTimer = setTimeout(() => {
+    learningWakeTimer = null;
+    // Only the still-mounted app for this model may re-render; a detached root is a no-op.
+    if (!currentRoot || !currentRoot.isConnected) return;
+    if (model.view !== 'review' && model.view !== 'practice') return;
+    if (model.clock().valueOf() >= nextDue.valueOf()) rerenderApp(model);
+    else scheduleLearningWake(model);
+  }, delay);
+  (learningWakeTimer as { unref?: () => void }).unref?.();
+}
 
 export function rerenderApp(model: AppModel): void {
   const app = document.getElementById('app');
@@ -4155,6 +4166,7 @@ export function rerenderApp(model: AppModel): void {
     el?.focus();
   }
   scrollCueIntoView(model.player.activeCueId);
+  scheduleLearningWake(model);
 }
 
 function scrollCueIntoView(cueId: string | null): void {
