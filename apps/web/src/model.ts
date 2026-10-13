@@ -1165,20 +1165,124 @@ export function handleNameFromMedia(model: AppModel): string | null {
   return path.slice(HANDLE_LABEL_PREFIX.length);
 }
 
-export async function importBrowserLocalFiles(model: AppModel, input: BrowserLocalFileImportInput): Promise<void> {
+export type BrowserMediaNameConflictChoice = 'import-new';
+
+/**
+ * lt-n31: raised when a selected media file has the same file name as an existing
+ * asset but a different content fingerprint. Nothing is written; the caller must
+ * ask the learner to either import it as a new asset or cancel.
+ */
+export class BrowserMediaNameConflictError extends Error {
+  readonly fileName: string;
+  readonly existingMediaId: string;
+  constructor(fileName: string, existingMediaId: string) {
+    super(`"${fileName}" has the same name as existing media but different content. Nothing was changed. Choose "Import as new media" to add it separately, or cancel.`);
+    this.name = 'BrowserMediaNameConflictError';
+    this.fileName = fileName;
+    this.existingMediaId = existingMediaId;
+  }
+}
+
+function mediaNameMatches(asset: MediaAsset, fileName: string): boolean {
+  const handleName = handleNameFromSourceLabel(asset.originalPath);
+  if (handleName !== null) return handleName === fileName;
+  return asset.title === titleFromFileName(fileName);
+}
+
+function pickTrackForRelink(tracks: readonly SubtitleTrack[], role: 'target' | 'native', previousId: string | null): string | null {
+  const roleTracks = tracks.filter((track) => track.role === role);
+  if (previousId && roleTracks.some((track) => track.id === previousId)) return previousId;
+  return (roleTracks.find((track) => track.isActive) ?? roleTracks[0])?.id ?? null;
+}
+
+async function relinkExistingBrowserMedia(
+  model: AppModel,
+  existing: MediaAsset,
+  input: BrowserLocalFileImportInput,
+  objectUrl: string,
+  mediaSourceLabel: string,
+  targetText: string | null,
+  nativeText: string | null,
+): Promise<void> {
+  const existingTracks = model.store.listSubtitleTracksForMedia(existing.id);
+  const previousTarget = model.currentMedia?.id === existing.id ? model.targetTrackId : null;
+  const previousNative = model.currentMedia?.id === existing.id ? model.nativeTrackId : null;
+  let targetTrackId = pickTrackForRelink(existingTracks, 'target', previousTarget);
+  let nativeTrackId = pickTrackForRelink(existingTracks, 'native', previousNative);
+  const newTracks: { track: SubtitleTrack; cues: Cue[] }[] = [];
+  const supplied: [File | null | undefined, string | null, 'target' | 'native', string][] = [
+    [input.targetSubtitleFile, targetText, 'target', input.targetLanguage ?? 'pl'],
+    [input.nativeSubtitleFile, nativeText, 'native', input.nativeLanguage ?? 'en'],
+  ];
+  for (const [file, text, role, language] of supplied) {
+    if (!file || text === null) continue;
+    const digest = await sha256BrowserText(text);
+    const same = existingTracks.find((track) => track.role === role && track.contentSha256 === digest);
+    if (same) {
+      if (role === 'target') targetTrackId = same.id; else nativeTrackId = same.id;
+      continue;
+    }
+    // Explicitly supplied different subtitles are added beside existing tracks; existing tracks/cues are never replaced.
+    const parsed = await parseBrowserSrtText({ mediaId: existing.id, language, role, path: file.name, text, sourceKind: 'owned' });
+    newTracks.push(parsed);
+    if (role === 'target') targetTrackId = parsed.track.id; else nativeTrackId = parsed.track.id;
+  }
+  // Persistent handle reselection updates the handle label; a plain-input session URL never replaces the stored source label.
+  const originalPath = (input.mediaHandleName || existing.originalPath.startsWith('blob:')) ? mediaSourceLabel : existing.originalPath;
+  const relinked: MediaAsset = { ...existing, originalPath, lastSeenAt: new Date().toISOString() };
+  revokeCurrentMediaObjectUrl(model);
+  model.store.putMediaAsset(relinked);
+  for (const parsed of newTracks) {
+    model.store.putSubtitleTrack(parsed.track);
+    for (const cue of parsed.cues) model.store.putCue(cue);
+  }
+  model.currentMedia = relinked;
+  model.browserLocalMedia = {
+    objectUrl,
+    sourceLabel: mediaSourceLabel,
+    handleName: input.mediaHandleName ?? null,
+    permissionState: input.mediaHandleName ? 'granted' : 'unavailable',
+    lastError: null,
+  };
+  model.targetTrackId = targetTrackId;
+  model.nativeTrackId = nativeTrackId;
+  model.cues = targetTrackId ? model.store.listCuesForTrack(targetTrackId) : [];
+  model.player.durationMs = relinked.durationMs;
+  model.player.currentTimeMs = 0;
+  model.player.activeCueId = model.cues[0]?.id ?? null;
+  model.importError = null;
+  persistIfLocalServiceAutosaveEnabled(model);
+}
+
+export async function importBrowserLocalFiles(
+  model: AppModel,
+  input: BrowserLocalFileImportInput,
+  options: Readonly<{ onNameConflict?: BrowserMediaNameConflictChoice }> = {},
+): Promise<void> {
   if (typeof URL.createObjectURL !== 'function') {
     throw new TypeError('Browser local media import requires URL.createObjectURL support.');
   }
   const mediaBytes = await input.mediaFile.arrayBuffer();
+  const contentSha256 = await sha256Bytes(mediaBytes);
+  // lt-n31 identity: content fingerprint decides; file name alone never relinks.
+  const existingSameContent = model.store.listMediaAssets().find((asset) => asset.contentSha256 === contentSha256);
+  if (!existingSameContent && options.onNameConflict !== 'import-new') {
+    const sameName = model.store.listMediaAssets().find((asset) => mediaNameMatches(asset, input.mediaFile.name));
+    if (sameName) throw new BrowserMediaNameConflictError(input.mediaFile.name, sameName.id);
+  }
   const objectUrl = URL.createObjectURL(input.mediaFile);
   try {
     const targetText = input.targetSubtitleFile ? await input.targetSubtitleFile.text() : null;
     const nativeText = input.nativeSubtitleFile ? await input.nativeSubtitleFile.text() : null;
     const mediaSourceLabel = input.mediaSourceLabel ?? objectUrl;
+    if (existingSameContent) {
+      await relinkExistingBrowserMedia(model, existingSameContent, input, objectUrl, mediaSourceLabel, targetText, nativeText);
+      return;
+    }
     const asset = makeMediaAsset({
       title: titleFromFileName(input.mediaFile.name),
       originalPath: mediaSourceLabel,
-      contentSha256: await sha256Bytes(mediaBytes),
+      contentSha256,
       durationMs: 1000,
       container: containerFromFile(input.mediaFile),
       sizeBytes: input.mediaFile.size,
@@ -1248,6 +1352,7 @@ export async function importBrowserLocalFiles(model: AppModel, input: BrowserLoc
 export async function importBrowserLocalFileHandles(
   model: AppModel,
   input: BrowserLocalFileHandleImportInput,
+  options: Readonly<{ onNameConflict?: BrowserMediaNameConflictChoice }> = {},
 ): Promise<void> {
   const mediaFile = await input.mediaHandle.getFile();
   const targetSubtitleFile = input.targetSubtitleHandle ? await input.targetSubtitleHandle.getFile() : null;
@@ -1261,7 +1366,7 @@ export async function importBrowserLocalFileHandles(
     ...(input.targetLanguage === undefined ? {} : { targetLanguage: input.targetLanguage }),
     ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
   };
-  await importBrowserLocalFiles(model, importInput);
+  await importBrowserLocalFiles(model, importInput, options);
   await persistBrowserMediaHandle(input.mediaHandle);
 }
 
@@ -1364,6 +1469,20 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
     }
     const file = await handle.getFile();
     if (!current()) return false;
+    const expectedSha = mediaAtStart?.contentSha256;
+    if (expectedSha && /^sha256:[0-9a-f]{64}$/.test(expectedSha)) {
+      const actualSha = await sha256Bytes(await file.arrayBuffer());
+      if (!current()) return false;
+      if (actualSha !== expectedSha) {
+        model.browserLocalMedia = emptyBrowserLocalMedia({
+          sourceLabel,
+          handleName: expectedHandleName ?? handle.name,
+          permissionState: 'error',
+          lastError: `The file behind the saved handle "${handle.name}" changed content and no longer matches this media. Nothing was relinked. Choose the original media again or import the changed file as new media.`,
+        });
+        return false;
+      }
+    }
     if (typeof URL.createObjectURL !== 'function') {
       model.browserLocalMedia = emptyBrowserLocalMedia({
         sourceLabel,
