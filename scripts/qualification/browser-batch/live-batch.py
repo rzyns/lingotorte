@@ -110,6 +110,8 @@ class PrivateRuntime:
         self.q = queue.Queue()
         self.lock = threading.Lock()
         self.forced = False
+        self._seq = 0
+        self.stop_detail = None
         args, self.origins, self.foreign = docker_args(self.name, image, ports or ports_from_env(), out, live)
         self.process = popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
         self.thread = threading.Thread(target=self._reader, daemon=True)
@@ -145,19 +147,34 @@ class PrivateRuntime:
 
     def request(self, op, timeout=40, **values):
         with self.lock:
-            self.process.stdin.write(json.dumps({'op': op, **values}) + '\n')
+            self._seq += 1
+            seq = self._seq
+            self.process.stdin.write(json.dumps({'op': op, **values, 'seq': seq}) + '\n')
             self.process.stdin.flush()
-            v = self.q.get(timeout=timeout)
+            end = time.monotonic() + timeout
+            while True:
+                try:
+                    v = self.q.get(timeout=max(0.01, end - time.monotonic()))
+                except queue.Empty:
+                    raise DE('PrivateRuntimeTimeout') from None
+                if v.get('seq') == seq:
+                    break
+                if time.monotonic() >= end:
+                    raise DE('PrivateRuntimeSequence')
+                # stale reply of an earlier timed-out request: dropped, never matched to this one
             if v.get('errorClass'):
                 raise DE('PrivateRuntimeOperation')
             return v
 
     def close(self):
         clean = {'strictPass': False}
+        stop_stage = 'reply'
         try:
             clean = self.request('stop', timeout=15)
+        except DE as e:
+            stop_stage = e.tag
         except Exception:
-            pass
+            stop_stage = 'transport'
         try:
             self.process.wait(timeout=8)
         except subprocess.TimeoutExpired:
@@ -176,8 +193,14 @@ class PrivateRuntime:
                 s.close()
             except Exception:
                 pass
+        closures = clean.get('closures') if isinstance(clean.get('closures'), dict) else {}
+        self.stop_detail = {
+            'stopStage': stop_stage, 'stopStrict': clean.get('strictPass') is True, 'exitCode': self.process.returncode,
+            'providers': clean.get('providers') if isinstance(clean.get('providers'), int) else None,
+            'closures': {k: {'graceful': v.get('graceful') is True, 'remainingSockets': v.get('remainingSockets') if isinstance(v.get('remainingSockets'), int) else None}
+                         for k, v in closures.items() if k in ('dev', 'foreign', 'gate', 'service', 'compiler') and isinstance(v, dict)}}
         return {'strictPass': clean.get('strictPass') is True and absent and not self.forced and self.process.returncode == 0,
-                'containerAbsent': absent, 'forced': self.forced}
+                'containerAbsent': absent, 'forced': self.forced, 'stop': self.stop_detail}
 
 
 def own_containers_absent(name, run=subprocess.run):
@@ -187,6 +210,13 @@ def own_containers_absent(name, run=subprocess.run):
     r = run(['docker', 'ps', '-a', '--filter', 'name=^/' + name + '$', '--format', '{{.Names}}'],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=12)
     return r.returncode == 0 and r.stdout.strip() == ''
+
+
+# Page-side error -> fixed vocabulary. dom-batch.mjs throws 'Tag|elementKey|state'; anything else is unexpected.
+INVOKE_FN = ("async function(op,arg){try{return await this.invoke(op,arg);}catch(e){"
+             "const p=String(e?.message??'').split('|');"
+             "const tag=['DomDeadline','DomButton','DomSelector'].includes(p[0])?p[0]:'UnexpectedException';"
+             "return tag==='UnexpectedException'?{diagnosticTag:tag}:{diagnosticTag:tag,element:p[1]??'none',elementState:p[2]??'none'};}}")
 
 
 class Tab:
@@ -259,13 +289,13 @@ class BatchDriver:
         t.origin = origin
 
     def invoke(self, op, **arg):
-        fn = "async function(op,arg){try{return await this.invoke(op,arg);}catch(e){return {diagnosticTag:['DomDeadline','DomButton','DomSelector'].includes(e?.message)?e.message:'UnexpectedException'};}}"
+        fn = INVOKE_FN
         r = self.call('Runtime.callFunctionOn', objectId=self.cur.object, functionDeclaration=fn, arguments=[{'value': op}, {'value': arg}], awaitPromise=True, returnByValue=True, _response_timeout=20)
         v = r.get('result', {}).get('value')
         if not isinstance(v, dict):
             raise DE('DOMResultType')
         if 'diagnosticTag' in v:
-            raise DE(v['diagnosticTag'], 'Runtime.callFunctionOn', 'javascript')
+            raise DE(v['diagnosticTag'], 'Runtime.callFunctionOn', 'javascript', v.get('element'), v.get('elementState'))
         return v
 
     def set_files(self, paths):
@@ -572,7 +602,7 @@ class BatchDriver:
             self.tabs.clear()
             self.cur = None
         ok = not issues and clean.get('strictPass') is True
-        self.journal.append('cleanup', 'cleanup', 'readback', ok=ok, counts={'issues': len(issues)}, value={'containerAbsent': clean.get('containerAbsent'), 'forced': clean.get('forced')})
+        self.journal.append('cleanup', 'cleanup', 'readback', ok=ok, counts={'issues': len(issues)}, value={'containerAbsent': clean.get('containerAbsent'), 'forced': clean.get('forced'), 'stop': clean.get('stop')})
         if not ok:
             raise AssertionError('QualificationAssertion')
         return {'strictPass': ok}

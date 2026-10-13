@@ -131,3 +131,33 @@ One browser session, with one batch dispatch and four owned tabs (A, B, F, R/T).
 3. **Step 8's oracle accepts that the upstream committed.** Reconciliation asserts 5 attempts only when the upstream status was 200. The alternative `kill-before-forward` mode exists in the fixture but no phase uses it.
 4. **Audit oracle depends on the v9 table split.** The audit oracle reads `practice_attempt` and `review_event` (full history) against `active_practice_attempt` and `active_review_event`. restore-05 requires history ≥ 5 retained and both active tables at 0. This mapping was checked against the `CREATE TABLE` statements in `sqliteLocalPersistence.ts`, but has not been observed live.
 5. **restore-02 seeds by a fixture PUT, not through the five practice UIs.** The plan's "seed synthetic learner data" is satisfied by service-side seeding. Driving five practice UIs would need per-mode DOM ops, which are not written.
+
+## Run 1 result and corrections
+
+Run 1 (journal `live-170e1ca23491`, 57 sanitized rows; image `lingotorte:bqb-run`):
+
+| Phase | Run 1 | Root cause | Defect |
+|---|---|---|---|
+| restore-01/02/03, 09, 10; relink-01/02/03 | PASS | - | - |
+| relink-04 | OBSERVED | - | - |
+| restore-04, 05, 08 | FAILED DomButton | 'Restore now' disabled: harness never bound a service-backed preview | harness |
+| restore-06 | SKIPPED_CASCADE | depends on 05 | - |
+| restore-07 | FAILED 200 != 409 | ran although 04/05 never advanced the revision; tab B was still current | harness (dependency) |
+| transcript-01 (02/03 cascaded) | FAILED PrivateRuntimeOperation | `seed-transcript` PUT failed: word timings used `sourceKind: 'synthetic'` | harness (fixture data) |
+| cleanup | FAILED strictPass false | not attributable from run 1 receipts (stop reply/exit code discarded); see below | harness (diagnostics) |
+
+Root causes and fixes:
+
+* **Restore commit (04/05/08).** `app.ts` renderExportImportView sets `restoreBtn.disabled = !canRestore || restoreIsBusy(model) || (status !== 'disconnected' && !hasCurrentDurableRestorePreview(model))`. With a paired service, a durable binding exists only after 'Refresh authoritative service preview' (`previewDurableRestore`, model.ts). Selecting a mode drops any binding (`setExportImportConfirmOverwrite` deletes restoreStates), and a successful refresh resets `acknowledgedWarnings`. `conflictChoice: true` in restore-03 shows the merge/replace conflict UI was present. The old `confirmRestore` in dom-batch.mjs ticked the mode and warnings and then clicked 'Restore now' without refreshing, so the button stayed disabled. Fix: select mode, refresh the service preview and wait for it, acknowledge warnings after the refresh, wait for 'Restore now' to enable, then click. The product behavior is the intended durability gate; no product defect.
+* **Diagnostics.** dom-batch.mjs throws `Tag|elementKey|state` from fixed `BUTTON_LABELS`/`SELECTOR_LABELS` keys. live-batch.py `INVOKE_FN` parses it. controller.py validates against `DOM_ELEMENTS`/`DOM_STATES` and journals `element`/`elementState`; unknown values are dropped.
+* **restore-07.** DEPENDS now requires restore-01, 02, 04 and 05; the 409 oracle is unchanged.
+* **transcript-01.** The SQLite schema allows word-timing `source_kind` only from ('provider-word-timing', 'forced-alignment', 'manual-edit'). It was reproduced offline in the image against `SqliteLocalPersistence.open(':memory:')` (CHECK constraint failed). The seed now uses 'manual-edit', and the offline probe passes for both seeds.
+* **Cleanup.** `PrivateRuntime.close()` discarded the stop reply detail and the exit code, so run 1 cannot tell which closure failed. A contributing hazard is also fixed: after a `request()` timeout, a late reply stayed in the queue and could be consumed by the next request, including 'stop'. Fixes:
+  * Requests and replies are now sequence-correlated (`seq`).
+  * Stop records `stopStage`, `exitCode`, providers and the closures with their `graceful`/`remainingSockets` values in the cleanup receipt.
+  * Fixture shutdown closes idle keep-alive connections first and waits up to 500 ms for socket 'close' after `destroy()` (it previously read `remainingSockets` synchronously).
+  * Shutdown errors are converted to a strict-false reply instead of an unhandled rejection.
+  * The strict check is not relaxed.
+
+Residual for run 2: the commit path is source-traced and not yet browser-proven. If cleanup still fails, the new `stop` receipt names the failing closure.
+

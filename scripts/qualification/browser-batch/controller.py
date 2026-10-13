@@ -14,7 +14,8 @@ DIAGNOSTIC_TAGS = frozenset((
     'DOMResultType', 'ExplicitPairFailed', 'FixtureNotReady', 'FixtureStartupFailure', 'CDPRejected',
     'PrivateBrowserOperation', 'PrivateRuntimeOperation', 'NativeNewTabHelperRequired', 'UnexpectedException',
     'DomDeadline', 'DomButton', 'DomSelector', 'QualificationAssertion', 'FileFixtureMissing',
-    'FileChooserUnavailable', 'CommitBarrierMissed', 'SkippedCascade', 'UnknownPhase',
+    'FileChooserUnavailable', 'CommitBarrierMissed', 'SkippedCascade', 'UnknownPhase', 'PrivateRuntimeTimeout',
+    'PrivateRuntimeSequence',
 ))
 CDP_METHODS = frozenset((
     'Target.attachToTarget', 'Target.createTarget', 'Target.closeTarget', 'Target.getTargets', 'Page.navigate',
@@ -22,10 +23,20 @@ CDP_METHODS = frozenset((
     'DOM.enable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.setFileInputFiles', 'Browser.getVersion',
 ))
 CATEGORIES = frozenset(('timeout', 'transport', 'javascript', 'rejected'))
+# Fixed element ids mirrored from dom-batch.mjs BUTTON_LABELS / SELECTOR_LABELS keys (test-enforced).
+DOM_ELEMENTS = frozenset((
+    'previewRestore', 'refreshServicePreview', 'restoreNow', 'connectLocalService', 'saveStateNow', 'generateLocalExport',
+    'importLocalMedia', 'importAsNewMedia', 'cancel', 'chooseMediaAgain', 'createCorrectedTranscript', 'approveTranscript',
+    'choiceService', 'choiceBrowser', 'navLibrary', 'navPlayer', 'navSettings', 'navSaved', 'navExportImport',
+    'nav', 'importManifest', 'serviceUrl', 'serviceCapability', 'autosave', 'mediaFile', 'nameConflict', 'confirmMerge',
+    'confirmReplace', 'confirmSingle', 'cueText', 'cueStart', 'cueEnd', 'wordText', 'wordStart', 'wordEnd', 'unlisted', 'none',
+))
+DOM_STATES = frozenset(('missing', 'disabled', 'none'))
 RECEIPT_FIELDS = frozenset((
     'ok', 'status', 'method', 'path', 'index', 'fault', 'errorClass', 'oracle', 'counts', 'graceful', 'forced',
     'remainingSockets', 'bytes', 'origin', 'masked', 'cleared', 'privateAbsent', 'browserExecuted', 'image',
     'sha256', 'value', 'errorTag', 'diagnosticMethod', 'failureCategory', 'bead', 'disposition',
+    'element', 'elementState',
 ))
 OBSERVED = 'OBSERVED'  # observation-only phase/row; never counted as PASS
 PASS_DISPOSITIONS = frozenset(('PASS',))
@@ -59,7 +70,8 @@ DEPENDS = {
     'restore-04-merge-twice-idempotent': ('restore-03-export-merge-preview-no-effect',),
     'restore-05-empty-replace-readback': ('restore-02-seed-five-modes',),
     'restore-06-reload-restart-repair': ('restore-05-empty-replace-readback',),
-    'restore-07-second-tab-stale-409': ('restore-01-pair',),
+    # Step 7's oracle (stale tab B save -> 409) is only meaningful after restores 04/05 advanced the revision.
+    'restore-07-second-tab-stale-409': ('restore-01-pair', 'restore-02-seed-five-modes', 'restore-04-merge-twice-idempotent', 'restore-05-empty-replace-readback'),
     'restore-08-kill-during-commit-unknown': ('restore-01-pair',),
     'restore-09-foreign-null-origin': ('restore-01-pair',),
     'restore-10-wrong-capability-generic': ('restore-01-pair',),
@@ -75,17 +87,22 @@ def method_name(phase):
 
 
 class DiagnosticError(RuntimeError):
-    def __init__(self, tag, method=None, category=None):
+    def __init__(self, tag, method=None, category=None, element=None, element_state=None):
         self.tag = tag if tag in DIAGNOSTIC_TAGS else 'UnexpectedException'
         self.method = method if method in CDP_METHODS else None
         self.category = category if category in CATEGORIES else None
+        self.element = element if element in DOM_ELEMENTS else None
+        self.element_state = element_state if element_state in DOM_STATES else None
         super().__init__(self.tag)
 
 
 def safe_diagnostic(error):
     if isinstance(error, DiagnosticError):
-        v = DiagnosticError(error.tag, error.method, error.category)  # revalidate mutated attributes
-        return {'errorTag': v.tag, 'diagnosticMethod': v.method, 'failureCategory': v.category}
+        v = DiagnosticError(error.tag, error.method, error.category, getattr(error, 'element', None), getattr(error, 'element_state', None))  # revalidate
+        out = {'errorTag': v.tag, 'diagnosticMethod': v.method, 'failureCategory': v.category}
+        if v.element is not None:
+            out.update(element=v.element, elementState=v.element_state)
+        return out
     return {'errorTag': 'UnexpectedException', 'diagnosticMethod': None, 'failureCategory': None}
 
 

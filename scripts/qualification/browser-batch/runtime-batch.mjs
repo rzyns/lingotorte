@@ -98,15 +98,19 @@ async function seedSnapshot(kind) {
   return { seeded: kind, revision: r.value?.revision ?? null };
 }
 const reply = (row) => process.stdout.write(JSON.stringify(row) + '\n');
+const settle = (set, ms) => new Promise((r) => { const end = Date.now() + ms; const tick = () => (!set || set.size === 0 || Date.now() > end ? r() : setTimeout(tick, 10)); tick(); });
 async function shutdown() {
-  stopping = true; const out = {};
+  stopping = true; commitMode = null; const out = {};
+  // Idle keep-alive sockets (browser pool, Vite proxy agent) must not hold a close past its window.
+  for (const s of [dev.httpServer, foreign, gate]) { try { s.closeIdleConnections?.(); } catch {} }
   for (const [label, fn] of [['dev', () => dev.close()], ['foreign', () => new Promise((r) => foreign.close(r))], ['gate', () => new Promise((r) => gate.close(r))], ['service', () => (serviceUp ? service.close() : null)], ['compiler', () => compiler.close()]]) {
     const graceful = await Promise.race([Promise.resolve().then(fn).then(() => true, () => false), new Promise((r) => { const t = setTimeout(() => r(false), 1500); t.unref(); })]);
     if (!graceful) for (const s of socketSets.get(label) ?? []) s.destroy();
+    await settle(socketSets.get(label), 500); // socket 'close' events are async after destroy()
     out[label] = { graceful, remainingSockets: socketSets.get(label)?.size ?? 0 };
   }
   upstream.destroy();
-  return { stopped: true, closures: out, strictPass: Object.values(out).every((v) => v.graceful && v.remainingSockets === 0) && providers === 0 };
+  return { stopped: true, closures: out, providers, strictPass: Object.values(out).every((v) => v.graceful && v.remainingSockets === 0) && providers === 0 };
 }
 async function op(msg) {
   switch (msg.op) {
@@ -130,8 +134,9 @@ reply({ ready: true, capability, origins, foreign: foreignOrigin });
 const rl = createInterface({ input: process.stdin });
 for await (const line of rl) {
   let msg; try { msg = JSON.parse(line); } catch { reply({ errorClass: 'InvalidIPC' }); continue; }
-  if (msg.op === 'stop') { reply(await shutdown()); break; }
-  try { const v = await op(msg); reply(msg.op === 'restart' || msg.op === 'start-service' ? { ...v, capability } : v); }
-  catch (e) { reply({ errorClass: e?.constructor?.name === 'Error' ? 'FixtureOperation' : 'FixtureException' }); }
+  const seq = Number.isInteger(msg.seq) ? msg.seq : null; // echoed so a late reply can never satisfy a later request
+  if (msg.op === 'stop') { let v; try { v = await shutdown(); } catch { v = { stopped: false, strictPass: false, errorStage: 'shutdown' }; } reply({ ...v, seq }); break; }
+  try { const v = await op(msg); reply({ ...(msg.op === 'restart' || msg.op === 'start-service' ? { ...v, capability } : v), seq }); }
+  catch (e) { reply({ errorClass: e?.constructor?.name === 'Error' ? 'FixtureOperation' : 'FixtureException', seq }); }
 }
-process.exit(0);
+rl.close(); process.exit(0);

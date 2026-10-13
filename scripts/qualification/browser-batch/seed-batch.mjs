@@ -38,7 +38,7 @@ export function transcriptStore({ storage, domain }) {
     store.putCue({ ...domain.makeCue({ trackId, cueIndex: i, startMs, endMs, text, normalizedText: text, textSha256: FP }), id: cueId });
     text.split(' ').forEach((word, w) => {
       const charStart = text.indexOf(word);
-      store.putTranscriptWordTiming({ ...domain.makeTranscriptWordTiming({ trackId, cueId, wordIndex: w, charStart, charEnd: charStart + word.length, text: word, normalizedText: word, startMs: startMs + w * 600, endMs: startMs + w * 600 + 500, sourceKind: 'synthetic', engine: 'synthetic', modelName: 'synthetic' }), id: cueId + '-w' + w });
+      store.putTranscriptWordTiming({ ...domain.makeTranscriptWordTiming({ trackId, cueId, wordIndex: w, charStart, charEnd: charStart + word.length, text: word, normalizedText: word, startMs: startMs + w * 600, endMs: startMs + w * 600 + 500, sourceKind: 'manual-edit', engine: 'synthetic', modelName: 'synthetic' }), id: cueId + '-w' + w });
     });
   });
   // Saved occurrence anchored on the original (V1) cue 0; must survive Apply/Approve unchanged.

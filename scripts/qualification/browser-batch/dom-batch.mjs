@@ -5,11 +5,16 @@
 // Exact app strings (web app source, app.ts). Tested against the checkout at test time.
 export const CHOICE_LABELS = Object.freeze({ service: 'Load service state (discard browser edits)', browser: 'Keep browser work' });
 export const APPLY_DONE = 'Corrected transcript version created';
+// Fixed-vocabulary element ids for diagnostics. Errors carry `Tag|labelKey|state`; never free text.
+export const BUTTON_LABELS = Object.freeze({ previewRestore: 'Preview restore', refreshServicePreview: 'Refresh authoritative service preview', restoreNow: 'Restore now', connectLocalService: 'Connect local service', saveStateNow: 'Save state now', generateLocalExport: 'Generate local export', importLocalMedia: 'Import local media', importAsNewMedia: 'Import as new media', cancel: 'Cancel', chooseMediaAgain: 'Choose media again', createCorrectedTranscript: 'Create corrected transcript version', approveTranscript: 'Approve transcript for study', choiceService: CHOICE_LABELS.service, choiceBrowser: CHOICE_LABELS.browser, navLibrary: 'Library', navPlayer: 'Player', navSettings: 'Settings', navSaved: 'Saved', navExportImport: 'Export / Import' });
+export const SELECTOR_LABELS = Object.freeze({ nav: '.lingotorte-nav', importManifest: '#import-manifest', serviceUrl: '#local-service-url', serviceCapability: '#local-service-capability', autosave: '#local-service-autosave', mediaFile: '#local-media-file', nameConflict: '.media-name-conflict', confirmMerge: '#restore-confirm-overwrite', confirmReplace: '#restore-confirm-replace', confirmSingle: '#restore-confirm', cueText: '#transcript-correction-cue-0', cueStart: '#transcript-correction-cue-0-start-ms', cueEnd: '#transcript-correction-cue-0-end-ms', wordText: '#transcript-word-timing-cue-0-word-0-text', wordStart: '[name="transcript-word-timing-cue-0-word-0-start-ms"]', wordEnd: '[name="transcript-word-timing-cue-0-word-0-end-ms"]' });
+export const labelKey = (table, value) => Object.keys(table).find((k) => table[k] === value) ?? 'unlisted';
+export const diagnostic = (tag, label = 'none', state = 'none') => new Error(tag + '|' + label + '|' + state);
 export async function installBatchDriver(requireUi = true) {
   const wait = async (fn, ms = 8000) => { const end = performance.now() + ms; while (performance.now() < end) { const v = fn(); if (v) return v; await new Promise((r) => setTimeout(r, 15)); } throw new Error('DomDeadline'); };
-  const find = (sel) => { const n = document.querySelector(sel); if (!n) throw new Error('DomSelector'); return n; };
+  const find = (sel) => { const n = document.querySelector(sel); if (!n) throw diagnostic('DomSelector', labelKey(SELECTOR_LABELS, sel), 'missing'); return n; };
   const btn = (text, scope = document) => [...scope.querySelectorAll('button')].find((n) => n.textContent.trim() === text);
-  const click = (text, scope = document) => { const b = btn(text, scope); if (!b || b.disabled) throw new Error('DomButton'); b.click(); };
+  const click = (text, scope = document) => { const b = btn(text, scope); if (!b || b.disabled) throw diagnostic('DomButton', labelKey(BUTTON_LABELS, text), b ? 'disabled' : 'missing'); b.click(); };
   const nav = (text) => click(text, find('.lingotorte-nav'));
   const fill = (sel, value) => { const n = find(sel); n.value = value; n.dispatchEvent(new Event('input', { bubbles: true })); n.dispatchEvent(new Event('change', { bubbles: true })); };
   const check = (sel, on = true) => { const n = find(sel); if (n.checked !== on) n.click(); };
@@ -33,12 +38,25 @@ export async function installBatchDriver(requireUi = true) {
     click('Preview restore'); await wait(() => document.querySelector('.restore-preview') && count('POST', '/api/restore/preview', 'finish') > before || restorePanel()?.querySelector('.status-banner.error'));
     return { preview: !!document.querySelector('.restore-preview'), integrity: document.querySelector('[data-testid="restore-integrity"]')?.dataset.integrityVerified === 'true', conflictChoice: !!document.querySelector('#restore-confirm-overwrite'), commitsSent: count('POST', '/api/restore/commit', 'start') };
   };
+  // app.ts renderExportImportView: with a paired service, 'Restore now' stays disabled until (a) exactly one
+  // mode is selected (conflict: #restore-confirm-overwrite|#restore-confirm-replace; else #restore-confirm),
+  // (b) a service-backed preview is bound for that mode ('Refresh authoritative service preview' ->
+  // previewDurableRestore; selecting a mode drops any earlier binding), and (c) every warning is
+  // acknowledged AFTER the refresh (previewDurableRestore resets acknowledgedWarnings). Each checkbox
+  // change rerenders, so elements are re-queried after every click.
   const confirmRestore = async (mode) => {
     if (document.querySelector('#restore-confirm-overwrite')) check(mode === 'replace' ? '#restore-confirm-replace' : '#restore-confirm-overwrite');
+    else if (mode === 'replace') throw diagnostic('DomSelector', 'confirmReplace', 'missing');
     else check('#restore-confirm');
-    for (const w of document.querySelectorAll('input[name="restore-warning"]')) if (!w.checked) w.click();
+    if (btn(BUTTON_LABELS.refreshServicePreview)) {
+      const before = count('POST', '/api/restore/preview', 'finish');
+      click(BUTTON_LABELS.refreshServicePreview);
+      await wait(() => (count('POST', '/api/restore/preview', 'finish') > before && btn(BUTTON_LABELS.refreshServicePreview) && !btn(BUTTON_LABELS.refreshServicePreview).disabled) || restorePanel()?.querySelector('[role="alert"].status-banner.error'));
+    }
+    for (let i = 0; i < 16; i++) { const w = [...document.querySelectorAll('input[name="restore-warning"]')].find((n) => !n.checked); if (!w) break; w.click(); }
+    try { await wait(() => { const b = btn(BUTTON_LABELS.restoreNow); return b && !b.disabled; }, 3000); } catch { const b = btn(BUTTON_LABELS.restoreNow); throw diagnostic('DomButton', 'restoreNow', b ? 'disabled' : 'missing'); }
     const before = count('POST', '/api/restore/commit', 'start');
-    click('Restore now');
+    click(BUTTON_LABELS.restoreNow);
     return { commitStartedBefore: before };
   };
 

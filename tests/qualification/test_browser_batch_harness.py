@@ -150,7 +150,7 @@ class RuntimeTests(Base):
 
     def test_runtime_error_fixed_tag(self):
         r = object.__new__(live.PrivateRuntime)
-        r.lock = threading.Lock(); r.process = types.SimpleNamespace(stdin=io.StringIO()); r.q = queue.Queue(); r.q.put({'errorClass': SECRET})
+        r.lock = threading.Lock(); r._seq = 0; r.process = types.SimpleNamespace(stdin=io.StringIO()); r.q = queue.Queue(); r.q.put({'errorClass': SECRET, 'seq': 1})
         with self.assertRaises(c.DiagnosticError) as cm:
             r.request('oracle')
         self.assertEqual(cm.exception.tag, 'PrivateRuntimeOperation'); self.assertNotIn(SECRET, str(cm.exception))
@@ -406,7 +406,7 @@ class DomLabelTests(unittest.TestCase):
         self.assertIn('click(label)', pair)  # click() throws DomButton on missing/disabled button
         self.assertNotIn('if (keep', pair)
         clickdef = [l for l in dom.splitlines() if l.strip().startswith('const click =')][0]
-        self.assertIn("if (!b || b.disabled) throw new Error('DomButton')", clickdef)
+        self.assertIn("if (!b || b.disabled) throw diagnostic('DomButton', labelKey(BUTTON_LABELS, text), b ? 'disabled' : 'missing')", clickdef)
 
 
 class StaticSourceTests(unittest.TestCase):
@@ -426,6 +426,122 @@ class StaticSourceTests(unittest.TestCase):
         for f in KIT.iterdir():
             if not f.is_file(): continue
             self.assertNotIn('apps/web/src', f.read_text(encoding='utf8').replace('/@fs/app/apps/local-service', ''))
+
+
+class Run1CorrectionTests(Base):
+    """Regression tests for the run-1 failures (restore-04/05/08 DomButton, restore-07, transcript-01, cleanup)."""
+
+    def dom(self):
+        return (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
+
+    def test_restore_confirm_refreshes_service_preview_then_acks_warnings(self):
+        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        # Product rule the harness must satisfy: paired 'Restore now' needs a durable (service-backed) preview.
+        self.assertIn("(model.localService.status !== 'disconnected' && !hasCurrentDurableRestorePreview(model))", app)
+        self.assertIn("refresh.textContent = 'Refresh authoritative service preview'", app)
+        model = (ROOT / 'apps/web/src/model.ts').read_text(encoding='utf8')
+        self.assertIn("model.exportImport.preview = reply.preview as RestorePlan['preview']; model.exportImport.acknowledgedWarnings = [];", model)
+        body = self.dom().split('const confirmRestore = async (mode) => {', 1)[1].split('\n  };', 1)[0]
+        i_mode, i_refresh, i_warn, i_click = (body.index(x) for x in ("check(mode === 'replace'", 'click(BUTTON_LABELS.refreshServicePreview)', 'restore-warning', 'click(BUTTON_LABELS.restoreNow)'))
+        self.assertTrue(i_mode < i_refresh < i_warn < i_click)  # mode -> refresh -> ack (after reset) -> commit
+        self.assertIn("throw diagnostic('DomButton', 'restoreNow'", body)
+
+    def test_button_and_selector_labels_exist_in_app_and_controller(self):
+        import re
+        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        dom = self.dom()
+        buttons = dict(re.findall(r"(\w+): '([^']+)'", dom.split('BUTTON_LABELS = Object.freeze(', 1)[1].split('});', 1)[0]))
+        sels = dict(re.findall(r"(\w+): '([^']+)'", dom.split('SELECTOR_LABELS = Object.freeze(', 1)[1].split('});', 1)[0]))
+        self.assertIn('restoreNow', buttons); self.assertIn('refreshServicePreview', buttons)
+        for k, v in buttons.items():
+            self.assertIn(k, c.DOM_ELEMENTS)
+            self.assertIn(v, app, k)
+        for k in sels:
+            self.assertIn(k, c.DOM_ELEMENTS)
+        for k in ('choiceService', 'choiceBrowser', 'wordStart', 'wordEnd'):
+            self.assertIn(k, c.DOM_ELEMENTS)
+
+    def test_dom_diagnostic_names_element_fixed_vocabulary(self):
+        tab = live.Tab(); tab.object = 'o'
+        d = live.BatchDriver(lambda m, **p: {'result': {'value': {'diagnosticTag': 'DomButton', 'element': 'restoreNow', 'elementState': 'disabled'}}}, None, None)
+        d.cur = tab
+        j = c.Journal(self.dir / 'r.jsonl')
+        j.phase('restore-04-merge-twice-idempotent', lambda: d.invoke('restore-commit', mode='merge'), bead='lt-2t4')
+        end = self.rows(j)[-1]
+        self.assertEqual((end['errorTag'], end['element'], end['elementState']), ('DomButton', 'restoreNow', 'disabled'))
+        d.cdp = lambda m, **p: {'result': {'value': {'diagnosticTag': 'DomButton', 'element': SECRET, 'elementState': 'Bearer x'}}}
+        j.phase('restore-05-empty-replace-readback', lambda: d.invoke('x'), bead='lt-2t4')
+        end = self.rows(j)[-1]
+        self.assertNotIn('element', end); self.assertNotIn(SECRET, j.path.read_text())
+        self.assertIn("split('|')", live.INVOKE_FN)
+
+    def test_restore_07_cascades_when_04_or_05_not_pass(self):
+        for failed in ('restore-04-merge-twice-idempotent', 'restore-05-empty-replace-readback'):
+            j = c.Journal(self.dir / (failed + '.jsonl'))
+            for p in ('restore-01-pair', 'restore-02-seed-five-modes'):
+                j.phase(p, lambda: None)
+            j.phase(failed, lambda: (_ for _ in ()).throw(AssertionError('x')))
+            ran = []
+            j.phase('restore-07-second-tab-stale-409', lambda: ran.append(1))
+            self.assertEqual(ran, [])
+            self.assertEqual(self.rows(j)[-1]['disposition'], 'SKIPPED_CASCADE')
+        j = c.Journal(self.dir / 'ok.jsonl'); ran = []
+        for p in ('restore-01-pair', 'restore-02-seed-five-modes', 'restore-04-merge-twice-idempotent', 'restore-05-empty-replace-readback'):
+            j.phase(p, lambda: None)
+        j.phase('restore-07-second-tab-stale-409', lambda: ran.append(1))
+        self.assertEqual(ran, [1])
+        self.assertIn("s['putStatus'] == 409 and s['conflict']", (KIT / 'live-batch.py').read_text(encoding='utf8'))  # oracle kept
+
+    def test_transcript_seed_word_timing_source_kind_allowed_by_schema(self):
+        import re
+        schema = (ROOT / 'packages/storage/src/sqliteLocalPersistence.ts').read_text(encoding='utf8')
+        allowed = re.search(r"source_kind TEXT NOT NULL CHECK \(source_kind IN \(('provider-word-timing'[^)]*)\)\)", schema).group(1)
+        allowed = set(re.findall(r"'([^']+)'", allowed))
+        seed = (KIT / 'seed-batch.mjs').read_text(encoding='utf8')
+        wt = seed.split('makeTranscriptWordTiming(', 1)[1].split('})', 1)[0]
+        self.assertIn(re.search(r"sourceKind: '([^']+)'", wt).group(1), allowed)
+
+    def _runtime(self, replies, rc=0):
+        r = object.__new__(live.PrivateRuntime)
+        r.lock = threading.Lock(); r._seq = 0; r.q = queue.Queue(); r.forced = False; r.name = 'lt-bqb-live-0123456789ab'
+        r._capability = SECRET; r._history = [SECRET]; r.stop_detail = None
+        sent = []
+        class In(io.StringIO):
+            def write(s, x):
+                sent.append(json.loads(x)); seq = sent[-1]['seq']
+                for v in replies(sent[-1]):
+                    r.q.put({**v, 'seq': seq} if 'seq' not in v else v)
+                return len(x)
+        r.process = types.SimpleNamespace(stdin=In(), stdout=io.StringIO(), returncode=rc, wait=lambda timeout=None: rc)
+        return r, sent
+
+    def test_stale_reply_never_satisfies_later_request(self):
+        r, sent = self._runtime(lambda m: [{'seq': 0, 'errorClass': 'FixtureOperation'}, {'ok': True}])
+        self.assertEqual(r.request('oracle', timeout=2), {'ok': True, 'seq': 1})
+
+    def test_cleanup_reports_stop_detail_and_exit(self):
+        orig = live.own_containers_absent; live.own_containers_absent = lambda name, run=None: True
+        try:
+            closures = {k: {'graceful': True, 'remainingSockets': 0} for k in ('dev', 'foreign', 'gate', 'service', 'compiler')}
+            r, _ = self._runtime(lambda m: [{'stopped': True, 'strictPass': True, 'providers': 0, 'closures': closures}])
+            self.assertTrue(r.close()['strictPass'])
+            bad = {**closures, 'gate': {'graceful': False, 'remainingSockets': 1}}
+            r, _ = self._runtime(lambda m: [{'stopped': True, 'strictPass': False, 'providers': 0, 'closures': bad}])
+            v = r.close()
+            self.assertFalse(v['strictPass']); self.assertEqual(v['stop']['closures']['gate'], {'graceful': False, 'remainingSockets': 1})
+            self.assertEqual(v['stop']['stopStage'], 'reply')
+            r, _ = self._runtime(lambda m: [{'stopped': True, 'strictPass': True, 'providers': 0, 'closures': closures}], rc=1)
+            v = r.close(); self.assertFalse(v['strictPass']); self.assertEqual(v['stop']['exitCode'], 1)
+            j = c.Journal(self.dir / 'c.jsonl', secrets=[SECRET]); j.append('cleanup', 'cleanup', 'readback', ok=False, value={'stop': v['stop']})
+        finally:
+            live.own_containers_absent = orig
+
+    def test_runtime_stop_path_deterministic(self):
+        rt = (KIT / 'runtime-batch.mjs').read_text(encoding='utf8')
+        self.assertIn('closeIdleConnections', rt)
+        self.assertIn('await settle(socketSets.get(label), 500)', rt)
+        self.assertIn("errorStage: 'shutdown'", rt)
+        self.assertIn('reply({ ...v, seq }); break;', rt)
 
 
 if __name__ == '__main__':
