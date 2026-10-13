@@ -8,7 +8,7 @@ Successor of scripts/qualification/lt-sor/live-controller-v2.py (PrivateRuntime/
   capability and must never reach tool output.
 * Nothing returned/written may contain the capability, CDP payloads, expressions or exception text.
 """
-import base64, hashlib, importlib.util, json, os, pathlib, queue, subprocess, threading, time, uuid
+import base64, hashlib, re, importlib.util, json, os, pathlib, queue, subprocess, threading, time, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
@@ -90,8 +90,11 @@ def binding(image):
 
 # ---- lt-3kk exact-revision guard ----
 # Files whose bytes must be identical in the host checkout (clean, at review['revision']) and in the image's
-# /app. git ls-files at HEAD restricted to what the Dockerfile COPYs; the image side is hashed by node inside
+# /app. git ls-files at HEAD (plus gitignored files present on disk) restricted to what the Dockerfile COPYs
+# and .dockerignore admits; the image side is hashed by node inside
 # a --network none container from the same list. Any mismatch, dirty tree or HEAD drift refuses the run.
+# Actions whose post-press focus is asserted (apply is OBSERVED only: async re-render, no successor).
+FOCUS_ASSERTED = ('approve', 'grade', 'practice-submit', 'practice-choice', 'analyse')
 SOURCE_ROOTS = ('apps', 'packages', 'vendor', 'fixtures', 'scripts', 'tests')
 SOURCE_FILES = ('package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts')
 IMAGE_HASH_JS = ("const{createHash}=require('node:crypto');const{readFileSync}=require('node:fs');let s='';"
@@ -107,11 +110,53 @@ def _git(args, run=subprocess.run):
     return r.stdout
 
 
-def source_file_list(run=subprocess.run):
-    out = _git(['ls-files', '-z', '--'] + list(SOURCE_ROOTS) + list(SOURCE_FILES), run).decode('utf8')
-    files = sorted(f for f in out.split('\0') if f)
-    # .dockerignore excludes these from the image; they cannot be compared.
-    return [f for f in files if '/node_modules/' not in f and not f.endswith(('.db', '.log')) and '/dist/' not in f.replace('vendor/morfeusz-ts/dist/', '')]
+def _dockerignore_rules(text=None):
+    if text is None:
+        text = (REPO / '.dockerignore').read_text(encoding='utf8')
+    rules = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        neg = line.startswith('!')
+        pat = line[1:].strip() if neg else line
+        pat = pat.strip('/')
+        rx, i = '', 0
+        while i < len(pat):
+            if pat.startswith('**/', i):
+                rx += '(?:.*/)?'; i += 3
+            elif pat.startswith('**', i):
+                rx += '.*'; i += 2
+            elif pat[i] == '*':
+                rx += '[^/]*'; i += 1
+            elif pat[i] == '?':
+                rx += '[^/]'; i += 1
+            else:
+                rx += re.escape(pat[i]); i += 1
+        rules.append((neg, re.compile(rx + r'\Z')))
+    return rules
+
+
+def dockerignore_excluded(path, rules):
+    """Docker semantics: a rule matches the path or any parent directory; the last matching rule wins."""
+    parts = path.split('/')
+    prefixes = ['/'.join(parts[:i]) for i in range(1, len(parts) + 1)]
+    excluded = False
+    for neg, rx in rules:
+        if any(rx.match(x) for x in prefixes):
+            excluded = not neg
+    return excluded
+
+
+def source_file_list(run=subprocess.run, rules=None):
+    """Every file the Dockerfile COPY roots carry into /app: tracked files plus gitignored-but-present files
+    (e.g. vendor dicts, coverage/, .vite/), filtered through .dockerignore so both sides hash the same set."""
+    roots = list(SOURCE_ROOTS) + list(SOURCE_FILES)
+    tracked = _git(['ls-files', '-z', '--'] + roots, run).decode('utf8')
+    ignored = _git(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--'] + roots, run).decode('utf8')
+    rules = _dockerignore_rules() if rules is None else rules
+    files = sorted({f for f in (tracked + '\0' + ignored).split('\0') if f})
+    return [f for f in files if not dockerignore_excluded(f, rules)]
 
 
 def host_source_digest(files):
@@ -766,8 +811,11 @@ class BatchDriver:
         e = self.invoke('edit-cue0', text=self.JOURNEY_CUE)
         self.ok(P, 'dirty-blocks-approve', e['approveDisabledWhileDirty'])
         f1 = self.press('createCorrectedTranscript')
-        self.note_focus(P, 'apply', f1)
         a = self.invoke('apply-settle')
+        # Apply has no focus successor and re-renders asynchronously (app.ts createCorrectedTranscript): the 0.15 s
+        # post-press read precedes apply-settle, so it is recorded as OBSERVED only, never asserted.
+        self.journal.append('checkpoint', P, 'focus-after-apply', ok=True, disposition=controller.OBSERVED,
+                            value={'onBody': f1['onBody'], 'key': f1['key']})
         mid = self.jsave()
         new = sorted({t['id'] for t in mid['journey']['tracks']} - {t['id'] for t in o['journey']['tracks']})
         self.ok(P, 'corrected-version-unapproved', a['applied'] and len(new) == 1 and mid['trackStatus'].get(new[0]) != 'approved', counts={'newTracks': len(new)})
@@ -970,7 +1018,7 @@ class BatchDriver:
         v = self.invoke('import-files')
         m = self.invoke('media-feedback')
         self.journal.append('checkpoint', P, 'media-element', ok=True, disposition=controller.OBSERVED, value={'imported': v['imported'], 'videoPresent': m['videoPresent'], 'errorCode': m['videoErrorCode']})
-        # Product source (app.ts renderVideoStage) registers no <video> 'error' listener: expected to FAIL live.
+        # lt-r4k.1 added the <video> 'error' listener and .media-error-alert (app.ts renderVideoStage/mediaErrorMessage).
         self.ok(P, 'visible-accessible-error', m['feedbackVisible'] and m['feedbackAccessible'], value={'visible': m['feedbackVisible'], 'accessible': m['feedbackAccessible']})
 
     def phase_journey_13_keyboard_focus(self):
@@ -988,8 +1036,10 @@ class BatchDriver:
         reached = sorted(primary & set(seen))
         self.ok(P, 'tab-reaches-primary-controls', set(reached) == primary, value={'reached': reached})
         self.ok(P, 'focus-visible-ring', bool(rings) and all(rings), counts={'stops': len(rings), 'ringed': sum(rings)})
-        lost = sorted(k for k, v in self.state.get('focusAfter', {}).items() if v['onBody'])
-        self.ok(P, 'focus-not-lost-after-actions', not lost and len(self.state.get('focusAfter', {})) >= 5, value={'lostAfter': lost})
+        fa = self.state.get('focusAfter', {})
+        lost = sorted(k for k, v in fa.items() if v['onBody'])
+        missing = sorted(set(FOCUS_ASSERTED) - set(fa))
+        self.ok(P, 'focus-not-lost-after-actions', not lost and not missing, value={'lostAfter': lost, 'missing': missing})
 
     # ---- cleanup (lt-sor: page cleanup, release, close target, readback; runtime independent) ----
     def cleanup(self):

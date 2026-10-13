@@ -118,7 +118,7 @@ class GuardTests(Base):
             calls.append(args[:4] if args[0] == 'docker' else args[3:5])
             if args[0] == 'git':
                 sub = args[3]
-                out = {'rev-parse': head.encode() + b'\n', 'status': porcelain, 'ls-files': ls}[sub]
+                out = {'rev-parse': head.encode() + b'\n', 'status': porcelain, 'ls-files': b'' if '-i' in args else ls}[sub]
                 return types.SimpleNamespace(returncode=0, stdout=out)
             files = json.loads(k['input'])
             return types.SimpleNamespace(returncode=0, stdout=(image_digest if image_digest is not None else live.host_source_digest(files)).encode())
@@ -141,6 +141,37 @@ class GuardTests(Base):
                 self.assertEqual(str(cm.exception), tag)
         with self.assertRaises(PermissionError):
             live.revision_guard({**REVIEW, 'revision': None}, IMG, run=self._fake_run(REV)[0])
+
+    def test_ignored_file_in_copied_root_is_hashed(self):
+        """B2: a gitignored file Docker still copies (vendor dict, coverage/, .vite/) enters the hashed list,
+        so changing its bytes changes the digest; .dockerignore exclusions stay out on both sides."""
+        rules = live._dockerignore_rules((ROOT / '.dockerignore').read_text(encoding='utf8'))
+        for p, ex in (('vendor/morfeusz-ts/morfeusz2/dict/x.dict', False), ('coverage/index.html', True),
+                      ('apps/web/.vite/deps/a.js', False), ('apps/web/node_modules/a.js', True), ('x.db', True),
+                      ('vendor/morfeusz-ts/dist/a.js', False), ('apps/web/dist/a.js', True), ('README.md', True)):
+            with self.subTest(p=p):
+                self.assertEqual(live.dockerignore_excluded(p, rules), ex)
+        seen = []
+
+        def run(args, **k):
+            sub = args[3:]
+            seen.append(sub)
+            out = b'apps/web/.vite/deps/a.js\0vendor/v.dict\0apps/node_modules/n.js\0' if '-i' in sub else b'package.json\0'
+            return types.SimpleNamespace(returncode=0, stdout=out)
+        files = live.source_file_list(run, rules=rules)
+        self.assertEqual(files, ['apps/web/.vite/deps/a.js', 'package.json', 'vendor/v.dict'])
+        self.assertTrue(any(s[:5] == ['ls-files', '-z', '-o', '-i', '--exclude-standard'] for s in seen))
+        d = self.dir / 'repo'
+        (d / 'vendor').mkdir(parents=True)
+        (d / 'vendor/v.dict').write_bytes(b'one')
+        orig = live.REPO
+        live.REPO = d
+        try:
+            h1 = live.host_source_digest(['vendor/v.dict'])
+            (d / 'vendor/v.dict').write_bytes(b'two')
+            self.assertNotEqual(h1, live.host_source_digest(['vendor/v.dict']))
+        finally:
+            live.REPO = orig
 
     def test_image_hash_runs_offline_without_mounts(self):
         src = (KIT / 'live-batch.py').read_text(encoding='utf8')
@@ -225,6 +256,38 @@ class SourceTraceTests(unittest.TestCase):
                     "'practice-choice", "'Rate ${rating}'", "'analyse-words'", "'review-buttons'", "'saved-occurrence-preview'", "'Create corrected transcript version'"):
             with self.subTest(sel=sel):
                 self.assertTrue(sel.strip("'") in app or sel.replace("'", '`') in app, sel)
+
+    def test_media_feedback_oracle_scoped_to_code_message(self):
+        """B3: the phase-12 oracle reads only .video-stage .media-error-alert with role alert/status and requires
+        the mediaErrorMessage wording for the actual video.error.code."""
+        js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')
+        case = js[js.index("case 'media-feedback'"):js.index("case 'morph-events'")]
+        self.assertIn("'.video-stage .media-error-alert'", case)
+        self.assertNotIn('[role="alert"], [role="status"]', case)
+        self.assertIn("['alert', 'status'].includes", case)
+        self.assertIn('MEDIA_ERROR_TEXT[code]', case)
+        app = (APP / 'app.ts').read_text(encoding='utf8')
+        fn = app[app.index('function mediaErrorMessage'):app.index('function renderEmptyVideoPlaceholder')]
+        table = js[js.index('const MEDIA_ERROR_TEXT = {'):]
+        table = table[:table.index('};')]
+        pairs = dict(re.findall(r"(\w+): '([^']+)'", table))
+        self.assertEqual(set(pairs), {'1', '2', '3', '4', 'unknown'})
+        for k, needle in pairs.items():
+            branch = re.search((r'case %s: return `([^`]*)`' % k) if k != 'unknown' else r'default: return `([^`]*)`', fn).group(1)
+            with self.subTest(code=k):
+                self.assertIn(needle, branch)
+                for other, n2 in pairs.items():
+                    if other != k:
+                        self.assertNotIn(n2, branch)
+
+    def test_focus_asserted_set_excludes_apply(self):
+        """B1: apply re-renders asynchronously with no focus successor; it is OBSERVED, never asserted."""
+        self.assertEqual(set(live.FOCUS_ASSERTED), {'approve', 'grade', 'practice-submit', 'practice-choice', 'analyse'})
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        self.assertNotIn("note_focus(P, 'apply'", src)
+        for a in live.FOCUS_ASSERTED:
+            self.assertIn("note_focus(P, '%s'" % a, src)
+        self.assertNotIn('>= 5', src[src.index('def phase_journey_13_keyboard_focus'):src.index('def cleanup')])
 
     def test_no_production_import_or_hook(self):
         js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')

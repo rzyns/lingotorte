@@ -2,6 +2,8 @@
 // production modules, never touches the model. Results are booleans/counts/fixed keys only. Free text the
 // page shows is compared page-side against exact app strings; it is never returned.
 // Exact strings traced in the web app sources app.ts, model.ts, morphologyPanel.ts (test-enforced).
+// Distinctive wording of app.ts mediaErrorMessage(code), keyed by MediaError.code (test_lt3kk pins these to app.ts).
+const MEDIA_ERROR_TEXT = { 1: 'playback was aborted before the browser finished reading it', 2: 'the browser could not read the file', 3: 'the browser could not decode it', 4: 'the browser does not support its format or codec', unknown: 'the browser reported an unknown media error' };
 export const J = Object.freeze({
   gatedDraft: 'Import gated demo caption draft', // app.ts renderTranscriptLifecyclePanel
   draftDone: 'Draft transcript imported',
@@ -171,12 +173,15 @@ export async function installJourneyDriver(batch, requireUi = true) {
         return { links: document.querySelectorAll('a.occurrence-link').length, createButtons: buttons().filter((b) => b.textContent.trim() === J.createReviewCard).length };
       }
       case 'media-feedback': {
-        // Undecodable media: wait for the <video> error and look for visible, accessible feedback anywhere.
+        // Undecodable media: wait for the <video> error, then require the product's own .media-error-alert inside the
+        // video stage (role alert/status) carrying the mediaErrorMessage wording for the actual error code (app.ts).
         await nav('Player'); const v = await wait(() => document.querySelector('.video-stage video'), 3000).catch(() => null);
         const end = performance.now() + (arg.ms ?? 6000); while (performance.now() < end && !(v?.error)) await new Promise((r) => setTimeout(r, 50));
         await new Promise((r) => setTimeout(r, 500));
-        const alerts = [...document.querySelectorAll('[role="alert"], [role="status"], .status-banner.error')].filter((n) => n.getClientRects().length > 0 && /decod|codec|format|cannot be played|could not (load|play)|unsupported|not supported/i.test(n.textContent ?? ''));
-        return { videoPresent: !!v, videoErrorCode: v?.error?.code ?? null, feedbackVisible: alerts.length > 0, feedbackAccessible: alerts.some((n) => ['alert', 'status'].includes(n.getAttribute('role') ?? '')) };
+        const code = v?.error?.code ?? null; const expected = MEDIA_ERROR_TEXT[code] ?? MEDIA_ERROR_TEXT.unknown;
+        const alerts = [...document.querySelectorAll('.video-stage .media-error-alert')].filter((n) => n.getClientRects().length > 0 && ['alert', 'status'].includes(n.getAttribute('role') ?? ''));
+        const matched = code !== null && alerts.some((n) => (n.textContent ?? '').includes(expected));
+        return { videoPresent: !!v, videoErrorCode: code, feedbackVisible: matched, feedbackAccessible: matched };
       }
       case 'morph-events': { const e = (await ownedEvents()).events.filter((x) => x.path === '/api/language/morphology'); return { posts: e.filter((x) => x.stage === 'start' && x.method === 'POST').length, ok200: e.filter((x) => x.stage === 'finish' && x.status === 200).length }; }
       case 'external-events': { const e = (await ownedEvents()).events; return { nonState: e.filter((x) => !['/api/state', '/api/status', '/api/language/morphology', '/api/restore/preview', '/api/restore/commit'].includes(x.path)).length }; }
