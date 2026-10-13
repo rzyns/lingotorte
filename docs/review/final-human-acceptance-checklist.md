@@ -32,13 +32,16 @@ These are recorded limits of the automated and harness evidence. They are not kn
 
 - [ ] **Edge.** All real-browser runs used Chrome. Repeat the persistent-handle check above in Edge if it is the daily browser.
 - [ ] **Private-LAN origin.** Runs used the loopback secure context. If the app will be opened from another device on the trusted LAN over plain HTTP, confirm the experience there. Browsers withhold persistent file handles and some APIs outside secure contexts, so the fallback relink path should appear instead.
+- [ ] **Correcting your own imported subtitles (`lt-3kk` G1/F1).** Subtitle files you import are trusted and approved immediately (you chose to keep this on 2026-10-13), so the journey's correct → approve → save flow ran on the built-in demo caption draft, which lives on its own placeholder media item. Confirm that saving words directly from your own approved subtitles is what you want, and that you're fine without a way to reopen them for correction. A "Reopen for correction" action would be a small follow-up.
+- [ ] **Focus after Create corrected transcript version.** Keyboard focus falls back to the page top after Apply; this is a known follow-up (`lt-5lb.1`). Check that it is tolerable in daily use.
+- [ ] **Real speech-to-text and online providers.** All providers stayed off in every qualification run. If you plan to use ElevenLabs Scribe or local ASR, try them deliberately once with owned media.
 - [ ] **Hard stop during restore commit.** Harness run 4 stopped the service in-process during a commit, and the app correctly showed *outcome unknown* without resending the commit. Optionally repeat this on an isolated store with `docker kill` on the service container mid-commit, then reconnect and confirm the state matches the readback.
 
 ## Sign-off
 
 | Field | Value |
 |---|---|
-| Candidate revision | _to be filled when `lt-3kk` produces the candidate packet_ |
+| Candidate revision | main after the `lt-3kk` merge (2026-10-13); the qualifying journey ran on `d597106` = main `422b0c5` plus harness (receipt in `docs/dev/lt-3kk-daily-driver-journey-plan.md`, run 4) |
 | Checks completed | |
 | Disposition | accept / repair / defer |
 | Date | |
