@@ -52,3 +52,7 @@ The reviewer and parent verified all 22 archived source copies and identical bef
 Parent applied the separately approved graph correction and read back its exact edges: `lt-13i` now depends on `lt-aur.1`, which retains `lt-dy6` and organizational parent `lt-aur`, without the cyclic review edge. The closed review remains bound in activation evidence. Original acceptance/status/claim, Windows prerequisite and downstream integration gate are preserved. No force flag or runtime gate relaxation was used.
 
 Disposition: activation and discovery checkpoint only. `lt-aur.1` remains blocked/unclaimed and incomplete. Implementation scope has been authorized, but no product edits or candidate execution have occurred; discovery did not establish a usable qualified execution lane. Publication of this report grants no test/build/import/guest authority, and no new harness is constructed by this checkpoint.
+
+## Subsequent lane authorization (2026-10-12)
+
+The user subsequently authorized the network-isolated Docker contributor image lane for lt-aur.1, recorded in Beads. Results are in `docs/dev/lt-aur-1-dirty-approval-result.md`. That lane is Linux-container synthetic evidence; it does not retroactively qualify a Windows guest lane.

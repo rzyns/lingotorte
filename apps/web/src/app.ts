@@ -87,6 +87,8 @@ import {
   setLocalServiceBaseUrl,
   approveTranscriptTrack,
   createCorrectedTranscriptVersion,
+  transcriptApprovalBlockReason,
+  transcriptCorrectionPending,
   splitTranscriptCueInCorrectedVersion,
   mergeTranscriptCueWithNextInCorrectedVersion,
   generateElevenLabsScribeDraft,
@@ -3181,6 +3183,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   trackMeta.textContent = `Current transcript: ${targetTrack.transcriptStatus} • ${targetTrack.transcriptSourceKind} • warnings: ${targetTrack.provenance.warningFlags.join(', ') || 'none'}`;
   panel.appendChild(trackMeta);
 
+  // Dirty/pending edits block approval and structural/offset actions; refreshed in place to keep focus/value.
+  const editGuardedButtons: HTMLButtonElement[] = [];
+  let refreshApprovalGate = (): void => {};
+  const editorBlocked = (): boolean => transcriptApprovalBlockReason(model, targetTrack.id) !== null;
+
   if (targetTrack.transcriptStatus !== 'approved') {
     const offsetGroup = document.createElement('div');
     offsetGroup.className = 'track-offset-editor';
@@ -3220,7 +3227,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     const applyOffsetBtn = document.createElement('button');
     applyOffsetBtn.className = 'btn-secondary';
     applyOffsetBtn.textContent = 'Apply offset to all cues';
+    editGuardedButtons.push(applyOffsetBtn);
     applyOffsetBtn.addEventListener('click', () => {
+      if (editorBlocked()) { refreshApprovalGate(); return; }
       const offsetMs = Number(offsetInput.value);
       if (!Number.isFinite(offsetMs) || offsetMs === 0) {
         model.importError = 'Select a non-zero offset before applying.';
@@ -3261,6 +3270,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       textarea.addEventListener('input', () => {
         model.transcriptLifecycle.pendingCueEdits[cue.id] = textarea.value;
         markUnsavedBrowserEdits(model);
+        refreshApprovalGate();
       });
       label.appendChild(textarea);
       const sourceComparison = renderCueSourceComparison(model, cue, targetTrack.id);
@@ -3294,6 +3304,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           endMs: Number(endInput.value),
         };
         markUnsavedBrowserEdits(model);
+        refreshApprovalGate();
       };
       startInput.addEventListener('input', updateTimingEdit);
       endInput.addEventListener('input', updateTimingEdit);
@@ -3345,6 +3356,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             startMs: Number(wordStart.value),
             endMs: Number(wordEnd.value),
           };
+          refreshApprovalGate();
         };
         wordText.addEventListener('input', updateWordTimingEdit);
         wordStart.addEventListener('input', updateWordTimingEdit);
@@ -3358,7 +3370,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const splitCueButton = document.createElement('button');
       splitCueButton.type = 'button';
       splitCueButton.textContent = `Split cue ${cue.cueIndex}`;
+      editGuardedButtons.push(splitCueButton);
       splitCueButton.addEventListener('click', () => {
+        if (editorBlocked()) { refreshApprovalGate(); return; }
         splitCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Splitting cue ${cue.cueIndex}…`;
         rerenderApp(model);
@@ -3379,8 +3393,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const mergeCueButton = document.createElement('button');
       mergeCueButton.type = 'button';
       mergeCueButton.textContent = `Merge cue ${cue.cueIndex} with next`;
-      mergeCueButton.disabled = !model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
+      const mergeHasNext = model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
+      mergeCueButton.disabled = !mergeHasNext;
+      if (mergeHasNext) editGuardedButtons.push(mergeCueButton);
       mergeCueButton.addEventListener('click', () => {
+        if (!mergeHasNext || editorBlocked()) { refreshApprovalGate(); return; }
         mergeCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Merging cue ${cue.cueIndex} with next…`;
         rerenderApp(model);
@@ -3412,6 +3429,12 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     correctBtn.className = 'btn-secondary';
     correctBtn.textContent = 'Create corrected transcript version';
     correctBtn.addEventListener('click', () => {
+      if (transcriptCorrectionPending(model) || model.targetTrackId !== targetTrack.id) { refreshApprovalGate(); return; }
+      const submitted = structuredClone({
+        cue: model.transcriptLifecycle.pendingCueEdits,
+        timing: model.transcriptLifecycle.pendingCueTimingEdits,
+        word: model.transcriptLifecycle.pendingWordTimingEdits,
+      });
       const edits = model.cues
         .map((cue) => {
           const timing = model.transcriptLifecycle.pendingCueTimingEdits[cue.id] ?? { startMs: cue.startMs, endMs: cue.endMs };
@@ -3439,14 +3462,39 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             endMs: timing.endMs,
             ...(wordTimings.length > 0 ? { wordTimings } : {}),
           };
-        })
-        .filter((edit) => edit.text.trim().length > 0);
-      void createCorrectedTranscriptVersion(model, targetTrack.id, edits)
-        .then(() => {
-          model.transcriptLifecycle.pendingCueEdits = {};
-          model.transcriptLifecycle.pendingCueTimingEdits = {};
-          model.transcriptLifecycle.pendingWordTimingEdits = {};
-          model.transcriptLifecycle.lastMessage = 'Corrected transcript version created';
+        });
+      const parentCues = model.cues.slice();
+      const parentWords = parentCues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+      const applying = createCorrectedTranscriptVersion(model, targetTrack.id, edits);
+      refreshApprovalGate();
+      void applying
+        .then((corrected) => {
+          // Consume only the edits that were submitted; edits made while Apply was pending are retained and
+          // re-keyed onto the new version so they stay visible and keep approval blocked.
+          const lifecycle = model.transcriptLifecycle;
+          const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+          const cueIdMap = new Map(parentCues.map((cue, index) => [cue.id, corrected.cues[index]?.id]));
+          const childWords = corrected.cues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+          const wordIdMap = new Map(parentWords.map((word) => {
+            const childCueId = cueIdMap.get(word.cueId);
+            return [word.id, childWords.find((child) => child.cueId === childCueId && child.wordIndex === word.wordIndex)?.id];
+          }));
+          const retain = <T>(current: Record<string, T>, sent: Record<string, T>, ids: Map<string, string | undefined>): Record<string, T> => {
+            const next: Record<string, T> = {};
+            for (const [id, value] of Object.entries(current)) {
+              if (Object.hasOwn(sent, id) && same(sent[id], value)) continue;
+              next[ids.get(id) ?? id] = value;
+            }
+            return next;
+          };
+          lifecycle.pendingCueEdits = retain(lifecycle.pendingCueEdits, submitted.cue, cueIdMap);
+          lifecycle.pendingCueTimingEdits = retain(lifecycle.pendingCueTimingEdits, submitted.timing, cueIdMap);
+          lifecycle.pendingWordTimingEdits = retain(lifecycle.pendingWordTimingEdits, submitted.word, wordIdMap);
+          const retained = [lifecycle.pendingCueEdits, lifecycle.pendingCueTimingEdits, lifecycle.pendingWordTimingEdits]
+            .some((value) => Object.keys(value).length > 0);
+          model.transcriptLifecycle.lastMessage = retained
+            ? 'Corrected transcript version created; edits made during Apply were kept and still need to be applied'
+            : 'Corrected transcript version created';
           model.importError = null;
           rerenderApp(model);
         })
@@ -3461,14 +3509,38 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const approveBtn = document.createElement('button');
   approveBtn.className = 'btn-primary';
   approveBtn.textContent = 'Approve transcript for study';
-  approveBtn.disabled = targetTrack.transcriptStatus === 'approved';
+  const approvalGate = document.createElement('p');
+  approvalGate.className = 'gate-note transcript-approval-gate';
+  approvalGate.id = 'transcript-approval-gate';
+  approvalGate.setAttribute('role', 'status');
+  approvalGate.setAttribute('aria-live', 'polite');
+  approveBtn.setAttribute('aria-describedby', approvalGate.id);
+  refreshApprovalGate = () => {
+    const reason = transcriptApprovalBlockReason(model, targetTrack.id);
+    approveBtn.disabled = targetTrack.transcriptStatus === 'approved' || reason !== null;
+    approvalGate.textContent = targetTrack.transcriptStatus === 'approved' ? '' : reason ?? '';
+    approvalGate.hidden = !approvalGate.textContent;
+    for (const guarded of editGuardedButtons) guarded.disabled = reason !== null;
+    const applyBtn = Array.from(panel.querySelectorAll('button')).find((candidate) => candidate.textContent === 'Create corrected transcript version');
+    if (applyBtn) applyBtn.disabled = transcriptCorrectionPending(model);
+  };
   approveBtn.addEventListener('click', () => {
-    approveTranscriptTrack(model, targetTrack.id);
+    // Bind approval to the selected track/version rendered by this panel and re-check the guard at dispatch.
+    if (model.targetTrackId !== targetTrack.id) { rerenderApp(model); return; }
+    try {
+      approveTranscriptTrack(model, targetTrack.id);
+    } catch (err: unknown) {
+      model.importError = err instanceof Error ? err.message : String(err);
+      refreshApprovalGate();
+      return;
+    }
     model.transcriptLifecycle.lastMessage = 'Transcript approved for study';
     model.importError = null;
     rerenderApp(model);
   });
+  panel.appendChild(approvalGate);
   panel.appendChild(approveBtn);
+  refreshApprovalGate();
 
   return panel;
 }

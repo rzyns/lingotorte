@@ -1,0 +1,92 @@
+# lt-aur.1 — dirty transcript approval repair (offline synthetic)
+
+Status: implemented candidate with Docker contributor-lane synthetic evidence. Awaiting independent parent review. No commit, push, merge, Beads mutation or deployment.
+
+## Cause and correction
+
+Base: branch `work/lt-aur1-dirty-approval` at `d63eaeb` (main `7acb49d` + two docs commits). Before the fix, `approveTranscriptTrack` approved any existing track. The Approve button only checked `transcriptStatus === 'approved'`, so pending cue text, cue timing and word text/timing edits could be approved without being applied. A successful Apply cleared all pending dictionaries, including edits made while Apply was still running. Apply also silently dropped cues with empty text. A rejected word edit was validated only after the corrected track and cues had been written, which left a partial `correcting` track selected. Split, merge and offset actions discarded pending edits.
+
+The correction follows block → Apply → inspect → Approve:
+
+- `model.ts`
+  - New `hasDirtyTranscriptEdits(model, trackId)` compares pending values with the persisted cue text/boundaries and word text/boundaries of the selected track. Reverted values count as clean. Entries that do not belong to the track and non-numeric (NaN) values fail closed.
+  - New `transcriptCorrectionPending`: an in-flight counter wraps corrected and structural version creation, including offset, split and merge.
+  - New `transcriptApprovalBlockReason`.
+  - `approveTranscriptTrack` now throws while edits are dirty or a correction is pending. Direct model callers therefore cannot bypass the guard.
+  - `createCorrectedTranscriptVersion` validates every word edit before any store write.
+- `app.ts`
+  - Adds a persistent accessible gate note (`.transcript-approval-gate`, `role=status`, `aria-live`).
+  - Approve, split, merge and offset are disabled while blocked and refreshed in place on input, without rerendering. This keeps focus and values.
+  - Each handler rechecks the guard. Approve is bound to the panel's rendered track id: a stale handler for a no-longer-selected track does nothing.
+  - Apply no longer filters out empty cues, so they fail visibly and stay pending. It is disabled while pending.
+  - On success, Apply consumes only the submitted values. Newer edits are kept and re-keyed onto the new version's cue/word ids, so approval stays blocked.
+
+No storage, backend, schema or dependency changes. No new harness.
+
+Changed paths: `apps/web/src/model.ts`, `apps/web/src/app.ts`, `tests/web/dirtyTranscriptApproval.test.ts` (new), `docs/dev/lt-aur-1-dirty-approval-result.md` (new), `docs/dev/lt-aur-1-offline-lane-discovery.md` (lane note).
+
+## Red / green per test (`tests/web/dirtyTranscriptApproval.test.ts`, 27 tests)
+
+Red: the new test file was copied alone into a detached scratch worktree of `d63eaeb` (original source), image `lingotorte:lt-aur1-red` `sha256:0d5820c3bb83f4d7050f2fd62fe15e49a039913388ede1f126981e3a95595f1c` (since removed). Result: **18 failed, 9 passed**, exit 1. Every failure was a product assertion; there were no setup or import failures. Green on the candidate: **27 passed**, exit 0.
+
+| Test | Red (original) | Green |
+| --- | --- | --- |
+| direct: refuses approval while {cueText, cueStart, cueEnd, wordText, wordStart, wordEnd} dirty (6) | FAIL ×6 — `expected [Function] to throw` (approved silently) | pass |
+| direct: permits approval after each field reverted (6) | pass ×6 (non-discriminating controls) | pass |
+| direct: clean track still approves | pass (control) | pass |
+| UI: Approve button + handler blocked per field, with visible explanation (6) | FAIL ×6 — button enabled (`expected false to be true`) | pass |
+| UI: re-enables after revert, explicit approve | FAIL — button not disabled while dirty | pass |
+| Apply → inspect → Approve: immutable child, displayed = persisted = approved, parent unchanged | pass (existing happy path already correct) | pass |
+| failed Apply with empty cue text stays unresolved, not approvable | FAIL — no error raised: empty cue filtered out and Apply "succeeded" | pass |
+| rejected word edit leaves no partial version selected/approvable | FAIL — `targetTrackId` switched to partial corrected track | pass |
+| stale Apply: newer edit retained and blocks approval | FAIL — approval allowed while Apply pending | pass |
+| stale Approve handler for unselected track does not approve | FAIL — `expected 'approved' to be 'draft'` | pass |
+| split/merge blocked while dirty, edits not discarded | FAIL — split enabled | pass |
+| V1 saved anchors unchanged/valid; correcting V2 save rejected | pass (already held; preserved) | pass |
+
+## Exact candidate and verification
+
+Candidate image `lingotorte:lt-aur1-cand`: `sha256:f4af74960f96be908e233b7eb4508ebb7174a38af7713c1e476b0b173586a980`. It was built with `docker build -q --target contributor` from this worktree, using the existing pinned Node Dockerfile and lockfile. Every run used `docker run --rm --init --network none`. There were no host mounts, published ports or host npm install.
+
+| Command (in candidate) | Result |
+| --- | --- |
+| `vitest run tests/web/dirtyTranscriptApproval.test.ts` | 27 passed, exit 0 |
+| `vitest run` (full) | 1276 passed, 1 skipped (pre-existing `privateDelivery`), exit 0 on 4 of 6 runs; see flake note |
+| `vitest run --exclude tests/web/dirtyTranscriptApproval.test.ts` | 1249 passed / 1 skipped ×3, exit 0 (matches baseline) |
+| `tsc --noEmit` | exit 0 |
+| `vite build --config vite.config.ts` | exit 0, 35 modules |
+| `vitest run tests/no-network` | 5 passed, 2 files, exit 0 |
+| `scripts/check-privacy-boundaries.mjs` | `ok: true`, exit 0 |
+| `git diff --check` (host) | exit 0 |
+
+**Flake note (open):** `tests/web/frontendUi.test.ts > imports browser-selected local media…` failed 2 of 6 full candidate runs with `currentMedia undefined`. That test waits a fixed 10 zero-delay ticks.
+
+- Results by configuration:
+  - The test passed in isolation 3/3 on both candidate and original.
+  - It passed in all 3 full runs on original source with the new test file present.
+  - It passed in 3/3 full candidate runs excluding the new test file.
+- Interpretation: the evidence suggests load or ordering sensitivity in that test's fixed tick budget when 27 extra JSDOM tests run in parallel. A product regression has not been ruled out, because the sample is small.
+- The test was not modified.
+
+The parent should decide whether this needs further investigation before acceptance.
+
+SHA256 of changed or new files:
+
+| Path | SHA256 |
+| --- | --- |
+| `apps/web/src/model.ts` | `a85f12e4aaa13311d52e61e60800bc56f3eec2b9973cca32f51ee3f1510e7152` |
+| `apps/web/src/app.ts` | `2390b020324db05d166d9ead0f2c532ae2f9ea0b88991f5ac753a0f5a07d2d0b` |
+| `tests/web/dirtyTranscriptApproval.test.ts` | `5a79409f520bf65c8164d8be4fa18c5573ded061fcc74497945f17cb43f70b2a` |
+
+Logs are in the Hermes scratch directory `lt-aur1/`: `red-build.log`, `red-tests.log`, `red-full-{1..3}.log`, `green-build.log`, `green-regression.log`, `qualification.log`, `full-{2..6}.log`, `cand-excl-{1..3}.log`, `frontendUi-*.log`. The red worktree was removed with `git worktree remove --force`.
+
+## Lane statement and limitations
+
+Execution used the Docker contributor image, network-isolated. The user authorized this lane, and it is recorded in Beads on 2026-10-12. The evidence is synthetic Linux-container Vitest/JSDOM component evidence only. It does **not** certify Windows startup/shutdown, native SQLite, Edge or any real browser, integration, deployment, or completion of the original `lt-13i`, which retains its `lt-13v` prerequisite and the integrated real-UI journey annotation.
+
+Known limits:
+
+- Pending numbers are compared exactly; no normalization policy was introduced.
+- Cue text is compared before normalization, so a whitespace-only change counts as dirty. This is fail-closed.
+- Re-keying retained edits relies on positional correspondence between parent and child cues, which holds for text/timing Apply.
+- Independent review is outstanding.
