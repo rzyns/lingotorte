@@ -91,6 +91,9 @@ describe('P6 frontend local practice attempts', () => {
     expect(app.textContent).toContain('Practice');
     expect(app.textContent).toContain('Your answer');
     expect(app.textContent).toContain('Submit attempt');
+    // lt-0g9: the source cue (the expected answer for a sentence card) is hidden until revealed.
+    expect(app.textContent).not.toContain(firstCue.text);
+    (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reveal answer') as HTMLButtonElement).click();
     expect(app.textContent).toContain(firstCue.text);
     expect(app.textContent).toContain(mediaPath);
     expect(app.textContent).toContain('Replay source cue');

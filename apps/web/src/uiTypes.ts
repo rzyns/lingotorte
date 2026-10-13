@@ -110,8 +110,15 @@ export type AppModel = {
   practice: {
     mode: PracticeMode;
     pendingAnswer: string;
-    lastAttemptResult: { result: PracticeResult; correct: boolean } | null;
+    /** Feedback for the most recent submission; `cardId` is the graded card, `nextCardId` the card presented after it. */
+    lastAttemptResult: { result: PracticeResult; correct: boolean; cardId?: string; expected?: string; nextCardId?: string | null } | null;
     typedAttemptsEnabled: boolean;
+    /** Card the per-card practice UI state (answer, tokens, choices, reveal) belongs to. */
+    cardId: string | null;
+    /** Answer revealed before submission; a later submit is graded as fail. */
+    revealed: boolean;
+    /** Stable multiple-choice options for `cardId`. */
+    choices: string[] | null;
     sentenceBuilder: {
       orderedTokens: string[];
       poolTokens: string[];
