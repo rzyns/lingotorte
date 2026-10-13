@@ -1,6 +1,28 @@
 # lt-0g9 — Honest practice prompts, grading and next-card state (result)
 
-Base: `main` 097fca7 (this includes the lt-2rl live clock, lt-3wr mature-due and lt-f5h practice persistence work). The changes are uncommitted and still need independent review.
+Implemented on `main` 097fca7 (this includes the lt-2rl live clock, lt-3wr mature-due and lt-f5h practice persistence work) as commit `c22caca`. The branch then merged main `401dd22` (lt-7lq, lt-3f1) and `c12780d` (import-wait de-flake). Independent review: SPEC PASS `deleg_162ab591`, QUALITY APPROVED `deleg_786957b3`.
+
+## Final integrated candidate
+
+Branch `work/lt-0g9-practice-honesty` at `e6077fd`. Image `sha256:d7707c88ef682af7a7d71aabccc559e83e7545c2a5c21ebaba57772bcfd2b2e6`. Every run used `--network none`.
+
+- Full vitest, 3 consecutive runs: 1296 passed, 1 skipped (pre-existing `privateDelivery`), all exit 0.
+- `tsc --noEmit`, vite build, `tests/no-network` and `check-privacy-boundaries`: all exit 0.
+
+Integration adjustment: `tests/web/lt7lqExportLimitsFrontend.test.ts` (commit `5a6ff87`) set `review.revealed = true` directly. lt-0g9 resets reveal state when a card is first shown, which invalidated that shortcut, so the test now clicks "Show answer / context". Its assertions are unchanged.
+
+| Path (at `e6077fd`) | SHA256 |
+| --- | --- |
+| `apps/web/src/model.ts` | `d0291692a0c234a6960a144db1f31e4530688a11d20377f9f6cf0d62732298f3` |
+| `apps/web/src/app.ts` | `4d708494e8b4c5d978c726bae5012344f5eca982af3c47d14033352b235b61ea` |
+| `apps/web/src/uiTypes.ts` | `6853534dee1f7404bd3b69307d5ab91a2abe31184e454d8d439ea0c933f43a51` |
+| `tests/web/lt0g9PracticeHonesty.test.ts` | `3abad19e3e404cf41478212e8142f9ff6ab05d58601f79ee392cf09eb28ebae0` |
+| `tests/web/liveReviewClock.test.ts` | `223ba70c7e0ae25a2f8f2aa22f305c8470f0aa4c060166f3780c05b7cf6155bc` |
+| `tests/web/matureDue.test.ts` | `5f87649d788ee7668bf4001f014bcc2f133555bb3ee5812b9c821bed0ae6095a` |
+| `tests/web/p6PracticeFrontend.test.ts` | `529bdf87fd9812e1221db86fb6b6c5502d2bf41f2962724294a54c73c007f1eb` |
+| `tests/web/lt7lqExportLimitsFrontend.test.ts` | `b70b665ed1e2f489206d8b5b0a2890e279feef3a1a863e702cbd08c2389a3dcd` |
+
+Hashes or results below this section that differ from this table describe the pre-integration candidate.
 
 ## Per-mode contract (`practiceContractFor` / `gradePracticeAnswer` in `apps/web/src/model.ts`)
 
