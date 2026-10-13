@@ -44,7 +44,28 @@ Red: the new test file was copied alone into a detached scratch worktree of `d63
 | split/merge blocked while dirty, edits not discarded | FAIL — split enabled | pass |
 | V1 saved anchors unchanged/valid; correcting V2 save rejected | pass (already held; preserved) | pass |
 
-## Exact candidate and verification
+## Final integrated candidate (supersedes the implementer image below)
+
+Implementation commit `ea5f6ee` was merged with main `c12780d`, giving `cb4c0fc`. That main merge brings in lt-7lq, lt-3f1 and the shared import-wait de-flake. The candidate branch itself does not modify `tests/web/frontendUi.test.ts`. Image `lingotorte:lt-aur1-cand` = `sha256:b25ac24fc39044bc53b10b4b4f8e7247c157d8c89b2c03c86039bad7860a47e2`. Every run used `--network none`.
+
+| Command | Result |
+| --- | --- |
+| `vitest run` (full), 6 consecutive runs | 1313 passed, 1 skipped (pre-existing `privateDelivery`); 6/6 exit 0 |
+| `tsc --noEmit` | exit 0 |
+| `vite build --config vite.config.ts` | exit 0 |
+| `vitest run tests/no-network` | exit 0 |
+| `scripts/check-privacy-boundaries.mjs` | exit 0 |
+
+| Path (at `cb4c0fc`) | SHA256 |
+| --- | --- |
+| `apps/web/src/model.ts` | `d529f1e909e098b5b321a091c6377d51f96c4041d83b9c70c8344dad7549b2ee` |
+| `apps/web/src/app.ts` | `5944541dffd04fe7abc91cc950e534f835b1fd2d06ef2f6313851b1de438d9e2` |
+| `tests/web/dirtyTranscriptApproval.test.ts` | `5a79409f520bf65c8164d8be4fa18c5573ded061fcc74497945f17cb43f70b2a` |
+| `tests/web/frontendUi.test.ts` (from main `c12780d`, not changed by this branch) | `edd0fcc73222224aab90f8dff9c9703ca19c41bd5970649cd91e1d4be53a1565` |
+
+The flake below is **resolved**. The failing frontendUi import tests waited a fixed 10 zero-delay ticks for an import that awaits File reads and a WebCrypto digest. Under full-suite load that wait was not always long enough. The same failure was reproduced on an lt-2t4 tree that did not contain this candidate (1 of 8 full runs, `expected undefined to be 'owned-clip'`), so it is not a product regression from this change. Main `c12780d` replaced all five fixed-tick import waits with a bounded `vi.waitFor` (5 s) and changed no assertions. Main plus that fix passed 6/6 full runs. The merged candidate above passed 6/6.
+
+## Implementer candidate (historical, pre-sync)
 
 Candidate image `lingotorte:lt-aur1-cand`: `sha256:f4af74960f96be908e233b7eb4508ebb7174a38af7713c1e476b0b173586a980`. It was built with `docker build -q --target contributor` from this worktree, using the existing pinned Node Dockerfile and lockfile. Every run used `docker run --rm --init --network none`. There were no host mounts, published ports or host npm install.
 
@@ -59,16 +80,16 @@ Candidate image `lingotorte:lt-aur1-cand`: `sha256:f4af74960f96be908e233b7eb4508
 | `scripts/check-privacy-boundaries.mjs` | `ok: true`, exit 0 |
 | `git diff --check` (host) | exit 0 |
 
-**Flake note (open):** `tests/web/frontendUi.test.ts > imports browser-selected local media…` failed 2 of 6 full candidate runs with `currentMedia undefined`. That test waits a fixed 10 zero-delay ticks.
+**Flake note (resolved; see the final integrated candidate above):** `tests/web/frontendUi.test.ts > imports browser-selected local media…` failed 2 of 6 full candidate runs with `currentMedia undefined`. That test waits a fixed 10 zero-delay ticks.
 
 - Results by configuration:
   - The test passed in isolation 3/3 on both candidate and original.
   - It passed in all 3 full runs on original source with the new test file present.
   - It passed in 3/3 full candidate runs excluding the new test file.
 - Interpretation: the evidence suggests load or ordering sensitivity in that test's fixed tick budget when 27 extra JSDOM tests run in parallel. A product regression has not been ruled out, because the sample is small.
-- The test was not modified.
+- The candidate branch did not modify the test; the shared de-flake landed on main `c12780d`.
 
-The parent should decide whether this needs further investigation before acceptance.
+Parent investigation identified the fixed-tick wait as the cause (see above).
 
 SHA256 of changed or new files:
 
