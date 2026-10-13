@@ -50,8 +50,10 @@ PHASES = (
     ('restore-03-export-merge-preview-no-effect', 'lt-2t4', 3),
     ('restore-04-merge-twice-idempotent', 'lt-2t4', 4),
     ('restore-05-empty-replace-readback', 'lt-2t4', 5),
-    ('restore-06-reload-restart-repair', 'lt-2t4', 6),
+    # Step 7 runs before step 6: tab B must still hold its pre-restart capability so it can save with a
+    # genuinely stale revision (re-pairing after the restart would refresh B's revision by design).
     ('restore-07-second-tab-stale-409', 'lt-2t4', 7),
+    ('restore-06-reload-restart-repair', 'lt-2t4', 6),
     ('restore-08-kill-during-commit-unknown', 'lt-2t4', 8),
     ('restore-09-foreign-null-origin', 'lt-2t4', 9),
     ('restore-10-wrong-capability-generic', 'lt-2t4', 10),

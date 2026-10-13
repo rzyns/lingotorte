@@ -481,6 +481,18 @@ class Run1CorrectionTests(Base):
         self.assertNotIn('element', end); self.assertNotIn(SECRET, j.path.read_text())
         self.assertIn("split('|')", live.INVOKE_FN)
 
+    def test_restore_07_runs_before_restart_and_saves_without_repair(self):
+        # Run 3: re-pairing tab B after the step-6 restart refreshed its revision, so the 'stale' save was not stale
+        # (server correctly returned 400 for history resurrection, not 409). Step 7 must run before the restart and
+        # save without re-pairing; the keep-browser re-pair is then checked separately for refused resurrection.
+        order = [p for p, _, _ in c.PHASES]
+        self.assertLess(order.index('restore-07-second-tab-stale-409'), order.index('restore-06-reload-restart-repair'))
+        src = (KIT / 'live-batch.py').read_text(encoding='utf-8')
+        body = src.split('def phase_restore_07_second_tab_stale_409', 1)[1].split('def phase_restore_08', 1)[0]
+        self.assertLess(body.index("self.invoke('save')"), body.index("self.pair('B', choice='browser')"))
+        self.assertIn("'keep-browser-resurrection-refused'", body)
+        self.assertIn("k['putStatus'] == 400", body)
+
     def test_restore_07_cascades_when_04_or_05_not_pass(self):
         for failed in ('restore-04-merge-twice-idempotent', 'restore-05-empty-replace-readback'):
             j = c.Journal(self.dir / (failed + '.jsonl'))

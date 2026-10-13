@@ -410,11 +410,19 @@ class BatchDriver:
     def phase_restore_07_second_tab_stale_409(self):
         P = 'restore-07-second-tab-stale-409'
         before = self.oracle()
-        self.pair('B', choice='browser')  # capability rotated: re-pair, keep stale browser work
+        # Tab B paired in step 2 and still holds that revision (no restart yet): an ordinary save is a stale writer.
+        self.tab('B')
         s = self.invoke('save')
         after = self.oracle()
         self.ok(P, 'stale-save-409-visible', s['putStatus'] == 409 and s['conflict'], status=s['putStatus'])
         self.ok(P, 'no-resurrection', after['learner'] == before['learner'] and after['revision'] == before['revision'] and after['tablesSha256'] == before['tablesSha256'], oracle={'revision': after['revision']})
+        # Explicit 'Keep browser work' re-pair refreshes B's revision by design; the server must still refuse to
+        # reactivate history that step 5's replace made inactive (ordinary save cannot resurrect; explicit restore required).
+        self.pair('B', choice='browser')
+        k = self.invoke('save')
+        kept = self.oracle()
+        self.ok(P, 'keep-browser-resurrection-refused', k['putStatus'] == 400 and k['sync'] == 'error', status=k['putStatus'])
+        self.ok(P, 'keep-browser-no-effect', kept['learner'] == before['learner'] and kept['revision'] == before['revision'] and kept['tablesSha256'] == before['tablesSha256'], oracle={'revision': kept['revision']})
         self.tab('A')
 
     def phase_restore_08_kill_during_commit_unknown(self):

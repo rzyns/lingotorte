@@ -191,3 +191,12 @@ Residual for run 3:
 * The restore commit and approve paths are JSDOM-proven, not browser-proven.
 * restore-08 now cascades if 05 or 06 fails.
 * The real fixture's drop-ack kill may leave tab A's binding `unknown` after restore-08. restore-10 re-pairs and only previews, but a still-unknown binding would surface there as `DomButton|previewRestore|disabled` (product-correct outcome-unknown gate). If that happens, decide whether reconnect/readback reconciliation (model.ts `reconcileRestoreState`) ran during the restore-08 re-pair.
+
+## Run 3 result and correction
+
+Run 3 (harness `4fd12c5`, image `sha256:db1da62f6b30…`, rows `2885361b…`, scratch `browser-batch/live-12bd4f64b5f7`): **all phases PASS except restore-07**. relink-04 remains OBSERVED. Strict cleanup PASS.
+
+- restore-07 got **400**, not 409. The stale tab B re-paired with "Keep browser work" *after* step 6's restart. Re-pairing refreshes B's revision by design, so the save was no longer a stale writer. The server instead refused it with 400 because the save would reactivate history that step 5's replace had made inactive ("Explicit restore required to reactivate inactive history"). That is a correct product refusal: no state changed (oracle unchanged). It is not the 409 the phase claimed to test.
+- **Correction (harness):** step 7 now runs before the step-6 restart (step numbers unchanged).
+  - Tab B saves **without re-pairing**, and the save must get 409 plus a visible conflict with no state change.
+  - Tab B then re-pairs with "Keep browser work" and saves again. That save must get 400 (refused resurrection), again with no state change.
