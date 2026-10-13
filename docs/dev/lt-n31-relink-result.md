@@ -66,3 +66,17 @@ The runbook allows the pairing capability to be retrieved only in a private inte
 - Name matching uses the handle name when the asset is handle-sourced; otherwise it compares the title derived from the file name. Plain-input assets with `blob:` labels are therefore matched by title.
 - The conflict choice for the persistent-handle import retries with the last picked handle. The pending choice is held in module state (not persisted) and is cleared by any successful import.
 - `restoreBrowserMediaHandle` skips the fingerprint check for legacy/non-canonical hash values.
+
+## Post-review integration (spec PASS `deleg_350f445c`, quality APPROVED `deleg_5a9e6411`)
+
+Two quality notes were applied before merge:
+
+- The conflict prompt uses `role="alert"` with ordinary inline buttons instead of an unnamed, unfocused `alertdialog`.
+- The `originalPath` precedence is now explicitly parenthesized. Behaviour is unchanged.
+
+Main `0506110` (lt-0g9 and lt-aur.1) merged in cleanly, giving `d1de526`. Image `sha256:adaa676f266b30572ac64538845f96a31a0e6162d6d781a20677884ae5825b34`, `--network none`:
+
+- Full suite, 3/3 runs: 1333 passed, 1 skipped (pre-existing).
+- tsc, build, no-network and privacy checks: all exit 0.
+
+**Issue closure remains open.** The acceptance clause "isolated real-browser restart/permission evidence" has not been executed.
