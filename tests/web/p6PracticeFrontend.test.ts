@@ -205,7 +205,7 @@ describe('P6 frontend export / import local learner state', () => {
     renderExportImport(model);
 
     const app = document.getElementById('app')!;
-    expect(app.textContent).toContain('Metadata backup v1 ready:');
+    expect(app.textContent).toContain('Learner-state export v1 ready:');
     expect(app.textContent).toContain('records');
     expect(app.textContent).toContain('privacy');
     expect(app.textContent).toContain('manifest integrity verified');

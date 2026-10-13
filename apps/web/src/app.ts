@@ -792,6 +792,8 @@ function renderPracticeView(model: AppModel): HTMLElement {
     sourceNote.className = 'meta';
     appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
     context.appendChild(sourceNote);
+  } else {
+    context.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));
   }
   section.appendChild(context);
 
@@ -813,7 +815,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
   section.appendChild(h2);
 
   const intro = document.createElement('p');
-  intro.textContent = 'Metadata backup v1 is local-only JSON: it includes learner state, cue text, notes, timestamps, review/practice history, content hashes, and media references, but it does not copy media files or contact cloud providers.';
+  intro.textContent = 'Learner-state export v1 (learner subset) is local-only JSON. Included: saved items, saved occurrences, review cards, review-card states, active review events and active practice attempts, with their captured source context (cue references, media paths, content hashes, notes and timestamps). Excluded: media files, media assets/observations, subtitle tracks, cues, word timings, retained inactive review/practice audit, import/export jobs and provider policy. It is not a full backup or full recovery; it copies no media and contacts no cloud providers.';
   section.appendChild(intro);
 
   const exportGroup = document.createElement('div');
@@ -841,7 +843,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
     const summary = document.createElement('div');
     summary.className = 'status-banner success export-summary';
     summary.setAttribute('role', 'status');
-    summary.textContent = `Metadata backup v1 ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • ${model.exportImport.lastExport.manifestIntegrityVerified ? 'manifest integrity verified' : 'manifest integrity warning'} • no media files copied`;
+    summary.textContent = `Learner-state export v1 ready: ${model.exportImport.lastExport.fileName} • ${model.exportImport.lastExport.recordCount} records • ${model.exportImport.lastExport.warningCount} privacy warnings • ${model.exportImport.lastExport.manifestIntegrityVerified ? 'manifest integrity verified (semantic integrity verified, sha256-per-record; not a physical-file check)' : 'manifest integrity warning'} • no media files copied`;
     exportGroup.appendChild(summary);
 
     const exportMetadata = document.createElement('dl');
@@ -854,7 +856,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
     const exportNote = document.createElement('p');
     exportNote.className = 'meta';
-    exportNote.textContent = 'Download or choose a file explicitly. File System Access saves are verified by readback; browser downloads are not read back by Lingotorte.';
+    exportNote.textContent = 'Physical-file verification is separate: download or choose a file explicitly. File System Access saves are verified by readback; browser downloads are not read back by Lingotorte.';
     exportGroup.appendChild(exportNote);
 
     const downloadBtn = document.createElement('button');
@@ -915,7 +917,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
       const verifyBanner = document.createElement('div');
       verifyBanner.className = 'status-banner success export-verified';
       verifyBanner.setAttribute('role', 'status');
-      verifyBanner.textContent = `Verified: ${model.exportImport.lastSaveVerified.fileName} saved and readback matched at ${model.exportImport.lastSaveVerified.verifiedAt}. This verifies the JSON backup file only; media files remain referenced, not copied.`;
+      verifyBanner.textContent = `Verified: ${model.exportImport.lastSaveVerified.fileName} saved and readback matched at ${model.exportImport.lastSaveVerified.verifiedAt}. This verifies the learner-state JSON file only; media files remain referenced, not copied.`;
       exportGroup.appendChild(verifyBanner);
     }
   }
@@ -992,7 +994,7 @@ function renderExportImportView(model: AppModel): HTMLElement {
 
     const modeNote = document.createElement('p');
     modeNote.className = 'meta';
-    modeNote.textContent = 'Metadata-only restore preview: no media files are copied or restored. Existing media references may need relinking after import.';
+    modeNote.textContent = 'Metadata-only restore preview: no media files are copied or restored. Existing media references may need relinking after import. Scope: learner subset only (saved items, saved occurrences, review cards, review-card states, review events, practice attempts); library, media, cues, word timings, jobs and provider policy are not restored. Semantic integrity is not physical-file or durable-save verification.';
     previewPanel.appendChild(modeNote);
 
     const counts = model.exportImport.preview.counts;
@@ -1237,6 +1239,12 @@ function renderRestoreReceipt(receipt: NonNullable<AppModel['exportImport']['las
   mediaNote.textContent = 'No media files were copied or restored. Media references may need relinking after import.';
   container.appendChild(mediaNote);
 
+  const scopeNote = document.createElement('p');
+  scopeNote.className = 'meta';
+  scopeNote.dataset.testid = 'restore-receipt-scope';
+  scopeNote.textContent = 'Learner subset restored; not a full recovery: library, media, cues, jobs and provider policy were not restored, so missing source media/cues remain unresolved until re-imported or relinked. Retained inactive audit stays local and is not included in learner export.';
+  container.appendChild(scopeNote);
+
   return container;
 }
 
@@ -1339,6 +1347,15 @@ function mediaLabel(model: AppModel, fallbackPath?: string): string {
   if (fallbackPath) return compactPathLabel(fallbackPath);
   if (model.currentMedia?.originalPath) return compactPathLabel(model.currentMedia.originalPath);
   return 'No media loaded';
+}
+
+function renderUnresolvedSource(mediaPath: string): HTMLElement {
+  const note = document.createElement('p');
+  note.className = 'status-banner warning source-unresolved';
+  note.setAttribute('role', 'status');
+  note.dataset.testid = 'source-unresolved';
+  appendSourceDisclosure(note, `Source cue/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
+  return note;
 }
 
 function appendSourceDisclosure(container: HTMLElement, summaryText: string, detailText: string): void {
@@ -3900,6 +3917,8 @@ function renderReviewView(model: AppModel): HTMLElement {
       appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
+    } else {
+      reveal.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));
     }
     section.appendChild(reveal);
   }
