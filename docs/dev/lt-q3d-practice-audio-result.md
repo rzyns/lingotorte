@@ -77,3 +77,15 @@ Image `lingotorte:lt-q3d-cand` = `sha256:b4fe79b8e09de357eb4751b0d090bfcaec776a8
 - JSDOM with fake fetch and fake `URL.createObjectURL`/`revokeObjectURL`: this is not real audio decoding, browser autoplay policy or a real local service.
 - The "wake to a new card" case is simulated by setting `review.activeCardId` and rerendering, not by firing the lt-2rl timer. Same-card wake is simulated as repeated `rerenderApp`.
 - Leaving Practice is enforced on the next `renderApp`. A tab close or unload without a rerender relies on browser teardown of blob URLs.
+
+## Integrated candidate (SPEC PASS + QUALITY APPROVED `deleg_784433a4/task0`)
+
+Implementation committed and merged with main `168b711` (`1f6c162`). Image `sha256:b7dddae716827c99f51cce1d767eb1e723f3c07669d34aec8e2f961463aedceb`, `--network none`:
+
+- Full suite, 3/3 runs: 1351 passed, 1 skipped (pre-existing).
+- tsc, build, no-network and privacy checks: all exit 0.
+
+Follow-ups (non-blocking):
+- Share one guard helper between Player and Practice.
+- Avoid accumulating `onInvalidate` listeners per Prepare click.
+- Consider revoking object URLs on `pagehide`.
