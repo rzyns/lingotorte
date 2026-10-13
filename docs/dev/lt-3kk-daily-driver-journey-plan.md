@@ -33,7 +33,7 @@ One fresh store, one service, one tab `J` (plus `JF` on the owned foreign origin
 | journey-09-persist-reload-repair | Save, reload the page, re-pair ("Load service state"). | Journey projection (IDs, card states, review events, attempts, anchors) and revision identical; anchors equal journey-04's; Saved lists ≥3 occurrences. | Live server |
 | journey-10-relink-restart-reselect | Restart the service (capability rotates), reload, re-pair, reselect the same media + SRTs through the file inputs. | Re-paired after rotation; no name conflict; media and track sets identical; occurrences, cards and attempts identical. | Live server |
 | journey-11-export-restore-merge | **Generate local export** → **Download export JSON** (blob text captured in page memory only) → paste into `#import-manifest` → **Preview restore** → Merge → **Refresh authoritative service preview** → acknowledge warnings → **Restore now**. | Export captured; preview integrity verified; durable receipt, commit 200, readback GET after the commit, exactly 1 commit, no `role=alert` banner; the post-merge journey projection equals both pre-merge and post-relink. | Live server |
-| journey-12-unsupported-codec-feedback | Library: import a 64-byte local file named `.webm` that is not a media container (built in owned scratch, no download), then open Player. | `<video>` error code is OBSERVED. Assertion: visible **and** accessible (`role=alert/status`) media-error feedback. **Expected FAIL at this revision** (G2). | Live browser |
+| journey-12-unsupported-codec-feedback | Library: import a 64-byte local file named `.webm` that is not a media container (built in owned scratch, no download), then open Player. | `<video>` error code is OBSERVED. Assertion: visible **and** accessible (`role=alert/status`) media-error feedback. G2 fixed by lt-r4k.1 (merged before the live run). | Live browser |
 | journey-13-keyboard-focus | From nav **Player**, 40 × CDP Tab. | Tab reaches {Library, Review, Practice, Settings, Analyse words, Save sentence}; every focus stop matches `:focus-visible` with a computed outline or box-shadow; focus was not on `body` after Apply, Approve, grade, practice submit, practice choice or Analyse (≥5 recorded). | Live browser (live-only) |
 | cleanup | Unchanged: page cleanup → release → close own targets → `Target.getTargets` readback; fixture `stop` (graceful per listener, 0 sockets); exact-name `docker ps -a` readback. A forced closure is a strict failure. | | Live |
 
@@ -73,7 +73,7 @@ The guard is re-run after the journey, so `sourceAndKitUnchanged` covers the tre
 | `node --check` on all 5 kit `.mjs` in `lingotorte:lt3kk` (`--network none`) | all OK, exit 0 |
 | JSDOM probe (real app modules + real `dom-batch.mjs` + `dom-journey.mjs`, in-memory SQLite, no listener) in Docker `--network none` | 1/1 pass, exit 0 (see below) |
 
-New tests cover: phase binding and order; DEPENDS that point only backwards and stay inside the journey; a cascade that never runs dependents and has no hidden retry; the journey excluded from the default selection and required to run alone; exact-revision syntax; unauthorized `run_live` → `PermissionError` with zero spawned processes; revision guard accept and refusals (HEAD drift, dirty tree, image mismatch); an image-hash container with no mounts; a locally built undecodable fixture; capability, free text and non-ASCII refused by the journal; no typed answer or cue text in any journal call; no `'PASS'` literal in journey code; strict cleanup and the no-prune check unchanged; every UI string in `dom-journey.mjs` present in the app sources; no production imports; G2 still present.
+New tests cover: phase binding and order; DEPENDS that point only backwards and stay inside the journey; a cascade that never runs dependents and has no hidden retry; the journey excluded from the default selection and required to run alone; exact-revision syntax; unauthorized `run_live` → `PermissionError` with zero spawned processes; revision guard accept and refusals (HEAD drift, dirty tree, image mismatch); an image-hash container with no mounts; a locally built undecodable fixture; capability, free text and non-ASCII refused by the journal; no typed answer or cue text in any journal call; no `'PASS'` literal in journey code; strict cleanup and the no-prune check unchanged; every UI string in `dom-journey.mjs` present in the app sources; no production imports; G2/G3 fixes present.
 
 **JSDOM probe result** (scratch `lt3kk/probe/lt3kkProbe.test.ts`; `activate-fallback` = click on the focused control replaces CDP Enter). It runs the full sequence pair → import (1 media; target and native both `approved`, F1) → gated draft (`draft`/`youtube-auto-caption`) → edit → Apply → Approve (corrected `manual-edit` track `approved`, V1 stays `draft`) → word ×2 + sentence (spans 5–10, 13–17, 0–18) → 3 cards via Create review card → Review reveal + Good (1 card `learning`, reps 1) → typed pass + multiple-choice fail (both persisted with FSRS) → Analyse (status role/live, meanings text; source = browser estimate because the probe has no Morfeusz service) → UI export captured (14.6 KB) → preview (integrity, conflict choice shown) → merge commit 200 with durable receipt and readback → projection unchanged. Defects it found and that are now fixed in the kit: cue editor ids follow `cueIndex` (provider drafts start at 1, not 0); `save` navigates away from Library/Practice; the selection gesture shows no preview; cards need an explicit **Create review card** on two Saved tabs.
 
@@ -109,9 +109,9 @@ print(result)   # sanitized only
 
 ## Residual risks for the first live run
 
-- **journey-12 is expected to FAIL (G2).** It is independent, and no other phase depends on it.
+- **journey-12:** G2 was fixed by lt-r4k.1; the real-browser behaviour is unproven until this run.
 - **Practice card order.** If two `new` cards share a `dueAt` millisecond (word saves in quick succession), journey-06 fails with `active-card-determinable` rather than guessing. That is a harness limitation, not a product defect.
-- **journey-13** is expected to FAIL on focus loss (G3). It also needs `:focus-visible` to match after programmatic `focus()` + Tab. Chrome sets focus-visible on keyboard navigation, but the first stop after a programmatic focus may differ.
+- **journey-13:** G3 was fixed by lt-r4k.2 in JSDOM; this run is the first real-browser check. It also needs `:focus-visible` to match after programmatic `focus()` + Tab. Chrome sets focus-visible on keyboard navigation, but the first stop after a programmatic focus may differ.
 - **Restore preview** shows a conflict choice when merging the journey's own records (JSDOM: `conflictChoice: true`). `restore-commit` ticks Merge, and the merge result equalled the pre-merge projection in JSDOM.
 - **Revision guard:** if the Dockerfile's install step rewrites any tracked file under `/app` (for example `vendor/**/dist`), `ImageSourceMismatch` refuses the run. That is the intended behaviour, but it needs a one-time check against a real build.
 - `Input.insertText` / `dispatchKeyEvent` require that the `cdp()` helper routes `session_id` for `Input.*` (it does for all non-`Target.`/`Browser.` methods).
@@ -119,3 +119,9 @@ print(result)   # sanitized only
 ## Run results
 
 _(empty — no live run has been executed)_
+
+## Gap resolution before the first live run (2026-10-13)
+
+- **G2** became `lt-r4k.1`, which is merged. The Player shows a `role=alert` message on media errors; after the first render it uses `role=status`.
+- **G3** became `lt-r4k.2`, which is merged. `requestFocusAfterRender` moves focus to a successor after Approve, Rate, Submit, multiple-choice and Skip.
+- **G1** (the gated demo draft creates its own `youtube:` media item) remains a documented gap pending Janusz's choice, together with F1.

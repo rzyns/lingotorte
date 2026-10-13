@@ -232,12 +232,13 @@ class SourceTraceTests(unittest.TestCase):
         self.assertNotIn('apps/web/src', js)
         self.assertNotIn('__lingotorte', js)
 
-    def test_known_product_gap_still_present(self):
-        """journey-12 expects a FAIL live: no <video> 'error' listener in app.ts at this revision."""
+    def test_g2_g3_fixes_present(self):
+        """G2/G3 were fixed by lt-r4k.1/.2 before the live run; journey-12/13 now assert the fixed behaviour."""
         app = (APP / 'app.ts').read_text(encoding='utf8')
         stage = app[app.index('function renderVideoStage'):app.index('function renderEmptyVideoPlaceholder')]
-        self.assertNotIn("addEventListener('error'", stage)
-        self.assertNotIn('onerror', stage)
+        self.assertIn("addEventListener('error'", stage)
+        self.assertIn('media-error-alert', stage)
+        self.assertIn('export function requestFocusAfterRender', app)
 
 
 if __name__ == '__main__':
