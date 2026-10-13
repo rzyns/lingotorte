@@ -200,3 +200,28 @@ Run 3 (harness `4fd12c5`, image `sha256:db1da62f6b30…`, rows `2885361b…`, sc
 - **Correction (harness):** step 7 now runs before the step-6 restart (step numbers unchanged).
   - Tab B saves **without re-pairing**, and the save must get 409 plus a visible conflict with no state change.
   - Tab B then re-pairs with "Keep browser work" and saves again. That save must get 400 (refused resurrection), again with no state change.
+
+## Run 4 result (qualifying receipt)
+
+Run 4 used harness `112efb2` and image `sha256:97ae4b0c1a471abf804cf97cf76ccc2416c5b3a1845646b41be21d6341df1628`. The browser was real Chrome driven over CDP from the Windows host, on the loopback dev origin. The fixture container held synthetic media read-only, with providers off. Journal `rows.jsonl` has sha256 `513a453c8278aaca3b3343c2d5b32a6c8de8240ef14f625bba0d4886adb4d570`, in scratch at `browser-batch/live-2826d27f3eb0`.
+
+**Result: ok = true.** All 16 asserted phases passed, 0 failed and 0 were skipped; relink-04 is OBSERVED.
+
+- **lt-2t4:** steps 01–10 all passed.
+  - Merge run twice was idempotent.
+  - The empty replace showed success only after durable readback.
+  - Stale second tab: 409 with a visible conflict and no effect. Keeping browser work and re-pairing was then refused with 400, again with no effect.
+  - Restart plus capability rotation, then re-pair, worked.
+  - Kill during commit: the upstream committed, the browser showed outcome-unknown, there was no replay, and readback reconciled.
+  - Foreign and null-origin attacks on restore preview/commit got 403 from the server with the server state unchanged.
+  - A wrong capability produced the generic error.
+- **lt-n31:** relink 01–03 passed and 04 is OBSERVED.
+- **lt-13i:** transcript 01–03 passed. Each of the six fields blocked approval in the real UI. Apply, inspect and Approve all worked. The approval and the V1 track persisted across save and reload, and anchors were unchanged.
+- **Cleanup:** strict pass. Every server stopped gracefully with 0 sockets, and the container is gone.
+- **Capability:** never in output, logs, argv, env or files.
+
+**Limits:**
+- The kill was in-process, not a hard crash.
+- The native file chooser and persistent-handle permission prompt were not driven; files were supplied via CDP.
+- Only the loopback secure context was tested, not the plain-HTTP LAN origin.
+- Chrome only; no Edge.
