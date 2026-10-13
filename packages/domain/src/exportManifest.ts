@@ -34,6 +34,14 @@ import type {
 import { validateSavedOccurrenceSourceContext } from './sourceContext.ts';
 
 const CURRENT_SCHEMA_VERSION = 'lingotorte.learner-export.v1' as const;
+
+/**
+ * lt-7lq: the v1 learner export is an active-only learner subset, not a full backup.
+ * `sourceContexts` is a supporting decode dictionary, not an independent collection.
+ * Every other LocalStore collection (library, media, audit, jobs, policy) is excluded.
+ */
+export const LEARNER_EXPORT_INCLUDED_COLLECTIONS = ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'reviewEvents', 'practiceAttempts'] as const;
+export const LEARNER_EXPORT_EXCLUDED_COLLECTIONS = ['mediaAssets', 'mediaObservations', 'subtitleTracks', 'cues', 'transcriptWordTimings', 'learnerAudit', 'exportJobs', 'providerPolicies', 'importJobs', 'importJobEvents'] as const;
 // Retain the verified wire spelling for legacy decoders without rewriting supplied integrity.
 // A mutated decoded object never inherits this validation evidence.
 const verifiedWire = new WeakMap<object, { fingerprint: string; wire: unknown }>();

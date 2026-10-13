@@ -176,7 +176,7 @@ describe('P6 frontend local practice attempts', () => {
     const { networkAttempts } = await withNoNetwork(async () => {
       const { model } = (await createPracticeModel()).value;
       renderPractice(model);
-      submitPracticeAttempt(model, 'Cześć, to jest lokalny test.', model.review.bucketAsOf);
+      submitPracticeAttempt(model, 'Cześć, to jest lokalny test.', model.clock());
       rerenderApp(model);
       return model;
     });
@@ -205,7 +205,7 @@ describe('P6 frontend export / import local learner state', () => {
     renderExportImport(model);
 
     const app = document.getElementById('app')!;
-    expect(app.textContent).toContain('Metadata backup v1 ready:');
+    expect(app.textContent).toContain('Learner-state export v1 ready:');
     expect(app.textContent).toContain('records');
     expect(app.textContent).toContain('privacy');
     expect(app.textContent).toContain('manifest integrity verified');

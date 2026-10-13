@@ -100,11 +100,12 @@ export type AppModel = {
     pendingWordTimingEdits: Record<string, { text: string; startMs: number; endMs: number }>;
     lastMessage: string | null;
   };
+  /** Live, injectable clock read at every review/practice query and submission boundary. */
+  clock: () => Date;
   review: {
     currentCardId: string | null;
     activeCardId: string | null;
     revealed: boolean;
-    bucketAsOf: Date;
   };
   practice: {
     mode: PracticeMode;
