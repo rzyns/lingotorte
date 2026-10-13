@@ -29,6 +29,7 @@ Every request goes through `admit()` (`requestAdmission.ts`) before `dispatch`. 
 | `/api/jobs/{uuid}/cancel` | POST | yes | required | **no web call site** (transport allowlists it) |
 | `/api/snippets/{uuid}` | GET, DELETE | yes | required | `sourceAudioSnippet.ts` fetch then DELETE |
 | `/api/artifacts/cleanup` | POST | yes | required | **no web call site** (transport allowlists it) |
+| `/api/language/morphology` (lt-elf) | POST | yes | required | `morphologyClient.ts` (no UI caller until lt-e8z); stateless, 16 KiB body cap |
 
 Client side: every local-service request goes through `pairedTransport.request()`. It checks the path against an allowlist that matches the server table above (health excluded), attaches the bearer, and forces the JSON content type. The only direct `fetch` is `model.ts:1048` (`browserFixtureMediaUrl`, a same-origin static fixture, not the service).
 

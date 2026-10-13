@@ -3,6 +3,8 @@ import { isIP } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const MAX_BODY_BYTES = 5 * 1024 * 1024;
+/** lt-elf: per-route body caps tighter than the gate-wide MAX_BODY_BYTES. */
+export const ROUTE_BODY_LIMITS: Readonly<Record<string, number>> = Object.freeze({ '/api/language/morphology': 16 * 1024 });
 export class AdmissionError extends Error {
   readonly status: number;
   constructor(status: number, message = 'Request rejected.') { super(message); this.status = status; }
@@ -67,6 +69,7 @@ export function routeMethods(path: string): readonly string[] | undefined {
   if (path === '/api/state') return ['GET', 'PUT'];
   if (path === '/api/restore/preview' || path === '/api/restore/commit') return ['POST'];
   if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
+  if (path === '/api/language/morphology') return ['POST'];
   if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
   if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];
   if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];
@@ -126,14 +129,15 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
     return { path, preflight: true };
   }
   if (!json) return { path, preflight: false };
-  if (Number(fields.get('content-length')?.[0] ?? 0) > MAX_BODY_BYTES) throw new AdmissionError(413);
+  const limit = ROUTE_BODY_LIMITS[path] ?? MAX_BODY_BYTES;
+  if (Number(fields.get('content-length')?.[0] ?? 0) > limit) throw new AdmissionError(413);
   if (expectContinue) response.writeContinue();
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += bytes.length;
-    if (size > MAX_BODY_BYTES) throw new AdmissionError(413);
+    if (size > limit) throw new AdmissionError(413);
     chunks.push(bytes);
   }
   let body: unknown;

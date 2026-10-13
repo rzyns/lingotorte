@@ -28,6 +28,7 @@ import {
   type LocalAsrTranscriptionResult,
 } from '../../../packages/local-transcription/src/index.ts';
 import { importSubtitle } from '../../../packages/subtitles/src/import.ts';
+import { makeMorphologyService, validateMorphologyRequest, MorphologyValidationError, MORPHOLOGY_ROUTE, type MorphologyRuntimeOptions, type MorphologyService } from './morphology.ts';
 
 const SERVICE_NAME = 'lingotorte-local-service';
 const SERVICE_VERSION = '0.1.0';
@@ -86,6 +87,7 @@ export type LocalServiceRuntime = Readonly<{
   elevenLabsApiKey?: string;
   elevenLabsBaseUrl?: string;
   elevenLabsHttpClient?: ElevenLabsHttpClient;
+  morphology?: MorphologyRuntimeOptions;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -154,7 +156,7 @@ function publicJob(job: LocalJob): unknown {
   };
 }
 
-function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName): unknown {
+function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName, morphology: MorphologyService): unknown {
   return {
     ok: true,
     service: SERVICE_NAME,
@@ -177,6 +179,7 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
       },
     },
     persistence: persistence.status(),
+    language: { morphology: morphology.capability() },
   };
 }
 
@@ -994,6 +997,8 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     })();
   };
 
+  const morphology = makeMorphologyService(runtime.morphology);
+  morphology.warm();
   dispatch = async (request, response, path, admittedBody) => {
     try {
 
@@ -1003,7 +1008,19 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/status') {
-        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME));
+        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME, morphology));
+        return;
+      }
+
+      if (request.method === 'POST' && path === MORPHOLOGY_ROUTE) {
+        let input;
+        try { input = validateMorphologyRequest(admittedBody); }
+        catch (error) {
+          if (error instanceof MorphologyValidationError) sendJson(response, 400, { ok: false, error: error.code });
+          else sendJson(response, 200, { status: 'error', code: 'internal' });
+          return;
+        }
+        sendJson(response, 200, await morphology.analyze(input));
         return;
       }
 

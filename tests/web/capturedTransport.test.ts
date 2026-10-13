@@ -41,7 +41,7 @@ describe('captured memory-only transport', () => {
   it('enforces authenticated omitted-credentials redirect-error on every request', async () => {
     const transport = pairTransport({}, origin, SYNTHETIC_CAPABILITY);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ ok: true }));
-    for (const [path, method] of [['/api/status','GET'],['/api/state','GET'],['/api/state','PUT'],['/api/jobs','POST'],['/api/jobs/test','GET'],['/api/jobs/test/cancel','POST'],[`/api/snippets/${uuid}`,'GET'],[`/api/snippets/${uuid}`,'DELETE'],['/api/artifacts/cleanup','POST']]) {
+    for (const [path, method] of [['/api/status','GET'],['/api/state','GET'],['/api/state','PUT'],['/api/jobs','POST'],['/api/jobs/test','GET'],['/api/jobs/test/cancel','POST'],[`/api/snippets/${uuid}`,'GET'],[`/api/snippets/${uuid}`,'DELETE'],['/api/artifacts/cleanup','POST'],['/api/language/morphology','POST']]) {
       await transport.request(path!, { method: method!, ...(['POST','PUT'].includes(method!) ? { body: '{}' } : {}) }, fetcher);
     }
     for (const [, init] of fetcher.mock.calls) {

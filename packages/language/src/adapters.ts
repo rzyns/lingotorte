@@ -265,6 +265,8 @@ const morfeuszPosMap: Record<string, string> = {
   burk: 'X',
   ign: 'X',
   qub: 'PART',
+  part: 'PART',
+  impt: 'VERB',
   xxx: 'X',
 };
 
@@ -295,6 +297,9 @@ const morfeuszFeatureMap: Record<string, { key: string; value: string }> = {
   1: { key: 'Person', value: '1' },
   2: { key: 'Person', value: '2' },
   3: { key: 'Person', value: '3' },
+  pri: { key: 'Person', value: '1' },
+  sec: { key: 'Person', value: '2' },
+  ter: { key: 'Person', value: '3' },
   perf: { key: 'Aspect', value: 'Perf' },
   impef: { key: 'Aspect', value: 'Imp' },
   aff: { key: 'Polarity', value: 'Pos' },
@@ -306,6 +311,7 @@ function mapMorfeuszTag(tag: string): { upos: string; morph: { key: string; valu
   const posPart = parts[0] ?? '';
   const upos = morfeuszPosMap[posPart] ?? 'X';
   const morph: { key: string; value: string; source: 'universal-dependencies' | 'language-specific' }[] = [];
+  if (posPart === 'impt') morph.push({ key: 'Mood', value: 'Imp', source: 'language-specific' });
   for (let i = 1; i < parts.length; i++) {
     const feature = morfeuszFeatureMap[parts[i]!];
     if (feature) {
@@ -375,39 +381,53 @@ export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
           };
         }
         const results = m.analyseToArray(token.surface);
-        if (results.length === 0) {
+        // Unknown = Morfeusz's own no-reading signal: zero readings or only 'ign' readings.
+        const known = results.filter((r) => (r.tag.split(':')[0] ?? '') !== 'ign');
+        if (known.length === 0) {
           return {
             tokenIndex: token.tokenIndex,
             lemma: token.normalizedSurface,
             upos: 'X',
+            xpos: 'ign',
             morph: [],
             confidence: confidencePossible(0.3),
             alternatives: [{ lemma: token.normalizedSurface, upos: 'X', note: 'No Morfeusz analysis' }],
           };
         }
-        const first = results[0]!;
-        const { upos, morph } = mapMorfeuszTag(first.tag);
-        const lemma = first.lemma.split(':')[0] ?? first.lemma;
-        const alternatives = results.slice(1, 4).map((r) => {
+        // Readings are deduplicated on (lowercased base lemma, UPOS): proper-name lemmas that differ from a
+        // common lemma only in case (Książka:Sf vs książka) collapse onto one reading, preferring the
+        // lowercase spelling. Readings with a lowercase lemma are then ranked before capitalised (proper-name)
+        // ones, stable otherwise, so a common-noun reading is never truncated behind proper names.
+        type Reading = { lemma: string; upos: string; tag: string; morph: ReturnType<typeof mapMorfeuszTag>['morph'] };
+        const byKey = new Map<string, Reading>();
+        for (const r of known) {
+          const base = r.lemma.split(':')[0] ?? r.lemma;
           const mapped = mapMorfeuszTag(r.tag);
-          return {
-            lemma: r.lemma.split(':')[0] ?? r.lemma,
-            upos: mapped.upos,
-            note: r.tag,
-          };
-        });
+          const key = `${base.toLocaleLowerCase('pl')}\u0000${mapped.upos}`;
+          const existing = byKey.get(key);
+          const isLower = base === base.toLocaleLowerCase('pl');
+          if (!existing || (isLower && existing.lemma !== existing.lemma.toLocaleLowerCase('pl'))) {
+            byKey.set(key, { lemma: base, upos: mapped.upos, tag: r.tag, morph: mapped.morph });
+          }
+        }
+        const isLowerLemma = (l: string) => l === l.toLocaleLowerCase('pl');
+        const ranked = [...byKey.values()].map((r, i) => ({ r, i }))
+          .sort((a, b) => Number(isLowerLemma(b.r.lemma)) - Number(isLowerLemma(a.r.lemma)) || a.i - b.i)
+          .map(({ r }) => r);
+        const first = ranked[0]!;
+        const { upos, morph, lemma } = first;
+        const alternatives = ranked.slice(1, 4).map((r) => ({ lemma: r.lemma, upos: r.upos, note: r.tag }));
         const ambiguous = alternatives.length > 0 && alternatives.some((alt) => alt.upos !== upos);
-        const confidence = upos === 'X'
-          ? confidencePossible(0.35)
-          : ambiguous
-            ? confidencePossible(0.55)
-            : alternatives.length > 0
-              ? confidenceProbable(0.72)
-              : confidenceProbable(0.92);
+        const confidence = ambiguous
+          ? confidencePossible(0.55)
+          : alternatives.length > 0
+            ? confidenceProbable(0.72)
+            : confidenceProbable(0.92);
         return {
           tokenIndex: token.tokenIndex,
           lemma,
           upos,
+          xpos: first.tag,
           morph,
           confidence,
           alternatives,
@@ -415,7 +435,7 @@ export function makeMorfeuszMorphologyAdapter(): MorphologyAdapter {
       });
       const warnings: string[] = [];
       const ambiguousCount = analyses.filter((a) => a.confidence.kind === 'possible' && a.alternatives.length > 0).length;
-      const unknownCount = analyses.filter((a) => a.upos === 'X').length;
+      const unknownCount = analyses.filter((a) => a.xpos === 'ign').length;
       if (ambiguousCount > 0) {
         warnings.push(`${ambiguousCount} token(s) have ambiguous Morfeusz analyses; verify selected lemma/POS`);
       }
