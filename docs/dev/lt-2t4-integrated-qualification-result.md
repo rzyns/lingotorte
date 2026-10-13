@@ -145,3 +145,12 @@ Record HAR and server dumps per step, plus browser version and profile. Steps no
 ## 8. Independent review
 
 Not performed in this task. An independent reviewer should re-run the focused and full commands against the image ID above and inspect the new test's oracle construction.
+
+## Integrated content-bound revision
+
+Committed and merged with main `1bdeebb`, which carries lt-0g9, lt-aur.1 and lt-n31; the merge is `df5a77b`. Image `sha256:0967e5853e38f23d4e358ab22b6a2fe98e7e6f9f95d1c57e1318e8891ab1333c`, `--network none`:
+
+- Full suite, 3/3 runs: 1342 passed, 1 skipped (pre-existing private-IPC A28 gate).
+- tsc, build, no-network and privacy checks: all exit 0.
+
+Spec review (`deleg_350f445c/task1`) passed the test code; its doc findings were corrected in correction cycle 1. A re-review of the corrected doc and a quality review are still pending. The issue stays open until those reviews pass and the real-browser restore receipt (section 7 plan) is recorded.
