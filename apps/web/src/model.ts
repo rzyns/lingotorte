@@ -82,6 +82,7 @@ export function createAppModel(): AppModel {
   const store = new LocalStore();
   return {
     store,
+    clock: () => new Date(),
     savedOccurrenceService: new SavedOccurrenceService(store),
     reviewService: new ReviewService(store, defaultFsrsConfig()),
     practiceService: new PracticeService(store),
@@ -135,7 +136,6 @@ export function createAppModel(): AppModel {
       currentCardId: null,
       activeCardId: null,
       revealed: false,
-      bucketAsOf: new Date(),
     },
     practice: {
       mode: 'typed-input',
@@ -2983,6 +2983,38 @@ export function pickNextDueCard(model: AppModel, asOf: Date): { card: ReviewCard
   return candidates[0] ?? null;
 }
 
+/**
+ * The card a review/practice surface is showing: the remembered active card while it remains due,
+ * otherwise the next due card. Submissions resolve the same card so a card that becomes due between
+ * display and submit cannot be graded in place of the displayed one.
+ */
+export function resolveActiveDueCard(model: AppModel, asOf: Date): ReturnType<typeof pickNextDueCard> {
+  const activeCardId = model.review.activeCardId;
+  if (activeCardId) {
+    const buckets = listReviewBuckets(model, asOf);
+    const remembered = [...buckets.newCards, ...buckets.learning, ...buckets.review, ...buckets.relearning, ...buckets.mastered]
+      .find((cs) => cs.card.id === activeCardId);
+    if (remembered) return remembered;
+  }
+  const next = pickNextDueCard(model, asOf);
+  model.review.activeCardId = next?.card.id ?? null;
+  return next;
+}
+
+/** Earliest scheduled due instant strictly after `asOf` among eligible cards, for waking an open queue. */
+export function nextReviewDueAfter(model: AppModel, asOf: Date): Date | null {
+  const snapshot = model.store.snapshot();
+  let earliest: number | null = null;
+  for (const card of Object.values(snapshot.reviewCards)) {
+    if (card.suspendedAt !== undefined || card.deletedAt !== undefined) continue;
+    const state = snapshot.reviewCardStates[card.id];
+    if (!state) continue;
+    const due = new Date(state.dueAt).valueOf();
+    if (Number.isFinite(due) && due > asOf.valueOf() && (earliest === null || due < earliest)) earliest = due;
+  }
+  return earliest === null ? null : new Date(earliest);
+}
+
 export function submitReviewRating(model: AppModel, cardId: string, rating: Rating, reviewedAt: Date): ReviewCardState {
   const { state } = model.reviewService.submitReview(cardId, rating, reviewedAt);
   recordStudyActivity(model, 60_000);
@@ -3025,7 +3057,7 @@ export function projectPracticeAttempt(
 }
 
 export function submitPracticeAttempt(model: AppModel, answer: string, reviewedAt: Date): import('@lingotorte/domain').PracticeAttempt {
-  const active = pickNextDueCard(model, model.review.bucketAsOf);
+  const active = resolveActiveDueCard(model, reviewedAt);
   if (!active) throw new TypeError('No active card for practice attempt');
   const { result, expected } = projectPracticeAttempt(active, answer);
   const responseMs = 0;
@@ -3095,7 +3127,7 @@ export function submitSentenceBuilderAttempt(
   orderedTokens: readonly string[],
   reviewedAt: Date,
 ): import('@lingotorte/domain').PracticeAttempt {
-  const active = pickNextDueCard(model, model.review.bucketAsOf);
+  const active = resolveActiveDueCard(model, reviewedAt);
   if (!active) throw new TypeError('No active card for sentence builder attempt');
   const currentCue = model.store.getCue(active.occurrence.cueId);
   const expectedText = currentCue ? currentCue.text : active.savedItem.displayText;
@@ -3177,7 +3209,7 @@ export function recordStudyActivity(model: AppModel, timeSpentMs: number): void 
   void model;
 }
 
-export function studyMetrics(model: AppModel, asOf = new Date()): Readonly<{
+export function studyMetrics(model: AppModel, asOf = model.clock()): Readonly<{
   totalStudyTimeMs: number;
   todayStudyTimeMs: number;
   streakDays: number;
@@ -3509,6 +3541,13 @@ export function toggleReviewReveal(model: AppModel): void {
   model.review.revealed = !model.review.revealed;
 }
 
+/** Inject the review/practice clock. The default reads the live system time at each boundary. */
+export function setLearningClock(model: AppModel, clock: () => Date): void {
+  model.clock = clock;
+}
+
+/** Deterministic helper: pin the review/practice clock to one instant (tests and fixtures). */
 export function setReviewBucketAsOf(model: AppModel, asOf: Date): void {
-  model.review.bucketAsOf = asOf;
+  const pinned = asOf.valueOf();
+  setLearningClock(model, () => new Date(pinned));
 }

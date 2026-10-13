@@ -176,7 +176,7 @@ describe('P6 frontend local practice attempts', () => {
     const { networkAttempts } = await withNoNetwork(async () => {
       const { model } = (await createPracticeModel()).value;
       renderPractice(model);
-      submitPracticeAttempt(model, 'Cześć, to jest lokalny test.', model.review.bucketAsOf);
+      submitPracticeAttempt(model, 'Cześć, to jest lokalny test.', model.clock());
       rerenderApp(model);
       return model;
     });
