@@ -1722,7 +1722,25 @@ function renderVideoStage(model: AppModel): HTMLElement {
       video.currentTime = loopJump / 1000;
     }
   });
+  const mediaId = model.currentMedia.id;
+  const mediaSource = mediaPlaybackUrl(model);
+  // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
+  const isCurrentVideo = () => video.isConnected
+    && model.currentMedia?.id === mediaId
+    && mediaPlaybackUrl(model) === mediaSource
+    && document.querySelector('.video-stage video') === video;
+  video.addEventListener('error', () => {
+    if (!isCurrentVideo()) return;
+    const code = video.error?.code ?? 0;
+    model.player.mediaError = { mediaId, source: mediaSource, code, message: mediaErrorMessage(code) };
+    model.player.isPlaying = false;
+    rerenderApp(model);
+  });
   video.addEventListener('loadedmetadata', () => {
+    if (isCurrentVideo() && model.player.mediaError) {
+      model.player.mediaError = null;
+      stage.querySelector('.media-error-alert')?.remove();
+    }
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
     video.playbackRate = model.player.playbackRate;
     if (model.player.isPlaying) {
@@ -1740,6 +1758,20 @@ function renderVideoStage(model: AppModel): HTMLElement {
   });
   stage.appendChild(video);
 
+  const mediaError = model.player.mediaError;
+  if (mediaError && (mediaError.mediaId !== mediaId || mediaError.source !== mediaSource)) {
+    model.player.mediaError = null;
+  } else if (mediaError) {
+    const alert = document.createElement('p');
+    alert.className = 'status-banner error media-error-alert';
+    // Assertive role=alert only on the first render after the error; later re-renders use role=status so
+    // unrelated rerenders don't re-announce it.
+    alert.setAttribute('role', mediaError.announced ? 'status' : 'alert');
+    mediaError.announced = true;
+    alert.textContent = mediaError.message;
+    stage.appendChild(alert);
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'subtitle-overlay';
   overlay.setAttribute('aria-live', 'polite');
@@ -1752,6 +1784,18 @@ function renderVideoStage(model: AppModel): HTMLElement {
   updateOverlay(stage, model, initialCue);
 
   return stage;
+}
+
+// MediaError codes: 1 ABORTED, 2 NETWORK, 3 DECODE, 4 SRC_NOT_SUPPORTED. The codec is never guessed.
+function mediaErrorMessage(code: number): string {
+  const advice = ' The imported record is kept; relink or choose another file.';
+  switch (code) {
+    case 1: return `This media file could not load: playback was aborted before the browser finished reading it.${advice}`;
+    case 2: return `This media file could not load: the browser could not read the file (it may have moved or become unavailable).${advice}`;
+    case 3: return `This media file could not be played: the browser could not decode it (the file may be corrupt or use an unsupported codec).${advice}`;
+    case 4: return `This media file could not be played: the browser does not support its format or codec.${advice}`;
+    default: return `This media file could not be played: the browser reported an unknown media error.${advice}`;
+  }
 }
 
 function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
