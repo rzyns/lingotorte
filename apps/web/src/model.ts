@@ -3436,43 +3436,91 @@ export function setSentenceBuilderTokens(model: AppModel, poolTokens: string[], 
   model.practice.sentenceBuilder.orderedTokens = orderedTokens;
 }
 
-function computeStudyMetricsFromEvents(events: readonly { reviewedAt: string }[], asOf: Date): {
+/**
+ * Study-metrics policy (lt-8vu). All values are local estimates derived only
+ * from persisted review/practice events; nothing is tracked or uploaded.
+ *
+ * - One study action = one plain review rating, one practice attempt without a
+ *   linked review event, or one practice attempt together with the FSRS review
+ *   event it created (`eventLink.reviewEventId`). The linked pair counts ONCE.
+ * - Time is an ESTIMATE: STUDY_ESTIMATE_MS_PER_ACTION per study action; no real
+ *   time-on-task is measured.
+ * - Days are the learner's local calendar days. The default day key uses the
+ *   runtime's local zone (Date local getters); callers may inject a key such as
+ *   `timeZoneDayKey('Europe/Warsaw')` or `fixedOffsetDayKey(-300)`. Streak and
+ *   "today" compare calendar-day keys, so DST-length days are still one day.
+ */
+export const STUDY_ESTIMATE_MS_PER_ACTION = 45_000;
+
+export type StudyDayKey = (instant: Date) => string;
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+export const localDayKey: StudyDayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+export function fixedOffsetDayKey(offsetMinutesEastOfUtc: number): StudyDayKey {
+  return (d) => new Date(d.valueOf() + offsetMinutesEastOfUtc * 60_000).toISOString().slice(0, 10);
+}
+
+export function timeZoneDayKey(timeZone: string): StudyDayKey {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  return (d) => {
+    const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  };
+}
+
+function dayNumber(key: string): number {
+  const [y, m, d] = key.split('-').map(Number);
+  return Math.round(Date.UTC(y!, m! - 1, d!) / 86_400_000);
+}
+
+export function studyActionInstants(
+  reviewEvents: readonly { id: string; reviewedAt: string }[],
+  practiceAttempts: readonly { reviewedAt: string; eventLink?: { reviewEventId?: string } }[],
+): string[] {
+  const reviewIds = new Set(reviewEvents.map((e) => e.id));
+  const linked = new Set<string>();
+  for (const a of practiceAttempts) {
+    const id = a.eventLink?.reviewEventId;
+    if (id !== undefined && reviewIds.has(id)) linked.add(id);
+  }
+  return [
+    ...reviewEvents.filter((e) => !linked.has(e.id)).map((e) => e.reviewedAt),
+    ...practiceAttempts.map((a) => a.reviewedAt),
+  ];
+}
+
+export function computeStudyMetricsFromEvents(
+  actionInstants: readonly string[],
+  asOf: Date,
+  dayKey: StudyDayKey = localDayKey,
+): {
   totalStudyTimeMs: number;
   todayStudyTimeMs: number;
   streakDays: number;
   lastStudyDate: string | null;
 } {
-  // Deterministic daily study time estimate: 45 seconds per event.
-  const studyTimePerEventMs = 45_000;
-  const todayIso = asOf.toISOString().slice(0, 10);
-  const uniqueDates = new Set(events.map((e) => e.reviewedAt.slice(0, 10)));
-  const sortedDates = [...uniqueDates].sort();
-  const lastStudyDate = sortedDates[sortedDates.length - 1] ?? null;
+  const todayKey = dayKey(asOf);
+  const keys = actionInstants.map((t) => dayKey(new Date(t)));
+  const sortedDays = [...new Set(keys.map(dayNumber))].sort((x, y) => x - y);
+  const lastDay = sortedDays[sortedDays.length - 1];
+  const lastStudyDate = lastDay === undefined ? null : keys.find((k) => dayNumber(k) === lastDay)!;
 
   let streakDays = 0;
-  if (lastStudyDate !== null) {
-    const lastDate = new Date(lastStudyDate);
-    const diffMs = new Date(todayIso).valueOf() - lastDate.valueOf();
-    const diffDays = Math.round(diffMs / 86_400_000);
+  if (lastDay !== undefined) {
+    const diffDays = dayNumber(todayKey) - lastDay;
     if (diffDays === 0 || diffDays === 1) {
       streakDays = 1;
-      for (let i = sortedDates.length - 2; i >= 0; i--) {
-        const current = new Date(sortedDates[i]!);
-        const next = new Date(sortedDates[i + 1]!);
-        if (Math.round((next.valueOf() - current.valueOf()) / 86_400_000) === 1) {
-          streakDays += 1;
-        } else {
-          break;
-        }
+      for (let i = sortedDays.length - 2; i >= 0; i--) {
+        if (sortedDays[i + 1]! - sortedDays[i]! === 1) streakDays += 1;
+        else break;
       }
-    } else {
-      streakDays = 0;
     }
   }
 
-  const totalStudyTimeMs = events.length * studyTimePerEventMs;
-  const todayStudyTimeMs = events.filter((e) => e.reviewedAt.slice(0, 10) === todayIso).length * studyTimePerEventMs;
-
+  const totalStudyTimeMs = keys.length * STUDY_ESTIMATE_MS_PER_ACTION;
+  const todayStudyTimeMs = keys.filter((k) => k === todayKey).length * STUDY_ESTIMATE_MS_PER_ACTION;
   return { totalStudyTimeMs, todayStudyTimeMs, streakDays, lastStudyDate };
 }
 
@@ -3483,18 +3531,18 @@ export function recordStudyActivity(model: AppModel, timeSpentMs: number): void 
   void model;
 }
 
-export function studyMetrics(model: AppModel, asOf = model.clock()): Readonly<{
+export function studyMetrics(model: AppModel, asOf = model.clock(), dayKey: StudyDayKey = localDayKey): Readonly<{
   totalStudyTimeMs: number;
   todayStudyTimeMs: number;
   streakDays: number;
   lastStudyDate: string | null;
 }> {
   const snapshot = model.store.snapshot();
-  const events: { reviewedAt: string }[] = [
-    ...snapshot.reviewEvents,
-    ...snapshot.practiceAttempts,
-  ];
-  return computeStudyMetricsFromEvents(events, asOf);
+  return computeStudyMetricsFromEvents(
+    studyActionInstants(snapshot.reviewEvents, snapshot.practiceAttempts),
+    asOf,
+    dayKey,
+  );
 }
 
 export function formatCompactDurationMs(ms: number): string {

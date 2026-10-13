@@ -116,6 +116,7 @@ import {
   PRACTICE_SPEAKING_UNAVAILABLE,
   studyMetrics,
   formatCompactDurationMs,
+  STUDY_ESTIMATE_MS_PER_ACTION,
 } from './model';
 
 export function renderApp(model: AppModel): HTMLElement {
@@ -1489,7 +1490,11 @@ function renderStudyStatusRail(model: AppModel): HTMLElement {
   const total = formatCompactDurationMs(metrics.totalStudyTimeMs);
   const streakText = metrics.streakDays > 0 ? `🔥 ${metrics.streakDays} day streak` : '🔥 Start a streak';
   rail.appendChild(renderStatusToken(streakText, 'neutral'));
-  rail.appendChild(renderStatusToken(`today ${today} • total ${total}`, 'neutral'));
+  const timeToken = renderStatusToken(`~${today} today • ~${total} total (estimated)`, 'neutral');
+  timeToken.title = `Estimated study time: ${STUDY_ESTIMATE_MS_PER_ACTION / 1000} seconds per study action, from local events only`;
+  timeToken.setAttribute('aria-label', `Estimated study time: about ${today} today, about ${total} total`);
+  timeToken.dataset.estimate = 'true';
+  rail.appendChild(timeToken);
   rail.dataset.streakDays = String(metrics.streakDays);
   rail.dataset.todayStudyTime = today;
   rail.dataset.totalStudyTime = total;

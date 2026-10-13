@@ -424,29 +424,30 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(rail?.textContent).toContain('Start a streak');
 
     // Simulate continuing a streak from yesterday by adding a persisted review event today.
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayIso = yesterday.toISOString().slice(0, 10);
-    const todayIso = new Date().toISOString().slice(0, 10);
+    // lt-8vu: days are learner-local; seed local noon (previously UTC-slice dates, which
+    // encoded the UTC day bug and failed in far-from-UTC zones).
+    const now = new Date();
+    const localNoonIso = (offsetDays: number) =>
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays, 12).toISOString();
     // Seed an event for yesterday so the persisted-event recomputation sees a 1-day streak.
     model.store.addReviewEvent({
       id: 'event-yesterday',
       cardId: 'card-1',
-      reviewedAt: `${yesterdayIso}T12:00:00.000Z`,
+      reviewedAt: localNoonIso(-1),
       rating: 'good',
       previousStateJson: '{}',
       nextStateJson: '{}',
-      createdAt: `${yesterdayIso}T12:00:00.000Z`,
+      createdAt: localNoonIso(-1),
     } as import('../../packages/domain/src/coreTypes').ReviewEvent);
     // Add an event for today.
     model.store.addReviewEvent({
       id: 'event-today',
       cardId: 'card-1',
-      reviewedAt: `${todayIso}T12:00:00.000Z`,
+      reviewedAt: localNoonIso(0),
       rating: 'good',
       previousStateJson: '{}',
       nextStateJson: '{}',
-      createdAt: `${todayIso}T12:00:00.000Z`,
+      createdAt: localNoonIso(0),
     } as import('../../packages/domain/src/coreTypes').ReviewEvent);
     rerenderApp(model);
 
@@ -455,6 +456,10 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(railAfter?.dataset.todayStudyTime).toBe('45s');
     expect(railAfter?.dataset.totalStudyTime).toBe('1m 30s');
     expect(railAfter?.textContent).toContain('2 day streak');
+    // lt-8vu: time is visibly and accessibly labelled as an estimate.
+    expect(railAfter?.textContent).toContain('~45s today • ~1m 30s total (estimated)');
+    const estimate = railAfter?.querySelector('[data-estimate="true"]');
+    expect(estimate?.getAttribute('aria-label')).toBe('Estimated study time: about 45s today, about 1m 30s total');
   });
 
   it('transcript rows display source context for visible provenance', async () => {
