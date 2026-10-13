@@ -95,6 +95,32 @@ export async function installJourneyDriver(batch, requireUi = true) {
         n.focus(); return { ...focusInfo(), focused: document.activeElement === n };
       }
       case 'focus-info': return focusInfo();
+      case 'save-when-ready': {
+        // Live run 3: after an import with autosave on, 'Save state now' is disabled while an autosave PUT is in
+        // flight (app.ts: connecting | sync choice/conflict/saving). Bounded wait until enabled; a conflict, choice
+        // or pair-again state is a real outcome and fails with a fixed state key, never silently retried.
+        await nav('Settings');
+        const sync = () => document.querySelector('[data-local-service-sync]');
+        const blocked = () => { const n = sync(); const st = n?.dataset.syncState ?? 'idle'; const t = n?.textContent ?? '';
+          if (t.includes('Pair again')) return 'pairAgain'; if (st === 'conflict' || st === 'choice') return st; return null; };
+        const ready = () => { const b = byText('Save state now'); return !!b && !b.disabled; };
+        const end = performance.now() + Math.min(arg.ms ?? 10000, 10000); let waited = 0;
+        while (!ready() && !blocked() && performance.now() < end) { await new Promise((r) => setTimeout(r, 50)); waited += 50; }
+        const bad = blocked(); if (bad) throw diagnostic('DomButton', 'saveStateNow', bad);
+        if (!ready()) { const n = sync(); const st = n?.dataset.syncState ?? 'idle'; const t = n?.textContent ?? '';
+          throw diagnostic('DomDeadline', 'saveStateNow', t.startsWith('Connecting') ? 'connecting' : (st === 'saving' ? 'saving' : (byText('Save state now') ? 'disabled' : 'missing'))); }
+        return { ...(await base.invoke('save', {})), waitedMs: waited };
+      }
+      case 'reselect-media': {
+        // Live run 3: journey-12 leaves the undecodable fake media current (no cues). Re-select the journey's approved
+        // media through the learner UI (Saved occurrence link sets currentMedia/cues/targetTrackId), then the Player.
+        await nav('Saved'); const link = await wait(() => document.querySelector('a.occurrence-link'), 3000).catch(() => null);
+        if (!link) throw diagnostic('DomSelector', 'unlisted', 'missing');
+        link.click(); await new Promise((r) => setTimeout(r, 0));
+        await nav('Player'); await wait(() => cueRows().length > 0, 5000).catch(() => null);
+        const r0 = cueRows()[0];
+        return { cues: cueRows().length, saveSentence: !!r0 && !!byText(J.saveSentence, r0), analyseWords: !!r0?.querySelector('button.analyse-words') };
+      }
       case 'activate-fallback': { // JSDOM probe only: stands in for CDP Enter on the focused control
         const n = document.activeElement; if (!n || n === document.body) throw diagnostic('DomSelector', 'none', 'missing'); n.click(); return focusInfo();
       }

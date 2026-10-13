@@ -434,7 +434,7 @@ class BatchDriver:
 
     # Page-side deadlines for restore-commit sum to ~19 s (refresh 8 + enable 3 + commit 8); keep CDP above them
     # so slow paths surface as precise DomDeadline/DomButton tags rather than a transport timeout.
-    OP_TIMEOUTS = {'restore-commit': 35, 'restore-preview-captured': 25, 'morphology-state': 25, 'media-feedback': 20}
+    OP_TIMEOUTS = {'restore-commit': 35, 'restore-preview-captured': 25, 'morphology-state': 25, 'media-feedback': 20, 'save-when-ready': 30, 'reselect-media': 20}
 
     def invoke(self, op, **arg):
         fn = INVOKE_FN
@@ -773,7 +773,8 @@ class BatchDriver:
         return self.invoke('focus-info')
 
     def jsave(self):
-        s = self.invoke('save')
+        # Journey-only readiness wait (live run 3); batch gates keep the shared 'save' op.
+        s = self.invoke('save-when-ready')
         if s['putStatus'] != 200:
             raise AssertionError('QualificationAssertion')
         return self.oracle()
@@ -1047,16 +1048,22 @@ class BatchDriver:
 
     def phase_journey_13_keyboard_focus(self):
         P = 'journey-13-keyboard-focus'
+        # Live run 3: journey-12 leaves the undecodable media current (no cue rows). Re-select approved media first.
+        m = self.invoke('reselect-media')
+        if not (m['cues'] > 0 and m['saveSentence'] and m['analyseWords']):
+            raise DE('DomSelector', element='cueRow', element_state='missing')  # harness precondition, not product evidence
         self.invoke('nav', view='Player')
         self.invoke('focus', target='navPlayer')
+        primary = {'navLibrary', 'navReview', 'navPractice', 'navSettings', 'analyseWords', 'saveSentence'}
         seen, rings = [], []
-        for _ in range(40):
+        for _ in range(120):
             self.key('Tab')
             fi = self.invoke('focus-info')
             seen.append(fi['key'])
             if fi['key'] != 'body':
                 rings.append(fi['focusVisible'] is True and fi['ring'])
-        primary = {'navLibrary', 'navReview', 'navPractice', 'navSettings', 'analyseWords', 'saveSentence'}
+            if primary <= set(seen):
+                break
         reached = sorted(primary & set(seen))
         self.ok(P, 'tab-reaches-primary-controls', set(reached) == primary, value={'reached': reached})
         self.ok(P, 'focus-visible-ring', bool(rings) and all(rings), counts={'stops': len(rings), 'ringed': sum(rings)})

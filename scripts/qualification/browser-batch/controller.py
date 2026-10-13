@@ -36,7 +36,8 @@ DOM_ELEMENTS = frozenset((
     'navPractice', 'publicReadAuth', 'targetFile', 'nativeFile', 'practiceMode', 'practiceAnswer', 'practiceChoice', 'morphologyPanel',
     'cueRow', 'video', 'createReviewCard',
 ))
-DOM_STATES = frozenset(('missing', 'disabled', 'none'))
+# Sync-state keys added after live run 3 (save-when-ready readiness diagnostics; fixed vocabulary).
+DOM_STATES = frozenset(('missing', 'disabled', 'none', 'saving', 'conflict', 'choice', 'connecting', 'pairAgain'))
 RECEIPT_FIELDS = frozenset((
     'ok', 'status', 'method', 'path', 'index', 'fault', 'errorClass', 'oracle', 'counts', 'graceful', 'forced',
     'remainingSockets', 'bytes', 'origin', 'masked', 'cleared', 'privateAbsent', 'browserExecuted', 'image',

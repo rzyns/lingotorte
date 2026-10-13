@@ -365,5 +365,45 @@ class SourceTraceTests(unittest.TestCase):
         p4 = src[src.index('def phase_journey_04'):src.index('def phase_journey_05')]
         self.assertNotIn("'lexeme'", p4)
 
+    def test_journey_save_waits_for_readiness(self):
+        """Live run 3: journey jsave uses a bounded readiness wait; batch gates keep the shared 'save' op."""
+        js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')
+        op = js[js.index("case 'save-when-ready'"):js.index("case 'reselect-media'")]
+        self.assertIn('Math.min(arg.ms ?? 10000, 10000)', op)
+        self.assertIn("diagnostic('DomButton', 'saveStateNow', bad)", op)
+        self.assertIn("diagnostic('DomDeadline', 'saveStateNow'", op)
+        self.assertIn("base.invoke('save', {})", op)
+        for st in ('saving', 'conflict', 'choice', 'connecting', 'pairAgain'):
+            self.assertIn(st, c.DOM_STATES)
+            self.assertIn("'%s'" % st, op)
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        jsave = src[src.index('def jsave'):src.index('def note_focus')]
+        self.assertIn("self.invoke('save-when-ready')", jsave)
+        self.assertIn("s['putStatus'] != 200", jsave)
+        self.assertIn('save-when-ready', live.BatchDriver.OP_TIMEOUTS)
+        p10 = src[src.index('def phase_journey_10'):src.index('def phase_journey_11')]
+        self.assertIn("o['journey']['media'] == prev['media'] and o['journey']['tracks'] == prev['tracks']", p10)
+        batch = (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
+        self.assertIn("case 'save': { nav('Settings'); const b = count('PUT', '/api/state', 'finish'); click('Save state now');", batch)
+        e = c.DiagnosticError('DomDeadline', element='saveStateNow', element_state='saving')
+        self.assertEqual(c.safe_diagnostic(e)['elementState'], 'saving')
+        self.assertIsNone(c.DiagnosticError('DomButton', element_state='free text').element_state)
+
+    def test_journey13_reselects_media_before_tabbing(self):
+        """Live run 3: journey-12 leaves undecodable media current; journey-13 re-selects approved media first."""
+        js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')
+        op = js[js.index("case 'reselect-media'"):js.index("case 'gated-draft'")]
+        self.assertIn("a.occurrence-link", op)
+        self.assertIn("saveSentence:", op)
+        self.assertIn("analyseWords:", op)
+        src = (KIT / 'live-batch.py').read_text(encoding='utf8')
+        p13 = src[src.index('def phase_journey_13_keyboard_focus'):src.index('def cleanup')]
+        self.assertLess(p13.index("self.invoke('reselect-media')"), p13.index("self.key('Tab')"))
+        self.assertIn("raise DE('DomSelector', element='cueRow', element_state='missing')", p13)
+        self.assertIn('range(120)', p13)
+        self.assertIn('if primary <= set(seen):', p13)
+        self.assertIn("rings.append(fi['focusVisible'] is True and fi['ring'])", p13)
+        self.assertIn("bool(rings) and all(rings)", p13)
+
 if __name__ == '__main__':
     unittest.main()
