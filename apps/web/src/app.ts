@@ -126,6 +126,7 @@ export function renderApp(model: AppModel): HTMLElement {
       invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned after leaving Player.');
     }
   }
+  if (practiceSnippetStates.has(model)) synchronizePracticeSnippet(model);
   const root = document.createElement('div');
   root.className = 'lingotorte-app';
   root.appendChild(renderHeader(model));
@@ -361,6 +362,8 @@ type PracticeSnippetUiState = SourceAudioSnippetLifecycle & {
   mediaPath: string;
   status: 'path-required' | 'unavailable' | 'preparing' | 'ready' | 'playing' | 'failed' | 'cleaned';
   message: string;
+  generation: number;
+  contextKey: string;
 };
 
 const practiceSnippetStates = new WeakMap<AppModel, PracticeSnippetUiState>();
@@ -450,9 +453,41 @@ function synchronizeSourceRangeSnippet(model: AppModel): SourceRangeSnippetUiSta
 function practiceSnippetState(model: AppModel): PracticeSnippetUiState {
   const existing = practiceSnippetStates.get(model);
   if (existing) return existing;
-  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.' };
+  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.', generation: 0, contextKey: '' };
+  created.contextKey = practiceSnippetContextKey(model, created);
   practiceSnippetStates.set(model, created);
   return created;
+}
+
+// lt-q3d: everything a prepared Practice snippet is bound to; any change revokes/invalidates it.
+function practiceSnippetContextKey(model: AppModel, state: PracticeSnippetUiState): string {
+  // Read-only: the card id fixes the cue bounds; never resolve/advance the queue here.
+  return JSON.stringify([
+    model.view, model.practice.mode, model.practice.cardId ?? '',
+    // A submit/skip that re-presents the same card is still a new presentation.
+    model.practice.cardId ? model.store.listPracticeAttemptsForCard(model.practice.cardId).length : 0,
+    state.mediaPath.trim(), model.localService.baseUrl, model.localService.status, model.localService.pathPolicy ?? null,
+  ]);
+}
+
+function invalidatePracticeSnippet(model: AppModel, message: string): PracticeSnippetUiState {
+  const state = practiceSnippetState(model);
+  state.generation += 1;
+  releaseSourceAudioSnippet(state);
+  state.status = state.mediaPath.trim() ? 'cleaned' : 'path-required';
+  state.message = message;
+  state.contextKey = practiceSnippetContextKey(model, state);
+  return state;
+}
+
+function synchronizePracticeSnippet(model: AppModel): PracticeSnippetUiState {
+  const state = practiceSnippetState(model);
+  if (state.contextKey !== practiceSnippetContextKey(model, state)) {
+    return invalidatePracticeSnippet(model, state.objectUrl || state.status === 'preparing'
+      ? 'Card, mode, view, media path or service changed; transient browser audio cleaned.'
+      : state.message);
+  }
+  return state;
 }
 
 function renderPracticeView(model: AppModel): HTMLElement {
@@ -466,6 +501,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   // lt-0g9: per-card answer/tokens/choices/reveal never carry over to a different card; the previous
   // submission's feedback is shown only until the next card changes or is submitted.
   syncPracticeCard(model, active?.card.id ?? null);
+  if (practiceSnippetStates.has(model)) synchronizePracticeSnippet(model);
 
   const last = model.practice.lastAttemptResult;
   if (last) {
@@ -561,7 +597,7 @@ function renderPracticeView(model: AppModel): HTMLElement {
   } else if (model.practice.mode === 'audio-recall') {
     const audioGroup = document.createElement('div');
     audioGroup.className = 'practice-audio-recall';
-    const snippet = practiceSnippetState(model);
+    const snippet = synchronizePracticeSnippet(model);
     const pathLabel = document.createElement('label');
     pathLabel.htmlFor = 'practice-audio-media-path';
     pathLabel.textContent = 'Owned local media path';
@@ -571,7 +607,12 @@ function renderPracticeView(model: AppModel): HTMLElement {
     pathInput.type = 'text';
     pathInput.value = snippet.mediaPath;
     pathInput.placeholder = 'Absolute path (kept only in this session)';
-    pathInput.addEventListener('input', () => { snippet.mediaPath = pathInput.value; snippet.status = pathInput.value.trim() ? 'cleaned' : 'path-required'; });
+    pathInput.addEventListener('input', () => {
+      const hadAudio = snippet.objectUrl !== null || snippet.status === 'preparing';
+      snippet.mediaPath = pathInput.value;
+      invalidatePracticeSnippet(model, pathInput.value.trim() ? 'Media path changed; prepare fresh source audio.' : 'Provide an explicit absolute owned local media path.');
+      if (hadAudio) rerenderApp(model);
+    });
     pathLabel.appendChild(pathInput);
     audioGroup.appendChild(pathLabel);
     const prepareButton = document.createElement('button');
@@ -582,26 +623,37 @@ function renderPracticeView(model: AppModel): HTMLElement {
     pathInput.addEventListener('input', () => {
       prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, pathInput.value);
     });
-    prepareButton.addEventListener('click', async () => {
-      if (!currentCue || !hasNativeInputPath(model, snippet.mediaPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+    prepareButton.addEventListener('click', () => {
+      const operationPath = snippet.mediaPath;
+      if (!currentCue || !hasNativeInputPath(model, operationPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
       const transport = captureUiServiceOwner(model); if (!transport) return;
       const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
-      transport.onInvalidate(() => releaseSourceAudioSnippet(snippet));
+      transport.onInvalidate(() => invalidatePracticeSnippet(model, 'Local service pairing changed; transient browser audio cleaned.'));
+      releaseSourceAudioSnippet(snippet);
+      const generation = ++snippet.generation;
+      const contextKey = practiceSnippetContextKey(model, snippet);
+      snippet.contextKey = contextKey;
+      const current = () => stillOwned() && snippet.generation === generation && practiceSnippetContextKey(model, snippet) === contextKey;
+      const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
       snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
-      try {
-        await prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: snippet.mediaPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: snippet });
-        if (!stillOwned()) return;
+      void prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: operationPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: operationLifecycle }).then(() => {
+        if (!current()) { releaseSourceAudioSnippet(operationLifecycle); return; }
+        snippet.objectUrl = operationLifecycle.objectUrl;
+        operationLifecycle.objectUrl = null;
         snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
-      } catch (error) {
-        if (!stillOwned()) return;
+        rerenderApp(model);
+      }).catch((error: unknown) => {
+        releaseSourceAudioSnippet(operationLifecycle);
+        if (!current()) return;
         snippet.status = 'failed'; snippet.message = redactSourceAudioSnippetError(error);
-      }
-      rerenderApp(model);
+        rerenderApp(model);
+      });
     });
     audioGroup.appendChild(prepareButton);
     if (snippet.objectUrl) {
       const audio = document.createElement('audio');
       audio.controls = true;
+      audio.autoplay = false;
       audio.src = snippet.objectUrl;
       audio.addEventListener('play', () => { snippet.status = 'playing'; });
       audioGroup.appendChild(audio);
