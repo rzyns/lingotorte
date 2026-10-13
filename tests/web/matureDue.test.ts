@@ -43,7 +43,10 @@ describe('mature cards remain scheduled, not retired', () => {
       expect(model.review.activeCardId).toBeNull();
       setView(model, view);
       rerenderApp(model);
-      expect(document.querySelector(`.${view}-prompt`)?.textContent).toBe(card.promptTemplate);
+      // lt-0g9: Practice no longer echoes the answer-leaking promptTemplate; both views present this card.
+      if (view === 'review') expect(document.querySelector(`.${view}-prompt`)?.textContent).toBe(card.promptTemplate);
+      else expect(document.querySelector(`.${view}-prompt`)).not.toBeNull();
+      expect(model.review.activeCardId).toBe(card.id);
       expect(document.querySelector('.empty-state')).toBeNull();
     });
     expect(networkAttempts).toEqual([]);
