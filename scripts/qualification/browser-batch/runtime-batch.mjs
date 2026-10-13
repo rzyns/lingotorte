@@ -38,7 +38,7 @@ await boot();
 let upstream = new Agent({ keepAlive: false });
 async function killService() { serviceUp = false; upstream.destroy(); for (const s of socketSets.get('service') ?? []) s.destroy(); await service.close(); upstream = new Agent({ keepAlive: false }); }
 
-const SAFE = /^\/api\/(health|status|state|restore\/(preview|commit)|jobs(?:\/[a-zA-Z0-9_-]+)?)$/;
+const SAFE = /^\/api\/(health|status|state|restore\/(preview|commit)|language\/morphology|jobs(?:\/[a-zA-Z0-9_-]+)?)$/;
 const gate = createServer((req, res) => {
   const path = req.url ?? ''; const method = req.method ?? 'GET';
   const row = { method, path: SAFE.test(path) ? path : 'unclassified', origin: req.headers.origin ?? null, status: null, privateAbsent: true, corsGranted: false, credentialsGrant: false, dropped: false };
@@ -87,7 +87,7 @@ async function oracle() {
   const t = tables(); const st = (await internal('/api/state')).value ?? {};
   // v9 schema: full history in practice_attempt/review_event; active subset in active_practice_attempt/active_review_event.
   const audit = Object.fromEntries(['practice_attempt', 'review_event', 'active_practice_attempt', 'active_review_event'].map((k) => [k, t[k]?.length ?? -1]));
-  return { tablesSha256: digest(t), tableCounts: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.length])), auditCounts: audit, revision: st.revision ?? null, learner: seeds.learnerCounts(st.snapshot), anchors: digest(seeds.anchorDigest(st.snapshot)), mediaIds: Object.keys(st.snapshot?.mediaAssets ?? {}).sort(), trackIds: Object.keys(st.snapshot?.subtitleTracks ?? {}).sort(), trackStatus: Object.fromEntries(Object.entries(st.snapshot?.subtitleTracks ?? {}).map(([k, v]) => [k, v?.transcriptStatus ?? null])), providers, commands, serviceUp };
+  return { tablesSha256: digest(t), tableCounts: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.length])), auditCounts: audit, revision: st.revision ?? null, learner: seeds.learnerCounts(st.snapshot), anchors: digest(seeds.anchorDigest(st.snapshot)), mediaIds: Object.keys(st.snapshot?.mediaAssets ?? {}).sort(), trackIds: Object.keys(st.snapshot?.subtitleTracks ?? {}).sort(), trackStatus: Object.fromEntries(Object.entries(st.snapshot?.subtitleTracks ?? {}).map(([k, v]) => [k, v?.transcriptStatus ?? null])), journey: seeds.journeyProjection(st.snapshot), providers, commands, serviceUp };
 }
 // Replace learner/transcript collections in the service snapshot with a synthetic store (CAS on revision).
 async function seedSnapshot(kind) {

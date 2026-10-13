@@ -15,12 +15,13 @@ DIAGNOSTIC_TAGS = frozenset((
     'PrivateBrowserOperation', 'PrivateRuntimeOperation', 'NativeNewTabHelperRequired', 'UnexpectedException',
     'DomDeadline', 'DomButton', 'DomSelector', 'QualificationAssertion', 'FileFixtureMissing',
     'FileChooserUnavailable', 'CommitBarrierMissed', 'SkippedCascade', 'UnknownPhase', 'PrivateRuntimeTimeout',
-    'PrivateRuntimeSequence',
+    'PrivateRuntimeSequence', 'SourceRevisionMismatch', 'FocusDeadline',
 ))
 CDP_METHODS = frozenset((
     'Target.attachToTarget', 'Target.createTarget', 'Target.closeTarget', 'Target.getTargets', 'Page.navigate',
     'Page.reload', 'Page.enable', 'Runtime.evaluate', 'Runtime.callFunctionOn', 'Runtime.releaseObject',
     'DOM.enable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.setFileInputFiles', 'Browser.getVersion',
+    'Input.dispatchKeyEvent', 'Input.insertText', 'Emulation.setDeviceMetricsOverride', 'Emulation.clearDeviceMetricsOverride',
 ))
 CATEGORIES = frozenset(('timeout', 'transport', 'javascript', 'rejected'))
 # Fixed element ids mirrored from dom-batch.mjs BUTTON_LABELS / SELECTOR_LABELS keys (test-enforced).
@@ -30,6 +31,9 @@ DOM_ELEMENTS = frozenset((
     'choiceService', 'choiceBrowser', 'navLibrary', 'navPlayer', 'navSettings', 'navSaved', 'navExportImport',
     'nav', 'importManifest', 'serviceUrl', 'serviceCapability', 'autosave', 'mediaFile', 'nameConflict', 'confirmMerge',
     'confirmReplace', 'confirmSingle', 'cueText', 'cueStart', 'cueEnd', 'wordText', 'wordStart', 'wordEnd', 'unlisted', 'none',
+    'importGatedDraft', 'downloadExport', 'saveSentence', 'showAnswer', 'rateGood', 'submitAttempt', 'analyseWords', 'navReview',
+    'navPractice', 'publicReadAuth', 'targetFile', 'nativeFile', 'practiceMode', 'practiceAnswer', 'practiceChoice', 'morphologyPanel',
+    'cueRow', 'video', 'createReviewCard',
 ))
 DOM_STATES = frozenset(('missing', 'disabled', 'none'))
 RECEIPT_FIELDS = frozenset((
@@ -64,6 +68,21 @@ PHASES = (
     ('transcript-01-dirty-approve-refused', 'lt-13i', 1),
     ('transcript-02-apply-inspect-approve', 'lt-13i', 2),
     ('transcript-03-save-reload-anchors', 'lt-13i', 3),
+    # lt-3kk daily-driver journey: one fresh store, one service, UI path wherever one exists.
+    # Runs ALONE (require_authorization refuses mixing it with the restore/relink/transcript gates).
+    ('journey-01-pair', 'lt-3kk', 1),
+    ('journey-02-import-media-subtitles', 'lt-3kk', 2),
+    ('journey-03-draft-correct-apply-approve', 'lt-3kk', 3),
+    ('journey-04-save-word-sentence', 'lt-3kk', 4),
+    ('journey-05-review-due-keyboard', 'lt-3kk', 5),
+    ('journey-06-practice-two-modes-keyboard', 'lt-3kk', 6),
+    ('journey-07-morphology-ui-narrow', 'lt-3kk', 7),
+    ('journey-08-morphology-origin-denial', 'lt-3kk', 8),
+    ('journey-09-persist-reload-repair', 'lt-3kk', 9),
+    ('journey-10-relink-restart-reselect', 'lt-3kk', 10),
+    ('journey-11-export-restore-merge', 'lt-3kk', 11),
+    ('journey-12-unsupported-codec-feedback', 'lt-3kk', 12),
+    ('journey-13-keyboard-focus', 'lt-3kk', 13),
 )
 # A failed phase cascades to these dependents (marked SKIPPED_CASCADE, never run).
 DEPENDS = {
@@ -82,7 +101,22 @@ DEPENDS = {
     'relink-03-same-name-different-content': ('relink-01-import-save',),
     'transcript-02-apply-inspect-approve': ('transcript-01-dirty-approve-refused',),
     'transcript-03-save-reload-anchors': ('transcript-02-apply-inspect-approve',),
+    'journey-02-import-media-subtitles': ('journey-01-pair',),
+    'journey-03-draft-correct-apply-approve': ('journey-02-import-media-subtitles',),
+    'journey-04-save-word-sentence': ('journey-03-draft-correct-apply-approve',),
+    'journey-05-review-due-keyboard': ('journey-04-save-word-sentence',),
+    'journey-06-practice-two-modes-keyboard': ('journey-04-save-word-sentence', 'journey-05-review-due-keyboard'),
+    'journey-07-morphology-ui-narrow': ('journey-03-draft-correct-apply-approve',),
+    'journey-08-morphology-origin-denial': ('journey-01-pair',),
+    'journey-09-persist-reload-repair': ('journey-05-review-due-keyboard', 'journey-06-practice-two-modes-keyboard'),
+    'journey-10-relink-restart-reselect': ('journey-09-persist-reload-repair',),
+    'journey-11-export-restore-merge': ('journey-10-relink-restart-reselect',),
+    'journey-12-unsupported-codec-feedback': ('journey-02-import-media-subtitles',),
+    'journey-13-keyboard-focus': ('journey-03-draft-correct-apply-approve', 'journey-05-review-due-keyboard', 'journey-06-practice-two-modes-keyboard', 'journey-07-morphology-ui-narrow'),
 }
+LEGACY_GATES = ('lt-2t4', 'lt-n31', 'lt-13i')
+JOURNEY_GATE = 'lt-3kk'
+KNOWN_GATES = frozenset(LEGACY_GATES + (JOURNEY_GATE,))
 
 
 def method_name(phase):
@@ -182,12 +216,19 @@ def require_authorization(review, image):
     if not isinstance(image, str) or not image.startswith('sha256:') or len(image) != 71 or review.get('image') != image:
         raise PermissionError('ExactImageBindingRequired')
     gates = review.get('gates')
-    if gates is not None and (not isinstance(gates, (list, tuple)) or not set(gates) <= {'lt-2t4', 'lt-n31', 'lt-13i'}):
+    if gates is not None and (not isinstance(gates, (list, tuple)) or not set(gates) <= KNOWN_GATES):
         raise PermissionError('UnknownGateSelection')
+    if gates is not None and JOURNEY_GATE in gates:
+        # One fresh store, one service: the journey never shares a runtime with the other gates.
+        if list(gates) != [JOURNEY_GATE]:
+            raise PermissionError('JourneyGateMustRunAlone')
+        rev = review.get('revision')
+        if not isinstance(rev, str) or len(rev) != 40 or any(c not in '0123456789abcdef' for c in rev):
+            raise PermissionError('ExactCandidateRevisionRequired')
 
 
 def selected_phases(review):
-    gates = set(review.get('gates') or ('lt-2t4', 'lt-n31', 'lt-13i'))
+    gates = set(review.get('gates') or LEGACY_GATES)  # default unchanged: the journey must be selected explicitly
     return [(p, b) for p, b, _ in PHASES if b in gates]
 
 
