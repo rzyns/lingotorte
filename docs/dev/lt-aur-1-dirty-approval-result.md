@@ -111,3 +111,25 @@ Known limits:
 - Cue text is compared before normalization, so a whitespace-only change counts as dirty. This is fail-closed.
 - Re-keying retained edits relies on positional correspondence between parent and child cues, which holds for text/timing Apply.
 - Independent review is outstanding.
+
+## Post-review integration (quality APPROVED `deleg_0340f914`)
+
+Quality reviewer note 4 was applied before merge. The new test's polling helper and its post-Apply wait use a bounded `vi.waitFor` (5 s) instead of fixed zero-delay ticks, and the split negative check uses a 20 ms settle. No assertion changed. Main `93838c1` (lt-0g9) was merged in cleanly. Image `sha256:5fb6cb28f07abbfc9e0b32ac2c8c6125fa6de0e45d9cacd8c02d4bd9c0a03060`, `--network none`:
+
+- Full suite, 3/3 runs: 1323 passed, 1 skipped (pre-existing).
+- Focused suite: 27/27 passed.
+- tsc, build, no-network and privacy checks: all exit 0.
+
+SHA256:
+
+- `apps/web/src/model.ts` `99db165e4a56b5ecd795760b1754fea7abaece14c3b8181d91f207426be6521a`
+- `apps/web/src/app.ts` `5c0486393e4c681bf13d8a9c4c223a3d3f6ed43456fcd42120afe9488579186a`
+- `tests/web/dirtyTranscriptApproval.test.ts` `92fdcf7623a7b8555f693dbdf10efb26a29717a7b07936a1fd27b082ef1caa0d`
+
+Remaining non-blocking follow-ups:
+
+- Use a direct reference for the Apply button in `refreshApprovalGate`.
+- Replace the `JSON.stringify` edit comparison with a field-wise compare.
+- Add a comment on the positional re-key.
+- Word-edit input does not call `markUnsavedBrowserEdits` (pre-existing; confirm).
+- Pull the block-reason strings out as constants.

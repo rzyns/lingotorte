@@ -1,7 +1,7 @@
 // lt-aur.1 — dirty transcript approval regressions (synthetic, offline, JSDOM).
 // Block → Apply → inspect → Approve. No providers, no network, no real stores.
 import { JSDOM } from 'jsdom';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateSavedOccurrenceSourceContext } from '../../packages/domain/src/sourceContext.ts';
 import {
   approveTranscriptTrack,
@@ -93,8 +93,7 @@ const FIELD_INPUT: Record<Field, string> = {
 };
 const FIELD_VALUE: Record<Field, string> = { cueText: 'Zmieniony tekst.', cueStart: '100', cueEnd: '1600', wordText: 'Hej', wordStart: '50', wordEnd: '650' };
 async function settle(predicate: () => boolean): Promise<void> {
-  for (let i = 0; i < 50 && !predicate(); i++) await new Promise((r) => setTimeout(r, 0));
-  expect(predicate()).toBe(true);
+  await vi.waitFor(() => expect(predicate()).toBe(true), { timeout: 5_000, interval: 5 });
 }
 
 describe('lt-aur.1 direct model approval path', () => {
@@ -234,8 +233,7 @@ describe('lt-aur.1 UI and handler approval path', () => {
     expect(() => approveTranscriptTrack(model, parentId)).toThrow(/pending transcript edits|correction is pending/i);
     type(FIELD_INPUT.wordText, 'Nowsze');
     await settle(() => model.transcriptLifecycle.lastMessage !== null || Boolean(model.importError));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(Object.values(model.transcriptLifecycle.pendingWordTimingEdits).map((e) => e.text)).toEqual(['Nowsze']);
+    await vi.waitFor(() => expect(Object.values(model.transcriptLifecycle.pendingWordTimingEdits).map((e) => e.text)).toEqual(['Nowsze']), { timeout: 5_000, interval: 5 });
     const shown = model.targetTrackId!;
     expect(() => approveTranscriptTrack(model, shown)).toThrow(/pending transcript edits/i);
     expect(button(APPROVE).disabled).toBe(true);
@@ -261,8 +259,8 @@ describe('lt-aur.1 UI and handler approval path', () => {
     expect(split.disabled).toBe(true);
     split.disabled = false;
     split.click();
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
+    // Negative check: give any (wrongly) started split a chance to land; a fixed wait can only under-detect, never fail spuriously.
+    await new Promise((r) => setTimeout(r, 20));
     expect(model.targetTrackId).toBe(parentId);
     expect(Object.values(model.transcriptLifecycle.pendingCueEdits)).toEqual(['Niezastosowana zmiana.']);
   });
