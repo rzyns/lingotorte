@@ -1,6 +1,7 @@
 import { isNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../packages/domain/src/nativePaths.ts';
 import type { AppModel, ViewName } from './uiTypes';
 import { PAIR_AGAIN, type PairedTransport } from './pairedTransport.ts';
+import { analyseCueMorphology, renderMorphologyPanel } from './morphologyPanel.ts';
 function captureUiServiceOwner(model: AppModel): PairedTransport | null {
   try { return captureLocalServiceTransport(model); }
   catch { model.localService.lastMessage = PAIR_AGAIN; rerenderApp(model); return null; }
@@ -2740,6 +2741,22 @@ function renderTranscriptPanel(model: AppModel): HTMLElement {
     });
     actions.appendChild(tokenizeBtn);
 
+    // lt-e8z: grammar analysis (local Morfeusz when paired, browser estimate otherwise). Native button: Enter/Space.
+    const analyseBtn = document.createElement('button');
+    analyseBtn.type = 'button';
+    analyseBtn.className = 'analyse-words';
+    // Stable id so rerenderApp restores keyboard focus to this button after the analysis renders.
+    analyseBtn.id = `analyse-words-${cue.id}`;
+    analyseBtn.textContent = 'Analyse words';
+    analyseBtn.setAttribute('aria-label', `Analyse word grammar for cue at ${formatTimeMs(cue.startMs)}`);
+    analyseBtn.setAttribute('aria-controls', 'morphology-panel');
+    analyseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void analyseCueMorphology(model, cue, null, () => rerenderApp(model));
+    });
+    analyseBtn.addEventListener('keydown', (e) => e.stopPropagation());
+    actions.appendChild(analyseBtn);
+
     row.appendChild(actions);
 
     const seek = () => {
@@ -2833,6 +2850,7 @@ function renderSelectionPanel(model: AppModel): HTMLElement {
   const h2 = document.createElement('h2');
   h2.textContent = 'Selection';
   panel.appendChild(h2);
+  panel.appendChild(renderMorphologyPanel(model, () => rerenderApp(model)));
 
   if (model.player.lastTokenPreview) {
     const preview = document.createElement('div');
