@@ -145,3 +145,38 @@ See "Live run 1 and 2 results" below.
 - journey-10 FAILED from a harness save race: after the restart, re-pair, autosave on and re-import, `jsave()` clicked **Save state now** while it was disabled (`DomButton|saveStateNow|disabled`). The most likely cause is the autosave PUT that the import started (sync `saving`), but the run did not record the sync state. `jsave()` now uses the journey-only op `save-when-ready`. It waits up to 10 s for the button to become enabled, and a `conflict`, `choice` or `pairAgain` state fails immediately with that fixed state key. A timeout reports `saving`, `connecting`, `disabled` or `missing`. Batch gates keep the shared `save` op unchanged. The oracle checks afterwards (`identity-preserved`, `learner-state-unchanged`) are unchanged.
 - journey-13 FAILED from a harness precondition: journey-12 makes the undecodable media current, which has no cues, so Tab reached only the nav buttons. journey-13 now re-selects the approved media through the Saved occurrence link (`reselect-media`). If there are no cue rows with **Save sentence** and **Analyse words**, it fails with `DomSelector|cueRow|missing`. It then presses Tab up to 120 times and stops early once every primary control has been seen. Rings are counted only for the stops actually visited. `FOCUS_ASSERTED` and focus-not-lost are unchanged. Re-selecting was chosen over reordering 12 and 13 because it keeps the step numbers and DEPENDS honest and does not depend on what an earlier phase left current.
 - journey-11 was skipped by cascade and has not been exercised live yet.
+
+## Live run 4 result (qualifying receipt)
+
+| Field | Value |
+|---|---|
+| Candidate revision | `d59710686557375a038324b54b2d476d7a477570` (main `422b0c5` plus this harness) |
+| Image | `sha256:b01140b0a3694bccfe41ce25b41937f0c2f3f9676b282efcd2a6260999947359`, built from a clean tree at that revision |
+| Source digest | `sourceSha256` `876dd8b546a72ca9018bc7701d74b16c83592b594000317d52dcc43c1492143b`; `sourceAndKitUnchanged` true |
+| Journal | `rows.jsonl` sha256 `948cacf9c543efc63ca896506dec0fa21fa746a01ddf86a778680ecdfc785a4e`, scratch `lt3kk/browser-batch/live-72d49d41f271` |
+| Browser | Real Chrome over CDP on the Windows host; loopback dev origin; journey tab visible |
+
+**Result: ok = true.** All 13 journey phases and cleanup passed, with 0 failures, 0 skips and no retries.
+
+- **01 pair:** fresh store, capability masked and cleared, providers off.
+- **02 import:** media plus target/native subtitles through the Library file inputs, with the server-side fingerprint and both track roles. F1 was observed: user subtitles are approved on import.
+- **03 draft → correct → approve, by keyboard:** the draft stays a draft, there is one corrected approved track, and Approve leaves a visible focus ring. G1 was observed: the draft lives on its own caption media item, not on the imported file.
+- **04 save:** two words and a sentence, saved by keyboard (Save sentence by Enter works after lt-r4k.3). Exact anchors 5–10, 13–17 and 0–18 on the corrected track. Three cards appear only after an explicit Create review card.
+- **05 review** and **06 practice (typed pass, multiple-choice fail)**, by keyboard. FSRS effects are checked server-side. No microphone.
+- **07 morphology UI:** POST from the UI origin, Morfeusz source label, `role=status` with `aria-live`, meanings-unavailable text, ambiguous warning with alternatives, and no panel overflow at 375 px.
+- **08 morphology route:** foreign and null origins, over fetch and form, all get 403 from the server, with the oracle unchanged.
+- **09 persist/reload/re-pair:** IDs, history, anchors and revision are identical.
+- **10 restart → re-pair → reselect same files:** media, tracks and learner state are identical.
+- **11 UI export → preview → merge → refresh authoritative preview → Restore now:** durable receipt, commit 200 and readback, with journey state unchanged.
+- **12 undecodable file:** Chrome reports MediaError 4, and the app shows its visible, accessible media-error message (lt-r4k.1/.4).
+- **13 keyboard:** Tab reaches every primary control, all 26 visited stops show a focus ring, and focus is not lost after Approve, Rate, practice Submit, the multiple-choice answer, or Analyse words.
+
+**Recorded observations (not PASS claims):**
+- Focus after Apply (Create corrected transcript version) lands on `body`. Apply has no focus successor yet; this is follow-up `lt-5lb.1`.
+- The journey-12 import check reports `imported: false` because the media-error banner itself is a `.status-banner.error`. That's the expected feedback, not an import failure.
+
+**Gaps that remain for human acceptance** (see `docs/review/final-human-acceptance-checklist.md`):
+- **G1/F1:** correcting and approving a transcript on your *own* imported file isn't exercised, because user subtitle files are trusted and approved on import.
+- **Platform:** Edge, the plain-HTTP LAN origin, and the native file-permission prompt weren't tested.
+- **Restart:** the service restart is in-process, not a hard crash.
+- **Providers:** real ASR/STT and online providers weren't exercised (all off).
