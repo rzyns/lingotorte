@@ -1464,7 +1464,7 @@ export class SqliteLocalPersistence {
     for (const attempt of snapshot.practiceAttempts) {
       const prior = existingAttempts.get(attempt.id);
       if (prior) {
-        if (!sameHistoryPayload(prior, attempt)) throw new TypeError('Immutable history conflict: practiceAttempts');
+        if (!sameHistoryPayload(prior, attempt)) throw new TypeError(`Immutable history conflict: practiceAttempts ${attempt.id}`);
         continue;
       }
       insertPracticeAttempt.run(
@@ -1689,7 +1689,7 @@ export class SqliteLocalPersistence {
     const existing = new Map(this.listImportJobEvents().map(e => [e.id, e]));
     for (const event of snapshot.importJobEvents) {
       const prior = existing.get(event.id);
-      if (prior && !sameImportJobEventPayload(prior, event)) throw new Error('Conflicting legacy import-job event');
+      if (prior && !sameImportJobEventPayload(prior, event)) throw new Error(`Conflicting legacy import-job event ${event.id}`);
       if (!prior) { insert.run(event.id, event.jobId, event.level, event.message, event.createdAt, event.dataJson ?? null); existing.set(event.id, event); }
     }
     this.selectHistory(active);
