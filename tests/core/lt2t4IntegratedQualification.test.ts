@@ -279,7 +279,7 @@ describe('lt-2t4 integrated request/restore qualification', () => {
         ];
         for (const [status, headers, payload] of rows) {
           const res = await raw(service.origin, path, 'POST', headers, payload);
-          expect(res.status).toBe(status); expect(res.body).not.toContain(token);
+          expect(res.status).toBe(status); expect(res.body.includes(token)).toBe(false);
           expect(await oracle()).toBe(before); denials++;
         }
       }

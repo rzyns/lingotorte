@@ -2,13 +2,13 @@
 
 "Close/reopen" below means same-process `service.close()` followed by a fresh `startLingotorteLocalService` on the same SQLite file, not an OS process restart.
 
-Status: **synthetic integrated qualification passed; real-browser gate OPEN.** Nothing is committed. Beads was not changed. No real-state rollout.
+Status: **synthetic integrated qualification passed; real-browser gate OPEN.** Committed on `work/lt-2t4-integrated-qual` (see the integrated revision section at the end). No real-state rollout.
 
 ## Binding
 
 | Item | Value |
 | --- | --- |
-| Base revision | `c12780d` (origin/main, fast-forwarded on branch `work/lt-2t4-integrated-qual`), plus uncommitted candidate: the new test file and this doc (parent commits) |
+| Base revision | `c12780d` (origin/main, fast-forwarded on branch `work/lt-2t4-integrated-qual`), plus the new test file and this doc; final integrated revision `df5a77b` on main `1bdeebb` (see the end) |
 | Candidate image | `lingotorte:lt-2t4-cand` = `sha256:94b20484af2a9949c68c45ce2947b4dbec090e57a4dbdce3d125e2ac7612107f` (built from the working tree with the final test file) |
 | New test | `tests/core/lt2t4IntegratedQualification.test.ts` sha256 `61c81fc9871c3fc0ec33cc91779714a15b47d70b605c6440b11edec1d67a1914` |
 | Product code changes | none |
@@ -71,7 +71,7 @@ Reconciliation result: server routes, the admission allowlist and the client all
 | A29 | lt-sor `providerDisabled`/no-network; NEW harness `allowOnlineProviders:false`, command runner throws (count unchanged) | covered | qualified |
 | A30 | lt-sor `requestRuntime` | n/a | qualified |
 
-Zero-side-effect oracle (NEW): `JSON.stringify({observeState logical state incl. snapshot/revision/jobs/LRU, runnerCalls, every SQLite table row (read-only connection), scratch file list})`. It is compared before and after each of 45 denials (2 routes × 11 header faults, 2 × ~10 envelope faults, foreign preflight, preflight-then-unauthenticated).
+Zero-side-effect oracle (NEW): `JSON.stringify({observeState logical state incl. snapshot/revision/jobs/LRU, runnerCalls, every SQLite table row (read-only connection), scratch file list})`. It is compared before and after each of 45 denials (2 routes × 11 header faults, 2 × 9 (preview) / 10 (commit) envelope faults, foreign preflight, preflight-then-unauthenticated).
 
 ## 3. T01–T14 mapping
 
@@ -144,7 +144,7 @@ Record HAR and server dumps per step, plus browser version and profile. Steps no
 
 ## 8. Independent review
 
-Not performed in this task. An independent reviewer should re-run the focused and full commands against the image ID above and inspect the new test's oracle construction.
+SPEC review `deleg_350f445c/task1` passed the test code. The doc findings it raised were corrected in correction cycle 1, then re-reviewed: SPEC PASS and QUALITY APPROVED `deleg_da5e11f7` (focused 9/9 ×3). Post-review: the test at line 282 now checks for a leaked token with `includes(...)` so a failure cannot print the synthetic capability.
 
 ## Integrated content-bound revision
 
