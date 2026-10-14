@@ -64,6 +64,12 @@ The media variable is still required to parse Compose even when running only the
 
 The base is the official multi-architecture Node 26.7.0 Bookworm slim index digest recorded in Dockerfile. Lockfile dependencies install with scripts, audit and fund disabled. Debian package versions follow Bookworm's repositories at build time, so the base/dependency source is pinned but rebuilds are not bit-for-bit identical; retain the qualified image ID when exact runtime bytes matter. Non-root `node` runs both services directly, with Compose init forwarding signals. `.dockerignore` is default-deny plus application inputs, with environment files, Git/Beads/worktrees, databases and caches excluded. An empty image-only `/app/.git` directory is a nativeConfig source-root exclusion sentinel, not copied Git history or a usable Git repository.
 
+## Providers and credentials
+
+The default stack runs no online providers. `compose.yaml` hard-codes `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=false` for the API, passes no provider key, and attaches the API only to an internal network with no outbound internet. `.dockerignore` excludes `.env` files from the image. No credential is needed to run, verify or qualify the stack.
+
+Provider keys such as `ELEVENLABS_API_KEY` must never live inside the checkout. Keep them in a file outside it, e.g. `%LOCALAPPDATA%\lingotorte\provider.env` or `~/.config/lingotorte/provider.env`, readable only by you. `npm run scan:privacy` fails if any `.env` or `.env.*` file at the repository root has a non-empty `*_KEY`, `*_APIKEY`, `*_TOKEN`, `*_SECRET` or `*_PASSWORD` value. It names the variable and never the value. `.env.example` lists the variables with empty placeholders. This repository provides no provider-enabled Compose variant. Running a provider in Docker needs the consent required by DECISIONS.md §6 and its own reviewed change: a key via `--env-file <outside-path>` or a Docker secret, plus an egress-capable network for the API.
+
 ## State, stop and reset
 
 State, scratch and model cache use separate Linux-native named volumes at `/state`, `/scratch`, `/models`. They do not overlap media or source. Nothing imports an old learner database. Keep a project name stable to reopen the same volumes; change it to create an isolated synthetic instance.
