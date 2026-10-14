@@ -20,6 +20,7 @@ import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippet
 import { renderExportImportView } from './views/exportImport.ts';
 import { renderLibraryView } from './views/library.ts';
 import { renderPlayerView } from './views/player/stage.ts';
+import { syncPlayButton } from './views/player/controls.ts';
 import { renderPracticeView } from './views/practice.ts';
 import { renderReviewView } from './views/review.ts';
 import { renderSavedView } from './views/saved.ts';
@@ -79,7 +80,8 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
     let handled = false;
     if (event.key === ' ' || event.key === 'Spacebar') {
       // lt-xlr: Space toggles play/pause, but never steals activation from buttons, role=button
-      // spans (cue words), cue rows, links or the seek/speed sliders.
+      // spans (cue words), cue rows, links or the seek/speed sliders. `[tabindex]` also intentionally
+      // covers .cue-word spans while focusCueWord gives them a temporary tabindex=-1.
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('button, [role="button"], a[href], summary, .cue-row, [tabindex]:not(body)')) return;
       const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
@@ -92,7 +94,8 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
       } else {
         video.pause();
       }
-      rerenderApp(currentModel);
+      // In-place label update: a full rerender is unnecessary for play/pause.
+      syncPlayButton(currentModel.player.isPlaying);
       return;
     } else if (event.key === 'r' || event.key === 'R') {
       if (cue) {

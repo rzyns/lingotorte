@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel } from '../../apps/web/src/model';
+import { createAppModel, setLoopRange } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -129,5 +129,105 @@ describe('lt-xlr custom video controls', () => {
     // The row's own Space activation seeks and plays once; the global handler must not also toggle.
     expect(play).toHaveBeenCalledTimes(2);
     expect(pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('focused-but-not-dragging slider keeps tracking playback; a pointer drag freezes it', () => {
+    installModel();
+    const slider = seek();
+    Object.defineProperty(video(), 'duration', { configurable: true, value: 4 });
+    slider.focus();
+    expect(document.activeElement).toBe(slider);
+    const tick = (t: number) => { video().currentTime = t; video().dispatchEvent(new dom.window.Event('timeupdate')); };
+    tick(1);
+    expect(Number(slider.value)).toBeCloseTo(1);
+    slider.dispatchEvent(new dom.window.Event('pointerdown'));
+    tick(2);
+    expect(Number(slider.value)).toBeCloseTo(1);
+    slider.dispatchEvent(new dom.window.Event('pointerup'));
+    tick(3);
+    expect(Number(slider.value)).toBeCloseTo(3);
+  });
+
+  it('fullscreen button label follows fullscreenchange, exits when already fullscreen', () => {
+    const request = vi.fn(() => Promise.resolve());
+    const exit = vi.fn(() => Promise.resolve());
+    Object.defineProperty(dom.window.HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: request });
+    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
+    let fsEl: Element | null = null;
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fsEl });
+    const { model } = installModel();
+    rerenderApp(model);
+    const btn = () => document.querySelector('button.player-fullscreen') as HTMLButtonElement;
+    expect(btn().textContent).toBe('Fullscreen');
+    expect(btn().getAttribute('aria-pressed')).toBe('false');
+    fsEl = document.querySelector('.video-stage');
+    document.dispatchEvent(new dom.window.Event('fullscreenchange'));
+    expect(btn().textContent).toBe('Exit fullscreen');
+    expect(btn().getAttribute('aria-pressed')).toBe('true');
+    btn().click();
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+    fsEl = null;
+    document.dispatchEvent(new dom.window.Event('fullscreenchange'));
+    expect(btn().textContent).toBe('Fullscreen');
+    expect(btn().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('fullscreen button is disabled when requestFullscreen is unsupported', () => {
+    Object.defineProperty(dom.window.HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: undefined });
+    installModel();
+    expect((document.querySelector('button.player-fullscreen') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('Space flips the play label in place without rerendering or replacing the <video>', () => {
+    const { model } = installModel();
+    const before = video();
+    const controlsBefore = document.querySelector('.player-controls');
+    const btn = () => document.querySelector('button.player-play') as HTMLButtonElement;
+    expect(btn().textContent).toBe('Play');
+    space(document.body);
+    expect(model.player.isPlaying).toBe(true);
+    expect(video()).toBe(before);
+    expect(document.querySelector('.player-controls')).toBe(controlsBefore);
+    expect(btn().textContent).toBe('Pause');
+    space(document.body);
+    expect(video()).toBe(before);
+    expect(btn().textContent).toBe('Play');
+  });
+
+  it('Space on the focused seek slider does not toggle play', () => {
+    const { model } = installModel();
+    const slider = seek();
+    slider.focus();
+    space(slider);
+    expect(play).not.toHaveBeenCalled();
+    expect(model.player.isPlaying).toBe(false);
+  });
+
+  it('loop range still loops via timeupdate without native controls', () => {
+    const { model } = installModel();
+    setLoopRange(model, 1000, 2000);
+    video().currentTime = 2.5;
+    video().dispatchEvent(new dom.window.Event('timeupdate'));
+    expect(video().currentTime).toBeCloseTo(1);
+  });
+
+  it('non-finite duration keeps the slider disabled until a finite durationchange', () => {
+    const { model } = installModel();
+    model.player.durationMs = 0;
+    const proto = dom.window.HTMLMediaElement.prototype;
+    const original = Object.getOwnPropertyDescriptor(proto, 'duration')!;
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'duration', { configurable: true, get: () => NaN });
+    rerenderApp(model);
+    expect(seek().disabled).toBe(true);
+    let d = Infinity;
+    Object.defineProperty(video(), 'duration', { configurable: true, get: () => d });
+    video().dispatchEvent(new dom.window.Event('durationchange'));
+    expect(seek().disabled).toBe(true);
+    d = 7;
+    video().dispatchEvent(new dom.window.Event('durationchange'));
+    expect(seek().disabled).toBe(false);
+    expect(seek().max).toBe('7');
+    Object.defineProperty(proto, 'duration', original);
   });
 });

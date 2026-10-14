@@ -39,8 +39,8 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
 
   const playBtn = document.createElement('button');
-  playBtn.textContent = model.player.isPlaying ? 'Pause' : 'Play';
-  playBtn.setAttribute('aria-label', model.player.isPlaying ? 'Pause video' : 'Play video');
+  playBtn.className = 'player-play';
+  applyPlayState(playBtn, model.player.isPlaying);
   playBtn.addEventListener('click', () => {
     togglePlay(model);
     const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
@@ -193,6 +193,10 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   seek.max = String(Math.max(0, durationS));
   seek.value = String(video ? video.currentTime || model.player.currentTimeMs / 1000 : model.player.currentTimeMs / 1000);
   seek.disabled = !(durationS > 0);
+  // Only a pointer drag freezes the slider against timeupdate; mere focus (after a click or arrow-key seek) must not.
+  const endDrag = () => { delete seek.dataset.dragging; };
+  seek.addEventListener('pointerdown', () => { seek.dataset.dragging = 'true'; });
+  for (const type of ['pointerup', 'pointercancel', 'change', 'blur']) seek.addEventListener(type, endDrag);
   seek.addEventListener('input', () => {
     const target = Number(seek.value);
     const v = document.querySelector('.video-stage video') as HTMLVideoElement | null;
@@ -219,8 +223,8 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   const fullscreenBtn = document.createElement('button');
   fullscreenBtn.type = 'button';
   fullscreenBtn.className = 'player-fullscreen';
-  fullscreenBtn.textContent = 'Fullscreen';
-  fullscreenBtn.setAttribute('aria-label', 'Toggle fullscreen');
+  applyFullscreenState(fullscreenBtn, Boolean(document.fullscreenElement));
+  installFullscreenChangeListener(document);
   fullscreenBtn.disabled = !model.currentMedia || typeof HTMLElement.prototype.requestFullscreen !== 'function';
   fullscreenBtn.addEventListener('click', () => {
     // Fullscreen the stage wrapper (not the <video>) so the subtitle overlay stays visible.
@@ -249,6 +253,35 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   return controls;
 }
 
+function applyPlayState(button: HTMLButtonElement, playing: boolean): void {
+  button.textContent = playing ? 'Pause' : 'Play';
+  button.setAttribute('aria-label', playing ? 'Pause video' : 'Play video');
+}
+
+/** lt-xlr: flip the Play/Pause button label in place (no rerender). */
+export function syncPlayButton(playing: boolean): void {
+  const button = document.querySelector<HTMLButtonElement>('.player-controls button.player-play');
+  if (button) applyPlayState(button, playing);
+}
+
+function applyFullscreenState(button: HTMLButtonElement, active: boolean): void {
+  button.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+  button.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+  button.setAttribute('aria-pressed', String(active));
+}
+
+const fullscreenListenerDocuments = new WeakSet<Document>();
+
+/** lt-xlr: one fullscreenchange listener per document (idempotent across rerenders). */
+function installFullscreenChangeListener(doc: Document): void {
+  if (fullscreenListenerDocuments.has(doc)) return;
+  fullscreenListenerDocuments.add(doc);
+  doc.addEventListener('fullscreenchange', () => {
+    const button = doc.querySelector<HTMLButtonElement>('.player-controls button.player-fullscreen');
+    if (button) applyFullscreenState(button, Boolean(doc.fullscreenElement));
+  });
+}
+
 /** lt-xlr: last mute state per model, so a rebuilt <video> keeps it (the element is the source of truth). */
 export const mutedByModel = new WeakMap<AppModel, boolean>();
 
@@ -273,7 +306,7 @@ export function syncPlayerTransport(video: HTMLVideoElement): void {
       seek.max = String(duration);
       seek.disabled = false;
     }
-    if (document.activeElement !== seek) seek.value = String(video.currentTime);
+    if (seek.dataset.dragging !== 'true') seek.value = String(video.currentTime);
   }
   const mute = controls.querySelector<HTMLButtonElement>('button.player-mute');
   if (mute) applyMuteState(mute, video.muted);

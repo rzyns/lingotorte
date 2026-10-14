@@ -15,7 +15,7 @@ import {
   restoreBrowserMediaHandle,
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
-import { mutedByModel, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
+import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
@@ -141,9 +141,11 @@ function renderVideoStage(model: AppModel): HTMLElement {
   });
   video.addEventListener('play', () => {
     model.player.isPlaying = true;
+    syncPlayButton(true);
   });
   video.addEventListener('pause', () => {
     model.player.isPlaying = false;
+    syncPlayButton(false);
   });
   stage.appendChild(video);
 

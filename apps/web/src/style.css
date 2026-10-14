@@ -499,6 +499,20 @@ textarea:focus-visible,
   aspect-ratio: auto;
 }
 
+/* lt-xlr: the control row is outside the fullscreen stage, so hint the keyboard shortcuts inside it. */
+.video-stage:fullscreen::after {
+  content: "Space play/pause \00B7 Esc exit";
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
 .source-range-panel {
   display: grid;
   gap: 0.75rem;
