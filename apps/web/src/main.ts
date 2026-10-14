@@ -1,5 +1,6 @@
 import './style.css';
 import { installBrowserHandleStore } from './browserHandleStore';
+import { bootSnapshotCache } from './browserSnapshotCache';
 import { createAppModel } from './model';
 import { rerenderApp } from './app';
 
@@ -11,5 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // relink affordance appears once the user reconnects and hydrates state.
   installBrowserHandleStore();
   const model = createAppModel();
-  rerenderApp(model);
+  // lt-0zc: hydrate from the browser snapshot cache (bounded wait, never throws)
+  // before the first render; the banner then reports it as unconfirmed.
+  void bootSnapshotCache(model).finally(() => rerenderApp(model));
 });
