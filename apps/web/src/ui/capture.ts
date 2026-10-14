@@ -34,13 +34,18 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>, 
 }
 
 /**
- * lt-e0j: "Saved “text” · Undo" for every capture-form save. Undo archives what this save created (see undoSave),
- * re-opens the form with the previous selection/meaning/notes, and confirms with a plain "Removed" toast.
+ * lt-e0j: "Saved “text” · Undo" for every capture-form save. Undo removes what this save created (see undoSave),
+ * re-opens the form with the previous selection/meaning/notes, and confirms with a plain "Removed" toast. If the
+ * item or card changed since the save, Undo refuses with a plain toast and changes nothing.
  */
 export function showSaveToast(model: AppModel, receipt: SaveReceipt): void {
   const text = receipt.item.displayText;
   showToast(model, `Saved \u201c${text}\u201d`, () => {
-    undoSave(model, receipt);
+    if (!undoSave(model, receipt)) {
+      showToast(model, `Can\u2019t undo \u2014 \u201c${text}\u201d changed since it was saved`);
+      rerenderApp(model);
+      return;
+    }
     showToast(model, `Removed \u201c${text}\u201d`);
     if (!openCapture(model, receipt.selection, { meaning: receipt.meaning, notes: receipt.notes })) rerenderApp(model);
   });

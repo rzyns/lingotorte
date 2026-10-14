@@ -3076,6 +3076,8 @@ export type SaveReceipt = Readonly<{
   selection: NonNullable<AppModel['selection']>;
   meaning: string;
   notes: string;
+  /** Save-time state Undo re-checks before mutating anything. */
+  baseline: Readonly<{ itemUpdatedAt: string; itemJson: string; occurrenceCount: number }>;
 }>;
 
 export async function saveSelection(model: AppModel): Promise<SavedItem | null> {
@@ -3083,27 +3085,47 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
 }
 
 /**
- * lt-e0j Undo. A new item is archived (archivedAt, the Saved view's existing archive) and its auto-created card
- * is archived (suspendedAt, as the Saved-view toggle does); nothing is hard-deleted. A dedupe save only removes
- * its own occurrence plus a card created by this save: occurrences have no archive field, and the fresh card
- * references that occurrence and has no review history, so both are removed rather than left dangling.
+ * lt-e0j Undo. Refuses (returns false, mutates nothing) unless everything this save created is still untouched:
+ * the item's updatedAt and occurrence count match the save-time baseline, the created card is still FSRS 'new' with
+ * no review events or practice attempts, it is not the card on screen in Review/Practice, and the occurrence is
+ * referenced by no card other than the created one. Under that guarantee nothing else can reference what the save
+ * created, so a new item is removed outright (item, its occurrence, the created card and its state) instead of being
+ * archived; an archived phantom would otherwise still reach Practice/Export. A dedupe save removes only its own
+ * occurrence plus a card it created.
  */
-export function undoSave(model: AppModel, receipt: SaveReceipt): void {
-  const now = model.clock().toISOString();
-  if (receipt.isNewItem) {
-    const item = model.store.getSavedItem(receipt.item.id);
-    if (item && !item.archivedAt) model.store.putSavedItem({ ...item, archivedAt: now, updatedAt: now });
-    const card = receipt.createdCardId ? model.store.getReviewCard(receipt.createdCardId) : undefined;
-    if (card && card.suspendedAt === undefined) model.store.putReviewCard({ ...card, suspendedAt: now });
-  } else if (receipt.isNewOccurrence) {
-    if (receipt.createdCardId) {
-      model.store.removeReviewCard(receipt.createdCardId);
-      model.store.removeReviewCardState(receipt.createdCardId);
-    }
-    model.store.removeSavedOccurrence(receipt.occurrence.id);
+export function undoSave(model: AppModel, receipt: SaveReceipt): boolean {
+  if (!receipt.isNewItem && !receipt.isNewOccurrence) return false;
+  if (!canUndoSave(model, receipt)) return false;
+  if (receipt.createdCardId) {
+    model.store.removeReviewCard(receipt.createdCardId);
+    model.store.removeReviewCardState(receipt.createdCardId);
   }
-  if (receipt.createdCardId && model.review.activeCardId === receipt.createdCardId) model.review.activeCardId = null;
-  if (receipt.isNewItem || receipt.isNewOccurrence) persistIfLocalServiceAutosaveEnabled(model);
+  model.store.removeSavedOccurrence(receipt.occurrence.id);
+  if (receipt.isNewItem) model.store.removeSavedItem(receipt.item.id);
+  persistIfLocalServiceAutosaveEnabled(model);
+  return true;
+}
+
+function canUndoSave(model: AppModel, receipt: SaveReceipt): boolean {
+  const item = model.store.getSavedItem(receipt.item.id);
+  // updatedAt plus the full record: an edit within the same clock tick still counts as a change.
+  if (!item || item.updatedAt !== receipt.baseline.itemUpdatedAt || JSON.stringify(item) !== receipt.baseline.itemJson) return false;
+  if (model.store.listSavedOccurrencesForItem(item.id).length !== receipt.baseline.occurrenceCount) return false;
+  if (!model.store.getSavedOccurrence(receipt.occurrence.id)) return false;
+  const cardId = receipt.createdCardId;
+  const cards = Object.values(model.store.snapshot().reviewCards);
+  // The occurrence (and, for a new item, the item) may be referenced only by the card this save created.
+  if (cards.some((c) => c.id !== cardId && (c.savedOccurrenceId === receipt.occurrence.id || (receipt.isNewItem && c.savedItemId === item.id)))) return false;
+  // Practice attempts reference cards only (no occurrence id), so checking the created card covers them.
+  if (cardId !== null && model.store.listPracticeAttemptsForCard(cardId).length > 0) return false;
+  if (cardId) {
+    const card = model.store.getReviewCard(cardId);
+    if (!card || card.suspendedAt !== undefined || card.deletedAt !== undefined) return false;
+    if (model.store.getReviewCardState(cardId)?.state !== 'new') return false;
+    if (model.store.listReviewEventsForCard(cardId).length > 0) return false;
+    if ([model.review.activeCardId, model.review.currentCardId, model.practice.cardId].includes(cardId)) return false;
+  }
+  return true;
 }
 
 export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveReceipt | null> {
@@ -3160,8 +3182,9 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
   const cardsBefore = reviewCardsForSavedItem(model, result.item.id);
   const card = ensureReviewCardForSavedItem(model, result.item, result.occurrence);
   const createdCardId = cardsBefore.active.length + cardsBefore.archived.length === 0 ? card.id : null;
+  const baseline = { itemUpdatedAt: result.item.updatedAt, itemJson: JSON.stringify(model.store.getSavedItem(result.item.id) ?? result.item), occurrenceCount: model.store.listSavedOccurrencesForItem(result.item.id).length };
   persistIfLocalServiceAutosaveEnabled(model);
-  return { ...result, createdCardId, selection, meaning, notes };
+  return { ...result, createdCardId, selection, meaning, notes, baseline };
 }
 
 export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<SavedItem | null> {

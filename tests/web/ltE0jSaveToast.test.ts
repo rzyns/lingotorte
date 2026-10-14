@@ -100,27 +100,114 @@ describe('lt-e0j save toast', () => {
     expect(model.ui.toast).not.toBeNull();
   });
 
-  it('Undo archives the item and its card and reopens capture with the previous values', async () => {
+  it('Undo removes the new item, its occurrence, card and card state and reopens capture with the previous values', async () => {
     const { model, cues } = installModel();
     const selection = await saveViaForm(model, cues[0]!, 'dom', { meaning: 'house', notes: 'n1' });
     const item = Object.values(model.store.snapshot().savedItems)[0]!;
     const card = Object.values(model.store.snapshot().reviewCards)[0]!;
     region()!.querySelector('button')!.click();
-    expect(model.store.getSavedItem(item.id)!.archivedAt).toBeDefined();
-    expect(model.store.getReviewCard(card.id)!.suspendedAt).toBeDefined();
-    expect(model.store.getReviewCard(card.id)!.deletedAt).toBeUndefined();
+    const snap = model.store.snapshot();
+    expect(snap.savedItems).toEqual({});
+    expect(snap.savedOccurrences).toEqual({});
+    expect(snap.reviewCards).toEqual({});
+    expect(model.store.getReviewCardState(card.id)).toBeUndefined();
+    expect(model.store.getSavedItem(item.id)).toBeUndefined();
     expect(model.selection).toEqual(selection);
     expect(model.pendingMeaning).toBe('house');
     expect(model.pendingNotes).toBe('n1');
     expect((document.getElementById('selection-meaning') as HTMLInputElement).value).toBe('house');
     expect(region()!.textContent).toBe('Removed \u201cdom\u201d');
     expect(region()!.querySelector('button')).toBeNull();
-    // A re-save after Undo creates a fresh active item (the archived one is not deduped into).
     button('Save occurrence')!.click();
     await flush();
-    const active = Object.values(model.store.snapshot().savedItems).filter((i) => !i.archivedAt);
+    const active = Object.values(model.store.snapshot().savedItems);
     expect(active).toHaveLength(1);
     expect(active[0]!.id).not.toBe(item.id);
+  });
+
+  it('Undo of a new item leaves no trace in the review queue, practice data or export snapshot', async () => {
+    const { model, cues } = installModel();
+    await saveViaForm(model, cues[0]!, 'dom');
+    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
+    const dueIds = (at: number) => model.reviewService.listDueCards(new Date(at)).map((c) => c.card.id);
+    expect(dueIds(now)).toContain(card.id);
+    region()!.querySelector('button')!.click();
+    expect(dueIds(now + 86_400_000)).not.toContain(card.id);
+    expect(model.savedOccurrenceService.listItems()).toHaveLength(0);
+    const serialized = JSON.stringify(model.store.snapshot());
+    expect(serialized).not.toContain(card.id);
+    expect(serialized).not.toContain('\u201cdom');
+  });
+
+  it('Undo is refused when the card got a review after the save', async () => {
+    const { model, cues } = installModel();
+    await saveViaForm(model, cues[0]!, 'dom');
+    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
+    now += 1_000;
+    model.reviewService.submitReview(card.id, 'good' as never, new Date(now));
+    const before = JSON.stringify(model.store.snapshot());
+    region()!.querySelector('button')!.click();
+    expect(JSON.stringify(model.store.snapshot())).toBe(before);
+    expect(region()!.textContent).toBe('Can\u2019t undo \u2014 \u201cdom\u201d changed since it was saved');
+    expect(region()!.querySelector('button')).toBeNull();
+  });
+
+  it('Undo is refused when the item was edited after the save', async () => {
+    const { model, cues } = installModel();
+    await saveViaForm(model, cues[0]!, 'dom');
+    const item = Object.values(model.store.snapshot().savedItems)[0]!;
+    model.store.putSavedItem({ ...item, meaning: 'edited' });
+    const before = JSON.stringify(model.store.snapshot());
+    region()!.querySelector('button')!.click();
+    expect(JSON.stringify(model.store.snapshot())).toBe(before);
+    expect(region()!.textContent).toContain('Can\u2019t undo');
+  });
+
+  it('Undo of the first save is refused once the item got another occurrence', async () => {
+    const { model, cues } = installModel();
+    await saveViaForm(model, cues[0]!, 'dom');
+    const undoFirst = model.ui.toast!.undo!;
+    await saveViaForm(model, cues[1]!, 'dom');
+    const before = JSON.stringify(model.store.snapshot());
+    undoFirst();
+    expect(JSON.stringify(model.store.snapshot())).toBe(before);
+    expect(model.ui.toast!.text).toContain('Can\u2019t undo');
+  });
+
+  it('Undo is refused while the created card is on screen in Review', async () => {
+    const { model, cues } = installModel();
+    await saveViaForm(model, cues[0]!, 'dom');
+    model.review.activeCardId = Object.values(model.store.snapshot().reviewCards)[0]!.id;
+    region()!.querySelector('button')!.click();
+    expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(1);
+    expect(model.ui.toast!.text).toContain('Can\u2019t undo');
+  });
+
+  it('Undo marks the model dirty and autosaves when connected', async () => {
+    const { model, cues } = installModel();
+    model.localService.status = 'connected';
+    model.localService.autosaveEnabled = true;
+    model.localService.revision = 'r1' as never;
+    await saveViaForm(model, cues[0]!, 'dom');
+    vi.mocked(modelModule.saveModelToLocalService).mockClear();
+    model.localService.syncState = 'saved';
+    region()!.querySelector('button')!.click();
+    expect(model.localService.syncState).toBe('unsaved');
+  });
+
+  it('Undo during a pending conflict mutates locally but does not autosave', async () => {
+    const { model, cues } = installModel();
+    model.localService.status = 'connected';
+    model.localService.autosaveEnabled = true;
+    model.localService.revision = 'r1' as never;
+    await saveViaForm(model, cues[0]!, 'dom');
+    model.localService.syncState = 'conflict';
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    region()!.querySelector('button')!.click();
+    expect(model.store.snapshot().savedItems).toEqual({});
+    expect(model.localService.syncState).toBe('conflict');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('Undo after a dedupe save removes only the new occurrence and never the pre-existing item or card', async () => {
@@ -132,7 +219,7 @@ describe('lt-e0j save toast', () => {
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id)).toHaveLength(2);
     const original = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
     region()!.querySelector('button')!.click();
-    expect(model.store.getSavedItem(item.id)!.archivedAt).toBeUndefined();
+    expect(model.store.getSavedItem(item.id)).toBeDefined();
     expect(model.store.getReviewCard(card.id)!.suspendedAt).toBeUndefined();
     expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(1);
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id).map((o) => o.id)).toEqual([original.id]);
@@ -150,7 +237,7 @@ describe('lt-e0j save toast', () => {
     expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(1);
     region()!.querySelector('button')!.click();
     expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(0);
-    expect(model.store.getSavedItem(item.id)!.archivedAt).toBeUndefined();
+    expect(model.store.getSavedItem(item.id)).toBeDefined();
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id)).toHaveLength(1);
   });
 
@@ -220,5 +307,39 @@ describe('lt-e0j actionable unsaved banner', () => {
     await flush();
     expect(modelModule.saveModelToLocalService).toHaveBeenCalledTimes(1);
     expect(modelModule.saveModelToLocalService).toHaveBeenCalledWith(model, model.localService.baseUrl);
+  });
+  it('Save now failure leaves the banner in an error state and re-enables the button', async () => {
+    const { model } = installModel();
+    markUnsavedBrowserEdits(model);
+    model.localService.status = 'connected';
+    rerenderApp(model);
+    vi.mocked(modelModule.saveModelToLocalService).mockRejectedValueOnce(new Error('boom'));
+    const save = banner().querySelector('[data-local-service-save]') as HTMLButtonElement;
+    save.click();
+    expect(save.disabled).toBe(true);
+    save.click();
+    await flush();
+    expect(modelModule.saveModelToLocalService).toHaveBeenCalledTimes(1);
+    expect(banner().dataset.syncState).toBe('error');
+    expect(banner().textContent).toContain('Save failed: boom');
+    const retry = banner().querySelector('[data-local-service-save]') as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+  });
+
+  it('Save now is not offered while a save is in flight', () => {
+    const { model } = installModel();
+    model.localService.status = 'connected';
+    model.localService.syncState = 'saving';
+    rerenderApp(model);
+    expect(banner().querySelector('[data-local-service-save]')).toBeNull();
+  });
+});
+
+describe('lt-e0j reduced motion', () => {
+  it('the toast animation is disabled under prefers-reduced-motion', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(new URL('../../apps/web/src/style.css', import.meta.url), 'utf8');
+    const blocks = css.split('@media (prefers-reduced-motion: reduce)').slice(1);
+    expect(blocks.some((b) => /\.toast\s*\{[^}]*animation:\s*none/.test(b.slice(0, b.indexOf('\n}'))))).toBe(true);
   });
 });

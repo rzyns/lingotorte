@@ -70,7 +70,8 @@ export function renderApp(model: AppModel): HTMLElement {
  * The Save now button carries [data-local-service-save] so updateSyncStatus keeps its disabled state honest.
  */
 function renderSyncBannerContent(model: AppModel, node: HTMLElement): void {
-  if (model.localService.syncState !== 'unsaved') {
+  const retryable = model.localService.syncState === 'error' && model.localService.status === 'connected';
+  if (model.localService.syncState !== 'unsaved' && !retryable) {
     node.textContent = model.localService.lastMessage;
     return;
   }
@@ -84,7 +85,17 @@ function renderSyncBannerContent(model: AppModel, node: HTMLElement): void {
     save.className = 'btn-link';
     save.textContent = 'Save now';
     save.dataset.localServiceSave = 'true';
-    save.addEventListener('click', () => { void saveModelToLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model)); });
+    save.addEventListener('click', () => {
+      if (model.localService.syncState === 'saving') return;
+      save.disabled = true;
+      // A rejected save is surfaced through the existing sync error state; the rerender re-enables the button.
+      void saveModelToLocalService(model, model.localService.baseUrl)
+        .catch((err: unknown) => {
+          model.localService.syncState = 'error';
+          model.localService.lastMessage = `Save failed: ${err instanceof Error ? err.message : String(err)}`;
+        })
+        .finally(() => rerenderApp(model));
+    });
     node.append(save, ' \u00b7 ');
   }
   const settings = document.createElement('button');
