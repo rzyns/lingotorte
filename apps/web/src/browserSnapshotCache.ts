@@ -122,19 +122,35 @@ export async function writeSnapshotCache(model: AppModel, backend?: SnapshotCach
   try { await target.put(SNAPSHOT_CACHE_KEY, buildSnapshotCacheRecord(model)); } catch (error) { warnOnce(error); }
 }
 
-/** Read the cached record; resolves null on absence, mismatch, error or timeout. Never rejects. */
-export async function readSnapshotCache(backend?: SnapshotCacheBackend | null, timeoutMs = SNAPSHOT_CACHE_READ_TIMEOUT_MS): Promise<SnapshotCacheRecord | null> {
+/**
+ * Outcome of the boot read. `unknown` (timeout or backend error) means the
+ * stored record may still hold good state, so the caller must not overwrite it.
+ */
+export type SnapshotCacheReadResult =
+  | { status: 'hit'; record: SnapshotCacheRecord }
+  | { status: 'miss' }
+  | { status: 'unknown' };
+
+export async function readSnapshotCacheResult(backend?: SnapshotCacheBackend | null, timeoutMs = SNAPSHOT_CACHE_READ_TIMEOUT_MS): Promise<SnapshotCacheReadResult> {
   const target = backendOrDefault(backend);
-  if (!target) return null;
+  if (!target) return { status: 'unknown' };
+  const timedOut = Symbol('timeout');
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const value = await Promise.race([
       target.get(SNAPSHOT_CACHE_KEY),
-      new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
+      new Promise<typeof timedOut>((resolve) => { timer = setTimeout(() => resolve(timedOut), timeoutMs); }),
     ]);
-    return isRecord(value) ? value : null;
-  } catch (error) { warnOnce(error); return null; }
+    if (value === timedOut) { warnOnce(new Error('Snapshot cache read timed out.')); return { status: 'unknown' }; }
+    return isRecord(value) ? { status: 'hit', record: value } : { status: 'miss' };
+  } catch (error) { warnOnce(error); return { status: 'unknown' }; }
   finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+/** Read the cached record; resolves null on absence, mismatch, error or timeout. Never rejects. */
+export async function readSnapshotCache(backend?: SnapshotCacheBackend | null, timeoutMs = SNAPSHOT_CACHE_READ_TIMEOUT_MS): Promise<SnapshotCacheRecord | null> {
+  const result = await readSnapshotCacheResult(backend, timeoutMs);
+  return result.status === 'hit' ? result.record : null;
 }
 
 /** Remove the cached record (for the deferred Settings "Clear this browser's cached state" button). */
@@ -170,19 +186,39 @@ export function hydrateModelFromSnapshotCache(model: AppModel, record: SnapshotC
   } catch (error) { warnOnce(error); return false; }
 }
 
-/** Debounced writer: every model change signal schedules one write 500 ms later. */
+/**
+ * Debounced writer: every model change signal schedules one write 500 ms later.
+ * A pending write is flushed best-effort on pagehide / hidden visibility so the
+ * last edits before a tab close are not lost. Single record: with several tabs
+ * open, the last tab to write wins (documented limitation of a crash buffer).
+ */
 export function installSnapshotCacheWriter(model: AppModel, backend?: SnapshotCacheBackend | null, delayMs = SNAPSHOT_CACHE_DEBOUNCE_MS): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    if (timer === undefined) return;
+    clearTimeout(timer); timer = undefined;
+    void writeSnapshotCache(model, backend);
+  };
   observeSnapshotCacheChanges(model, () => {
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => { timer = undefined; void writeSnapshotCache(model, backend); }, delayMs);
   });
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+  }
 }
 
-/** Boot sequence used by main.ts: bounded read, hydrate, then install the writer. */
+/**
+ * Boot sequence used by main.ts: bounded read, hydrate, then install the writer.
+ * If the read timed out or failed, the stored record may still hold the
+ * learner's only copy of unsaved edits, so the writer is NOT installed for this
+ * page load: an empty model must never overwrite a good cache.
+ */
 export async function bootSnapshotCache(model: AppModel, backend?: SnapshotCacheBackend | null): Promise<boolean> {
-  const record = await readSnapshotCache(backend);
-  const hydrated = record ? hydrateModelFromSnapshotCache(model, record) : false;
+  const result = await readSnapshotCacheResult(backend);
+  if (result.status === 'unknown') return false;
+  const hydrated = result.status === 'hit' ? hydrateModelFromSnapshotCache(model, result.record) : false;
   installSnapshotCacheWriter(model, backend);
   return hydrated;
 }
