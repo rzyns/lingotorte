@@ -172,7 +172,7 @@ export function createAppModel(): AppModel {
       status: 'disconnected',
       lastMessage: 'Local service not connected.',
       lastSavedAt: null,
-      autosaveEnabled: false,
+      autosaveEnabled: true,
     },
   };
 }
@@ -212,7 +212,6 @@ export function pairLocalService(model: AppModel, capability: string, baseUrl = 
     model.localService.syncState = 'error';
     model.localService.revision = null;
     model.localService.pathPolicy = null;
-    model.localService.autosaveEnabled = false;
     model.localService.lastMessage = PAIR_AGAIN;
     notifySync(model);
     pairingHook(model, (hooks) => hooks.unauthorized?.());
@@ -563,7 +562,8 @@ export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
   notifySync(model);
 }
 
-export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void { model.localService.autosaveEnabled = enabled; }
+/** lt-4ji: a preference, persisted in the browser snapshot cache (A28); pairing never resets it. */
+export function setLocalServiceAutosave(model: AppModel, enabled: boolean): void { model.localService.autosaveEnabled = enabled; signalSnapshotCache(model); }
 
 export function markUnsavedBrowserEdits(model: AppModel): void {
   ++syncOwner(model).editGeneration;

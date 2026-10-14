@@ -61,11 +61,11 @@ describe('captured memory-only transport', () => {
     const owner = {}; const transport = pairTransport(owner, origin, SYNTHETIC_CAPABILITY); clearPairing(owner);
     const fetcher = vi.fn(); await expect(transport.request('/api/state', undefined, fetcher)).rejects.toThrow('superseded'); expect(fetcher).not.toHaveBeenCalled();
   });
-  it('401 disables autosave and requires fresh explicit pairing without replay', async () => {
+  it('401 keeps the autosave preference but requires fresh explicit pairing without replay', async () => {
     const model = modelWithPair(); model.localService.autosaveEnabled = true;
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ ok: false }, 401)); vi.stubGlobal('fetch', fetcher);
     await connectLocalService(model);
-    expect(model.localService.lastMessage).toContain('Pair again'); expect(model.localService.autosaveEnabled).toBe(false);
+    expect(model.localService.lastMessage).toContain('Pair again'); expect(model.localService.autosaveEnabled).toBe(true);
     await saveModelToLocalService(model); await connectLocalService(model);
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(model)).not.toContain(SYNTHETIC_CAPABILITY);
