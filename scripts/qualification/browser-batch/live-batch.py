@@ -870,17 +870,11 @@ class BatchDriver:
         anchored = len(occ) == 3 and all(x['track'] == self.state['jTrack'] and x['mediaId'] == self.state['jDraftMedia'] for x in occ) and spans == want
         kinds = sorted(x['kind'] for x in occ)
         self.ok(P, 'anchors-on-approved-corrected-track', anchored, counts={'occurrences': len(occ)}, value={'kinds': kinds})
-        self.ok(P, 'no-card-before-explicit-create', not o['journey']['cards'], counts={'cards': len(o['journey']['cards'])})
-        # Cards are created explicitly per saved item: Saved view 'Create review card' (app.ts renderSavedView),
-        # which navigates to Review after each press; the Saved list is re-opened for the next item.
-        vocab = self.invoke('saved-count', tab='vocab')['createButtons']
-        sentences = self.invoke('saved-count', tab='sentences')['createButtons']
-        self.ok(P, 'saved-items-listed', vocab == 2 and sentences == 1, counts={'vocab': vocab, 'sentences': sentences})
-        for tab, n in (('vocab', vocab), ('sentences', sentences)):
-            for i in range(n):
-                self.invoke('saved-count', tab=tab)
-                self.press('createReviewCard', index=i)
-        o = self.jsave()
+        # lt-uzo: saving creates one recognition card per saved item; Saved shows an 'In review \u2713' toggle per item.
+        vocab = self.invoke('saved-count', tab='vocab')
+        sentences = self.invoke('saved-count', tab='sentences')
+        listed = vocab['toggles'] == 2 and sentences['toggles'] == 1 and vocab['inReview'] == 2 and sentences['inReview'] == 1
+        self.ok(P, 'saved-items-listed-in-review', listed, counts={'vocab': vocab['inReview'], 'sentences': sentences['inReview']})
         cards = o['journey']['cards']
         self.ok(P, 'three-new-cards-due-now', len(cards) == 3 and len({x['text'] for x in cards}) == 3 and all(x['state'] == 'new' for x in cards), counts={'cards': len(cards)})
         self.state['jAnchors'] = occ

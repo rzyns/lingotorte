@@ -3094,6 +3094,8 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
     endMs: selectionTimeRange.end,
     sourceContext,
   });
+  // lt-uzo: a saved item becomes one recognition card (idempotent per saved item, not per occurrence).
+  ensureReviewCardForSavedItem(model, result.item, result.occurrence);
   persistIfLocalServiceAutosaveEnabled(model);
   return result.item;
 }
@@ -3200,6 +3202,82 @@ export function createReviewCardForSavedItem(
   }).card;
   persistIfLocalServiceAutosaveEnabled(model);
   return card;
+}
+
+/** Cards referencing a saved item, split into active (in review) and archived (suspended, history kept). */
+export function reviewCardsForSavedItem(model: AppModel, savedItemId: string): { active: ReviewCard[]; archived: ReviewCard[] } {
+  const cards = Object.values(model.store.snapshot().reviewCards).filter((c) => c.savedItemId === savedItemId && c.deletedAt === undefined);
+  return { active: cards.filter((c) => c.suspendedAt === undefined), archived: cards.filter((c) => c.suspendedAt !== undefined) };
+}
+
+/**
+ * lt-uzo: create the item's recognition card unless one already references it. Archived (suspended) cards count:
+ * an item the learner took out of review is not silently re-added by saving another occurrence.
+ * Returns the existing or new card; the new card starts FSRS 'new', due at model.clock().
+ */
+export function ensureReviewCardForSavedItem(model: AppModel, item: SavedItem, occurrence: SavedOccurrence): ReviewCard {
+  const { active, archived } = reviewCardsForSavedItem(model, item.id);
+  const existing = active[0] ?? archived[0];
+  if (existing) return existing;
+  const now = model.clock().toISOString();
+  const { card, state } = model.reviewService.createCard({
+    savedItem: item,
+    savedOccurrence: occurrence,
+    cardType: 'recognition',
+    promptTemplate: `Recognize: ${item.displayText}`,
+  });
+  const stamped = { ...card, createdAt: now };
+  model.store.putReviewCard(stamped);
+  model.store.putReviewCardState({ ...state, dueAt: now });
+  return stamped;
+}
+
+/** Saved-view toggle off: archive (suspend) the item's active cards. Card, state and review events are kept. */
+export function archiveReviewCardsForSavedItem(model: AppModel, savedItemId: string): void {
+  const now = model.clock().toISOString();
+  for (const card of reviewCardsForSavedItem(model, savedItemId).active) model.store.putReviewCard({ ...card, suspendedAt: now });
+  if (model.review.activeCardId && model.store.getReviewCard(model.review.activeCardId)?.suspendedAt !== undefined) model.review.activeCardId = null;
+  persistIfLocalServiceAutosaveEnabled(model);
+}
+
+/** Saved-view toggle on: re-activate the most recent archived card (keeping its schedule), else create one. */
+export function addSavedItemToReview(model: AppModel, item: SavedItem, persist = true): ReviewCard | null {
+  const { active, archived } = reviewCardsForSavedItem(model, item.id);
+  if (active[0]) return active[0];
+  let result: ReviewCard | null = null;
+  const latest = [...archived].sort((a, b) => (b.suspendedAt ?? '').localeCompare(a.suspendedAt ?? ''))[0];
+  if (latest) {
+    const { suspendedAt: _suspendedAt, ...rest } = latest;
+    result = rest;
+    model.store.putReviewCard(result);
+  } else {
+    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
+    if (occurrence) result = ensureReviewCardForSavedItem(model, item, occurrence);
+  }
+  if (persist) persistIfLocalServiceAutosaveEnabled(model);
+  return result;
+}
+
+/** 'Add all to review (N)': only items lacking an active card; one persist for the batch. */
+export function addSavedItemsToReview(model: AppModel, items: readonly SavedItem[]): number {
+  let added = 0;
+  for (const item of items) {
+    if (reviewCardsForSavedItem(model, item.id).active.length > 0) continue;
+    if (addSavedItemToReview(model, item, false)) added += 1;
+  }
+  if (added > 0) persistIfLocalServiceAutosaveEnabled(model);
+  return added;
+}
+
+/** Inline 'Add meaning': writes savedItem.meaning and persists (also marks the snapshot cache dirty). */
+export function setSavedItemMeaning(model: AppModel, savedItemId: string, meaning: string): SavedItem | null {
+  const item = model.store.getSavedItem(savedItemId);
+  const trimmed = meaning.trim();
+  if (!item || !trimmed) return null;
+  const updated: SavedItem = { ...item, meaning: trimmed, updatedAt: model.clock().toISOString() };
+  model.store.putSavedItem(updated);
+  persistIfLocalServiceAutosaveEnabled(model);
+  return updated;
 }
 
 export function listReviewBuckets(model: AppModel, asOf: Date, bucketConfig?: ReviewBucketConfig): {

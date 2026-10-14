@@ -34,7 +34,7 @@ DOM_ELEMENTS = frozenset((
     'confirmReplace', 'confirmSingle', 'cueText', 'cueStart', 'cueEnd', 'wordText', 'wordStart', 'wordEnd', 'unlisted', 'none',
     'importGatedDraft', 'downloadExport', 'saveSentence', 'showAnswer', 'rateGood', 'submitAttempt', 'analyseWords', 'navReview',
     'navPractice', 'publicReadAuth', 'targetFile', 'nativeFile', 'practiceMode', 'practiceAnswer', 'practiceChoice', 'morphologyPanel',
-    'cueRow', 'video', 'createReviewCard',
+    'cueRow', 'video', 'reviewToggle',
 ))
 # Sync-state keys added after live run 3 (save-when-ready readiness diagnostics; fixed vocabulary).
 DOM_STATES = frozenset(('missing', 'disabled', 'none', 'saving', 'conflict', 'choice', 'connecting', 'pairAgain'))
