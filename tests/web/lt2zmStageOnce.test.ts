@@ -213,4 +213,62 @@ describe('lt-2zm video stage mounted once', () => {
     rerenderApp(model);
     expect(document.querySelector('.media-error-alert')).toBeNull();
   });
+  it('switching subtitle tracks on the same media updates the overlay without replacing the <video>', () => {
+    const { model } = installModel();
+    const v = video();
+    v.currentTime = 2.5;
+    v.dispatchEvent(new dom.window.Event('timeupdate'));
+    expect(document.querySelector('.subtitle-target')?.textContent).toContain('widzenia');
+    // Second target track on the same media (e.g. a corrected transcript).
+    const asset = model.currentMedia!;
+    const alt = makeSubtitleTrack({ mediaId: asset.id, language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: 'alt.srt', contentSha256: sha, isActive: true, transcriptStatus: 'approved' });
+    model.store.putSubtitleTrack(alt);
+    const a0 = makeCue({ trackId: alt.id, cueIndex: 0, startMs: 0, endMs: 2000, text: 'Cześć wszystkim.', normalizedText: 'cześć wszystkim.', textSha256: sha });
+    const a1 = makeCue({ trackId: alt.id, cueIndex: 1, startMs: 2000, endMs: 4000, text: 'Na razie.', normalizedText: 'na razie.', textSha256: sha });
+    model.store.putCue(a0);
+    model.store.putCue(a1);
+    model.targetTrackId = alt.id;
+    model.cues = [a0, a1];
+    rerenderApp(model);
+    expect(video()).toBe(v);
+    expect(document.querySelector('.subtitle-target')?.textContent).toContain('Na razie');
+    expect(document.querySelector('.subtitle-overlay')?.textContent).not.toContain('widzenia');
+    // Adding a native (translation) track also shows up in the overlay on the persistent stage.
+    const native = makeSubtitleTrack({ mediaId: asset.id, language: 'en', role: 'native', format: 'srt', sourceKind: 'synthetic', sourcePath: 'en.srt', contentSha256: sha, isActive: true, transcriptStatus: 'approved' });
+    model.store.putSubtitleTrack(native);
+    model.store.putCue(makeCue({ trackId: native.id, cueIndex: 0, startMs: 0, endMs: 2000, text: 'Hi all.', normalizedText: 'hi all.', textSha256: sha }));
+    model.store.putCue(makeCue({ trackId: native.id, cueIndex: 1, startMs: 2000, endMs: 4000, text: 'See you.', normalizedText: 'see you.', textSha256: sha }));
+    model.nativeTrackId = native.id;
+    rerenderApp(model);
+    expect(video()).toBe(v);
+    expect(document.querySelector('.subtitle-native')?.textContent).toContain('See you');
+    expect(srcSets).toHaveLength(1);
+  });
+
+  it('if the browser refuses to resume after a rerender (rejected play()), the UI falls back to paused', async () => {
+    const { model } = installModel();
+    playBtn().click();
+    const v = video();
+    // Chrome pauses the element when it leaves the document; the resume net's play() is then refused.
+    play.mockImplementation(() => Promise.reject(new Error('NotAllowedError')));
+    const proto = dom.window.Node.prototype as any;
+    const origAppend = proto.appendChild;
+    proto.appendChild = function (this: Node, n: Node) {
+      const r = origAppend.call(this, n);
+      if (!v.isConnected && !v.paused) (v as any).pause();
+      return r;
+    };
+    try {
+      rerenderApp(model);
+    } finally {
+      proto.appendChild = origAppend;
+    }
+    expect(play).toHaveBeenCalled();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(video()).toBe(v);
+    expect(v.paused).toBe(true);
+    expect(model.player.isPlaying).toBe(false);
+    expect(playBtn().textContent).toBe('Play');
+  });
 });
