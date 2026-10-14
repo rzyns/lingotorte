@@ -16,7 +16,7 @@ import {
 import { rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
-import { renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
+import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
 export function renderTranscriptPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
@@ -174,6 +174,15 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         seek();
+        return;
+      }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        // lt-z8s: words are not Tab stops; arrows step from the row into its first/last word.
+        const ws = Array.from(row.querySelectorAll<HTMLElement>('.cue-target .cue-word, .cue-text .cue-word'));
+        const targetWord = e.key === 'ArrowRight' ? ws[0] : ws[ws.length - 1];
+        if (!targetWord) return;
+        e.preventDefault();
+        focusCueWord(targetWord);
       }
     });
     row.addEventListener('mouseup', () => {
@@ -320,6 +329,15 @@ function installCueWordDelegation(model: AppModel, panel: HTMLElement): void {
       if (cue) captureCueWord(model, cue, button, e.shiftKey);
       return;
     }
+    if (e.key === 'Escape') {
+      const button = cueWordFromEvent(e);
+      const cueRow = button?.closest<HTMLElement>('.cue-row');
+      if (!cueRow) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cueRow.focus();
+      return;
+    }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const button = cueWordFromEvent(e);
     if (!button) return;
@@ -333,12 +351,10 @@ function installCueWordDelegation(model: AppModel, panel: HTMLElement): void {
       const prior = model.selection;
       if (!(prior && prior.cueId === cue.id && prior.kind !== 'sentence')) captureCueWord(model, cue, button, false);
       if (!captureCueWord(model, cue, next, true)) return;
-      document.getElementById(next.id)?.focus();
+      focusCueWord(document.getElementById(next.id));
       return;
     }
-    button.tabIndex = -1;
-    next.tabIndex = 0;
-    next.focus();
+    focusCueWord(next);
   });
 }
 

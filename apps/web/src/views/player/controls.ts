@@ -431,7 +431,7 @@ export function renderCueSourceContext(model: AppModel, cue: Cue): HTMLElement {
 }
 
 export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
-  // lt-z8s: every word/number token is a focusable <span role="button"> (class cue-word; a real <button> blocks native drag text-selection in Chrome) whether or not the cue has word timings;
+  // lt-z8s: every word/number token is a <span role="button"> (class cue-word; a real <button> blocks native drag text-selection in Chrome) whether or not the cue has word timings;
   // punctuation and whitespace stay plain text nodes so the element's textContent equals cue.text.
   // Clicks/keys are handled by one delegated listener on the transcript panel (views/player/transcript.ts).
   const target = document.createElement('div');
@@ -450,7 +450,6 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
     button.setAttribute('role', 'button');
     button.className = 'cue-word';
     button.id = `cue-word-${cue.id}-${token.tokenIndex}`;
-    button.tabIndex = -1;
     button.dataset.wordCueId = cue.id;
     button.dataset.tokenIndex = String(token.tokenIndex);
     button.dataset.charStart = String(token.charStart);
@@ -473,10 +472,19 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
     cursor = token.charEnd;
   }
   if (cursor < cue.text.length) target.appendChild(document.createTextNode(cue.text.slice(cursor)));
-  // Roving tabindex: one word per cue is reachable with Tab; arrows move within the cue.
-  const first = (target.querySelector('.cue-word[aria-pressed="true"]') ?? target.querySelector('.cue-word')) as HTMLElement | null;
-  if (first) first.tabIndex = 0;
+  // Words carry no tabindex at rest: a focusable mousedown target blocks native drag-selection in Chrome.
+  // Keyboard users reach words from the focused cue row with ArrowLeft/ArrowRight (focusCueWord).
   return target;
+}
+
+/** lt-z8s: focus a word span via a temporary tabindex=-1 that is removed again on blur. */
+export function focusCueWord(el: HTMLElement | null | undefined): void {
+  if (!el) return;
+  if (!el.hasAttribute('tabindex')) {
+    el.setAttribute('tabindex', '-1');
+    el.addEventListener('focusout', () => el.removeAttribute('tabindex'), { once: true });
+  }
+  el.focus();
 }
 
 /** lt-z8s: toggle the current-word highlight in place during playback (no rerender). */

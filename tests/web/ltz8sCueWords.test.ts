@@ -106,8 +106,9 @@ describe('lt-z8s clickable cue words', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     const first = words(cue.id)[0]!;
-    expect(first.tabIndex).toBe(0);
-    first.focus();
+    row(cue.id).focus();
+    key(dom, row(cue.id), 'ArrowRight');
+    expect(document.activeElement).toBe(first);
     const ev = key(dom, first, 'ArrowRight');
     expect(ev.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(word(cue.id, 'się'));
@@ -122,13 +123,35 @@ describe('lt-z8s clickable cue words', () => {
     expect(word(cue.id, 'polskiego').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('words are focusable role=button spans with roving tabindex', () => {
+  it('words are role=button spans with no tabindex at rest; the cue row is the single Tab stop', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     const ws = words(cue.id);
-    expect(ws.every((w) => w.tagName === 'SPAN' && w.getAttribute('role') === 'button' && w.hasAttribute('tabindex'))).toBe(true);
-    expect(ws.filter((w) => w.tabIndex === 0)).toHaveLength(1);
+    expect(ws.every((w) => w.tagName === 'SPAN' && w.getAttribute('role') === 'button' && !w.hasAttribute('tabindex'))).toBe(true);
+    expect(row(cue.id).getAttribute('tabindex')).toBe('0');
     expect(row(cue.id).querySelector('button.cue-word')).toBeNull();
+  });
+
+  it('row ArrowRight/ArrowLeft focus first/last word, arrows move, Escape returns to row, blur drops tabindex', () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    const r = row(cue.id);
+    r.focus();
+    expect(key(dom, r, 'ArrowLeft').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(word(cue.id, 'razem'));
+    r.focus();
+    expect(word(cue.id, 'razem').hasAttribute('tabindex')).toBe(false);
+    key(dom, r, 'ArrowRight');
+    expect(document.activeElement).toBe(word(cue.id, 'Uczymy'));
+    key(dom, word(cue.id, 'Uczymy'), 'ArrowRight');
+    expect(document.activeElement).toBe(word(cue.id, 'się'));
+    expect(word(cue.id, 'Uczymy').hasAttribute('tabindex')).toBe(false);
+    const esc = key(dom, word(cue.id, 'się'), 'Escape');
+    expect(esc.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(r);
+    expect(words(cue.id).some((w) => w.hasAttribute('tabindex'))).toBe(false);
+    expect(model.selection).toBeNull();
+    expect(model.player.activeCueId).toBeNull();
   });
 
   for (const k of ['Enter', ' ']) {
@@ -136,7 +159,9 @@ describe('lt-z8s clickable cue words', () => {
       const { model, cue } = installModel();
       rerenderApp(model);
       const b = word(cue.id, 'razem');
-      b.focus();
+      row(cue.id).focus();
+      key(dom, row(cue.id), 'ArrowLeft');
+      expect(document.activeElement).toBe(b);
       const ev = key(dom, b, k);
       expect(ev.defaultPrevented).toBe(true);
       expect(model.player.activeCueId).toBeNull();

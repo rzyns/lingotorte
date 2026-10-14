@@ -266,6 +266,11 @@ export function rerenderApp(model: AppModel): void {
     successor.focus();
   } else if (focused) {
     const el = document.getElementById(focused);
+    // lt-z8s: word spans have no tabindex at rest; give a temporary one (removed on blur) so focus sticks.
+    if (el?.classList.contains('cue-word') && !el.hasAttribute('tabindex')) {
+      el.setAttribute('tabindex', '-1');
+      el.addEventListener('focusout', () => el.removeAttribute('tabindex'), { once: true });
+    }
     el?.focus();
   }
   scrollCueIntoView(model.player.activeCueId);
