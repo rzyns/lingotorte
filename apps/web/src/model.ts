@@ -1545,6 +1545,8 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
       return false;
     }
     const objectUrl = URL.createObjectURL(file);
+    const replacedUrl = model.browserLocalMedia.objectUrl;
+    if (replacedUrl && replacedUrl !== objectUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(replacedUrl);
     model.browserLocalMedia = {
       objectUrl,
       sourceLabel: `${HANDLE_LABEL_PREFIX}${handle.name}`,
