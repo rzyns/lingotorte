@@ -20,8 +20,8 @@ import { currentKeyboardCue, isEditableShortcutTarget, seekRenderedVideoToCue } 
 import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippetStates, synchronizePracticeSnippet, synchronizeSourceRangeSnippet } from './ui/snippets.ts';
 import { renderExportImportView } from './views/exportImport.ts';
 import { renderLibraryView } from './views/library.ts';
-import { pausePersistentVideoOffPlayer, renderPlayerView, resumePersistentVideoAfterRender } from './views/player/stage.ts';
-import { togglePlaybackInPlace } from './views/player/controls.ts';
+import { fullscreenPersistentStage, pausePersistentVideoOffPlayer, renderPlayerView, resumePersistentVideoAfterRender, updatePersistentStageInPlace } from './views/player/stage.ts';
+import { syncPlayButton, syncPlayerTransport, togglePlaybackInPlace } from './views/player/controls.ts';
 import { renderPracticeView } from './views/practice.ts';
 import { renderReviewView } from './views/review.ts';
 import { renderSavedView } from './views/saved.ts';
@@ -307,7 +307,39 @@ export function requestFocusAfterRender(model: AppModel, ...ids: string[]): void
   pendingFocusRequests.set(model, ids);
 }
 
+// lt-dlf.2: a root swap moves the persistent .video-stage through a detached tree; the browser exits
+// fullscreen when its fullscreen element leaves the document. Decision: while the stage is fullscreen,
+// rerenderApp does NOT swap the root (the rest of the page is invisible anyway). It refreshes only the
+// in-place parts (stage rate/overlay/alert, transport, play button) and defers one full rerender to the
+// fullscreenchange that exits fullscreen. Model state still changes immediately. The toast region lives
+// outside the stage, so toasts raised in fullscreen are not visible until exit (accepted).
+const deferredFullscreenRerender = new WeakMap<Document, AppModel>();
+const fullscreenRerenderDocuments = new WeakSet<Document>();
+
+function deferRerenderUntilFullscreenExit(model: AppModel): void {
+  deferredFullscreenRerender.set(document, model);
+  if (fullscreenRerenderDocuments.has(document)) return;
+  fullscreenRerenderDocuments.add(document);
+  const doc = document;
+  doc.addEventListener('fullscreenchange', () => {
+    if (doc.fullscreenElement) return;
+    const pending = deferredFullscreenRerender.get(doc);
+    if (!pending) return;
+    deferredFullscreenRerender.delete(doc);
+    if (document === doc) rerenderApp(pending);
+  });
+}
+
 export function rerenderApp(model: AppModel): void {
+  if (currentRoot?.isConnected && fullscreenPersistentStage(model)) {
+    pendingFocusRequests.delete(model);
+    updatePersistentStageInPlace(model);
+    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (video) syncPlayerTransport(video);
+    syncPlayButton(model.player.isPlaying);
+    deferRerenderUntilFullscreenExit(model);
+    return;
+  }
   // Consume the one-time focus request first, so it can never survive to a later, unrelated render.
   const requested = pendingFocusRequests.get(model);
   pendingFocusRequests.delete(model);

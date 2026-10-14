@@ -127,6 +127,24 @@ export function resumePersistentVideoAfterRender(model: AppModel): void {
   }
 }
 
+/**
+ * lt-dlf.2: the persistent stage element (if any) when it, or a node inside it, is the fullscreen element.
+ * rerenderApp defers its root swap while this is non-null, because moving the stage out of the document
+ * makes the browser exit fullscreen.
+ */
+export function fullscreenPersistentStage(model: AppModel): HTMLElement | null {
+  const fs = typeof document !== 'undefined' ? document.fullscreenElement : null;
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  if (!fs || !stage || !stage.isConnected) return null;
+  return stage === fs || stage.contains(fs) ? stage : null;
+}
+
+/** lt-dlf.2: refresh the persistent stage in place (rate, label, alert, overlay) without moving it. */
+export function updatePersistentStageInPlace(model: AppModel): void {
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  if (stage) updateVideoStage(stage, model);
+}
+
 function updateVideoStage(stage: HTMLElement, model: AppModel): void {
   const video = stageVideo(stage);
   if (!video || !model.currentMedia) return;
