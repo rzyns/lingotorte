@@ -431,7 +431,7 @@ export function renderCueSourceContext(model: AppModel, cue: Cue): HTMLElement {
 }
 
 export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
-  // lt-z8s: every word/number token is a button (class cue-word) whether or not the cue has word timings;
+  // lt-z8s: every word/number token is a focusable <span role="button"> (class cue-word; a real <button> blocks native drag text-selection in Chrome) whether or not the cue has word timings;
   // punctuation and whitespace stay plain text nodes so the element's textContent equals cue.text.
   // Clicks/keys are handled by one delegated listener on the transcript panel (views/player/transcript.ts).
   const target = document.createElement('div');
@@ -446,8 +446,8 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
   for (const token of cueWordTokens(cue.text)) {
     if (token.tokenKind !== 'word' && token.tokenKind !== 'number') continue;
     if (token.charStart > cursor) target.appendChild(document.createTextNode(cue.text.slice(cursor, token.charStart)));
-    const button = document.createElement('button');
-    button.type = 'button';
+    const button = document.createElement('span');
+    button.setAttribute('role', 'button');
     button.className = 'cue-word';
     button.id = `cue-word-${cue.id}-${token.tokenIndex}`;
     button.tabIndex = -1;

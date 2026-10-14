@@ -1451,20 +1451,13 @@ textarea:focus-visible,
 
 .cue-word,
 .timed-word {
-  appearance: none;
-  border: 0;
   border-radius: 0.25rem;
-  background: transparent;
-  color: inherit;
-  font: inherit;
 }
 
-/* Words read as running text: no UA button padding/margin, so punctuation sits
-   flush ("Cześć, to") and drag-select across words stays possible. */
+/* Words are inline role="button" spans (not <button>) so native drag-select across words works;
+   focus ring comes from the global [tabindex]:focus-visible rule. */
 .cue-word {
-  padding: 0;
-  margin: 0;
-  line-height: inherit;
+  cursor: pointer;
   -webkit-user-select: text;
   user-select: text;
 }

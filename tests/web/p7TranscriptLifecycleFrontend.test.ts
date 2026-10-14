@@ -277,13 +277,13 @@ describe('P7 transcript lifecycle frontend', () => {
     const playerButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Player') as HTMLButtonElement | null;
     playerButton?.click();
 
-    const timedWordButtons = Array.from(document.querySelectorAll('button.timed-word')) as HTMLButtonElement[];
+    const timedWordButtons = Array.from(document.querySelectorAll('.timed-word')) as HTMLButtonElement[];
     expect(timedWordButtons.map((button) => button.textContent)).toEqual(['Serwis', 'lokalny']);
     const lokalnyButton = timedWordButtons.find((button) => button.textContent === 'lokalny')!;
     // lt-z8s: Alt+click replays the timed word; plain click collects it.
     lokalnyButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, altKey: true }));
     expect(model.player.currentTimeMs).toBe(650);
-    (Array.from(document.querySelectorAll('button.timed-word')).find((button) => button.textContent === 'lokalny') as HTMLButtonElement).click();
+    (Array.from(document.querySelectorAll('.timed-word')).find((button) => button.textContent === 'lokalny') as HTMLButtonElement).click();
     expect(model.selection).toMatchObject({ text: 'lokalny', charStart: 7, charEnd: 14 });
 
     const saveOccurrenceButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null;

@@ -239,9 +239,9 @@ const DRAG_CLICK_SUPPRESS_MS = 400;
 
 // lt-z8s: one delegated listener set per transcript panel (no per-token listeners). Word buttons carry
 // data-word-cue-id (not data-cue-id, which row selectors rely on)/data-token-index/data-char-start/data-char-end; timed ones also data-start-ms.
-function cueWordFromEvent(e: Event): HTMLButtonElement | null {
+function cueWordFromEvent(e: Event): HTMLElement | null {
   // Duck-typed (no instanceof) so it works across realms, e.g. jsdom windows in tests.
-  return ((e.target as Element | null)?.closest?.('button.cue-word') as HTMLButtonElement | null | undefined) ?? null;
+  return ((e.target as Element | null)?.closest?.('.cue-word') as HTMLElement | null | undefined) ?? null;
 }
 
 function wordRange(button: HTMLElement) {
@@ -310,10 +310,20 @@ function installCueWordDelegation(model: AppModel, panel: HTMLElement): void {
     if (cue) toggleLoopForWord(model, cue, Number(button.dataset.charStart), Number(button.dataset.charEnd));
   });
   panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      // Word spans are role="button" spans (not <button>), so activate them by hand: same path as click.
+      const button = cueWordFromEvent(e);
+      if (!button) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const cue = cueFor(button);
+      if (cue) captureCueWord(model, cue, button, e.shiftKey);
+      return;
+    }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     const button = cueWordFromEvent(e);
     if (!button) return;
-    const words = Array.from(button.parentElement?.querySelectorAll<HTMLButtonElement>('button.cue-word') ?? []);
+    const words = Array.from(button.parentElement?.querySelectorAll<HTMLElement>('.cue-word') ?? []);
     const next = words[words.indexOf(button) + (e.key === 'ArrowRight' ? 1 : -1)];
     e.preventDefault();
     e.stopPropagation();

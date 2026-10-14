@@ -55,7 +55,7 @@ function installModel(status: 'approved' | 'draft' = 'approved', text = 'Uczymy 
 
 const meaning = () => document.getElementById('selection-meaning') as HTMLInputElement | null;
 const row = (cueId: string) => document.querySelector(`.transcript-panel [data-cue-id="${cueId}"]`) as HTMLElement;
-const words = (cueId: string) => Array.from(row(cueId).querySelectorAll('.cue-target button.cue-word')) as HTMLButtonElement[];
+const words = (cueId: string) => Array.from(row(cueId).querySelectorAll('.cue-target .cue-word')) as HTMLElement[];
 const word = (cueId: string, text: string) => words(cueId).find((b) => b.textContent === text)!;
 function click(dom: JSDOM, el: HTMLElement, init: MouseEventInit = {}) {
   el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
@@ -122,17 +122,28 @@ describe('lt-z8s clickable cue words', () => {
     expect(word(cue.id, 'polskiego').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('Enter on a word button activates it and does not seek the row', () => {
+  it('words are focusable role=button spans with roving tabindex', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
-    const b = word(cue.id, 'razem');
-    b.focus();
-    const ev = key(dom, b, 'Enter');
-    expect(ev.defaultPrevented).toBe(false);
-    if (!ev.defaultPrevented) b.click();
-    expect(model.player.activeCueId).toBeNull();
-    expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem' });
+    const ws = words(cue.id);
+    expect(ws.every((w) => w.tagName === 'SPAN' && w.getAttribute('role') === 'button' && w.hasAttribute('tabindex'))).toBe(true);
+    expect(ws.filter((w) => w.tabIndex === 0)).toHaveLength(1);
+    expect(row(cue.id).querySelector('button.cue-word')).toBeNull();
   });
+
+  for (const k of ['Enter', ' ']) {
+    it(`${k === ' ' ? 'Space' : k} on a word span captures it, focuses Meaning, and does not seek the row`, () => {
+      const { model, cue } = installModel();
+      rerenderApp(model);
+      const b = word(cue.id, 'razem');
+      b.focus();
+      const ev = key(dom, b, k);
+      expect(ev.defaultPrevented).toBe(true);
+      expect(model.player.activeCueId).toBeNull();
+      expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem' });
+      expect(document.activeElement).toBe(meaning());
+    });
+  }
 
   it('drag-select still resolves to the same token range', () => {
     const { model, cue } = installModel();
