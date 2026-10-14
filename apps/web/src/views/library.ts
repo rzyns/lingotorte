@@ -1,7 +1,7 @@
 import { readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../../packages/domain/src/nativePaths.ts';
 import type { AppModel } from '../uiTypes';
 import { formatTimeMs } from '../uiTypes';
-import { renderEmptyVideoPlaceholder } from './player/stage.ts';
+import { chooseMediaAgainViaPicker } from './player/stage.ts';
 import {
   applyTrackOffsetMs,
   createOffsetCorrectedTranscriptVersion,
@@ -654,11 +654,15 @@ function renderMediaList(model: AppModel): HTMLElement {
   wrap.appendChild(heading);
   const assets = listMediaAssetsNewestFirst(model);
   if (assets.length === 0) {
-    wrap.appendChild(renderEmptyVideoPlaceholder(model));
+    const empty = document.createElement('p');
+    empty.className = 'media-list-empty meta';
+    empty.textContent = 'No media yet. Add a video below.';
+    wrap.appendChild(empty);
     return wrap;
   }
   const list = document.createElement('ul');
   list.className = 'media-rows';
+  list.tabIndex = 0; // scrollable region (max-height) must be keyboard reachable
   list.setAttribute('aria-label', 'Imported media');
   for (const asset of assets) {
     const row = document.createElement('li');
@@ -694,9 +698,12 @@ function renderMediaList(model: AppModel): HTMLElement {
       setView(model, 'player');
       rerenderApp(model);
     });
-    actions.appendChild(openBtn);
-    if (mediaAssetNeedsRelink(model, asset)) {
-      // Reuses the player's relink placeholder (Relink media / Choose media again).
+    const needsRelink = mediaAssetNeedsRelink(model, asset);
+    if (!(isCurrent && needsRelink)) actions.appendChild(openBtn);
+    if (needsRelink) {
+      // Only one browser file handle is stored (HANDLE_STORE_KEY 'current-media-handle'), so a stored-handle
+      // reconnect works only for the current asset. Non-current assets go straight to the choose-again picker.
+      // TODO(follow-up): per-media handle storage would let any asset reconnect without re-picking.
       const relinkBtn = document.createElement('button');
       relinkBtn.type = 'button';
       relinkBtn.className = 'btn-secondary';
@@ -704,7 +711,9 @@ function renderMediaList(model: AppModel): HTMLElement {
       relinkBtn.setAttribute('aria-label', `Relink ${asset.title}`);
       relinkBtn.addEventListener('click', () => {
         if (!openMediaAsset(model, asset.id)) return;
+        model.importError = null;
         setView(model, 'player');
+        if (!isCurrent) chooseMediaAgainViaPicker(model);
         rerenderApp(model);
       });
       actions.appendChild(relinkBtn);
@@ -731,7 +740,8 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   form.className = 'import-form';
 
   const loadBtn = document.createElement('button');
-  loadBtn.className = 'btn-primary';
+  loadBtn.className = 'btn-secondary';
+  loadBtn.type = 'button';
   loadBtn.textContent = 'Load synthetic fixture';
   loadBtn.addEventListener('click', () => {
     void importFixtureMediaAndSubtitles(
@@ -750,7 +760,6 @@ export function renderLibraryView(model: AppModel): HTMLElement {
         rerenderApp(model);
       });
   });
-  form.appendChild(loadBtn);
 
   const localImportGroup = document.createElement('div');
   localImportGroup.className = 'local-file-import add-media-card';
@@ -891,6 +900,10 @@ export function renderLibraryView(model: AppModel): HTMLElement {
     localImportActions.prepend(persistentImportBtn);
   }
   localImportGroup.appendChild(localImportActions);
+  const fixtureActions = document.createElement('div');
+  fixtureActions.className = 'add-media-fixture-actions';
+  fixtureActions.appendChild(loadBtn);
+  localImportGroup.appendChild(fixtureActions);
   form.appendChild(localImportGroup);
 
   const conflictBox = renderMediaNameConflict(model);
@@ -905,12 +918,17 @@ export function renderLibraryView(model: AppModel): HTMLElement {
 
   const disclosure = document.createElement('details');
   disclosure.className = 'transcript-lifecycle-disclosure';
-  disclosure.open = lifecycleDisclosureOpen.get(model) ?? lifecycleDisclosureDefaultOpen(model);
+  const renderedOpen = lifecycleDisclosureOpen.get(model) ?? lifecycleDisclosureDefaultOpen(model);
+  disclosure.open = renderedOpen;
   const summary = document.createElement('summary');
   summary.textContent = 'Transcript tools (ASR drafts, captions, embedded tracks)';
   disclosure.appendChild(summary);
   disclosure.appendChild(renderTranscriptLifecyclePanel(model));
+  // Setting open programmatically fires an async 'toggle'; record only genuine changes away from the rendered state.
+  let lastOpen = renderedOpen;
   disclosure.addEventListener('toggle', () => {
+    if (disclosure.open === lastOpen) return;
+    lastOpen = disclosure.open;
     lifecycleDisclosureOpen.set(model, disclosure.open);
   });
   form.appendChild(disclosure);

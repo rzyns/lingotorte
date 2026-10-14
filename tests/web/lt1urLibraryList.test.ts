@@ -58,11 +58,10 @@ describe('lt-1ur Library media list', () => {
     expect(first!.querySelector('.media-row-privacy')?.textContent).toBe(newer.privacyLabel);
   });
 
-  it('shows the empty placeholder copy when nothing is imported', () => {
+  it('shows the empty message when nothing is imported', () => {
     const model = pairedModel();
     library(model);
     expect(rows()).toHaveLength(0);
-    expect(document.querySelector('.media-list')?.textContent).toContain('Start with owned local media');
   });
 
   it('Open switches currentMedia and tracks, clears loop, and lands in the player at 0', async () => {
@@ -154,5 +153,80 @@ describe('lt-1ur Add media card', () => {
     const buttons = Array.from(document.querySelectorAll('.local-import-actions button')).map((b) => b.textContent);
     expect(buttons).toEqual(['Choose video (recommended — stays linked after reload)', 'Import local media']);
     expect(document.querySelector('label[for="local-media-file"]')?.textContent).toBe('Import copy for this session only');
+  });
+});
+
+describe('lt-1ur review fixes', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  it('programmatic open at render is not remembered as a user choice (empty -> approved closes)', async () => {
+    const model = clockModel();
+    library(model);
+    expect(details().open).toBe(true);
+    // Browsers fire 'toggle' asynchronously when open is set programmatically.
+    details().dispatchEvent(new dom.window.Event('toggle'));
+    await tick();
+    await importBrowserLocalFiles(model, { mediaFile: media([11], 'a.webm'), targetSubtitleFile: srt('a.srt') });
+    const track = model.store.getSubtitleTrack(model.targetTrackId!)!;
+    if (track.transcriptStatus !== 'approved') approveTranscriptTrack(model, track.id);
+    library(model);
+    expect(details().open).toBe(false);
+    // A genuine user toggle is still remembered.
+    details().open = true;
+    details().dispatchEvent(new dom.window.Event('toggle'));
+    library(model);
+    expect(details().open).toBe(true);
+  });
+
+  it('puts Load synthetic fixture inside the Add media card', () => {
+    const model = pairedModel();
+    library(model);
+    expect(btn(document.querySelector('.add-media-card')!, 'Load synthetic fixture')).toBeTruthy();
+  });
+
+  it('shows a Library-specific empty message', () => {
+    const model = pairedModel();
+    library(model);
+    const list = document.querySelector('.media-list')!;
+    expect(list.textContent).toContain('No media yet. Add a video below.');
+    expect(list.querySelector('.video-placeholder')).toBeNull();
+  });
+
+  it('current row needing relink shows only Relink; Relink clears importError', async () => {
+    const model = clockModel();
+    await importTwo(model);
+    model.browserLocalMedia = { ...model.browserLocalMedia, objectUrl: null };
+    model.importError = 'stale';
+    library(model);
+    expect(btn(rows()[0]!, 'Open')).toBeUndefined();
+    btn(rows()[0]!, 'Relink')!.click();
+    expect(model.importError).toBeNull();
+    expect(model.view).toBe('player');
+  });
+
+  it('non-current Relink goes straight to the choose-again picker for that asset', async () => {
+    const model = clockModel();
+    const { older } = await importTwo(model);
+    const picker = vi.fn(() => Promise.resolve([]));
+    Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
+    library(model);
+    btn(rows()[1]!, 'Relink')!.click();
+    expect(picker).toHaveBeenCalledTimes(1);
+    expect(model.currentMedia?.id).toBe(older.id);
+  });
+
+  it('re-opening current media keeps its object URL; switching revokes the old one', async () => {
+    const model = clockModel();
+    const { older } = await importTwo(model);
+    const url = model.browserLocalMedia.objectUrl;
+    const revoke = URL.revokeObjectURL as unknown as ReturnType<typeof vi.fn>;
+    revoke.mockClear();
+    library(model);
+    btn(rows()[0]!, 'Open')!.click();
+    expect(model.browserLocalMedia.objectUrl).toBe(url);
+    expect(revoke).not.toHaveBeenCalledWith(url);
+    library(model);
+    btn(rows()[1]!, 'Open')!.click();
+    expect(model.currentMedia?.id).toBe(older.id);
+    expect(revoke).toHaveBeenCalledWith(url);
   });
 });

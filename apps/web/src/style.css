@@ -1145,6 +1145,12 @@ textarea:focus-visible,
   margin: 0;
   padding: 0;
   list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.add-media-fixture-actions {
+  margin-top: 0.75rem;
 }
 
 .media-row {
@@ -1153,13 +1159,13 @@ textarea:focus-visible,
   align-items: center;
   gap: 0.5rem 0.75rem;
   padding: 0.6rem 0.75rem;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
 .media-row.active {
   border-color: var(--accent-strong);
-  background: rgba(141, 169, 255, 0.1);
+  background: var(--surface-soft);
 }
 
 .media-row-title {

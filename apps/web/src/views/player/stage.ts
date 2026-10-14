@@ -322,6 +322,50 @@ export function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   return placeholder;
 }
 
+/** Re-pick media through the persistent file picker (Relink placeholder's 'Choose media again'; also Library Relink). */
+export function chooseMediaAgainViaPicker(model: AppModel): void {
+  const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
+  if (typeof picker !== 'function') {
+    model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
+    rerenderApp(model);
+    return;
+  }
+  void picker({
+    multiple: false,
+    types: [
+      {
+        description: 'Owned media files',
+        accept: {
+          'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
+          'audio/*': ['.mp3', '.m4a', '.wav'],
+        },
+      },
+    ],
+  })
+    .then((handles) => {
+      const mediaHandle = handles[0];
+      if (!mediaHandle) {
+        model.importError = 'No media handle was selected.';
+        rerenderApp(model);
+        return;
+      }
+      return importBrowserLocalFileHandles(model, { mediaHandle })
+        .catch((err: unknown) => {
+          handleMediaImportError(model, err, () => importBrowserLocalFileHandles(model, { mediaHandle }, { onNameConflict: 'import-new' }));
+          throw null;
+        });
+    })
+    .then(() => {
+      clearPendingMediaNameConflict();
+      rerenderApp(model);
+    })
+    .catch((err: unknown) => {
+      if (err === null) return;
+      model.importError = err instanceof Error ? err.message : String(err);
+      rerenderApp(model);
+    });
+}
+
 function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder video-placeholder-relink';
@@ -374,48 +418,7 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   chooseAgainBtn.className = 'btn-secondary';
   chooseAgainBtn.type = 'button';
   chooseAgainBtn.textContent = 'Choose media again';
-  chooseAgainBtn.addEventListener('click', () => {
-    const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
-    if (typeof picker !== 'function') {
-      model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
-      rerenderApp(model);
-      return;
-    }
-    void picker({
-      multiple: false,
-      types: [
-        {
-          description: 'Owned media files',
-          accept: {
-            'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
-            'audio/*': ['.mp3', '.m4a', '.wav'],
-          },
-        },
-      ],
-    })
-      .then((handles) => {
-        const mediaHandle = handles[0];
-        if (!mediaHandle) {
-          model.importError = 'No media handle was selected.';
-          rerenderApp(model);
-          return;
-        }
-        return importBrowserLocalFileHandles(model, { mediaHandle })
-          .catch((err: unknown) => {
-            handleMediaImportError(model, err, () => importBrowserLocalFileHandles(model, { mediaHandle }, { onNameConflict: 'import-new' }));
-            throw null;
-          });
-      })
-      .then(() => {
-        clearPendingMediaNameConflict();
-        rerenderApp(model);
-      })
-      .catch((err: unknown) => {
-        if (err === null) return;
-        model.importError = err instanceof Error ? err.message : String(err);
-        rerenderApp(model);
-      });
-  });
+  chooseAgainBtn.addEventListener('click', () => chooseMediaAgainViaPicker(model));
   const libraryBtn = document.createElement('button');
   libraryBtn.className = 'btn-secondary';
   libraryBtn.type = 'button';
