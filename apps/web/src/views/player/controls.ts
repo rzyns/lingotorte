@@ -12,6 +12,7 @@ import {
   activeCueAtTime,
   activeLoopRangeForSelection,
   clearLoopRange,
+  cueWordTokens,
   clearVisualSourceRange,
   MAX_PLAYBACK_RATE,
   MIN_PLAYBACK_RATE,
@@ -29,7 +30,6 @@ import {
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
 import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
-import { tokenizeWhitespaceText } from '@lingotorte/language';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
 
 export function renderPlayerControls(model: AppModel): HTMLElement {
@@ -443,7 +443,7 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
   const selection = model.selection && model.selection.cueId === cue.id && model.selection.kind !== 'sentence' ? model.selection : null;
   const isActiveCue = cue.id === model.player.activeCueId;
   let cursor = 0;
-  for (const token of tokenizeWhitespaceText(cue.text, 'pl')) {
+  for (const token of cueWordTokens(cue.text)) {
     if (token.tokenKind !== 'word' && token.tokenKind !== 'number') continue;
     if (token.charStart > cursor) target.appendChild(document.createTextNode(cue.text.slice(cursor, token.charStart)));
     const button = document.createElement('button');
@@ -465,7 +465,7 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
       button.dataset.startMs = String(word.startMs);
       button.dataset.endMs = String(word.endMs);
       button.title = `Alt+click to replay ${formatTimeMs(word.startMs)}–${formatTimeMs(word.endMs)}`;
-      if (isActiveCue && word.startMs <= model.player.currentTimeMs && word.endMs >= model.player.currentTimeMs) {
+      if (isActiveCue && word.startMs <= model.player.currentTimeMs && model.player.currentTimeMs < word.endMs) {
         button.classList.add('current-word');
       }
     }
@@ -484,7 +484,7 @@ export function syncTranscriptCurrentWord(cueId: string | null, timeMs: number):
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('.transcript-panel .cue-word.timed-word'))) {
     const start = Number(button.dataset.startMs);
     const end = Number(button.dataset.endMs);
-    button.classList.toggle('current-word', button.dataset.wordCueId === cueId && start <= timeMs && end >= timeMs);
+    button.classList.toggle('current-word', button.dataset.wordCueId === cueId && start <= timeMs && timeMs < end);
   }
 }
 

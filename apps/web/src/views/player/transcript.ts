@@ -10,6 +10,7 @@ import {
   setPendingMeaning,
   setPendingNotes,
   setTranscriptQuery,
+  cueWordTokens,
   tokenizeCueText,
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
@@ -179,8 +180,11 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
       const domSelection = window.getSelection();
       const selectionText = domSelection?.toString().trim();
       if (selectionText) {
+        lastDragCaptureAt.set(model, Date.now());
         const rangeStart = selectionOffsetInCueText(row, domSelection, cue.text, selectionText);
-        void tokenizeCueText(model, cue).then((tokens: import('../../model').TokenInfo[]) => {
+        // lt-z8s: same synchronous tokenizer as the word buttons, so click and drag yield identical anchors.
+        {
+          const tokens = cueWordTokens(cue.text);
           const lower = selectionText.toLowerCase();
           const token = tokens.find(
             (t: import('../../model').TokenInfo) =>
@@ -220,7 +224,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
             charEnd: overlapping.length === 1 ? overlapping[0]!.charEnd : charEnd,
           });
           return;
-        });
+        }
       }
     });
     panel.appendChild(row);
@@ -228,6 +232,10 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
   installCueWordDelegation(model, panel);
   return panel;
 }
+
+// lt-z8s: set when a drag-select mouseup captures, so the click that follows it on a word button is ignored.
+const lastDragCaptureAt = new WeakMap<AppModel, number>();
+const DRAG_CLICK_SUPPRESS_MS = 400;
 
 // lt-z8s: one delegated listener set per transcript panel (no per-token listeners). Word buttons carry
 // data-word-cue-id (not data-cue-id, which row selectors rely on)/data-token-index/data-char-start/data-char-end; timed ones also data-start-ms.
@@ -275,8 +283,18 @@ function installCueWordDelegation(model: AppModel, panel: HTMLElement): void {
     const button = cueWordFromEvent(e);
     if (!button) return;
     e.stopPropagation();
+    // A drag that starts and ends on one button also fires click; the row's mouseup already captured it.
+    // (The capture rerender may already have collapsed the DOM selection, so also honour the mouseup mark.)
+    if (Date.now() - (lastDragCaptureAt.get(model) ?? 0) < DRAG_CLICK_SUPPRESS_MS) return;
+    const domSelection = window.getSelection();
+    if (domSelection && domSelection.isCollapsed === false && domSelection.toString().trim()) return;
     const cue = cueFor(button);
     if (!cue) return;
+    // Second click of a double-click: the word is already selected; skip the redundant capture/rerender
+    // so dblclick only toggles the word loop and leaves one lexeme selection of this word.
+    const prior = model.selection;
+    if (e.detail > 1 && !e.shiftKey && !e.altKey && prior && prior.cueId === cue.id && prior.kind === 'lexeme'
+      && prior.tokenStart === Number(button.dataset.tokenIndex) && prior.tokenEnd === Number(button.dataset.tokenIndex) + 1) return;
     if (e.altKey) {
       // Alt+click replays a timed word; plain click collects.
       if (button.dataset.startMs !== undefined) seekToTimedWord(model, cue, Number(button.dataset.startMs));

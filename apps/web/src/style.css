@@ -1459,6 +1459,16 @@ textarea:focus-visible,
   font: inherit;
 }
 
+/* Words read as running text: no UA button padding/margin, so punctuation sits
+   flush ("Cześć, to") and drag-select across words stays possible. */
+.cue-word {
+  padding: 0;
+  margin: 0;
+  line-height: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .cue-word:hover,
 .timed-word:hover {
   background: var(--surface-soft);

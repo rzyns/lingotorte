@@ -157,6 +157,71 @@ describe('lt-z8s clickable cue words', () => {
     expect(row(cue.id).querySelector('.current-word')?.textContent).toBe('razem');
   });
 
+  it('punctuation-heavy cue: click and drag produce identical anchors for the same word', () => {
+    const { model, cue } = installModel('approved', '„Tak, 2,5 zł.”');
+    rerenderApp(model);
+    expect(words(cue.id).map((b) => b.textContent)).toEqual(['Tak', '2,5', 'zł']);
+    const anchors: unknown[] = [];
+    for (const w of ['Tak', '2,5', 'zł']) {
+      click(dom, word(cue.id, w));
+      anchors.push(model.selection);
+    }
+    const dragged: unknown[] = [];
+    for (const w of ['Tak', '2,5', 'zł']) {
+      vi.spyOn(dom.window, 'getSelection').mockImplementation(() => ({ toString: () => w, isCollapsed: true, removeAllRanges: () => undefined }) as unknown as Selection);
+      row(cue.id).dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+      dragged.push(model.selection);
+    }
+    expect(dragged).toEqual(anchors);
+    expect(anchors[1]).toMatchObject({ text: '2,5', tokenStart: 3, tokenEnd: 4, charStart: 6, charEnd: 9 });
+  });
+
+  it('a drag that starts and ends on one word captures once (no duplicate click capture)', () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    const b = word(cue.id, 'polskiego');
+    vi.spyOn(dom.window, 'getSelection').mockImplementation(() => ({ toString: () => 'polskie', isCollapsed: false, removeAllRanges: () => undefined }) as unknown as Selection);
+    b.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+    const captured = model.selection;
+    expect(captured).toMatchObject({ kind: 'lexeme', text: 'polskiego', tokenStart: 2 });
+    click(dom, b);
+    expect(model.selection).toBe(captured); // click after the drag is skipped: no second capture/rerender
+  });
+
+  it('dblclick on a timed word loops it and leaves a single lexeme selection of that word', () => {
+    const { model, cue } = installModel('approved', undefined, true);
+    rerenderApp(model);
+    click(dom, word(cue.id, 'polskiego'), { detail: 1 });
+    const first = model.selection;
+    click(dom, word(cue.id, 'polskiego'), { detail: 2 });
+    expect(model.selection).toBe(first); // second click is not a fresh capture
+    word(cue.id, 'polskiego').dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true, detail: 2 }));
+    expect(model.player.loopRange).toEqual({ startMs: 2800, endMs: 3100 });
+    expect(model.selection).toEqual({ kind: 'lexeme', text: 'polskiego', cueId: cue.id, tokenStart: 2, tokenEnd: 3, charStart: 11, charEnd: 20 });
+    expect(document.activeElement?.id).toBe('selection-meaning');
+  });
+
+  it('adjacent words touching at a boundary highlight only the later word', () => {
+    const { model, cue } = installModel('approved', undefined, true);
+    for (const w of model.store.listTranscriptWordTimingsForCue(cue.id)) {
+      model.store.putTranscriptWordTiming({ ...w, endMs: w.startMs + 400 }); // contiguous: się ends where polskiego starts
+    }
+    model.player.currentTimeMs = 2800;
+    rerenderApp(model);
+    expect(Array.from(row(cue.id).querySelectorAll('.current-word')).map((b) => b.textContent)).toEqual(['polskiego']);
+  });
+
+  it('Shift+click on a word in a different cue resets to a plain lexeme for that word', () => {
+    const { model, cue } = installModel();
+    const other = { ...cue, id: `${cue.id}-b`, cueIndex: 1, startMs: 4000, endMs: 5000, text: 'Dzień dobry.' };
+    model.store.putCue(other);
+    model.cues = [cue, other];
+    rerenderApp(model);
+    click(dom, word(cue.id, 'się'));
+    click(dom, word(other.id, 'dobry'), { shiftKey: true });
+    expect(model.selection).toEqual({ kind: 'lexeme', text: 'dobry', cueId: other.id, tokenStart: 1, tokenEnd: 2, charStart: 6, charEnd: 11 });
+  });
+
   it('unapproved track: click shows the refusal message and sets no selection', () => {
     const { model, cue } = installModel('draft');
     rerenderApp(model);
