@@ -11,6 +11,7 @@ import { rerenderApp } from '../appShell.ts';
 import {
   REMEMBERED_PAIRING_NOTE,
   REMEMBER_PAIRING_LABEL,
+  REMEMBER_PAIRING_NEXT_CONNECT_HINT,
   forgetRememberedPairing,
   noteExplicitPairing,
   pairingIsRemembered,
@@ -92,6 +93,13 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   rememberLabel.appendChild(rememberCheckbox);
   rememberLabel.append(` ${REMEMBER_PAIRING_LABEL}`);
   servicePanel.appendChild(rememberLabel);
+  if (rememberPairingOptedIn(model) && !pairingIsRemembered(model)) {
+    // The capability is not retained after connect, so a tick only applies to the next Connect.
+    const hint = document.createElement('p');
+    hint.dataset.rememberPairingHint = 'true';
+    hint.textContent = REMEMBER_PAIRING_NEXT_CONNECT_HINT;
+    servicePanel.appendChild(hint);
+  }
   if (pairingIsRemembered(model)) {
     const remembered = document.createElement('p');
     remembered.dataset.rememberedPairing = 'true';

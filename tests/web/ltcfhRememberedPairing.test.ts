@@ -7,7 +7,7 @@ import {
 } from '../../apps/web/src/model';
 import { SNAPSHOT_CACHE_KEY, bootSnapshotCache, type SnapshotCacheBackend } from '../../apps/web/src/browserSnapshotCache';
 import {
-  REMEMBERED_PAIRING_KEY, bootRememberedPairing, forgetRememberedPairing, installRememberedPairing, noteExplicitPairing,
+  REMEMBERED_PAIRING_KEY, REMEMBER_PAIRING_NEXT_CONNECT_HINT, bootRememberedPairing, forgetRememberedPairing, installRememberedPairing, noteExplicitPairing,
   pairingIsRemembered, setRememberPairingOptIn, type RememberedPairingBackend,
 } from '../../apps/web/src/rememberedPairing';
 import { rerenderApp } from '../../apps/web/src/app';
@@ -204,5 +204,83 @@ describe('lt-cfh remembered pairing', () => {
     const forget = [...dom.window.document.querySelectorAll('button')].find((b) => b.textContent === 'Forget pairing')!;
     forget.click(); await settle();
     expect(stored(backend)).toBeUndefined();
+  });
+  it('Disconnect/Forget during a slow boot read aborts auto-connect', async () => {
+    const backend = new MemoryBackend();
+    backend.data.set(REMEMBERED_PAIRING_KEY, { origin: createAppModel().localService.baseUrl, capability: SYNTHETIC_CAPABILITY, savedAt: 'x' });
+    let release!: () => void; const gate = new Promise<void>((r) => { release = r; });
+    const slow: RememberedPairingBackend = { get: async (k) => { await gate; return backend.get(k); }, put: (k, v) => backend.put(k, v), delete: (k) => backend.delete(k) };
+    const fetchMock = stubService(empty);
+    const model = createAppModel();
+    const boot = bootRememberedPairing(model, slow);
+    await settle();
+    const forgotten = forgetRememberedPairing(model);
+    release();
+    expect(await boot).toBeNull();
+    await forgotten; await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(model.localService.status).not.toBe('connecting');
+    expect(stored(backend)).toBeUndefined();
+  });
+
+  it('statusOk then an immediate Forget leaves no record even with a delayed put', async () => {
+    const backend = new MemoryBackend();
+    const delayed: RememberedPairingBackend = {
+      get: (k) => backend.get(k),
+      put: async (k, v) => { await new Promise((r) => setTimeout(r, 20)); await backend.put(k, v); },
+      delete: (k) => backend.delete(k),
+    };
+    stubService(empty);
+    const model = createAppModel();
+    installRememberedPairing(model, delayed);
+    await setRememberPairingOptIn(model, true);
+    pairLocalService(model, SYNTHETIC_CAPABILITY);
+    noteExplicitPairing(model, SYNTHETIC_CAPABILITY, model.localService.baseUrl);
+    expect((await connectLocalService(model)).ok).toBe(true);
+    await forgetRememberedPairing(model);
+    await new Promise((r) => setTimeout(r, 40)); await settle();
+    expect(backend.puts).toBe(1);
+    expect(stored(backend)).toBeUndefined();
+  });
+
+  it('URL edited while /api/status is in flight writes no record for the old origin', async () => {
+    const backend = new MemoryBackend();
+    let release!: () => void; const gate = new Promise<void>((r) => { release = r; });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/api/status')) { await gate; return response({ ok: true, config: {} }); }
+      return response({ ok: true, snapshot: empty(), revision });
+    }));
+    const model = createAppModel();
+    installRememberedPairing(model, backend);
+    await setRememberPairingOptIn(model, true);
+    pairLocalService(model, SYNTHETIC_CAPABILITY);
+    noteExplicitPairing(model, SYNTHETIC_CAPABILITY, model.localService.baseUrl);
+    const connecting = connectLocalService(model);
+    await settle();
+    // Same steps as the Settings URL input handler.
+    void forgetRememberedPairing(model);
+    setLocalServiceBaseUrl(model, 'http://127.0.0.1:5999');
+    release();
+    await connecting.catch(() => undefined); await settle();
+    expect(backend.puts).toBe(0);
+    expect(stored(backend)).toBeUndefined();
+    expect(pairingIsRemembered(model)).toBe(false);
+  });
+
+  it('ticking after a connect shows the next-connect hint and writes nothing yet', async () => {
+    const dom = new JSDOM('<!doctype html><html><body><main id="app"></main></body></html>', { pretendToBeVisual: true, url: 'http://localhost:5173/' });
+    for (const [k, v] of Object.entries({ window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, MutationObserver: dom.window.MutationObserver })) vi.stubGlobal(k, v);
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    const backend = new MemoryBackend(); stubService(empty);
+    const model = createAppModel();
+    await explicitPair(model, backend, false);
+    model.view = 'settings';
+    rerenderApp(model);
+    const box = dom.window.document.querySelector<HTMLInputElement>('#local-service-remember-pairing')!;
+    expect(dom.window.document.body.textContent).not.toContain(REMEMBER_PAIRING_NEXT_CONNECT_HINT);
+    box.checked = true; box.dispatchEvent(new dom.window.Event('change'));
+    await settle();
+    expect(dom.window.document.body.textContent).toContain(REMEMBER_PAIRING_NEXT_CONNECT_HINT);
+    expect(backend.puts).toBe(0);
   });
 });
