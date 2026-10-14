@@ -8,6 +8,16 @@ import {
   setLocalServiceBaseUrl,
 } from '../model';
 import { rerenderApp } from '../appShell.ts';
+import {
+  REMEMBERED_PAIRING_NOTE,
+  REMEMBER_PAIRING_LABEL,
+  REMEMBER_PAIRING_NEXT_CONNECT_HINT,
+  forgetRememberedPairing,
+  noteExplicitPairing,
+  pairingIsRemembered,
+  rememberPairingOptedIn,
+  setRememberPairingOptIn,
+} from '../rememberedPairing.ts';
 
 export function renderSettingsView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -53,6 +63,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   urlInput.value = model.localService.baseUrl === '/' ? window.location.origin : model.localService.baseUrl;
   urlInput.addEventListener('input', () => {
     capabilityInput.value = '';
+    void forgetRememberedPairing(model);
     setLocalServiceBaseUrl(model, urlInput.value);
   });
   urlLabel.appendChild(urlInput);
@@ -67,8 +78,38 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   capabilityLabel.appendChild(capabilityInput);
   servicePanel.appendChild(capabilityLabel);
   const warning = document.createElement('p');
-  warning.textContent = 'Pair only with the exact selected origin on an operator-trusted private network. HTTP sends capability and learner data unencrypted; no public internet use. Reload requires fresh pairing.';
+  warning.textContent = 'Pair only with the exact selected origin on an operator-trusted private network. HTTP sends capability and learner data unencrypted; no public internet use.' + (pairingIsRemembered(model) ? '' : ' Reload requires fresh pairing.');
   servicePanel.appendChild(warning);
+  const rememberLabel = document.createElement('label');
+  rememberLabel.htmlFor = 'local-service-remember-pairing';
+  const rememberCheckbox = document.createElement('input');
+  rememberCheckbox.type = 'checkbox';
+  rememberCheckbox.id = 'local-service-remember-pairing';
+  rememberCheckbox.name = 'local-service-remember-pairing';
+  rememberCheckbox.checked = rememberPairingOptedIn(model);
+  rememberCheckbox.addEventListener('change', () => {
+    void setRememberPairingOptIn(model, rememberCheckbox.checked).then(() => rerenderApp(model));
+  });
+  rememberLabel.appendChild(rememberCheckbox);
+  rememberLabel.append(` ${REMEMBER_PAIRING_LABEL}`);
+  servicePanel.appendChild(rememberLabel);
+  if (rememberPairingOptedIn(model) && !pairingIsRemembered(model)) {
+    // The capability is not retained after connect, so a tick only applies to the next Connect.
+    const hint = document.createElement('p');
+    hint.dataset.rememberPairingHint = 'true';
+    hint.textContent = REMEMBER_PAIRING_NEXT_CONNECT_HINT;
+    servicePanel.appendChild(hint);
+  }
+  if (pairingIsRemembered(model)) {
+    const remembered = document.createElement('p');
+    remembered.dataset.rememberedPairing = 'true';
+    remembered.textContent = `${REMEMBERED_PAIRING_NOTE}.`;
+    servicePanel.appendChild(remembered);
+    const forget = document.createElement('button');
+    forget.textContent = 'Forget pairing';
+    forget.addEventListener('click', () => { void forgetRememberedPairing(model).then(() => rerenderApp(model)); });
+    servicePanel.appendChild(forget);
+  }
   const buttonRow = document.createElement('div');
   buttonRow.className = 'button-row';
   const connectButton = document.createElement('button');
@@ -78,7 +119,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   connectButton.addEventListener('click', () => {
     const capability = capabilityInput.value;
     capabilityInput.value = '';
-    try { pairLocalService(model, capability, urlInput.value); }
+    try { pairLocalService(model, capability, urlInput.value); noteExplicitPairing(model, capability, model.localService.baseUrl); }
     catch { model.localService.lastMessage = 'Select an exact HTTP origin and enter its private session capability.'; rerenderApp(model); return; }
     void connectLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
     rerenderApp(model);
@@ -86,7 +127,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   buttonRow.appendChild(connectButton);
   const disconnect = document.createElement('button');
   disconnect.textContent = 'Disconnect local service';
-  disconnect.addEventListener('click', () => { capabilityInput.value = ''; setLocalServiceBaseUrl(model, model.localService.baseUrl); rerenderApp(model); });
+  disconnect.addEventListener('click', () => { capabilityInput.value = ''; void forgetRememberedPairing(model); setLocalServiceBaseUrl(model, model.localService.baseUrl); rerenderApp(model); });
   buttonRow.appendChild(disconnect);
 
   const saveButton = document.createElement('button');
