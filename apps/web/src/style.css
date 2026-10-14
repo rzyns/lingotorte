@@ -69,12 +69,19 @@ textarea:focus-visible,
 
 .lingotorte-app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* header, sync banner, main, footer. Explicit rows keep <main> on the 1fr
+     track whether or not the sync banner is rendered (lt-4he). */
+  grid-template-rows: auto auto 1fr auto;
   min-height: 100vh;
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 1rem;
 }
+
+.lingotorte-app > .lingotorte-header { grid-row: 1; }
+.lingotorte-app > [data-local-service-sync] { grid-row: 2; margin-top: 0.75rem; }
+.lingotorte-app > .lingotorte-main { grid-row: 3; }
+.lingotorte-app > .lingotorte-footer { grid-row: 4; }
 
 .lingotorte-header {
   display: flex;
