@@ -1,7 +1,6 @@
 import { readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../../packages/domain/src/nativePaths.ts';
 import type { AppModel } from '../uiTypes';
 import { formatTimeMs } from '../uiTypes';
-import { chooseMediaAgainViaPicker } from './player/stage.ts';
 import {
   applyTrackOffsetMs,
   createOffsetCorrectedTranscriptVersion,
@@ -27,6 +26,7 @@ import {
   listMediaAssetsNewestFirst,
   mediaAssetNeedsRelink,
   openMediaAsset,
+  restoreOpenedMediaHandle,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderStatusToken, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
@@ -697,13 +697,18 @@ function renderMediaList(model: AppModel): HTMLElement {
       model.importError = null;
       setView(model, 'player');
       rerenderApp(model);
+      // lt-ddy.2: reconnect this asset's own stored handle (query-only); 'prompt' keeps the Reconnect placeholder.
+      if (!isCurrent) void restoreOpenedMediaHandle(model).then((result) => { if (result !== 'stale') rerenderApp(model); });
     });
     const needsRelink = mediaAssetNeedsRelink(model, asset);
     if (!(isCurrent && needsRelink)) actions.appendChild(openBtn);
     if (needsRelink) {
-      // Only one browser file handle is stored (HANDLE_STORE_KEY 'current-media-handle'), so a stored-handle
-      // reconnect works only for the current asset. Non-current assets go straight to the choose-again picker.
-      // TODO(follow-up): per-media handle storage would let any asset reconnect without re-picking.
+      // lt-ddy.2: handles are stored per media ('media-handle:<mediaId>'), so a non-current Relink tries that
+      // asset's stored handle (query-only): granted reconnects silently, 'prompt' shows the Reconnect placeholder.
+      // Every other outcome (no handle, denied, moved/renamed, mismatch) stays on the player's relink placeholder,
+      // whose lastError explains why and whose 'Choose media again' opens the picker from a fresh click. The
+      // picker is never opened here: after the IndexedDB/permission/getFile/hash awaits, Chrome's transient
+      // user activation may have expired and showOpenFilePicker would throw SecurityError.
       const relinkBtn = document.createElement('button');
       relinkBtn.type = 'button';
       relinkBtn.className = 'btn-secondary';
@@ -713,8 +718,12 @@ function renderMediaList(model: AppModel): HTMLElement {
         if (!openMediaAsset(model, asset.id)) return;
         model.importError = null;
         setView(model, 'player');
-        if (!isCurrent) chooseMediaAgainViaPicker(model);
         rerenderApp(model);
+        if (!isCurrent) {
+          void restoreOpenedMediaHandle(model).then((result) => {
+            if (result !== 'stale') rerenderApp(model);
+          });
+        }
       });
       actions.appendChild(relinkBtn);
     }
@@ -846,7 +855,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
         rerenderApp(model);
       })
       .catch((err: unknown) => {
-        handleMediaImportError(model, err, () => importBrowserLocalFiles(model, importInput, { onNameConflict: 'import-new' }));
+        handleMediaImportError(model, err, async () => { await importBrowserLocalFiles(model, importInput, { onNameConflict: 'import-new' }); });
       });
   });
   const localImportActions = document.createElement('div');

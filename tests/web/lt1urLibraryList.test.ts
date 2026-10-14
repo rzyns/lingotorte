@@ -203,15 +203,20 @@ describe('lt-1ur review fixes', () => {
     expect(model.view).toBe('player');
   });
 
-  it('non-current Relink goes straight to the choose-again picker for that asset', async () => {
+  it('non-current Relink with no stored handle lands on the placeholder; Choose again opens the picker (lt-ddy.2)', async () => {
     const model = clockModel();
     const { older } = await importTwo(model);
     const picker = vi.fn(() => Promise.resolve([]));
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
     library(model);
     btn(rows()[1]!, 'Relink')!.click();
-    expect(picker).toHaveBeenCalledTimes(1);
+    await new Promise((r) => { setTimeout(r, 20); });
+    expect(picker).not.toHaveBeenCalled();
     expect(model.currentMedia?.id).toBe(older.id);
+    expect(model.view).toBe('player');
+    rerenderApp(model);
+    btn(document, 'Choose media again')!.click();
+    expect(picker).toHaveBeenCalledTimes(1);
   });
 
   it('re-opening current media keeps its object URL; switching revokes the old one', async () => {
