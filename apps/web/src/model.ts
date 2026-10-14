@@ -188,6 +188,18 @@ function normalizeLocalServiceBaseUrl(baseUrl: string): string {
   return exactServiceOrigin(baseUrl);
 }
 
+/**
+ * lt-cfh: pairing lifecycle hooks for the opt-in remembered pairing. Model code
+ * only signals events; it never sees or stores the remembered record.
+ */
+type PairingHooks = { statusOk?: (origin: string) => void; unauthorized?: () => void };
+const pairingHooks = new WeakMap<AppModel, PairingHooks>();
+export function observePairingLifecycle(model: AppModel, hooks: PairingHooks): void { pairingHooks.set(model, hooks); }
+function pairingHook(model: AppModel, run: (hooks: PairingHooks) => void): void {
+  const hooks = pairingHooks.get(model);
+  if (hooks) try { run(hooks); } catch { /* remembered pairing is best-effort */ }
+}
+
 export function pairLocalService(model: AppModel, capability: string, baseUrl = model.localService.baseUrl): void {
   if (restoreStates.get(model)?.committing) throw new TypeError('Restore pending; wait for acknowledgement/readback before pairing.');
   const origin = exactServiceOrigin(baseUrl);
@@ -203,6 +215,7 @@ export function pairLocalService(model: AppModel, capability: string, baseUrl = 
     model.localService.autosaveEnabled = false;
     model.localService.lastMessage = PAIR_AGAIN;
     notifySync(model);
+    pairingHook(model, (hooks) => hooks.unauthorized?.());
   });
 }
 export function captureLocalServiceTransport(model: AppModel): PairedTransport {
@@ -442,6 +455,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
   try {
     const status = await fetchLocalServiceJson(transport, '/api/status');
     if (!current()) return supersededSync();
+    pairingHook(model, (hooks) => hooks.statusOk?.(url));
     const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
     const state = await fetchLocalServiceJson(transport, '/api/state');
     if (!current()) return supersededSync();

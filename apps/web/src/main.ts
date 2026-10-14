@@ -3,6 +3,7 @@ import { installBrowserHandleStore } from './browserHandleStore';
 import { bootSnapshotCache } from './browserSnapshotCache';
 import { createAppModel, restoreMediaAtBoot } from './model';
 import { rerenderApp } from './app';
+import { bootRememberedPairing } from './rememberedPairing';
 
 document.addEventListener('DOMContentLoaded', () => {
   // Install the IndexedDB handle store before creating the model so the
@@ -19,5 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
     .catch(() => false)
     .then(() => restoreMediaAtBoot(model))
     .catch(() => false)
-    .finally(() => rerenderApp(model));
+    .finally(() => {
+      rerenderApp(model);
+      // lt-cfh: an opted-in remembered pairing auto-connects without blocking render.
+      void bootRememberedPairing(model, undefined, () => rerenderApp(model))
+        .then((connecting) => { if (connecting) rerenderApp(model); /* banner shows connecting */ })
+        .catch(() => undefined);
+    });
 });
