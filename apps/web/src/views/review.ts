@@ -10,6 +10,7 @@ import {
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, compactPathLabel, renderUnresolvedSource } from '../ui/common.ts';
+import { renderAddMeaning } from './saved.ts';
 
 export function renderReviewView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -71,6 +72,9 @@ export function renderReviewView(model: AppModel): HTMLElement {
       meaning.className = 'review-meaning';
       meaning.textContent = `Meaning: ${savedItem.meaning}`;
       reveal.appendChild(meaning);
+    } else if (!nativeText) {
+      // lt-uzo: no meaning and no native line, so front and back would match; offer an inline answer.
+      reveal.appendChild(renderAddMeaning(model, savedItem.id));
     }
 
     if (currentCue) {
@@ -158,9 +162,21 @@ export function renderReviewView(model: AppModel): HTMLElement {
 
   const stats = document.createElement('p');
   stats.className = 'meta';
-  const totalCards = Object.keys(model.store.snapshot().reviewCards).length;
-  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck • state: ${state.state} • due: ${formatDueAt(state.dueAt)}`;
+  // lt-uzo review: count only cards in review; archived (suspended) ones are reported separately.
+  const allCards = Object.values(model.store.snapshot().reviewCards).filter((card) => !card.deletedAt);
+  const totalCards = allCards.filter((card) => !card.suspendedAt).length;
+  const archivedCards = allCards.length - totalCards;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
   section.appendChild(stats);
+  // lt-uzo: FSRS state/due are scheduling detail, kept behind a disclosure.
+  const scheduling = document.createElement('details');
+  scheduling.className = 'meta review-scheduling';
+  const summary = document.createElement('summary');
+  summary.textContent = 'scheduling';
+  const schedulingText = document.createElement('p');
+  schedulingText.textContent = `state: ${state.state} • due: ${formatDueAt(state.dueAt)}`;
+  scheduling.append(summary, schedulingText);
+  section.appendChild(scheduling);
 
   return section;
 }

@@ -1,7 +1,7 @@
 import type { AppModel } from '../uiTypes';
 import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
-import { createReviewCardForSavedItem, setView } from '../model';
+import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, nativeTextForCue, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
 import { rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, compactPathLabel } from '../ui/common.ts';
 
@@ -45,6 +45,19 @@ export function renderSavedView(model: AppModel): HTMLElement {
   heading.id = 'saved-heading';
   section.appendChild(heading);
 
+  // lt-uzo: bulk opt-in for items in this tab lacking an active review card; hidden when there are none.
+  const lacking = items.filter((i) => reviewCardsForSavedItem(model, i.id).active.length === 0);
+  if (lacking.length > 0) {
+    const addAll = document.createElement('button');
+    addAll.className = 'btn-secondary saved-add-all';
+    addAll.textContent = `Add all to review (${lacking.length})`;
+    addAll.addEventListener('click', () => {
+      addSavedItemsToReview(model, lacking);
+      rerenderApp(model);
+    });
+    section.appendChild(addAll);
+  }
+
   const panel = document.createElement('div');
   panel.className = 'saved-panel';
   panel.setAttribute('role', 'tabpanel');
@@ -80,6 +93,8 @@ export function renderSavedView(model: AppModel): HTMLElement {
       meaning.className = 'meta meaning';
       meaning.textContent = `Meaning: ${item.meaning}`;
       card.appendChild(meaning);
+    } else if (!savedItemNativeLine(model, occurrences[0]?.cueId)) {
+      card.appendChild(renderAddMeaning(model, item.id));
     }
 
     const occurrenceGroup = document.createElement('div');
@@ -128,17 +143,17 @@ export function renderSavedView(model: AppModel): HTMLElement {
     }
     card.appendChild(occurrenceGroup);
 
+    // lt-uzo: saving creates the card; this toggles it. Off archives (suspends) it, keeping state and history.
+    const inReview = reviewCardsForSavedItem(model, item.id).active.length > 0;
     const reviewBtn = document.createElement('button');
-    reviewBtn.className = 'btn-secondary';
-    reviewBtn.textContent = 'Create review card';
+    reviewBtn.className = 'btn-secondary saved-review-toggle';
+    reviewBtn.textContent = inReview ? 'In review ✓' : 'Add to review';
+    reviewBtn.setAttribute('aria-pressed', String(inReview));
+    reviewBtn.disabled = !inReview && occurrences.length === 0;
     reviewBtn.addEventListener('click', () => {
-      const occurrence = occurrences[0];
-      if (occurrence) {
-        createReviewCardForSavedItem(model, item, occurrence, 'recognition');
-        setView(model, 'review');
-        model.review.activeCardId = null;
-        rerenderApp(model);
-      }
+      if (inReview) archiveReviewCardsForSavedItem(model, item.id);
+      else addSavedItemToReview(model, item);
+      rerenderApp(model);
     });
     card.appendChild(reviewBtn);
     list.appendChild(card);
@@ -146,4 +161,33 @@ export function renderSavedView(model: AppModel): HTMLElement {
   panel.appendChild(list);
   section.appendChild(panel);
   return section;
+}
+
+function savedItemNativeLine(model: AppModel, cueId: string | undefined): string | undefined {
+  if (!cueId || !model.nativeTrackId) return undefined;
+  const cue = model.store.getCue(cueId);
+  if (!cue) return undefined;
+  return nativeTextForCue(cue, model.store.getSubtitleTrack(model.nativeTrackId) ?? null, model.store.listCuesForTrack(model.nativeTrackId));
+}
+
+/** lt-uzo: inline 'Add meaning' for items with neither a meaning nor a native cue line (shared with Review reveal). */
+export function renderAddMeaning(model: AppModel, savedItemId: string): HTMLElement {
+  const form = document.createElement('form');
+  form.className = 'add-meaning';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'add-meaning-input';
+  input.placeholder = 'Add meaning';
+  input.required = true;
+  input.setAttribute('aria-label', 'Add meaning');
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'btn-secondary';
+  save.textContent = 'Save meaning';
+  form.append(input, save);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (setSavedItemMeaning(model, savedItemId, input.value)) rerenderApp(model);
+  });
+  return form;
 }

@@ -172,8 +172,12 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     sentencesTab?.click();
     rerenderApp(model);
 
-    const createCardBtn = Array.from(document.querySelectorAll('.saved-item button')).find((b) => b.textContent === 'Create review card') as HTMLElement | null;
+    // lt-uzo: the Saved button is now an in-review toggle. saveSentenceFromCue (not the capture path) creates no
+    // card, so the item offers 'Add to review'; the learner then opens Review from the nav.
+    const createCardBtn = Array.from(document.querySelectorAll('.saved-item button')).find((b) => b.textContent === 'Add to review') as HTMLElement | null;
     createCardBtn?.click();
+    expect(Object.keys(model.store.snapshot().reviewCards)).toHaveLength(1);
+    (Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Review') as HTMLElement | null)?.click();
 
     expect(model.view).toBe('review');
     const app = document.getElementById('app');

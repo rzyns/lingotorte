@@ -11,7 +11,7 @@ export const J = Object.freeze({
   saveSentence: 'Save sentence…', // lt-cms: opens the Selection capture form
   saveOccurrence: 'Save occurrence', // views/player/transcript.ts renderSelectionPanel
   showAnswer: 'Show answer / context',
-  createReviewCard: 'Create review card', // app.ts renderSavedView, one per saved item
+  reviewToggle: 'In review ✓', // views/saved.ts renderSavedView, one per saved item (lt-uzo: cards auto-created on save)
   submitAttempt: 'Submit attempt',
   downloadExport: 'Download export JSON',
   analyse: 'Analyse words',
@@ -38,7 +38,7 @@ const FOCUS_KEYS = [
   ['practiceMode', (n) => n.id === 'practice-mode'],
   ['practiceAnswer', (n) => n.id === 'practice-answer'],
   ['practiceChoice', (n) => n.classList?.contains('practice-choice')],
-  ['createReviewCard', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Create review card'],
+  ['reviewToggle', (n) => n.tagName === 'BUTTON' && n.classList?.contains('saved-review-toggle')],
   ['createCorrectedTranscript', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Create corrected transcript version'],
   ['approveTranscript', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Approve transcript for study'],
   ['importGatedDraft', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Import gated demo caption draft'],
@@ -73,7 +73,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
     submitAttempt: () => byText(J.submitAttempt), practiceMode: () => document.querySelector('#practice-mode'),
     practiceAnswer: () => document.querySelector('#practice-answer'),
     practiceChoice: (i) => document.querySelectorAll('.practice-choices button.practice-choice')[i ?? 0],
-    createReviewCard: (i) => buttons().filter((b) => b.textContent.trim() === J.createReviewCard)[i ?? 0],
+    reviewToggle: (i) => buttons().filter((b) => b.classList.contains('saved-review-toggle'))[i ?? 0],
   };
   const focusInfo = () => {
     const n = document.activeElement; const cs = n && n !== document.body ? getComputedStyle(n) : null;
@@ -205,7 +205,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
         // Saved view has role=tab 'My Vocab' (#saved-tab-vocab: lexeme/phrase) and 'My Sentences' (#saved-tab-sentences).
         await nav('Saved'); await wait(() => document.querySelector('#saved-heading'), 3000);
         if (arg.tab) { const t = document.querySelector('#saved-tab-' + (arg.tab === 'sentences' ? 'sentences' : 'vocab')); if (!t) throw diagnostic('DomSelector', 'unlisted', 'missing'); if (t.getAttribute('aria-selected') !== 'true') { t.click(); await new Promise((r) => setTimeout(r, 0)); } }
-        return { links: document.querySelectorAll('a.occurrence-link').length, createButtons: buttons().filter((b) => b.textContent.trim() === J.createReviewCard).length };
+        return { links: document.querySelectorAll('a.occurrence-link').length, inReview: buttons().filter((b) => b.textContent.trim() === J.reviewToggle).length, toggles: buttons().filter((b) => b.classList.contains('saved-review-toggle')).length };
       }
       case 'media-feedback': {
         // Undecodable media: wait for the <video> error, then require the product's own .media-error-alert inside the
