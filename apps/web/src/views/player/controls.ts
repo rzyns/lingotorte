@@ -41,21 +41,8 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   const playBtn = document.createElement('button');
   playBtn.className = 'player-play';
   applyPlayState(playBtn, model.player.isPlaying);
-  playBtn.addEventListener('click', () => {
-    togglePlay(model);
-    const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
-    if (video) {
-      if (model.player.isPlaying) {
-        const playPromise = video.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => undefined);
-        }
-      } else {
-        video.pause();
-      }
-    }
-    rerenderApp(model);
-  });
+  // lt-dlf.1: no rerender — a rebuild would detach the playing <video> (lt-2zm).
+  playBtn.addEventListener('click', () => { togglePlaybackInPlace(model); });
   controls.appendChild(playBtn);
 
   const prevBtn = document.createElement('button');
@@ -256,6 +243,24 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
 function applyPlayState(button: HTMLButtonElement, playing: boolean): void {
   button.textContent = playing ? 'Pause' : 'Play';
   button.setAttribute('aria-label', playing ? 'Pause video' : 'Play video');
+}
+
+/**
+ * lt-dlf.1: toggle play/pause on the live <video> and flip the label in place, without a rerender.
+ * Shared by the Play button and the Space shortcut. Returns false when there is no video.
+ */
+export function togglePlaybackInPlace(model: AppModel): boolean {
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+  if (!video) return false;
+  togglePlay(model);
+  if (model.player.isPlaying) {
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => undefined);
+  } else {
+    video.pause();
+  }
+  syncPlayButton(model.player.isPlaying);
+  return true;
 }
 
 /** lt-xlr: flip the Play/Pause button label in place (no rerender). */

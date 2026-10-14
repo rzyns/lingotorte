@@ -11,7 +11,6 @@ import {
   seekToCue,
   setPlaybackRate,
   setView,
-  togglePlay,
   nextReviewDueAfter,
   observeLocalServiceSync,
 } from './model';
@@ -20,7 +19,7 @@ import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippet
 import { renderExportImportView } from './views/exportImport.ts';
 import { renderLibraryView } from './views/library.ts';
 import { renderPlayerView } from './views/player/stage.ts';
-import { syncPlayButton } from './views/player/controls.ts';
+import { togglePlaybackInPlace } from './views/player/controls.ts';
 import { renderPracticeView } from './views/practice.ts';
 import { renderReviewView } from './views/review.ts';
 import { renderSavedView } from './views/saved.ts';
@@ -87,15 +86,8 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
       const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
       if (!video) return;
       event.preventDefault();
-      togglePlay(currentModel);
-      if (currentModel.player.isPlaying) {
-        const playPromise = video.play();
-        if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => undefined);
-      } else {
-        video.pause();
-      }
-      // In-place label update: a full rerender is unnecessary for play/pause.
-      syncPlayButton(currentModel.player.isPlaying);
+      // In-place toggle: a full rerender would detach the playing <video> (lt-dlf.1).
+      togglePlaybackInPlace(currentModel);
       return;
     } else if (event.key === 'r' || event.key === 'R') {
       if (cue) {

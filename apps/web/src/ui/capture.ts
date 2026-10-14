@@ -17,6 +17,10 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>):
     return false;
   }
   if (model.importError === CAPTURE_REQUIRES_APPROVAL_MESSAGE) model.importError = null;
+  // lt-dlf.1: pause explicitly so the learner can type; position stays in model.player.currentTimeMs.
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+  if (video && !video.paused) video.pause();
+  model.player.isPlaying = false;
   model.selection = selection;
   model.pendingMeaning = '';
   model.pendingNotes = '';
