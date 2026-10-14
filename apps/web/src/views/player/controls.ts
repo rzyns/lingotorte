@@ -180,6 +180,61 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   speedLabel.appendChild(speedInput);
   controls.appendChild(speedLabel);
 
+  // lt-xlr: seek / mute / fullscreen replace what the removed native <video controls> bar provided.
+  // Values derive from the live <video> (falling back to the model) so a rebuilt stage shows the truth.
+  const seek = document.createElement('input');
+  seek.type = 'range';
+  seek.className = 'player-seek';
+  seek.dataset.testid = 'player-seek';
+  seek.min = '0';
+  seek.step = '0.1';
+  seek.setAttribute('aria-label', 'Seek');
+  const durationS = video && Number.isFinite(video.duration) && video.duration > 0 ? video.duration : model.player.durationMs / 1000;
+  seek.max = String(Math.max(0, durationS));
+  seek.value = String(video ? video.currentTime || model.player.currentTimeMs / 1000 : model.player.currentTimeMs / 1000);
+  seek.disabled = !(durationS > 0);
+  seek.addEventListener('input', () => {
+    const target = Number(seek.value);
+    const v = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (v && Number.isFinite(target)) v.currentTime = target;
+    model.player.currentTimeMs = Math.round(target * 1000);
+    updateTimeline(time, model.player.currentTimeMs, Math.round(Number(seek.max) * 1000));
+  });
+  controls.appendChild(seek);
+
+  const muteBtn = document.createElement('button');
+  muteBtn.type = 'button';
+  muteBtn.className = 'player-mute';
+  applyMuteState(muteBtn, Boolean(video?.muted));
+  muteBtn.disabled = !model.currentMedia;
+  muteBtn.addEventListener('click', () => {
+    const v = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+    if (!v) return;
+    v.muted = !v.muted;
+    mutedByModel.set(model, v.muted);
+    applyMuteState(muteBtn, v.muted);
+  });
+  controls.appendChild(muteBtn);
+
+  const fullscreenBtn = document.createElement('button');
+  fullscreenBtn.type = 'button';
+  fullscreenBtn.className = 'player-fullscreen';
+  fullscreenBtn.textContent = 'Fullscreen';
+  fullscreenBtn.setAttribute('aria-label', 'Toggle fullscreen');
+  fullscreenBtn.disabled = !model.currentMedia || typeof HTMLElement.prototype.requestFullscreen !== 'function';
+  fullscreenBtn.addEventListener('click', () => {
+    // Fullscreen the stage wrapper (not the <video>) so the subtitle overlay stays visible.
+    const stage = document.querySelector('.video-stage') as HTMLElement | null;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.()?.catch?.(() => undefined);
+      return;
+    }
+    if (!stage || typeof stage.requestFullscreen !== 'function') return;
+    const result = stage.requestFullscreen();
+    if (result && typeof result.catch === 'function') result.catch(() => undefined);
+  });
+  controls.appendChild(fullscreenBtn);
+
   const time = document.createElement('span');
   time.className = 'timeline';
   time.textContent = `${formatTimeMs(model.player.currentTimeMs)} / ${formatTimeMs(model.player.durationMs)}`;
@@ -188,10 +243,42 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
 
   const shortcuts = document.createElement('p');
   shortcuts.className = 'keyboard-shortcuts meta';
-  shortcuts.textContent = 'Shortcuts: [ previous cue, ] next cue, R replay cue, , slower, . faster';
+  shortcuts.textContent = 'Shortcuts: Space play/pause, [ previous cue, ] next cue, R replay cue, , slower, . faster';
   controls.appendChild(shortcuts);
 
   return controls;
+}
+
+/** lt-xlr: last mute state per model, so a rebuilt <video> keeps it (the element is the source of truth). */
+export const mutedByModel = new WeakMap<AppModel, boolean>();
+
+function applyMuteState(button: HTMLButtonElement, muted: boolean): void {
+  button.textContent = muted ? 'Unmute' : 'Mute';
+  button.setAttribute('aria-label', muted ? 'Unmute video' : 'Mute video');
+  button.setAttribute('aria-pressed', String(muted));
+}
+
+function updateTimeline(el: Element | null, currentMs: number, durationMs: number): void {
+  if (el) el.textContent = `${formatTimeMs(currentMs)} / ${formatTimeMs(durationMs)}`;
+}
+
+/** lt-xlr: update seek slider, mute button and time readout in place (no rerender) from the live video. */
+export function syncPlayerTransport(video: HTMLVideoElement): void {
+  const controls = document.querySelector('.player-controls');
+  if (!controls) return;
+  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+  const seek = controls.querySelector<HTMLInputElement>('input.player-seek');
+  if (seek) {
+    if (duration > 0) {
+      seek.max = String(duration);
+      seek.disabled = false;
+    }
+    if (document.activeElement !== seek) seek.value = String(video.currentTime);
+  }
+  const mute = controls.querySelector<HTMLButtonElement>('button.player-mute');
+  if (mute) applyMuteState(mute, video.muted);
+  const durationMs = duration > 0 ? Math.round(duration * 1000) : Math.round(Number(seek?.max ?? 0) * 1000);
+  updateTimeline(controls.querySelector('.timeline'), Math.round(video.currentTime * 1000), durationMs);
 }
 
 export function renderSourceRangePanel(model: AppModel): HTMLElement {

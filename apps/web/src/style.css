@@ -484,6 +484,19 @@ textarea:focus-visible,
 
 .player-controls input[type="range"] {
   width: 120px;
+  accent-color: var(--accent);
+}
+
+/* lt-xlr: the seek slider takes the free row width; wraps on narrow screens. */
+.player-controls input.player-seek {
+  flex: 1 1 160px;
+  min-width: 0;
+  width: auto;
+}
+
+.video-stage:fullscreen {
+  border-radius: 0;
+  aspect-ratio: auto;
 }
 
 .source-range-panel {
