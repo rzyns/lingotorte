@@ -1138,6 +1138,52 @@ textarea:focus-visible,
   color: var(--text-muted);
 }
 
+/* lt-1ur Library media list + lifecycle disclosure */
+.media-rows {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.add-media-fixture-actions {
+  margin-top: 0.75rem;
+}
+
+.media-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.media-row.active {
+  border-color: var(--accent-strong);
+  background: var(--surface-soft);
+}
+
+.media-row-title {
+  flex: 1 1 12rem;
+  font-weight: 600;
+}
+
+.media-row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.transcript-lifecycle-disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.5rem 0;
+}
+
 .status-banner {
   padding: 0.6rem 0.75rem;
   border-radius: 0.5rem;

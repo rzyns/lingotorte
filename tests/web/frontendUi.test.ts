@@ -187,7 +187,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: showOpenFilePicker });
 
     rerenderApp(model);
-    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
+    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Choose video (recommended — stays linked after reload)');
     expect(persistentButton).toBeTruthy();
     persistentButton!.click();
     await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
@@ -256,7 +256,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     model.view = 'library';
     rerenderApp(model);
-    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import persistent media handle');
+    const persistentButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Choose video (recommended — stays linked after reload)');
     expect(persistentButton).toBeTruthy();
     persistentButton!.click();
     await vi.waitFor(() => { if (!model.currentMedia && !model.importError) throw new Error('import pending'); }, { timeout: 5_000, interval: 5 });
