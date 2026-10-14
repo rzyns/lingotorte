@@ -94,6 +94,12 @@ describe('lt-dlf.1 play button and playback position across rerenders', () => {
     const { model } = installModel();
     const old = video();
     model.player.isPlaying = true;
+    // lt-2zm: same-media rerenders keep the element; a media change is what detaches the old one now.
+    rerenderApp(model);
+    expect(video()).toBe(old);
+    const other = makeMediaAsset({ title: 'Other', originalPath: 'fixtures/media/y.webm', contentSha256: sha, durationMs: 4000, container: 'webm', sizeBytes: 2, privacyLabel: 'owned' });
+    model.store.putMediaAsset(other);
+    model.currentMedia = other;
     rerenderApp(model);
     expect(video()).not.toBe(old);
     old.dispatchEvent(new dom.window.Event('pause'));
