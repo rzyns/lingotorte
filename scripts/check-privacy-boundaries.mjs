@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findEnvKeys } from './env-key-scan.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 const runtimeRoots = ['apps', 'packages', 'scripts'];
@@ -36,6 +37,11 @@ for (const file of scannedFiles) {
   for (const marker of markers) {
     if (marker.test(content)) findings.push({ file, marker: marker.source });
   }
+}
+
+// Credentials belong outside the checkout (docs/dev/docker-runbook.md §Providers).
+for (const { file, variable } of await findEnvKeys(repoRoot)) {
+  findings.push({ file, marker: `credential assignment ${variable} (value withheld)` });
 }
 
 if (findings.length > 0) {
