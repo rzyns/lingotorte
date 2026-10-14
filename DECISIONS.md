@@ -270,3 +270,18 @@ Implementation semantics:
 - Browser + loopback local service remains the current target.
 - Tauri/Electron/native packaging is deferred unless the local-file/daily-driver story requires it.
 - Do not add auto-update, public distribution, installer signing, or cross-platform packaging work in the current autonomous lane.
+
+---
+
+### 14. Threat model: single trusted operator, single trusted machine
+
+Decided by Janusz on 2026-10-13 (`lt-2k9`, option A).
+
+Decision: Lingotorte has one trusted operator on one trusted machine. The private LAN is a convenience, not a trust boundary. Other LAN devices and other users of the same machine are **not** adversaries the product must defend against.
+
+Implementation semantics:
+
+- No existing control is removed by this decision. Origin/Host allowlists, the internal-only API network, provider-off defaults, media-rights and redaction rules stay: they are cheap and stop drive-by web pages and accidents.
+- New work need not add defences against hostile LAN peers or same-machine users. Convenience features may trade those defences away when the change is recorded on its issue. Examples include remembering the pairing across reloads, a capability the browser can read once minted, and making TTY-only delivery optional.
+- Specific relaxations of the accepted request-authenticity contract (`docs/dev/local-request-authenticity-contract.md`, `lt-9zj`) still go through their own decision issue. One example is `lt-z41`, which governs where a remembered pairing may live. This entry sets the threat model those decisions are judged against. It does not pre-select their options.
+- Hosted, public, multi-user or internet-exposed operation remains out of scope and would need a new threat model.
