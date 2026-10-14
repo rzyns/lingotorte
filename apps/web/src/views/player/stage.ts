@@ -19,7 +19,7 @@ import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurren
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
-import { dropKeyed, keyed, peekKeyed } from '../../ui/keyed.ts';
+import { dropKeyed, keyed, peekKeyed, peekKeyedKey } from '../../ui/keyed.ts';
 import { renderPlayerControls, renderSourceRangePanel } from './controls.ts';
 import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
 
@@ -79,8 +79,13 @@ function renderVideoStage(model: AppModel): HTMLElement {
     stage.appendChild(model.currentMedia ? renderRelinkPlaceholder(model) : renderEmptyVideoPlaceholder(model));
     return stage;
   }
-  const key = `${model.currentMedia.id}\u0000${mediaPlaybackUrl(model)}`;
+  const key = videoStageKey(model)!;
   return keyed(model, VIDEO_STAGE_SLOT, key, () => createVideoStage(model), (stage) => updateVideoStage(stage, model), releaseVideoStage);
+}
+
+function videoStageKey(model: AppModel): string | null {
+  if (!model.currentMedia || needsMediaRelink(model)) return null;
+  return `${model.currentMedia.id}\u0000${mediaPlaybackUrl(model)}`;
 }
 
 function stageVideo(stage: HTMLElement): HTMLVideoElement | null {
@@ -125,6 +130,37 @@ export function resumePersistentVideoAfterRender(model: AppModel): void {
       syncPlayButton(false);
     });
   }
+}
+
+/**
+ * lt-dlf.2: the persistent stage element (if any) when it, or a node inside it, is the fullscreen element.
+ * rerenderApp defers its root swap while this is non-null, because moving the stage out of the document
+ * makes the browser exit fullscreen.
+ */
+export function fullscreenPersistentStage(model: AppModel): HTMLElement | null {
+  const fs = typeof document !== 'undefined' ? document.fullscreenElement : null;
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  if (!fs || !stage || !stage.isConnected) return null;
+  return stage === fs || stage.contains(fs) ? stage : null;
+}
+
+/** lt-dlf.2: refresh the persistent stage in place (rate, label, alert, overlay) without moving it. */
+// If the media changed under the fullscreen stage (e.g. an import finished), the old stage must not be
+// fed the new media's data (that would also clear the new media's error); exit fullscreen instead and let
+// the deferred rerender rebuild the stage.
+export function updatePersistentStageInPlace(model: AppModel): void {
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  if (!stage) return;
+  if (peekKeyedKey(model, VIDEO_STAGE_SLOT) !== videoStageKey(model)) {
+    if (typeof document.exitFullscreen === 'function') {
+      try {
+        const result = document.exitFullscreen();
+        if (result && typeof result.catch === 'function') result.catch(() => undefined);
+      } catch { /* not fullscreen / unsupported */ }
+    }
+    return;
+  }
+  updateVideoStage(stage, model);
 }
 
 function updateVideoStage(stage: HTMLElement, model: AppModel): void {

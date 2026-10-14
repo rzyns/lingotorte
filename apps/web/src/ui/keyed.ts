@@ -47,6 +47,11 @@ export function peekKeyed<T extends HTMLElement>(model: AppModel, slot: string):
   return (caches.get(model)?.get(slot)?.el as T | undefined) ?? null;
 }
 
+/** The key the slot's cached element was built for, if any. */
+export function peekKeyedKey(model: AppModel, slot: string): string | null {
+  return caches.get(model)?.get(slot)?.key ?? null;
+}
+
 /** Release and forget a slot (e.g. the media was cleared). */
 export function dropKeyed(model: AppModel, slot: string): void {
   const cache = caches.get(model);
