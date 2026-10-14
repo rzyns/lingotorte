@@ -176,7 +176,8 @@ export function hydrateModelFromSnapshotCache(model: AppModel, record: SnapshotC
     const native = ownTrack(record.nativeTrackId);
     if (native) model.nativeTrackId = native;
     if (typeof record.localService.baseUrl === 'string' && record.localService.baseUrl) model.localService.baseUrl = record.localService.baseUrl;
-    model.localService.autosaveEnabled = record.localService.autosaveEnabled === true;
+    // lt-4ji: records written before the preference defaulted on, or lacking it, restore the default (on).
+    model.localService.autosaveEnabled = record.localService.autosaveEnabled !== false;
     if (record.lastAcked && typeof record.lastAcked.serialized === 'string' && typeof record.lastAcked.baseUrl === 'string') {
       try { seedCachedAckBaseline(model, record.lastAcked.baseUrl, record.lastAcked.serialized); } catch { /* invalid origin: ignore baseline */ }
     }

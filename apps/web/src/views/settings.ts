@@ -170,7 +170,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     rerenderApp(model);
   });
   autosaveLabel.appendChild(autosaveCheckbox);
-  autosaveLabel.append(' Autosave to local service after supported study-state changes');
+  autosaveLabel.append(` Autosave to local service (${model.localService.autosaveEnabled ? 'on' : 'off'}) — saves after each change once connected`);
   servicePanel.appendChild(autosaveLabel);
 
   const serviceStatus = document.createElement('div');
