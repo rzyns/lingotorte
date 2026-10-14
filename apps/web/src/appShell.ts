@@ -13,7 +13,9 @@ import {
   setView,
   nextReviewDueAfter,
   observeLocalServiceSync,
+  saveModelToLocalService,
 } from './model';
+import { renderToastRegion } from './ui/toast.ts';
 import { currentKeyboardCue, isEditableShortcutTarget, seekRenderedVideoToCue } from './ui/common.ts';
 import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippetStates, synchronizePracticeSnippet, synchronizeSourceRangeSnippet } from './ui/snippets.ts';
 import { renderExportImportView } from './views/exportImport.ts';
@@ -45,7 +47,7 @@ export function renderApp(model: AppModel): HTMLElement {
   root.appendChild(syncStatus);
   const updateSyncStatus = () => {
     for (const node of root.querySelectorAll<HTMLElement>('[data-local-service-sync]')) {
-      node.textContent = model.localService.lastMessage;
+      renderSyncBannerContent(model, node);
       node.dataset.syncState = model.localService.syncState ?? 'idle';
       node.className = `status-banner ${model.localService.status === 'error' ? 'error' : ''}`;
       node.hidden = model.localService.status === 'disconnected' && !model.localService.syncState;
@@ -58,7 +60,51 @@ export function renderApp(model: AppModel): HTMLElement {
   observeLocalServiceSync(model, updateSyncStatus);
   updateSyncStatus();
   root.appendChild(renderFooter());
+  // lt-e0j: one persistent live region (keyed), re-appended into each new root.
+  root.appendChild(renderToastRegion(model));
   return root;
+}
+
+/**
+ * lt-e0j (H2): the unsaved banner says what to do. Save now only when connected; otherwise point at Settings.
+ * The Save now button carries [data-local-service-save] so updateSyncStatus keeps its disabled state honest.
+ */
+function renderSyncBannerContent(model: AppModel, node: HTMLElement): void {
+  const retryable = model.localService.syncState === 'error' && model.localService.status === 'connected';
+  if (model.localService.syncState !== 'unsaved' && !retryable) {
+    node.textContent = model.localService.lastMessage;
+    return;
+  }
+  node.replaceChildren();
+  const connected = model.localService.status === 'connected';
+  // The lead keeps any specific sync message (cache restore, kept browser work); only the actions are added.
+  node.append(`${model.localService.lastMessage} \u2014 ${connected ? '' : 'connect in '}`);
+  if (connected) {
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn-link';
+    save.textContent = 'Save now';
+    save.dataset.localServiceSave = 'true';
+    save.addEventListener('click', () => {
+      if (model.localService.syncState === 'saving') return;
+      save.disabled = true;
+      // A rejected save is surfaced through the existing sync error state; the rerender re-enables the button.
+      void saveModelToLocalService(model, model.localService.baseUrl)
+        .catch((err: unknown) => {
+          model.localService.syncState = 'error';
+          model.localService.lastMessage = `Save failed: ${err instanceof Error ? err.message : String(err)}`;
+        })
+        .finally(() => rerenderApp(model));
+    });
+    node.append(save, ' \u00b7 ');
+  }
+  const settings = document.createElement('button');
+  settings.type = 'button';
+  settings.className = 'btn-link';
+  settings.textContent = 'Settings';
+  settings.addEventListener('click', () => { setView(model, 'settings'); rerenderApp(model); });
+  node.append(settings);
+  if (!connected) node.append(' to save');
 }
 
 let keyboardShortcutsDocument: Document | null = null;

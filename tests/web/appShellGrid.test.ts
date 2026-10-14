@@ -25,7 +25,8 @@ afterEach(() => { dom.window.close(); vi.unstubAllGlobals(); });
 
 it('gives the sync banner its own auto row so <main> keeps the 1fr row (lt-4he)', () => {
   const root = renderApp(createAppModel());
-  const children = [...root.children].map((child) =>
+  // lt-e0j: the toast region is position:fixed (not a grid row), so it is excluded here.
+  const children = [...root.children].filter((child) => !child.classList.contains('toast-region')).map((child) =>
     child.classList.contains('lingotorte-header') ? '.lingotorte-header'
       : child.hasAttribute('data-local-service-sync') ? '[data-local-service-sync]'
         : child.classList.contains('lingotorte-main') ? '.lingotorte-main'
