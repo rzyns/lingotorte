@@ -92,6 +92,31 @@ describe('lt-0zc browser snapshot cache', () => {
     warn.mockRestore();
   });
 
+  it('never overwrites a good cache after a timed-out or failed boot read', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const source = createAppModel(); await loadFixture(source);
+    const good = { schemaVersion: SNAPSHOT_CACHE_SCHEMA_VERSION, savedAt: 'x', snapshot: source.store.snapshot(), currentMediaId: null, targetTrackId: null, nativeTrackId: null, localService: { baseUrl: '/', autosaveEnabled: false }, lastAcked: null };
+    for (const kind of ['slow', 'error'] as const) {
+      const backend = new MemoryBackend();
+      backend.data.set(SNAPSHOT_CACHE_KEY, structuredClone(good));
+      const original = backend.get.bind(backend);
+      backend.get = kind === 'slow'
+        ? (key: string) => new Promise((resolve) => { setTimeout(() => resolve(original(key)), 5000); })
+        : async () => { throw new Error('idb boom'); };
+      const model = createAppModel();
+      const booting = bootSnapshotCache(model, backend);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(await booting).toBe(false);
+      await loadFixture(model);
+      markUnsavedBrowserEdits(model);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(backend.puts, kind).toBe(0);
+      expect(backend.data.get(SNAPSHOT_CACHE_KEY), kind).toEqual(good);
+    }
+    warn.mockRestore();
+  });
+
   it('renders a hydrated media without a playable object URL safely', async () => {
     const dom = new JSDOM('<!doctype html><html><body><main id="app"></main></body></html>', { pretendToBeVisual: true, url: 'http://localhost:5173/' });
     Object.assign(globalThis, { document: dom.window.document, window: dom.window, HTMLElement: dom.window.HTMLElement, HTMLVideoElement: dom.window.HTMLVideoElement,
