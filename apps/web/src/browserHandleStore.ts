@@ -24,6 +24,7 @@ export type BrowserHandleStore = Readonly<{
 export type BrowserHandleStoreDb = Readonly<{
   get(key: string): Promise<unknown>;
   put(value: unknown, key: string): Promise<void>;
+  delete?(key: string): Promise<void>;
 }>;
 
 function isIndexedDBAvailable(): boolean {
@@ -69,6 +70,14 @@ function openHandleDb(): Promise<BrowserHandleStoreDb> {
             putReq.onerror = () => rejectPut(putReq.error);
           });
         },
+        delete(key: string): Promise<void> {
+          return new Promise((resolveDel, rejectDel) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const delReq = tx.objectStore(STORE_NAME).delete(key);
+            delReq.onsuccess = () => resolveDel();
+            delReq.onerror = () => rejectDel(delReq.error);
+          });
+        },
       };
       resolve(api);
     };
@@ -94,5 +103,9 @@ export function installBrowserHandleStore(): boolean {
   return true;
 }
 
-/** Exposed for tests that need to reset the global between cases. */
+/**
+ * Legacy single-handle key. lt-ddy.2: handles now live per media under
+ * `media-handle:<mediaId>` in this same store (see model.ts mediaHandleStoreKey);
+ * the legacy record is migrated on first read.
+ */
 export const HANDLE_STORE_KEY = KEY_NAME;

@@ -27,6 +27,7 @@ import {
   listMediaAssetsNewestFirst,
   mediaAssetNeedsRelink,
   openMediaAsset,
+  restoreOpenedMediaHandle,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderStatusToken, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
@@ -697,13 +698,15 @@ function renderMediaList(model: AppModel): HTMLElement {
       model.importError = null;
       setView(model, 'player');
       rerenderApp(model);
+      // lt-ddy.2: reconnect this asset's own stored handle (query-only); 'prompt' keeps the Reconnect placeholder.
+      if (!isCurrent) void restoreOpenedMediaHandle(model).then((result) => { if (result === 'restored') rerenderApp(model); });
     });
     const needsRelink = mediaAssetNeedsRelink(model, asset);
     if (!(isCurrent && needsRelink)) actions.appendChild(openBtn);
     if (needsRelink) {
-      // Only one browser file handle is stored (HANDLE_STORE_KEY 'current-media-handle'), so a stored-handle
-      // reconnect works only for the current asset. Non-current assets go straight to the choose-again picker.
-      // TODO(follow-up): per-media handle storage would let any asset reconnect without re-picking.
+      // lt-ddy.2: handles are stored per media ('media-handle:<mediaId>'), so a non-current Relink first tries
+      // that asset's stored handle: granted reconnects silently, 'prompt' shows the Reconnect placeholder
+      // (one requestPermission on click). Only with no usable stored handle does it open the choose-again picker.
       const relinkBtn = document.createElement('button');
       relinkBtn.type = 'button';
       relinkBtn.className = 'btn-secondary';
@@ -713,8 +716,14 @@ function renderMediaList(model: AppModel): HTMLElement {
         if (!openMediaAsset(model, asset.id)) return;
         model.importError = null;
         setView(model, 'player');
-        if (!isCurrent) chooseMediaAgainViaPicker(model);
         rerenderApp(model);
+        if (!isCurrent) {
+          void restoreOpenedMediaHandle(model).then((result) => {
+            if (result === 'stale') return;
+            if (result === 'unavailable' || result === 'not-handle') chooseMediaAgainViaPicker(model);
+            else rerenderApp(model);
+          });
+        }
       });
       actions.appendChild(relinkBtn);
     }

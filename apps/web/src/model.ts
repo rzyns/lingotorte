@@ -1459,10 +1459,65 @@ export async function importBrowserLocalFileHandles(
     ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
   };
   await importBrowserLocalFiles(model, importInput, options);
-  await persistBrowserMediaHandle(input.mediaHandle);
+  // lt-ddy.2: remember the handle under the media id it now backs (handle imports only; blob imports never persist).
+  const importedId = model.currentMedia?.originalPath === `${HANDLE_LABEL_PREFIX}${input.mediaHandle.name}` ? model.currentMedia.id : null;
+  if (importedId) await persistBrowserMediaHandle(input.mediaHandle, importedId);
 }
 
-const HANDLE_STORE_KEY = 'current-media-handle';
+/** lt-ddy.2: legacy single-handle key (pre per-media storage); migrated on first read. */
+const LEGACY_HANDLE_STORE_KEY = 'current-media-handle';
+/** lt-ddy.2: per-media key in the same IndexedDB store; no deletion API yet (there is no media delete feature). */
+export function mediaHandleStoreKey(mediaId: string): string {
+  return `media-handle:${mediaId}`;
+}
+
+type StoredMediaHandleRecord = Readonly<{ handle: BrowserFileHandleLike; mediaId: string }>;
+type HandleStoreDb = { get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void>; delete?: (key: string) => Promise<void> };
+
+function isHandleLike(value: unknown): value is BrowserFileHandleLike {
+  return typeof value === 'object' && value !== null && typeof (value as { getFile?: unknown }).getFile === 'function';
+}
+
+/** Accepts the record shape ({handle, mediaId}) or a bare legacy handle. */
+function unpackStoredHandle(value: unknown): { handle: BrowserFileHandleLike; mediaId: string | null } | null {
+  if (isHandleLike(value)) return { handle: value, mediaId: null };
+  if (typeof value === 'object' && value !== null && isHandleLike((value as { handle?: unknown }).handle)) {
+    const mediaId = (value as { mediaId?: unknown }).mediaId;
+    return { handle: (value as { handle: BrowserFileHandleLike }).handle, mediaId: typeof mediaId === 'string' && mediaId ? mediaId : null };
+  }
+  return null;
+}
+
+/**
+ * lt-ddy.2: idempotent legacy migration. A legacy record carrying a mediaId is copied to its per-id key
+ * (never overwriting a newer per-id record) and the legacy key is deleted. A bare legacy handle (old code
+ * assumed it belonged to the current media) is adopted for `currentMediaId` only when its name matches;
+ * otherwise it is left in place. Copy-then-delete makes concurrent or repeated runs safe.
+ */
+export async function migrateLegacyMediaHandle(store: HandleStoreDb, currentMediaId: string | null, expectedName: string | null): Promise<void> {
+  const legacy = unpackStoredHandle(await store.get(LEGACY_HANDLE_STORE_KEY));
+  if (!legacy) return;
+  const targetId = legacy.mediaId ?? (currentMediaId && expectedName && legacy.handle.name === expectedName ? currentMediaId : null);
+  if (!targetId) return;
+  const key = mediaHandleStoreKey(targetId);
+  if (!unpackStoredHandle(await store.get(key))) {
+    await store.put({ handle: legacy.handle, mediaId: targetId } satisfies StoredMediaHandleRecord, key);
+  }
+  if (typeof store.delete === 'function') await store.delete(LEGACY_HANDLE_STORE_KEY);
+}
+
+async function readMediaHandle(store: HandleStoreDb, mediaId: string | null, expectedName: string | null): Promise<BrowserFileHandleLike | undefined> {
+  if (mediaId) {
+    const own = unpackStoredHandle(await store.get(mediaHandleStoreKey(mediaId)));
+    if (own) return own.handle;
+    try { await migrateLegacyMediaHandle(store, mediaId, expectedName); } catch { /* fall through to legacy read */ }
+    const migrated = unpackStoredHandle(await store.get(mediaHandleStoreKey(mediaId)));
+    if (migrated) return migrated.handle;
+  }
+  // Unmigratable bare legacy handle: old code assumed it was the current media's (name check follows).
+  const legacy = unpackStoredHandle(await store.get(LEGACY_HANDLE_STORE_KEY));
+  return legacy && legacy.mediaId === null ? legacy.handle : undefined;
+}
 
 function normalizeBrowserPermissionState(value: unknown): BrowserMediaPermissionState {
   return value === 'granted' || value === 'prompt' || value === 'denied' ? value : 'unknown';
@@ -1486,22 +1541,22 @@ async function ensureBrowserHandleReadPermission(handle: BrowserFileHandleLike, 
   }
 }
 
-async function getHandleStore(): Promise<{ get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void> } | null> {
+async function getHandleStore(): Promise<HandleStoreDb | null> {
   const store = (globalThis as { lingotorteHandleStore?: { open: () => Promise<unknown> } }).lingotorteHandleStore;
   if (!store) return null;
   try {
     const db = await store.open();
-    return db as { get: (key: string) => Promise<unknown>; put: (value: unknown, key: string) => Promise<void> };
+    return db as HandleStoreDb;
   } catch {
     return null;
   }
 }
 
-async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise<void> {
+async function persistBrowserMediaHandle(handle: BrowserFileHandleLike, mediaId: string): Promise<void> {
   const store = await getHandleStore();
   if (!store) return;
   try {
-    await store.put(handle, HANDLE_STORE_KEY);
+    await store.put({ handle, mediaId } satisfies StoredMediaHandleRecord, mediaHandleStoreKey(mediaId));
   } catch {
     // IndexedDB may not support storing handles in all environments
   }
@@ -1527,7 +1582,7 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
     return false;
   }
   try {
-    const handle = await store.get(HANDLE_STORE_KEY) as BrowserFileHandleLike | undefined;
+    const handle = await readMediaHandle(store, mediaAtStart?.id ?? null, expectedHandleName);
     if (!current()) return false;
     if (!handle) {
       if (expectedHandleName) {
@@ -1617,6 +1672,24 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
     });
     return false;
   }
+}
+
+export type OpenedMediaRestoreResult = 'restored' | 'prompt' | 'unavailable' | 'stale' | 'not-handle';
+
+/**
+ * lt-ddy.2: after openMediaAsset, reconnect THAT media's stored handle by id. Query-only: 'granted'
+ * reconnects silently; 'prompt' leaves the relink placeholder whose Reconnect button requests once
+ * (user gesture). 'unavailable' (no handle, denied, missing, mismatch) means fall back to the picker.
+ * 'stale' means the media was switched while awaiting and the result was discarded.
+ */
+export async function restoreOpenedMediaHandle(model: AppModel): Promise<OpenedMediaRestoreResult> {
+  const mediaAtStart = model.currentMedia;
+  if (!handleNameFromMedia(model) || !mediaAtStart) return 'not-handle';
+  if (model.browserLocalMedia.objectUrl) return 'restored';
+  const restored = await restoreBrowserMediaHandle(model, () => true, { queryOnly: true }).catch(() => false);
+  if (model.currentMedia !== mediaAtStart) return 'stale';
+  if (restored) return 'restored';
+  return model.browserLocalMedia.permissionState === 'prompt' ? 'prompt' : 'unavailable';
 }
 
 /**

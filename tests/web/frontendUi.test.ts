@@ -267,7 +267,8 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     // Simulate reload: create fresh model, hydrate from stored handle
     const restoredModel = pairedModel();
-    const asset = makeMediaAsset({
+    // lt-ddy.2: handles are stored per media id, so the reloaded asset keeps the imported media's id.
+    const asset = { ...makeMediaAsset({
       title: 'persisted-clip',
       originalPath: 'browser-file-handle:persisted-clip.webm',
       contentSha256: 'sha256:abc123',
@@ -275,7 +276,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       container: 'video/webm',
       sizeBytes: 3,
       privacyLabel: 'owned',
-    });
+    }), id: model.currentMedia!.id };
     restoredModel.store.putMediaAsset(asset);
     restoredModel.currentMedia = asset;
     restoredModel.browserLocalMedia = { objectUrl: null, sourceLabel: 'browser-file-handle:persisted-clip.webm', handleName: 'persisted-clip.webm', permissionState: 'unknown', lastError: null };
