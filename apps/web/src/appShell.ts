@@ -332,12 +332,13 @@ function deferRerenderUntilFullscreenExit(model: AppModel): void {
 
 export function rerenderApp(model: AppModel): void {
   if (currentRoot?.isConnected && fullscreenPersistentStage(model)) {
-    pendingFocusRequests.delete(model);
+    // Defer first, so a throw in the in-place refresh still gets the full rerender on exit. The latest
+    // focus request stays pending and is consumed by that deferred rerender.
+    deferRerenderUntilFullscreenExit(model);
     updatePersistentStageInPlace(model);
     const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
     if (video) syncPlayerTransport(video);
     syncPlayButton(model.player.isPlaying);
-    deferRerenderUntilFullscreenExit(model);
     return;
   }
   // Consume the one-time focus request first, so it can never survive to a later, unrelated render.

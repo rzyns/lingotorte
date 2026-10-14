@@ -2,7 +2,7 @@ import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAppModel } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
-import { rerenderApp } from '../../apps/web/src/app';
+import { requestFocusAfterRender, rerenderApp } from '../../apps/web/src/app';
 
 // lt-dlf.2: a rerender while the video stage is fullscreen must not detach the stage (Chrome would exit
 // fullscreen). The root swap is deferred until fullscreen exits; in-place parts still update.
@@ -136,8 +136,61 @@ describe('lt-dlf.2 rerender in fullscreen keeps the stage in the document', () =
   it('without fullscreen the root is swapped as before', () => {
     const { model } = installModel();
     const rootBefore = document.getElementById('app')!.firstElementChild;
+    const detached = watchDetach(stage());
     rerenderApp(model);
     expect(document.getElementById('app')!.firstElementChild).not.toBe(rootBefore);
+    expect(detached.length).toBeGreaterThan(0);
     expect(stage().isConnected).toBe(true);
+  });
+
+  it('fullscreen on the <video> inside the stage counts as stage fullscreen', () => {
+    const { model } = installModel();
+    const s = stage();
+    fsElement = video();
+    const detached = watchDetach(s);
+    rerenderApp(model);
+    expect(detached).toEqual([]);
+    expect(stage()).toBe(s);
+  });
+
+  it('a media change during fullscreen leaves the old stage alone, keeps the new error, and exits fullscreen', () => {
+    const { model } = installModel();
+    const s = stage();
+    fsElement = s;
+    const exit = vi.fn(() => Promise.reject(new Error('no')));
+    (document as any).exitFullscreen = exit;
+    const other = makeMediaAsset({ title: 'Other', originalPath: 'fixtures/media/y.webm', contentSha256: sha, durationMs: 6000, container: 'webm', sizeBytes: 2, privacyLabel: 'owned' });
+    model.store.putMediaAsset(other);
+    model.currentMedia = other;
+    const err = { mediaId: other.id, source: 'whatever', message: 'boom', announced: false };
+    model.player.mediaError = err as any;
+    rerenderApp(model);
+    expect(video().getAttribute('aria-label')).toBe('Clip');
+    expect(model.player.mediaError).toBe(err);
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a throw in the in-place refresh still defers the full rerender to fullscreen exit', () => {
+    const { model } = installModel();
+    fsElement = stage();
+    const rate = vi.spyOn(dom.window.HTMLMediaElement.prototype as any, 'playbackRate', 'set').mockImplementation(() => { throw new Error('in-place'); });
+    model.player.playbackRate = 1.5;
+    expect(() => rerenderApp(model)).toThrow('in-place');
+    rate.mockRestore();
+    const app = document.getElementById('app')!;
+    const spy = vi.spyOn(app, 'replaceChild');
+    fsElement = null;
+    fsChange();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a focus request made in fullscreen is honored by the deferred rerender', () => {
+    const { model } = installModel();
+    fsElement = stage();
+    requestFocusAfterRender(model, 'no-such-id', 'transcript-search');
+    rerenderApp(model);
+    fsElement = null;
+    fsChange();
+    expect(document.activeElement?.id).toBe('transcript-search');
   });
 });
