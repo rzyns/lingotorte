@@ -267,7 +267,7 @@ function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
     : key !== 'schemaVersion' && value !== null && typeof value === 'object' && Object.keys(value).length > 0);
 }
 
-function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
+export function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
   const hydrated = model.store.replaceSnapshot(snapshot);
   const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
   model.currentMedia = media;
@@ -301,6 +301,38 @@ type SyncOwner = {
   notify?: () => void;
 };
 const syncOwners = new WeakMap<AppModel, SyncOwner>();
+/**
+ * lt-0zc browser snapshot cache hooks. The cache is a crash/reload buffer, never
+ * a source of truth: model code only signals "state changed" and, on boot, may be
+ * given the serialized snapshot last acknowledged by a service (bound to its origin)
+ * so an unchanged cache does not force the Keep/Load choice on reconnect.
+ */
+type CacheHooks = { changed?: (model: AppModel) => void; ack?: { baseUrl: string; serialized: string } | null; seeded?: { baseUrl: string; serialized: string } | null };
+const cacheHooks = new WeakMap<AppModel, CacheHooks>();
+function cacheHook(model: AppModel): CacheHooks {
+  let hooks = cacheHooks.get(model);
+  if (!hooks) { hooks = {}; cacheHooks.set(model, hooks); }
+  return hooks;
+}
+export function observeSnapshotCacheChanges(model: AppModel, changed: (model: AppModel) => void): void { cacheHook(model).changed = changed; }
+function signalSnapshotCache(model: AppModel): void { cacheHook(model).changed?.(model); }
+/** Last durable-ack baseline (serialized snapshot + origin) for the cache record, or null. */
+export function lastAckedSnapshotBaseline(model: AppModel): Readonly<{ baseUrl: string; serialized: string }> | null { return cacheHook(model).ack ?? null; }
+/** Boot-time: seed the cached ack baseline; used only while no live baseline exists for the same origin. */
+export function seedCachedAckBaseline(model: AppModel, baseUrl: string, serialized: string): void {
+  const value = { baseUrl: normalizeLocalServiceBaseUrl(baseUrl), serialized };
+  cacheHook(model).ack = value; cacheHook(model).seeded = value;
+}
+function recordAckBaseline(model: AppModel, baseUrl: string, serialized: string): void {
+  cacheHook(model).ack = { baseUrl: normalizeLocalServiceBaseUrl(baseUrl), serialized };
+  cacheHook(model).seeded = null; // live baselines supersede the boot-seeded one
+}
+function effectiveBaseline(model: AppModel, url: string): string | null {
+  const owner = syncOwner(model);
+  if (owner.baseline !== null) return owner.baseline;
+  const ack = cacheHook(model).seeded;
+  return ack && ack.baseUrl === url ? ack.serialized : null;
+}
 function syncOwner(model: AppModel): SyncOwner {
   let owner = syncOwners.get(model);
   if (!owner) { owner = { generation: 0, editGeneration: 0, tail: Promise.resolve(), baseline: null, choice: null }; syncOwners.set(model, owner); }
@@ -357,12 +389,14 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
       if (typeof ack.savedAt !== 'string' || !Number.isFinite(Date.parse(ack.savedAt))) throw new TypeError('Local service did not acknowledge durable save time.');
       model.localService.revision = revision;
       owner.baseline = serialized;
+      recordAckBaseline(model, url, serialized);
       model.localService.status = 'connected';
       model.localService.lastSavedAt = ack.savedAt;
       const dirty = JSON.stringify(model.store.snapshot()) !== serialized || hasPendingTranscriptEdits(model);
       model.localService.syncState = dirty ? 'unsaved' : 'saved';
       model.localService.lastMessage = dirty ? 'Earlier snapshot saved; newer browser edits remain unsaved.' : `Saved local state at ${ack.savedAt}`;
       notifySync(model);
+      signalSnapshotCache(model);
       return { ok: !dirty, message: model.localService.lastMessage };
     } catch (error) {
       if (!current()) return supersededSync();
@@ -418,8 +452,9 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const serialized = JSON.stringify(model.store.snapshot());
     const remote = JSON.stringify(serviceSnapshot);
     const changedDuringConnect = comparison !== browserComparison(model);
-    const dirty = hasPendingTranscriptEdits(model) || (owner.baseline !== null
-      ? owner.baseline !== serialized : snapshotHasDurableContent(model.store.snapshot()));
+    const baseline = effectiveBaseline(model, url);
+    const dirty = hasPendingTranscriptEdits(model) || (baseline !== null
+      ? baseline !== serialized : snapshotHasDurableContent(model.store.snapshot()));
     model.localService.pathPolicy = pathPolicy;
     if (model.store.snapshotPendingRestoreIntent() || changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(serviceSnapshot)) || hasPendingTranscriptEdits(model)) {
       model.localService.status = 'connected';
@@ -436,6 +471,8 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     } else {
       projectHydratedSnapshotIntoModel(model, serviceSnapshot);
       owner.baseline = JSON.stringify(model.store.snapshot());
+      recordAckBaseline(model, url, owner.baseline);
+      signalSnapshotCache(model);
       const hydratedComparison = browserComparison(model);
       const restoredBrowserHandle = await restoreBrowserMediaHandle(model, () => current() && hydratedComparison === browserComparison(model));
       if (!current()) return supersededSync();
@@ -484,12 +521,14 @@ export function resolveLocalServiceConnection(model: AppModel, choice: 'browser'
     model.transcriptLifecycle.pendingCueTimingEdits = {};
     model.transcriptLifecycle.pendingWordTimingEdits = {};
     owner.baseline = JSON.stringify(model.store.snapshot());
+    recordAckBaseline(model, model.localService.baseUrl, owner.baseline);
   }
   owner.choice = null;
   model.localService.revision = pending.revision;
   model.localService.syncState = choice === 'browser' ? 'unsaved' : 'idle';
   model.localService.lastMessage = choice === 'browser' ? 'Browser work kept. Save explicitly to replace the compared durable state; concurrent changes will conflict.' : 'Loaded compared service state; browser edits discarded by explicit confirmation.';
   notifySync(model);
+  if (choice === 'service') signalSnapshotCache(model);
   return { ok: true, message: model.localService.lastMessage };
 }
 
@@ -519,6 +558,7 @@ export function markUnsavedBrowserEdits(model: AppModel): void {
     model.localService.lastMessage = 'Browser changes are unsaved (transcript form drafts are not saved until applied).';
   }
   notifySync(model);
+  signalSnapshotCache(model);
 }
 
 export function persistIfLocalServiceAutosaveEnabled(model: AppModel): void {
