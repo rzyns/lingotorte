@@ -7,7 +7,6 @@ import {
   importFixtureMediaAndSubtitles,
   importBrowserLocalFileHandles,
   nativeTextForCue,
-  saveLexemeFromCue,
   setView,
   toggleLoopRange,
   mediaPlaybackUrl,
@@ -18,6 +17,7 @@ import {
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
+import { openCapture } from '../../ui/capture.ts';
 import { renderPlayerControls, renderSourceRangePanel } from './controls.ts';
 import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
 
@@ -482,7 +482,7 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
     button.dataset.charStart = String(word.charStart);
     button.dataset.charEnd = String(word.charEnd);
     button.dataset.tokenIndex = String(word.tokenIndex);
-    button.setAttribute('aria-label', `Add ${button.textContent} to My Vocab`);
+    button.setAttribute('aria-label', `Capture ${button.textContent}`);
     if (!canSaveFromTargetTrack) {
       button.disabled = true;
       button.title = 'Approve this transcript before saving learner study items.';
@@ -490,16 +490,16 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       if (!canSaveFromTargetTrack) return;
-      try {
-        const displayText = button.textContent ?? word.text;
-        const item = saveLexemeFromCue(model, cue, displayText, word.charStart, word.charEnd, word.tokenIndex);
-        if (item) {
-          model.player.lastTokenPreview = `Saved “${item.displayText}” to My Vocab`;
-        }
-      } catch (err: unknown) {
-        model.importError = err instanceof Error ? err.message : String(err);
-      }
-      rerenderApp(model);
+      // lt-cms: route through the shared capture form; nothing persists until Save occurrence.
+      openCapture(model, {
+        kind: 'lexeme',
+        text: button.textContent ?? word.text,
+        cueId: cue.id,
+        tokenStart: word.tokenIndex,
+        tokenEnd: word.tokenIndex + 1,
+        charStart: word.charStart,
+        charEnd: word.charEnd,
+      });
     });
     button.addEventListener('dblclick', (event) => {
       event.stopPropagation();

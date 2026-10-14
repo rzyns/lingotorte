@@ -1,7 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel } from '../../apps/web/src/model';
-import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
+import { createAppModel, saveSentenceFromCue } from '../../apps/web/src/model';
+import { makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
 // lt-cms: every collect gesture opens one capture state; nothing persists until Save occurrence / Enter.
@@ -22,7 +22,7 @@ function setupDom() {
   return dom;
 }
 
-function installModel(status: 'approved' | 'draft' = 'approved') {
+function installModel(status: 'approved' | 'draft' = 'approved', text = 'Uczymy się polskiego razem.', timed = false) {
   const model = createAppModel();
   const asset = makeMediaAsset({ title: 'Capture', originalPath: 'fixtures/media/x.webm', contentSha256: sha, durationMs: 4000, container: 'webm', sizeBytes: 1, privacyLabel: 'owned' });
   model.store.putMediaAsset(asset);
@@ -30,11 +30,26 @@ function installModel(status: 'approved' | 'draft' = 'approved') {
   const track = makeSubtitleTrack({ mediaId: asset.id, language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: 'x.srt', contentSha256: sha, isActive: true, transcriptStatus: status });
   model.store.putSubtitleTrack(track);
   model.targetTrackId = track.id;
-  const text = 'Uczymy się polskiego razem.';
   const cue = makeCue({ trackId: track.id, cueIndex: 0, startMs: 2000, endMs: 4000, text, normalizedText: text.toLocaleLowerCase('pl'), textSha256: sha });
   model.store.putCue(cue);
   model.cues = [cue];
   model.view = 'player';
+  if (timed) {
+    model.player.activeCueId = cue.id;
+    model.player.currentTimeMs = 2100;
+    model.player.durationMs = 4000;
+    let cursor = 0;
+    text.split(' ').forEach((raw, index) => {
+      const word = raw.replace(/[.,]$/, '');
+      const charStart = text.indexOf(word, cursor);
+      cursor = charStart + word.length;
+      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+        trackId: track.id, cueId: cue.id, wordIndex: index, charStart, charEnd: cursor, text: word,
+        normalizedText: word.toLocaleLowerCase('pl'), startMs: 2000 + index * 400, endMs: 2000 + index * 400 + 300,
+        sourceKind: 'provider-word-timing', engine: 'test-asr', modelName: 'test-model',
+      }));
+    });
+  }
   return { model, cue };
 }
 
@@ -124,5 +139,110 @@ describe('lt-cms unified capture state', () => {
     key(dom, meaning()!, 'Enter');
     await new Promise((r) => setTimeout(r, 10));
     expect(savedItems(model)).toHaveLength(0);
+  });
+
+  it('timed-word click seeks, opens the form with meaning focused, and resets a prior pending meaning', () => {
+    const { model, cue } = installModel('approved', undefined, true);
+    model.pendingMeaning = 'stale meaning';
+    model.pendingNotes = 'stale notes';
+    rerenderApp(model);
+    const timed = Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'polskiego') as HTMLButtonElement;
+    expect(timed).toBeTruthy();
+    timed.click();
+    expect(model.player.currentTimeMs).toBe(2800);
+    expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'polskiego', cueId: cue.id, tokenStart: 2 });
+    expect(model.pendingMeaning).toBe('');
+    expect(model.pendingNotes).toBe('');
+    expect(meaning()!.value).toBe('');
+    expect(document.activeElement?.id).toBe('selection-meaning');
+    expect(savedItems(model)).toHaveLength(0);
+  });
+
+  it('timed-word click on a draft track still seeks but opens no capture', () => {
+    const { model } = installModel('draft', undefined, true);
+    rerenderApp(model);
+    (Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'razem') as HTMLButtonElement).click();
+    expect(model.player.currentTimeMs).toBe(3200);
+    expect(model.selection).toBeNull();
+  });
+
+  it('overlay-word click opens the form; nothing is saved until Save occurrence', async () => {
+    const { model, cue } = installModel('approved', undefined, true);
+    rerenderApp(model);
+    const word = Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find((b) => b.textContent === 'razem') as HTMLButtonElement;
+    expect(word.getAttribute('aria-label')).toBe('Capture razem');
+    word.click();
+    expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem', cueId: cue.id });
+    expect(document.activeElement?.id).toBe('selection-meaning');
+    expect(savedItems(model)).toHaveLength(0);
+    btn('Save occurrence')!.click();
+    await vi.waitFor(() => expect(savedItems(model)).toHaveLength(1));
+    expect(savedItems(model)[0]).toMatchObject({ kind: 'lexeme', displayText: 'razem' });
+  });
+
+  it('a zero-length mouseup opens nothing', async () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    dragSelect(dom, cue.id, '   ');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(model.selection).toBeNull();
+    expect(meaning()).toBeNull();
+  });
+
+  it('Enter in Notes does not save', async () => {
+    const { model } = installModel();
+    rerenderApp(model);
+    btn('Save sentence…')!.click();
+    const notes = document.getElementById('selection-notes') as HTMLTextAreaElement;
+    key(dom, notes, 'Enter');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(savedItems(model)).toHaveLength(0);
+    expect(model.selection).not.toBeNull();
+  });
+
+  it('saving the same sentence twice dedupes exactly like saveSentenceFromCue', async () => {
+    const { model } = installModel();
+    rerenderApp(model);
+    for (let i = 1; i <= 2; i += 1) {
+      btn('Save sentence…')!.click();
+      btn('Save occurrence')!.click();
+      await vi.waitFor(() => expect(model.selection).toBeNull());
+    }
+    // Reference: the direct saveSentenceFromCue path, twice, on a fresh model.
+    const ref = installModel();
+    await saveSentenceFromCue(ref.model, ref.cue);
+    await saveSentenceFromCue(ref.model, ref.cue);
+    const refItems = savedItems(ref.model);
+    expect(savedItems(model)).toHaveLength(refItems.length);
+    expect(model.savedOccurrenceService.listOccurrencesForItem(savedItems(model)[0]!.id)).toHaveLength(
+      ref.model.savedOccurrenceService.listOccurrencesForItem(refItems[0]!.id).length,
+    );
+    expect(savedItems(model)).toHaveLength(1);
+  });
+
+  it('drag-select of a repeated word anchors to the selected (second) occurrence via Range offsets', async () => {
+    const { model, cue } = installModel('approved', 'tak i tak');
+    rerenderApp(model);
+    const row = document.querySelector(`[data-cue-id="${cue.id}"]`) as HTMLElement;
+    const textEl = row.querySelector('.cue-target') as HTMLElement;
+    const textNode = textEl.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, 6);
+    range.setEnd(textNode, 9);
+    const sel = dom.window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    row.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+    await vi.waitFor(() => expect(model.selection).not.toBeNull());
+    expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'tak', charStart: 6, charEnd: 9 });
+  });
+
+  it('drag-select on a draft track shows the approval help message', async () => {
+    const { model, cue } = installModel('draft');
+    rerenderApp(model);
+    dragSelect(dom, cue.id, 'razem');
+    await vi.waitFor(() => expect(model.importError).toBe('Approve the transcript before saving from it.'));
+    expect(model.selection).toBeNull();
+    expect(document.getElementById('app')?.textContent).toContain('Approve the transcript before saving from it.');
   });
 });

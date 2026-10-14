@@ -1,7 +1,6 @@
 import type { AppModel } from '../../uiTypes';
 import { analyseCueMorphology, renderMorphologyPanel } from '../../morphologyPanel.ts';
 import type { Cue } from '@lingotorte/domain';
-import type { Selection } from '../../uiTypes';
 import { formatTimeMs } from '../../uiTypes';
 import {
   clearSelection,
@@ -13,7 +12,8 @@ import {
   setTranscriptQuery,
   tokenizeCueText,
 } from '../../model';
-import { requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
+import { rerenderApp } from '../../appShell.ts';
+import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { renderCueSourceContext, renderCueTargetText } from './controls.ts';
 
@@ -172,8 +172,10 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
       }
     });
     row.addEventListener('mouseup', () => {
-      const selectionText = window.getSelection()?.toString().trim();
+      const domSelection = window.getSelection();
+      const selectionText = domSelection?.toString().trim();
       if (selectionText) {
+        const rangeStart = selectionOffsetInCueText(row, domSelection, cue.text, selectionText);
         void tokenizeCueText(model, cue).then((tokens: import('../../model').TokenInfo[]) => {
           const lower = selectionText.toLowerCase();
           const token = tokens.find(
@@ -182,7 +184,11 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
               (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
           );
           // lt-cms: build a capture selection; nothing is persisted until Save occurrence.
-          if (token && token.surface.toLowerCase() === lower) {
+          const anchoredToken = rangeStart === null
+            ? token
+            : tokens.find((t) => t.charStart === rangeStart && t.surface.toLowerCase() === lower);
+          if (anchoredToken && anchoredToken.surface.toLowerCase() === lower) {
+            const token = anchoredToken;
             openCapture(model, {
               kind: 'lexeme',
               text: token.surface,
@@ -194,7 +200,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
             });
             return;
           }
-          const phraseStart = cue.text.toLowerCase().indexOf(lower);
+          const phraseStart = rangeStart ?? cue.text.toLowerCase().indexOf(lower);
           const charStart = phraseStart >= 0 ? phraseStart : 0;
           const charEnd = phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length;
           const overlapping = tokens.filter((t) => t.charStart < charEnd && t.charEnd > charStart);
@@ -218,15 +224,23 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
   return panel;
 }
 
-function openCapture(model: AppModel, selection: NonNullable<Selection>): void {
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
-  if (targetTrack?.transcriptStatus !== 'approved') return;
-  model.selection = selection;
-  model.pendingMeaning = '';
-  model.pendingNotes = '';
-  window.getSelection()?.removeAllRanges();
-  requestFocusAfterRender(model, 'selection-meaning');
-  rerenderApp(model);
+// lt-cms: anchor a drag-selection by its DOM Range offset within the cue's target-text element so a
+// repeated word maps to the occurrence the learner actually selected. Returns null when unavailable
+// (no range, selection outside the cue text, or text mismatch) so callers fall back to indexOf.
+function selectionOffsetInCueText(row: HTMLElement, sel: globalThis.Selection | null | undefined, cueText: string, selectionText: string): number | null {
+  if (!sel || typeof sel.rangeCount !== 'number' || sel.rangeCount < 1 || typeof sel.getRangeAt !== 'function') return null;
+  const range = sel.getRangeAt(0);
+  const textEl = row.querySelector('.cue-target, .cue-text') as HTMLElement | null;
+  if (!textEl || !textEl.contains(range.startContainer)) return null;
+  if ((textEl.textContent ?? '') !== cueText) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(textEl);
+  pre.setEnd(range.startContainer, range.startOffset);
+  let offset = pre.toString().length;
+  const raw = range.toString();
+  offset += raw.length - raw.trimStart().length;
+  if (cueText.slice(offset, offset + selectionText.length).toLowerCase() !== selectionText.toLowerCase()) return null;
+  return offset;
 }
 
 function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
@@ -277,6 +291,13 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   }
 
   if (!model.selection) {
+    if (model.importError === CAPTURE_REQUIRES_APPROVAL_MESSAGE) {
+      const blocked = document.createElement('p');
+      blocked.className = 'selection-help capture-blocked';
+      blocked.setAttribute('role', 'status');
+      blocked.textContent = CAPTURE_REQUIRES_APPROVAL_MESSAGE;
+      panel.appendChild(blocked);
+    }
     const p = document.createElement('p');
     p.className = 'selection-help';
     p.textContent = model.player.lastTokenPreview?.startsWith('Saved ')
