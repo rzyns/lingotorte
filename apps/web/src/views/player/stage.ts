@@ -275,7 +275,7 @@ function mediaErrorMessage(code: number): string {
   }
 }
 
-function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
+export function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder';
 

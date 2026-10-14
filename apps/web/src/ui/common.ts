@@ -87,7 +87,7 @@ export function seekRenderedVideoToCue(cue: Cue): void {
   }
 }
 
-function renderStatusToken(label: string, tone: 'local' | 'approved' | 'draft' | 'warning' | 'neutral' = 'neutral'): HTMLElement {
+export function renderStatusToken(label: string, tone: 'local' | 'approved' | 'draft' | 'warning' | 'neutral' = 'neutral'): HTMLElement {
   const token = document.createElement('span');
   token.className = `status-token status-token-${tone}`;
   token.textContent = label;

@@ -1,6 +1,7 @@
 import { readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../../packages/domain/src/nativePaths.ts';
 import type { AppModel } from '../uiTypes';
 import { formatTimeMs } from '../uiTypes';
+import { renderEmptyVideoPlaceholder } from './player/stage.ts';
 import {
   applyTrackOffsetMs,
   createOffsetCorrectedTranscriptVersion,
@@ -22,9 +23,13 @@ import {
   makeLocalServiceElevenLabsScribeProvider,
   makeLocalServiceYouTubeCaptionProvider,
   makeFakeYouTubeCaptionProvider,
+  activeTargetTrackForMedia,
+  listMediaAssetsNewestFirst,
+  mediaAssetNeedsRelink,
+  openMediaAsset,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
+import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderStatusToken, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../ui/mediaConflict.ts';
 import { hasNativeInputPath } from '../ui/snippets.ts';
 import { renderCueSourceComparison, renderEmbeddedSubtitleControls } from '../ui/transcriptSources.ts';
@@ -632,6 +637,85 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   return panel;
 }
 
+/** lt-1ur: session-only memory of the user's lifecycle-disclosure toggle (not persisted, not on AppModel). */
+const lifecycleDisclosureOpen = new WeakMap<AppModel, boolean>();
+
+function lifecycleDisclosureDefaultOpen(model: AppModel): boolean {
+  if (!model.currentMedia || !model.targetTrackId) return true;
+  const status = model.store.getSubtitleTrack(model.targetTrackId)?.transcriptStatus;
+  return status === undefined || status === 'draft' || status === 'correcting';
+}
+
+function renderMediaList(model: AppModel): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'media-list';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Your media';
+  wrap.appendChild(heading);
+  const assets = listMediaAssetsNewestFirst(model);
+  if (assets.length === 0) {
+    wrap.appendChild(renderEmptyVideoPlaceholder(model));
+    return wrap;
+  }
+  const list = document.createElement('ul');
+  list.className = 'media-rows';
+  list.setAttribute('aria-label', 'Imported media');
+  for (const asset of assets) {
+    const row = document.createElement('li');
+    row.className = 'media-row';
+    row.dataset.mediaId = asset.id;
+    const isCurrent = model.currentMedia?.id === asset.id;
+    if (isCurrent) {
+      row.classList.add('active');
+      row.setAttribute('aria-current', 'true');
+    }
+    const title = document.createElement('span');
+    title.className = 'media-row-title';
+    title.textContent = asset.title;
+    const duration = document.createElement('span');
+    duration.className = 'media-row-duration meta';
+    duration.textContent = formatTimeMs(asset.durationMs);
+    const status = activeTargetTrackForMedia(model, asset.id)?.transcriptStatus;
+    const statusLabel = status === 'approved' ? 'approved' : status ? 'draft' : 'none';
+    const statusToken = renderStatusToken(`transcript: ${statusLabel}`, statusLabel === 'approved' ? 'approved' : statusLabel === 'draft' ? 'draft' : 'neutral');
+    statusToken.classList.add('media-row-status');
+    const privacy = renderStatusToken(asset.privacyLabel, 'local');
+    privacy.classList.add('media-row-privacy');
+    const actions = document.createElement('span');
+    actions.className = 'media-row-actions';
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'btn-secondary';
+    openBtn.textContent = 'Open';
+    openBtn.setAttribute('aria-label', `Open ${asset.title}`);
+    openBtn.addEventListener('click', () => {
+      if (!openMediaAsset(model, asset.id)) return;
+      model.importError = null;
+      setView(model, 'player');
+      rerenderApp(model);
+    });
+    actions.appendChild(openBtn);
+    if (mediaAssetNeedsRelink(model, asset)) {
+      // Reuses the player's relink placeholder (Relink media / Choose media again).
+      const relinkBtn = document.createElement('button');
+      relinkBtn.type = 'button';
+      relinkBtn.className = 'btn-secondary';
+      relinkBtn.textContent = 'Relink';
+      relinkBtn.setAttribute('aria-label', `Relink ${asset.title}`);
+      relinkBtn.addEventListener('click', () => {
+        if (!openMediaAsset(model, asset.id)) return;
+        setView(model, 'player');
+        rerenderApp(model);
+      });
+      actions.appendChild(relinkBtn);
+    }
+    row.append(title, duration, statusToken, privacy, actions);
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+  return wrap;
+}
+
 export function renderLibraryView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
   section.className = 'card';
@@ -639,8 +723,9 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   h2.textContent = 'Library';
   section.appendChild(h2);
   const p = document.createElement('p');
-  p.textContent = 'Load the synthetic local fixture, or choose your own local video with optional subtitle files. Browser imports stay on this device: media is opened via a local object URL and subtitles are read with File.text().';
+  p.textContent = 'Your imported media, stored on this device. Open one to study, or add another below.';
   section.appendChild(p);
+  section.appendChild(renderMediaList(model));
 
   const form = document.createElement('div');
   form.className = 'import-form';
@@ -668,12 +753,12 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   form.appendChild(loadBtn);
 
   const localImportGroup = document.createElement('div');
-  localImportGroup.className = 'local-file-import';
+  localImportGroup.className = 'local-file-import add-media-card';
   const localHeading = document.createElement('h3');
-  localHeading.textContent = 'Import your local files';
+  localHeading.textContent = 'Add media';
   const localIntro = document.createElement('p');
   localIntro.className = 'file-hint';
-  localIntro.textContent = 'Everything stays in this browser session: media opens as a local object URL, subtitle files are read with File.text(), and provider drafts stay gated.';
+  localIntro.textContent = 'Files stay on this device. Subtitles are optional; you can create a draft transcript later.';
   localImportGroup.append(localHeading, localIntro);
 
   const localFileGrid = document.createElement('div');
@@ -681,7 +766,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
 
   const mediaLabel = document.createElement('label');
   mediaLabel.htmlFor = 'local-media-file';
-  mediaLabel.textContent = 'Local media file';
+  mediaLabel.textContent = 'Import copy for this session only';
   const mediaInput = document.createElement('input');
   mediaInput.id = 'local-media-file';
   mediaInput.name = 'local-media-file';
@@ -764,8 +849,8 @@ export function renderLibraryView(model: AppModel): HTMLElement {
     let lastPickedHandle: BrowserFileHandleLike | null = null;
     const persistentImportBtn = document.createElement('button');
     persistentImportBtn.className = 'btn-secondary';
-    persistentImportBtn.textContent = 'Import persistent media handle';
-    persistentImportBtn.setAttribute('aria-label', 'Import media through a browser persistent file handle');
+    persistentImportBtn.textContent = 'Choose video (recommended — stays linked after reload)';
+    persistentImportBtn.setAttribute('aria-label', 'Choose video through a browser persistent file handle (recommended — stays linked after reload)');
     persistentImportBtn.addEventListener('click', () => {
       void showOpenFilePicker({
         multiple: false,
@@ -803,18 +888,10 @@ export function renderLibraryView(model: AppModel): HTMLElement {
           });
         });
     });
-    localImportActions.appendChild(persistentImportBtn);
+    localImportActions.prepend(persistentImportBtn);
   }
   localImportGroup.appendChild(localImportActions);
   form.appendChild(localImportGroup);
-  form.appendChild(renderTranscriptLifecyclePanel(model));
-
-  if (model.currentMedia) {
-    const current = document.createElement('p');
-    current.className = 'meta';
-    current.textContent = `Current media: ${model.currentMedia.title} • ${model.currentMedia.privacyLabel}`;
-    form.appendChild(current);
-  }
 
   const conflictBox = renderMediaNameConflict(model);
   if (conflictBox) form.appendChild(conflictBox);
@@ -825,6 +902,18 @@ export function renderLibraryView(model: AppModel): HTMLElement {
     banner.textContent = model.importError;
     form.appendChild(banner);
   }
+
+  const disclosure = document.createElement('details');
+  disclosure.className = 'transcript-lifecycle-disclosure';
+  disclosure.open = lifecycleDisclosureOpen.get(model) ?? lifecycleDisclosureDefaultOpen(model);
+  const summary = document.createElement('summary');
+  summary.textContent = 'Transcript tools (ASR drafts, captions, embedded tracks)';
+  disclosure.appendChild(summary);
+  disclosure.appendChild(renderTranscriptLifecyclePanel(model));
+  disclosure.addEventListener('toggle', () => {
+    lifecycleDisclosureOpen.set(model, disclosure.open);
+  });
+  form.appendChild(disclosure);
 
   section.appendChild(form);
   return section;

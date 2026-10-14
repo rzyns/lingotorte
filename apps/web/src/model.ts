@@ -282,9 +282,9 @@ function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
 export function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
   const hydrated = model.store.replaceSnapshot(snapshot);
   const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
-  model.currentMedia = media;
-  model.browserLocalMedia = browserLocalMediaForHydratedMedia(media);
   if (!media) {
+    model.currentMedia = null;
+    model.browserLocalMedia = browserLocalMediaForHydratedMedia(null);
     model.targetTrackId = null;
     model.nativeTrackId = null;
     model.cues = [];
@@ -292,16 +292,7 @@ export function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: Loca
     model.player.activeCueId = null;
     return;
   }
-
-  const tracks = Object.values(hydrated.subtitleTracks).filter((track) => track.mediaId === media.id);
-  const targetTrack = chooseActiveTrack(tracks, 'target');
-  const nativeTrack = chooseActiveTrack(tracks, 'native');
-  model.targetTrackId = targetTrack?.id ?? null;
-  model.nativeTrackId = nativeTrack?.id ?? null;
-  model.cues = targetTrack ? model.store.listCuesForTrack(targetTrack.id) : [];
-  model.player.durationMs = media.durationMs;
-  model.player.currentTimeMs = 0;
-  model.player.activeCueId = model.cues[0]?.id ?? null;
+  projectMediaIntoModel(model, media, Object.values(hydrated.subtitleTracks).filter((track) => track.mediaId === media.id));
 }
 
 type SyncOwner = {
@@ -641,6 +632,46 @@ export function setLoopRange(model: AppModel, startMs: number, endMs: number): v
 
 export function clearLoopRange(model: AppModel): void {
   model.player.loopRange = null;
+}
+
+/** lt-1ur: media assets newest first (importedAt, the immutable import stamp). */
+export function listMediaAssetsNewestFirst(model: AppModel): MediaAsset[] {
+  return [...model.store.listMediaAssets()].sort((a, b) => b.importedAt.localeCompare(a.importedAt) || a.id.localeCompare(b.id));
+}
+
+function projectMediaIntoModel(model: AppModel, media: MediaAsset, tracks: SubtitleTrack[]): void {
+  model.currentMedia = media;
+  model.browserLocalMedia = browserLocalMediaForHydratedMedia(media);
+  const targetTrack = chooseActiveTrack(tracks, 'target');
+  const nativeTrack = chooseActiveTrack(tracks, 'native');
+  model.targetTrackId = targetTrack?.id ?? null;
+  model.nativeTrackId = nativeTrack?.id ?? null;
+  model.cues = targetTrack ? model.store.listCuesForTrack(targetTrack.id) : [];
+  model.player.durationMs = media.durationMs;
+  model.player.currentTimeMs = 0;
+  model.player.activeCueId = model.cues[0]?.id ?? null;
+}
+
+/** lt-1ur: switch to a stored media asset with the same projection as hydration. */
+export function openMediaAsset(model: AppModel, mediaId: string): boolean {
+  const media = model.store.getMediaAsset(mediaId);
+  if (!media) return false;
+  const sameMedia = model.currentMedia?.id === media.id;
+  const keptPlayback = sameMedia ? model.browserLocalMedia : null;
+  if (!sameMedia) revokeCurrentMediaObjectUrl(model);
+  projectMediaIntoModel(model, media, model.store.listSubtitleTracksForMedia(media.id));
+  if (keptPlayback) model.browserLocalMedia = keptPlayback;
+  model.player.isPlaying = false;
+  model.player.loopRange = null;
+  model.selection = null;
+  model.pendingMeaning = '';
+  model.pendingNotes = '';
+  return true;
+}
+
+/** lt-1ur: the active target track for any stored media (not only the current one). */
+export function activeTargetTrackForMedia(model: AppModel, mediaId: string): SubtitleTrack | null {
+  return chooseActiveTrack(model.store.listSubtitleTracksForMedia(mediaId), 'target');
 }
 
 export function normalizeVisualSourceRange(
@@ -1210,6 +1241,12 @@ export function needsMediaRelink(model: AppModel): boolean {
   const path = model.currentMedia.originalPath;
   if (!path.startsWith(HANDLE_LABEL_PREFIX) && !path.startsWith('blob:')) return false;
   return model.browserLocalMedia.objectUrl === null;
+}
+
+/** lt-1ur: needsMediaRelink for any stored asset; only the current one can hold a live object URL. */
+export function mediaAssetNeedsRelink(model: AppModel, media: MediaAsset): boolean {
+  if (model.currentMedia?.id === media.id) return needsMediaRelink(model);
+  return media.originalPath.startsWith(HANDLE_LABEL_PREFIX) || media.originalPath.startsWith('blob:');
 }
 
 export function handleNameFromMedia(model: AppModel): string | null {
