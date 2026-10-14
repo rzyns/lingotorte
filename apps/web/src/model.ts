@@ -1416,12 +1416,15 @@ function normalizeBrowserPermissionState(value: unknown): BrowserMediaPermission
   return value === 'granted' || value === 'prompt' || value === 'denied' ? value : 'unknown';
 }
 
-async function ensureBrowserHandleReadPermission(handle: BrowserFileHandleLike): Promise<BrowserMediaPermissionState> {
+async function ensureBrowserHandleReadPermission(handle: BrowserFileHandleLike, queryOnly = false): Promise<BrowserMediaPermissionState> {
   try {
     if (typeof handle.queryPermission === 'function') {
       const queried = normalizeBrowserPermissionState(await handle.queryPermission({ mode: 'read' }));
       if (queried === 'granted' || queried === 'denied') return queried;
+      // lt-aot: requestPermission needs a user gesture; boot must only query.
+      if (queryOnly) return queried === 'unknown' ? 'prompt' : queried;
     }
+    if (queryOnly) return 'prompt';
     if (typeof handle.requestPermission === 'function') {
       return normalizeBrowserPermissionState(await handle.requestPermission({ mode: 'read' }));
     }
@@ -1452,7 +1455,7 @@ async function persistBrowserMediaHandle(handle: BrowserFileHandleLike): Promise
   }
 }
 
-export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () => boolean = () => true): Promise<boolean> {
+export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () => boolean = () => true, options: { queryOnly?: boolean } = {}): Promise<boolean> {
   const expectedHandleName = handleNameFromMedia(model);
   const sourceLabel = expectedHandleName ? `${HANDLE_LABEL_PREFIX}${expectedHandleName}` : model.browserLocalMedia.sourceLabel;
   const mediaAtStart = model.currentMedia;
@@ -1494,8 +1497,17 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
       });
       return false;
     }
-    const permissionState = await ensureBrowserHandleReadPermission(handle);
+    const permissionState = await ensureBrowserHandleReadPermission(handle, options.queryOnly === true);
     if (!current()) return false;
+    if (options.queryOnly && permissionState === 'prompt') {
+      model.browserLocalMedia = emptyBrowserLocalMedia({
+        sourceLabel,
+        handleName: expectedHandleName ?? handle.name,
+        permissionState: 'prompt',
+        lastError: null,
+      });
+      return false;
+    }
     if (permissionState !== 'granted' && permissionState !== 'unknown') {
       model.browserLocalMedia = emptyBrowserLocalMedia({
         sourceLabel,
@@ -1550,6 +1562,27 @@ export async function restoreBrowserMediaHandle(model: AppModel, isCurrent: () =
       lastError: error instanceof Error ? error.message : String(error),
     });
     return false;
+  }
+}
+
+/**
+ * lt-aot: restore the saved browser media handle at boot, independent of the
+ * local service. Only queries permission (never requestPermission, which needs
+ * a user gesture); a 'prompt' state leaves a Reconnect affordance for the
+ * player. Does not touch the store, so no cache write or dirty flag results.
+ */
+export async function restoreMediaAtBoot(model: AppModel, timeoutMs = 1500): Promise<boolean> {
+  if (!handleNameFromMedia(model) || model.browserLocalMedia.objectUrl) return false;
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => { timer = setTimeout(() => { timedOut = true; resolve(false); }, timeoutMs); });
+  try {
+    return await Promise.race([
+      restoreBrowserMediaHandle(model, () => !timedOut, { queryOnly: true }).catch(() => false),
+      timeout,
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
