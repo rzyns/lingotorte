@@ -8,7 +8,8 @@ export const J = Object.freeze({
   gatedDraft: 'Import gated demo caption draft', // app.ts renderTranscriptLifecyclePanel
   draftDone: 'Draft transcript imported',
   publicRead: 'input[name="youtube-public-read-auth"]',
-  saveSentence: 'Save sentence',
+  saveSentence: 'Save sentence…', // lt-cms: opens the Selection capture form
+  saveOccurrence: 'Save occurrence', // views/player/transcript.ts renderSelectionPanel
   showAnswer: 'Show answer / context',
   createReviewCard: 'Create review card', // app.ts renderSavedView, one per saved item
   submitAttempt: 'Submit attempt',
@@ -30,7 +31,7 @@ const FOCUS_KEYS = [
   ['navExportImport', (n) => n.closest?.('.lingotorte-nav') && n.textContent.trim() === 'Export / Import'],
   ['navSettings', (n) => n.closest?.('.lingotorte-nav') && n.textContent.trim() === 'Settings'],
   ['analyseWords', (n) => n.classList?.contains('analyse-words')],
-  ['saveSentence', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Save sentence'],
+  ['saveSentence', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Save sentence…'],
   ['showAnswer', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Show answer / context'],
   ['rateGood', (n) => n.getAttribute?.('aria-label') === 'Rate good'],
   ['submitAttempt', (n) => n.tagName === 'BUTTON' && n.textContent.trim() === 'Submit attempt'],
@@ -146,7 +147,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
         return { cues: cueRows().length, cue0Matches: !!r0 && (r0.querySelector('.cue-target')?.textContent ?? '') === arg.text, saveEnabled: !!s && !s.disabled, draftBanner: !!document.querySelector('.transcript-panel .transcript-approval-gate') };
       }
       case 'select-word': {
-        // Real selection + mouseup on the cue row (app.ts renderTranscriptPanel mouseup -> saveSelectedPhraseFromCue).
+        // Real selection + mouseup on the cue row (lt-cms: mouseup opens the Selection capture form; Save occurrence persists).
         const r0 = cueRows()[0]; const t = r0?.querySelector('.cue-target'); if (!t) throw diagnostic('DomSelector', 'cueRow', 'missing');
         const walker = document.createTreeWalker(t, NodeFilter.SHOW_TEXT); let node, at = -1;
         while ((node = walker.nextNode())) { at = node.data.indexOf(arg.word); if (at >= 0) break; }
@@ -154,11 +155,19 @@ export async function installJourneyDriver(batch, requireUi = true) {
         const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + arg.word.length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
         r0.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        // The mouseup path saves via saveSelectedPhraseFromCue and does not render a 'Saved' preview (JSDOM probe):
-        // the page only reports that the gesture ran; the server oracle after Save is the evidence.
-        await new Promise((r) => setTimeout(r, 300));
+        // lt-cms: the gesture opens the capture form; confirm with Save occurrence. The server oracle after Save is the evidence.
+        const form = await wait(() => byText(J.saveOccurrence), 3000).catch(() => null);
         sel.removeAllRanges();
-        return { gesture: true, selectionHelp: !!document.querySelector('.selection-help') };
+        if (form && !form.disabled) form.click();
+        await new Promise((r) => setTimeout(r, 300));
+        return { gesture: !!form, selectionHelp: !!document.querySelector('.selection-help') };
+      }
+      case 'save-occurrence': {
+        // lt-cms: confirm the open capture form (after pressing Save sentence…).
+        const b = await wait(() => byText(J.saveOccurrence), 3000).catch(() => null);
+        if (!b) throw diagnostic('DomSelector', 'saveOccurrence', 'missing');
+        b.click(); await wait(() => !byText(J.saveOccurrence), 3000).catch(() => null);
+        return { saved: !byText(J.saveOccurrence) };
       }
       case 'review-state': {
         await wait(() => document.querySelector('.review-card'), 3000);

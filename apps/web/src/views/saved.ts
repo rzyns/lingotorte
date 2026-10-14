@@ -56,7 +56,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
     empty.className = 'empty-state';
     empty.textContent = currentTab === 'vocab'
       ? 'No words or phrases saved yet. Select text in a transcript cue to save it.'
-      : 'No sentences saved yet. Click “Save sentence” on a transcript cue.';
+      : 'No sentences saved yet. Click “Save sentence…” on a transcript cue.';
     panel.appendChild(empty);
     section.appendChild(panel);
     return section;

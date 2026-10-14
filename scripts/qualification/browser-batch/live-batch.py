@@ -861,6 +861,7 @@ class BatchDriver:
             self.ok(P, 'word-gesture-' + str(self.JOURNEY_WORDS.index(w)), r['gesture'])  # saved state asserted server-side below
         self.invoke('player-cues', text=self.JOURNEY_CUE)
         self.press('saveSentence')
+        self.invoke('save-occurrence')  # lt-cms: Save sentence… opens the capture form; confirm it
         o = self.jsave()
         occ = o['journey']['occurrences']
         cue_text = self.JOURNEY_CUE

@@ -28,6 +28,7 @@ import {
   togglePlay,
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
+import { openCapture } from '../../ui/capture.ts';
 import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
 
@@ -462,7 +463,14 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
       event.stopPropagation();
       seekToTime(model, word.startMs);
       model.player.activeCueId = cue.id;
-      model.selection = {
+      seekRenderedVideoToMs(word.startMs);
+      // lt-cms: the seek always happens; only the capture form is gated on an approved transcript.
+      const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+      if (targetTrack?.transcriptStatus !== 'approved') {
+        rerenderApp(model);
+        return;
+      }
+      openCapture(model, {
         kind: 'lexeme',
         text: word.text,
         cueId: cue.id,
@@ -470,9 +478,7 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
         tokenEnd: word.wordIndex + 1,
         charStart: word.charStart,
         charEnd: word.charEnd,
-      };
-      seekRenderedVideoToMs(word.startMs);
-      rerenderApp(model);
+      });
     });
     button.addEventListener('dblclick', (event) => {
       event.stopPropagation();
