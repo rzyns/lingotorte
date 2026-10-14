@@ -501,7 +501,8 @@ textarea:focus-visible,
 
 /* lt-xlr: the control row is outside the fullscreen stage, so hint the keyboard shortcuts inside it. */
 .video-stage:fullscreen::after {
-  content: "Space play/pause \00B7 Esc exit";
+  /* A CSS hex escape consumes one following space, hence two spaces after \00B7. */
+  content: "Space play/pause \00B7  Esc exit";
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
