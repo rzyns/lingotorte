@@ -5,6 +5,14 @@ Run: python -I -m unittest tests/qualification/test_browser_batch_harness.py  (B
 import importlib.util, io, json, os, pathlib, queue, sys, tempfile, threading, types, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+def web_ui_source(root):
+    """Web UI sources after lt-939 split app.ts into appShell/views/ui modules.
+    app.ts is now a re-export; harness string traces read every UI module."""
+    src = root / 'apps/web/src'
+    files = [src / 'app.ts', src / 'appShell.ts'] + sorted((src / 'ui').glob('*.ts')) + sorted((src / 'views').rglob('*.ts'))
+    return '\n'.join(f.read_text(encoding='utf8') for f in files)
+
 KIT = ROOT / 'scripts/qualification/browser-batch'
 
 
@@ -394,7 +402,7 @@ class DriverTests(Base):
 class DomLabelTests(unittest.TestCase):
     def test_choice_labels_match_app_strings(self):
         import re
-        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         dom = (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
         labels = dict(re.findall(r"(service|browser): '([^']+)'", dom.split('CHOICE_LABELS', 1)[1].split('})', 1)[0]))
         self.assertEqual(labels['service'], 'Load service state (discard browser edits)')
@@ -441,7 +449,7 @@ class Run1CorrectionTests(Base):
         return (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
 
     def test_restore_confirm_refreshes_service_preview_then_acks_warnings(self):
-        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         # Product rule the harness must satisfy: paired 'Restore now' needs a durable (service-backed) preview.
         self.assertIn("(model.localService.status !== 'disconnected' && !hasCurrentDurableRestorePreview(model))", app)
         self.assertIn("refresh.textContent = 'Refresh authoritative service preview'", app)
@@ -454,7 +462,7 @@ class Run1CorrectionTests(Base):
 
     def test_button_and_selector_labels_exist_in_app_and_controller(self):
         import re
-        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         dom = self.dom()
         buttons = dict(re.findall(r"(\w+): '([^']+)'", dom.split('BUTTON_LABELS = Object.freeze(', 1)[1].split('});', 1)[0]))
         sels = dict(re.findall(r"(\w+): '([^']+)'", dom.split('SELECTOR_LABELS = Object.freeze(', 1)[1].split('});', 1)[0]))
@@ -571,7 +579,7 @@ class Run2CorrectionTests(DriverTests):
         return (KIT / 'dom-batch.mjs').read_text(encoding='utf8')
 
     def test_restore_settle_ignores_always_present_conflict_banner(self):
-        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         # Product fact: the conflict note is a '.status-banner.error' (role=status), present whenever a merge
         # conflict preview renders; only lastError uses role=alert.
         self.assertIn("conflictError.className = 'status-banner error';", app)
@@ -623,7 +631,7 @@ class Run2CorrectionTests(DriverTests):
         with self.assertRaises(AssertionError): d2.phase_restore_03_export_merge_preview_no_effect()
 
     def test_transcript_approve_returns_to_library_and_requires_message(self):
-        app = (ROOT / 'apps/web/src/app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         dom = self.dom()
         done = __import__('re').search(r"APPROVED_DONE = '([^']+)'", dom).group(1)
         self.assertIn("model.transcriptLifecycle.lastMessage = '" + done + "';", app)

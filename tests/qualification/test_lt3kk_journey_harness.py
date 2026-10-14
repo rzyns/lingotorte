@@ -6,6 +6,14 @@ No Docker, browser, network or listener. Run:
 import ast, importlib.util, json, os, pathlib, re, subprocess, sys, tempfile, types, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+def web_ui_source(root):
+    """Web UI sources after lt-939 split app.ts into appShell/views/ui modules.
+    app.ts is now a re-export; harness string traces read every UI module."""
+    src = root / 'apps/web/src'
+    files = [src / 'app.ts', src / 'appShell.ts'] + sorted((src / 'ui').glob('*.ts')) + sorted((src / 'views').rglob('*.ts'))
+    return '\n'.join(f.read_text(encoding='utf8') for f in files)
+
 KIT = ROOT / 'scripts/qualification/browser-batch'
 APP = ROOT / 'apps/web/src'
 
@@ -238,7 +246,7 @@ class SourceTraceTests(unittest.TestCase):
     """Every exact UI string/selector the journey relies on exists in the app sources at this revision."""
 
     def app(self):
-        return '\n'.join((APP / f).read_text(encoding='utf8') for f in ('app.ts', 'model.ts', 'morphologyPanel.ts'))
+        return '\n'.join((APP / f).read_text(encoding='utf8') for f in ('model.ts', 'morphologyPanel.ts')) + '\n' + web_ui_source(ROOT)
 
     def test_journey_strings_exist_in_app(self):
         js = (KIT / 'dom-journey.mjs').read_text(encoding='utf8')
@@ -266,7 +274,7 @@ class SourceTraceTests(unittest.TestCase):
         self.assertNotIn('[role="alert"], [role="status"]', case)
         self.assertIn("['alert', 'status'].includes", case)
         self.assertIn('MEDIA_ERROR_TEXT[code]', case)
-        app = (APP / 'app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         fn = app[app.index('function mediaErrorMessage'):app.index('function renderEmptyVideoPlaceholder')]
         table = js[js.index('const MEDIA_ERROR_TEXT = {'):]
         table = table[:table.index('};')]
@@ -306,7 +314,7 @@ class SourceTraceTests(unittest.TestCase):
 
     def test_g2_g3_fixes_present(self):
         """G2/G3 were fixed by lt-r4k.1/.2 before the live run; journey-12/13 now assert the fixed behaviour."""
-        app = (APP / 'app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         stage = app[app.index('function renderVideoStage'):app.index('function renderEmptyVideoPlaceholder')]
         self.assertIn("addEventListener('error'", stage)
         self.assertIn('media-error-alert', stage)
@@ -359,7 +367,7 @@ class SourceTraceTests(unittest.TestCase):
 
     def test_saved_vocab_tab_lists_phrases(self):
         """Word selections save as kind 'phrase'; renderSavedView lists lexeme+phrase under My Vocab."""
-        app = (APP / 'app.ts').read_text(encoding='utf8')
+        app = web_ui_source(ROOT)
         self.assertIn("{ id: 'vocab', label: 'My Vocab', kinds: ['lexeme', 'phrase'] }", app)
         src = (KIT / 'live-batch.py').read_text(encoding='utf8')
         p4 = src[src.index('def phase_journey_04'):src.index('def phase_journey_05')]
