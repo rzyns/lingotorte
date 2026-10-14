@@ -253,7 +253,9 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   relinkBtn.type = 'button';
   // lt-aot: at boot a 'prompt' permission needs one user gesture to reconnect.
   relinkBtn.textContent = model.browserLocalMedia.permissionState === 'prompt' && handleName ? `Reconnect ${handleName}` : 'Relink media';
-  relinkBtn.setAttribute('aria-label', 'Regrant the saved browser file handle for the current media');
+  relinkBtn.setAttribute('aria-label', relinkBtn.textContent.startsWith('Reconnect')
+    ? `Reconnect ${handleName}: grant read access to the saved browser file handle`
+    : 'Regrant the saved browser file handle for the current media');
   relinkBtn.addEventListener('click', () => {
     void restoreBrowserMediaHandle(model)
       .then((restored) => {

@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 const file = () => new dom.window.File([new Uint8Array([1, 2, 3, 4])], 'clip.webm', { type: 'video/webm' });
-function makeHandle(permission: string) {
+function makeHandle(_permission: string) {
   let state = 'granted';
   const f = file();
   return {
@@ -35,7 +35,6 @@ function makeHandle(permission: string) {
     queryPermission: vi.fn(async () => state),
     requestPermission: vi.fn(async () => { state = 'granted'; return 'granted'; }),
     setState(next: string) { state = next; },
-    initial: permission,
   };
 }
 function installHandleStore() {
@@ -106,5 +105,40 @@ describe('lt-aot restoreMediaAtBoot', () => {
     Object.defineProperty(globalThis, 'lingotorteHandleStore', { configurable: true, value: { open: () => new Promise(() => {}) } });
     expect(await restoreMediaAtBoot(model, 20)).toBe(false);
     expect(model.browserLocalMedia.objectUrl).toBeNull();
+  });
+
+  it('late completion after the timeout is discarded', async () => {
+    const { model, h } = await importThenReload('granted');
+    const f = await h.getFile();
+    h.getFile.mockImplementation(() => new Promise((resolve) => { setTimeout(() => resolve(f), 60); }));
+    (URL.createObjectURL as ReturnType<typeof vi.fn>).mockClear();
+    expect(await restoreMediaAtBoot(model, 20)).toBe(false);
+    await new Promise((resolve) => { setTimeout(resolve, 120); });
+    expect(model.browserLocalMedia.objectUrl).toBeNull();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('handle without queryPermission: reports prompt and never requests at boot', async () => {
+    const { model, h } = await importThenReload('granted');
+    (h as { queryPermission?: unknown }).queryPermission = undefined;
+    expect(await restoreMediaAtBoot(model)).toBe(false);
+    expect(h.requestPermission).not.toHaveBeenCalled();
+    expect(model.browserLocalMedia.permissionState).toBe('prompt');
+    expect(model.browserLocalMedia.objectUrl).toBeNull();
+  });
+
+  it('changed file content at boot: refuses to relink', async () => {
+    const { model, h } = await importThenReload('granted');
+    h.getFile.mockResolvedValue(new dom.window.File([new Uint8Array([9, 9, 9, 9])], 'clip.webm', { type: 'video/webm' }));
+    expect(await restoreMediaAtBoot(model)).toBe(false);
+    expect(model.browserLocalMedia.objectUrl).toBeNull();
+    expect(model.browserLocalMedia.lastError).toContain('changed content');
+  });
+
+  it('a successful boot restore does not mark browser edits unsaved', async () => {
+    const { model } = await importThenReload('granted');
+    const before = model.localService.syncState;
+    expect(await restoreMediaAtBoot(model)).toBe(true);
+    expect(model.localService.syncState).toBe(before);
   });
 });
