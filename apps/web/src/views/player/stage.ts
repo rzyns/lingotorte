@@ -87,6 +87,7 @@ function stageVideo(stage: HTMLElement): HTMLVideoElement | null {
   return stage.querySelector('video');
 }
 
+// Object URLs are owned and revoked by model.ts (relink revokes the replaced URL); release only frees the element.
 function releaseVideoStage(stage: HTMLElement): void {
   const video = stageVideo(stage);
   if (!video) return;
@@ -95,7 +96,10 @@ function releaseVideoStage(stage: HTMLElement): void {
   try { video.load(); } catch { /* jsdom: load() not implemented */ }
 }
 
-/** lt-2zm: called by renderApp for non-player views; the cached video would otherwise keep playing off-screen. */
+/**
+ * lt-2zm: called by renderApp for non-player views; the cached video would otherwise keep playing off-screen.
+ * The element stays loaded (src kept) so returning to the Player resumes at the same position without a reload.
+ */
 export function pausePersistentVideoOffPlayer(model: AppModel): void {
   if (model.view === 'player') return;
   const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
@@ -103,7 +107,8 @@ export function pausePersistentVideoOffPlayer(model: AppModel): void {
   if (video && !video.paused) {
     try { video.pause(); } catch { /* jsdom */ }
   }
-  if (video) model.player.isPlaying = false;
+  // Off the Player nothing plays; clear a stale 'playing' too, so returning never auto-resumes.
+  if (video && model.player.isPlaying) model.player.isPlaying = false;
 }
 
 /** lt-2zm: post-attach safety net; a browser that paused the element during the move gets it back. */
