@@ -15,7 +15,7 @@ import {
   restoreBrowserMediaHandle,
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
-import { syncTranscriptCurrentWord } from './controls.ts';
+import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
@@ -77,9 +77,11 @@ function renderVideoStage(model: AppModel): HTMLElement {
   }
 
   const video = document.createElement('video');
-  video.setAttribute('controls', '');
+  // lt-xlr: no native `controls` (its bar sat under the subtitle overlay); the custom row in
+  // renderPlayerControls owns play/seek/mute/fullscreen. The aria-label stays the accessible name.
   video.setAttribute('preload', 'metadata');
-  video.setAttribute('role', 'img');
+  // lt-xlr: a stage rebuild (lt-2zm) must not silently unmute; carry the last element's mute state over.
+  if (mutedByModel.get(model)) video.muted = true;
   video.setAttribute('aria-label', model.currentMedia.title);
   video.src = mediaPlaybackUrl(model);
   video.playbackRate = model.player.playbackRate;
@@ -93,6 +95,7 @@ function renderVideoStage(model: AppModel): HTMLElement {
     }
     updateOverlay(stage, model, cue);
     syncTranscriptCurrentWord(model.player.activeCueId, timeMs);
+    syncPlayerTransport(video);
     const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue, model.player.loopRange);
     if (loopJump !== null) {
       video.currentTime = loopJump / 1000;
@@ -122,6 +125,7 @@ function renderVideoStage(model: AppModel): HTMLElement {
       stage.querySelector('.media-error-alert')?.remove();
     }
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
+    syncPlayerTransport(video);
     video.playbackRate = model.player.playbackRate;
     if (model.player.isPlaying) {
       const playPromise = video.play();
@@ -130,11 +134,18 @@ function renderVideoStage(model: AppModel): HTMLElement {
       }
     }
   });
+  video.addEventListener('durationchange', () => syncPlayerTransport(video));
+  video.addEventListener('volumechange', () => {
+    mutedByModel.set(model, video.muted);
+    syncPlayerTransport(video);
+  });
   video.addEventListener('play', () => {
     model.player.isPlaying = true;
+    syncPlayButton(true);
   });
   video.addEventListener('pause', () => {
     model.player.isPlaying = false;
+    syncPlayButton(false);
   });
   stage.appendChild(video);
 

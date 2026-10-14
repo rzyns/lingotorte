@@ -484,6 +484,34 @@ textarea:focus-visible,
 
 .player-controls input[type="range"] {
   width: 120px;
+  accent-color: var(--accent);
+}
+
+/* lt-xlr: the seek slider takes the free row width; wraps on narrow screens. */
+.player-controls input.player-seek {
+  flex: 1 1 160px;
+  min-width: 0;
+  width: auto;
+}
+
+.video-stage:fullscreen {
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+
+/* lt-xlr: the control row is outside the fullscreen stage, so hint the keyboard shortcuts inside it. */
+.video-stage:fullscreen::after {
+  /* A CSS hex escape consumes one following space, hence two spaces after \00B7. */
+  content: "Space play/pause \00B7  Esc exit";
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.8rem;
+  pointer-events: none;
 }
 
 .source-range-panel {
