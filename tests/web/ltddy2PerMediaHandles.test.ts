@@ -1,7 +1,7 @@
 import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { importBrowserLocalFileHandles, importBrowserLocalFiles, restoreMediaAtBoot } from '../../apps/web/src/model';
+import { importBrowserLocalFileHandles, importBrowserLocalFiles, restoreBrowserMediaHandle, restoreMediaAtBoot } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 
@@ -109,26 +109,81 @@ describe('lt-ddy.2 per-media browser handles', () => {
     expect(a.requestPermission).toHaveBeenCalledTimes(1);
   });
 
-  it('no stored handle for that media: falls back to the picker', async () => {
-    const { map, model, alpha } = await twoHandleMedia();
+  /** Library fallback never opens the picker after an await (transient activation); it lands on the placeholder. */
+  async function expectPlaceholderFallback(model: AppModel, picker: ReturnType<typeof vi.fn>, reason: RegExp) {
+    await vi.waitFor(() => expect(model.browserLocalMedia.lastError ?? '').toMatch(reason));
+    await new Promise((r) => { setTimeout(r, 20); });
+    rerenderApp(model);
+    expect(picker).not.toHaveBeenCalled();
+    expect(model.view).toBe('player');
+    expect(document.querySelector('.relink-permission-state')?.textContent).toMatch(reason);
+    btn(document, 'Choose media again')!.click();
+    expect(picker).toHaveBeenCalledTimes(1);
+  }
+
+  it('no stored handle for that media: placeholder with reason; Choose again opens the picker once', async () => {
+    const { map, model, a, alpha } = await twoHandleMedia();
     map.delete(`media-handle:${alpha.id}`);
     const picker = vi.fn(async () => []);
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
     library(model);
     btn(rowFor(alpha.id), 'Relink')!.click();
-    await vi.waitFor(() => expect(picker).toHaveBeenCalledTimes(1));
     expect(model.currentMedia?.id).toBe(alpha.id);
+    await expectPlaceholderFallback(model, picker, /No saved browser handle/);
+    expect(a.requestPermission).not.toHaveBeenCalled();
   });
 
-  it('denied: falls back to the picker without requesting', async () => {
+  it('denied: placeholder fallback without requesting or auto-picking', async () => {
     const { model, a, alpha } = await twoHandleMedia();
     a.setState('denied');
     const picker = vi.fn(async () => []);
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
     library(model);
     btn(rowFor(alpha.id), 'Relink')!.click();
-    await vi.waitFor(() => expect(picker).toHaveBeenCalledTimes(1));
+    await expectPlaceholderFallback(model, picker, /denied/);
     expect(a.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('renamed/moved file (getFile throws): placeholder fallback', async () => {
+    const { model, a, alpha } = await twoHandleMedia();
+    a.getFile.mockRejectedValue(new Error('NotFoundError: file moved'));
+    const picker = vi.fn(async () => []);
+    Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
+    library(model);
+    btn(rowFor(alpha.id), 'Open')!.click();
+    await expectPlaceholderFallback(model, picker, /file moved/);
+    expect(a.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('content mismatch behind the handle: placeholder fallback, nothing relinked', async () => {
+    const { model, a, alpha } = await twoHandleMedia();
+    a.getFile.mockResolvedValue(new dom.window.File([new Uint8Array([7, 7, 7])], 'alpha.webm', { type: 'video/webm' }));
+    const picker = vi.fn(async () => []);
+    Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: picker });
+    library(model);
+    btn(rowFor(alpha.id), 'Relink')!.click();
+    await expectPlaceholderFallback(model, picker, /changed content/);
+    expect(model.browserLocalMedia.objectUrl).toBeNull();
+  });
+
+  it('silent reconnect revokes the previous object URL', async () => {
+    const { model, b } = await twoHandleMedia();
+    model.browserLocalMedia = { ...model.browserLocalMedia, objectUrl: 'blob:old' };
+    expect(await restoreBrowserMediaHandle(model, () => true, { queryOnly: true })).toBe(true);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:old');
+    expect(urlFor.get(model.browserLocalMedia.objectUrl!)).toBe(b.file);
+  });
+
+  it('saves the handle under the id for dedupe-to-existing and import-new imports', async () => {
+    const { map, model, alpha } = await twoHandleMedia();
+    const renamed = makeHandle([1, 2, 3], 'alpha-copy.webm');
+    await importBrowserLocalFileHandles(model, { mediaHandle: renamed });
+    expect(model.currentMedia?.id).toBe(alpha.id);
+    expect(map.get(`media-handle:${alpha.id}`)).toEqual({ handle: renamed, mediaId: alpha.id });
+    const clash = makeHandle([8, 8, 8], 'beta.webm');
+    await importBrowserLocalFileHandles(model, { mediaHandle: clash }, { onNameConflict: 'import-new' });
+    const fresh = model.currentMedia!;
+    expect(map.get(`media-handle:${fresh.id}`)).toEqual({ handle: clash, mediaId: fresh.id });
   });
 
   it('media switched during an await: the late result is ignored', async () => {
@@ -172,6 +227,21 @@ describe('lt-ddy.2 per-media browser handles', () => {
     expect(await restoreMediaAtBoot(model)).toBe(true);
     expect(map.has('current-media-handle')).toBe(false);
     expect(map.get(`media-handle:${beta.id}`)).toEqual({ handle: b, mediaId: beta.id });
+  });
+
+  it('boot restore and Library open migrating concurrently leave one per-id record and no legacy key', async () => {
+    const { map, model, a, alpha, beta } = await twoHandleMedia();
+    map.delete(`media-handle:${alpha.id}`);
+    map.set('current-media-handle', { handle: a, mediaId: alpha.id });
+    library(model);
+    const boot = restoreMediaAtBoot(model);
+    btn(rowFor(alpha.id), 'Open')!.click();
+    await boot;
+    await vi.waitFor(() => expect(urlFor.get(model.browserLocalMedia.objectUrl ?? '')).toBe(a.file));
+    expect(map.has('current-media-handle')).toBe(false);
+    expect(map.get(`media-handle:${alpha.id}`)).toEqual({ handle: a, mediaId: alpha.id });
+    expect([...map.keys()].sort()).toEqual([`media-handle:${alpha.id}`, `media-handle:${beta.id}`].sort());
+    expect(a.requestPermission).not.toHaveBeenCalled();
   });
 
   it('boot never prompts even when the stored handle needs permission', async () => {

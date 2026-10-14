@@ -1350,7 +1350,7 @@ export async function importBrowserLocalFiles(
   model: AppModel,
   input: BrowserLocalFileImportInput,
   options: Readonly<{ onNameConflict?: BrowserMediaNameConflictChoice }> = {},
-): Promise<void> {
+): Promise<string> {
   if (typeof URL.createObjectURL !== 'function') {
     throw new TypeError('Browser local media import requires URL.createObjectURL support.');
   }
@@ -1369,7 +1369,7 @@ export async function importBrowserLocalFiles(
     const mediaSourceLabel = input.mediaSourceLabel ?? objectUrl;
     if (existingSameContent) {
       await relinkExistingBrowserMedia(model, existingSameContent, input, objectUrl, mediaSourceLabel, targetText, nativeText);
-      return;
+      return existingSameContent.id;
     }
     const asset = makeMediaAsset({
       title: titleFromFileName(input.mediaFile.name),
@@ -1435,6 +1435,7 @@ export async function importBrowserLocalFiles(
     model.player.activeCueId = model.cues[0]?.id ?? null;
     model.importError = null;
     persistIfLocalServiceAutosaveEnabled(model);
+    return assetWithDuration.id;
   } catch (err) {
     URL.revokeObjectURL(objectUrl);
     throw err;
@@ -1458,10 +1459,10 @@ export async function importBrowserLocalFileHandles(
     ...(input.targetLanguage === undefined ? {} : { targetLanguage: input.targetLanguage }),
     ...(input.nativeLanguage === undefined ? {} : { nativeLanguage: input.nativeLanguage }),
   };
-  await importBrowserLocalFiles(model, importInput, options);
-  // lt-ddy.2: remember the handle under the media id it now backs (handle imports only; blob imports never persist).
-  const importedId = model.currentMedia?.originalPath === `${HANDLE_LABEL_PREFIX}${input.mediaHandle.name}` ? model.currentMedia.id : null;
-  if (importedId) await persistBrowserMediaHandle(input.mediaHandle, importedId);
+  // lt-ddy.2: remember the handle under the id the import returned (deduped existing or new), never by
+  // re-deriving from currentMedia/originalPath. Handle imports only; blob imports never persist.
+  const importedId = await importBrowserLocalFiles(model, importInput, options);
+  await persistBrowserMediaHandle(input.mediaHandle, importedId);
 }
 
 /** lt-ddy.2: legacy single-handle key (pre per-media storage); migrated on first read. */
@@ -1493,6 +1494,9 @@ function unpackStoredHandle(value: unknown): { handle: BrowserFileHandleLike; me
  * (never overwriting a newer per-id record) and the legacy key is deleted. A bare legacy handle (old code
  * assumed it belonged to the current media) is adopted for `currentMediaId` only when its name matches;
  * otherwise it is left in place. Copy-then-delete makes concurrent or repeated runs safe.
+ * Precedence: an existing per-id record always wins; the legacy copy is then discarded (deleted), not merged.
+ * A bare legacy handle whose name does not match stays under the legacy key; readMediaHandle may still
+ * return it, and restoreBrowserMediaHandle rejects it via the name check (placeholder fallback, no relink).
  */
 export async function migrateLegacyMediaHandle(store: HandleStoreDb, currentMediaId: string | null, expectedName: string | null): Promise<void> {
   const legacy = unpackStoredHandle(await store.get(LEGACY_HANDLE_STORE_KEY));
