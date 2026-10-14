@@ -18,7 +18,7 @@ import { currentKeyboardCue, isEditableShortcutTarget, seekRenderedVideoToCue } 
 import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippetStates, synchronizePracticeSnippet, synchronizeSourceRangeSnippet } from './ui/snippets.ts';
 import { renderExportImportView } from './views/exportImport.ts';
 import { renderLibraryView } from './views/library.ts';
-import { renderPlayerView } from './views/player/stage.ts';
+import { pausePersistentVideoOffPlayer, renderPlayerView, resumePersistentVideoAfterRender } from './views/player/stage.ts';
 import { togglePlaybackInPlace } from './views/player/controls.ts';
 import { renderPracticeView } from './views/practice.ts';
 import { renderReviewView } from './views/review.ts';
@@ -27,6 +27,8 @@ import { renderSettingsView } from './views/settings.ts';
 
 export function renderApp(model: AppModel): HTMLElement {
   installGlobalKeyboardShortcuts(model);
+  // lt-2zm: the cached video survives off-player renders; stop playback like the old teardown did.
+  pausePersistentVideoOffPlayer(model);
   if (sourceRangeSnippetStates.has(model)) {
     const snippet = synchronizeSourceRangeSnippet(model);
     if (model.view !== 'player' && snippet.objectUrl) {
@@ -267,13 +269,16 @@ export function rerenderApp(model: AppModel): void {
   if (!app) return;
   const previousView = model.view;
   const focused = document.activeElement?.id ?? '';
-  if (currentRoot && currentRoot.parentNode === app) {
-    app.removeChild(currentRoot);
-  }
+  // lt-2zm: build the new root before detaching the old one; persistent nodes (the video stage) move
+  // from the old root into the new tree, then a single swap attaches it.
+  const oldRoot = currentRoot;
   currentRoot = renderApp(model);
   const nav = currentRoot.querySelector('.lingotorte-nav');
   if (nav) setActiveNav(nav as HTMLElement, previousView);
-  app.appendChild(currentRoot);
+  if (oldRoot && oldRoot.parentNode === app) app.replaceChild(currentRoot, oldRoot);
+  else app.appendChild(currentRoot);
+  // A browser may have paused the moved <video> while it was detached; resume if the model says playing.
+  resumePersistentVideoAfterRender(model);
   const successor = requested?.map((id) => document.getElementById(id)).find((el): el is HTMLElement => el !== null);
   if (successor) {
     successor.focus();

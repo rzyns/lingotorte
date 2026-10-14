@@ -19,6 +19,7 @@ import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurren
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
+import { dropKeyed, keyed, peekKeyed } from '../../ui/keyed.ts';
 import { renderPlayerControls, renderSourceRangePanel } from './controls.ts';
 import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
 
@@ -62,30 +63,108 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   return section;
 }
 
+const VIDEO_STAGE_SLOT = 'player-video-stage';
+
+/**
+ * lt-2zm: the stage (and its <video>) is mounted once per media identity (currentMedia.id + playback
+ * URL) through keyed(); rerenders re-append the same element and refresh only rate/label/overlay/alert.
+ * src is assigned once per media selection. Leaving the Player view pauses the persistent video
+ * (pausePersistentVideoOffPlayer); returning reattaches the same element at its position without reload.
+ */
 function renderVideoStage(model: AppModel): HTMLElement {
+  if (!model.currentMedia || needsMediaRelink(model)) {
+    dropKeyed(model, VIDEO_STAGE_SLOT);
+    const stage = document.createElement('div');
+    stage.className = `video-stage${model.currentMedia ? '' : ' video-stage-empty'}`;
+    stage.appendChild(model.currentMedia ? renderRelinkPlaceholder(model) : renderEmptyVideoPlaceholder(model));
+    return stage;
+  }
+  const key = `${model.currentMedia.id}\u0000${mediaPlaybackUrl(model)}`;
+  return keyed(model, VIDEO_STAGE_SLOT, key, () => createVideoStage(model), (stage) => updateVideoStage(stage, model), releaseVideoStage);
+}
+
+function stageVideo(stage: HTMLElement): HTMLVideoElement | null {
+  return stage.querySelector('video');
+}
+
+function releaseVideoStage(stage: HTMLElement): void {
+  const video = stageVideo(stage);
+  if (!video) return;
+  try { video.pause(); } catch { /* jsdom */ }
+  video.removeAttribute('src');
+  try { video.load(); } catch { /* jsdom: load() not implemented */ }
+}
+
+/** lt-2zm: called by renderApp for non-player views; the cached video would otherwise keep playing off-screen. */
+export function pausePersistentVideoOffPlayer(model: AppModel): void {
+  if (model.view === 'player') return;
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  const video = stage ? stageVideo(stage) : null;
+  if (video && !video.paused) {
+    try { video.pause(); } catch { /* jsdom */ }
+  }
+  if (video) model.player.isPlaying = false;
+}
+
+/** lt-2zm: post-attach safety net; a browser that paused the element during the move gets it back. */
+export function resumePersistentVideoAfterRender(model: AppModel): void {
+  if (model.view !== 'player' || !model.player.isPlaying) return;
+  const stage = peekKeyed<HTMLElement>(model, VIDEO_STAGE_SLOT);
+  const video = stage ? stageVideo(stage) : null;
+  if (!video || !video.isConnected || !video.paused) return;
+  const playPromise = video.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => {
+      if (!video.isConnected || !video.paused) return;
+      model.player.isPlaying = false;
+      syncPlayButton(false);
+    });
+  }
+}
+
+function updateVideoStage(stage: HTMLElement, model: AppModel): void {
+  const video = stageVideo(stage);
+  if (!video || !model.currentMedia) return;
+  if (video.playbackRate !== model.player.playbackRate) video.playbackRate = model.player.playbackRate;
+  if (video.getAttribute('aria-label') !== model.currentMedia.title) video.setAttribute('aria-label', model.currentMedia.title);
+  renderMediaErrorAlert(stage, model, model.currentMedia.id, mediaPlaybackUrl(model));
+  updateOverlay(stage, model, activeCueAtTime(model.cues, model.player.currentTimeMs));
+}
+
+function renderMediaErrorAlert(stage: HTMLElement, model: AppModel, mediaId: string, mediaSource: string): void {
+  stage.querySelector('.media-error-alert')?.remove();
+  const mediaError = model.player.mediaError;
+  if (mediaError && (mediaError.mediaId !== mediaId || mediaError.source !== mediaSource)) {
+    model.player.mediaError = null;
+  } else if (mediaError) {
+    const alert = document.createElement('p');
+    alert.className = 'status-banner error media-error-alert';
+    // Assertive role=alert only on the first render after the error; later re-renders use role=status so
+    // unrelated rerenders don't re-announce it.
+    alert.setAttribute('role', mediaError.announced ? 'status' : 'alert');
+    mediaError.announced = true;
+    alert.textContent = mediaError.message;
+    const overlay = (stage as any).__overlay as HTMLElement | undefined;
+    if (overlay && overlay.parentNode === stage) stage.insertBefore(alert, overlay);
+    else stage.appendChild(alert);
+  }
+}
+
+function createVideoStage(model: AppModel): HTMLElement {
+  const currentMedia = model.currentMedia!;
   const stage = document.createElement('div');
-  stage.className = `video-stage${model.currentMedia ? '' : ' video-stage-empty'}`;
-
-  if (!model.currentMedia) {
-    stage.appendChild(renderEmptyVideoPlaceholder(model));
-    return stage;
-  }
-
-  if (needsMediaRelink(model)) {
-    stage.appendChild(renderRelinkPlaceholder(model));
-    return stage;
-  }
-
+  stage.className = 'video-stage';
   const video = document.createElement('video');
   // lt-xlr: no native `controls` (its bar sat under the subtitle overlay); the custom row in
   // renderPlayerControls owns play/seek/mute/fullscreen. The aria-label stays the accessible name.
   video.setAttribute('preload', 'metadata');
-  // lt-xlr: a stage rebuild (lt-2zm) must not silently unmute; carry the last element's mute state over.
+  // lt-xlr: a stage rebuild (media change) must not silently unmute; carry the last element's mute state over.
   if (mutedByModel.get(model)) video.muted = true;
-  video.setAttribute('aria-label', model.currentMedia.title);
+  video.setAttribute('aria-label', currentMedia.title);
+  // lt-2zm: the only src assignment for this media selection.
   video.src = mediaPlaybackUrl(model);
   video.playbackRate = model.player.playbackRate;
-  const mediaId = model.currentMedia.id;
+  const mediaId = currentMedia.id;
   const mediaSource = mediaPlaybackUrl(model);
   // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
   const isCurrentVideo = () => video.isConnected
@@ -159,25 +238,12 @@ function renderVideoStage(model: AppModel): HTMLElement {
     syncPlayButton(true);
   });
   video.addEventListener('pause', () => {
+    // lt-2zm: isCurrentVideo() is false while the persistent element is mid-move between roots.
     if (!isCurrentVideo()) return;
     model.player.isPlaying = false;
     syncPlayButton(false);
   });
   stage.appendChild(video);
-
-  const mediaError = model.player.mediaError;
-  if (mediaError && (mediaError.mediaId !== mediaId || mediaError.source !== mediaSource)) {
-    model.player.mediaError = null;
-  } else if (mediaError) {
-    const alert = document.createElement('p');
-    alert.className = 'status-banner error media-error-alert';
-    // Assertive role=alert only on the first render after the error; later re-renders use role=status so
-    // unrelated rerenders don't re-announce it.
-    alert.setAttribute('role', mediaError.announced ? 'status' : 'alert');
-    mediaError.announced = true;
-    alert.textContent = mediaError.message;
-    stage.appendChild(alert);
-  }
 
   const overlay = document.createElement('div');
   overlay.className = 'subtitle-overlay';
@@ -186,10 +252,9 @@ function renderVideoStage(model: AppModel): HTMLElement {
   stage.appendChild(overlay);
   (stage as any).__overlay = overlay;
 
+  renderMediaErrorAlert(stage, model, mediaId, mediaSource);
   // Initial overlay update after render tick.
-  const initialCue = activeCueAtTime(model.cues, model.player.currentTimeMs);
-  updateOverlay(stage, model, initialCue);
-
+  updateOverlay(stage, model, activeCueAtTime(model.cues, model.player.currentTimeMs));
   return stage;
 }
 
