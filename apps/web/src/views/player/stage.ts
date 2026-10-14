@@ -1,0 +1,543 @@
+import type { AppModel } from '../../uiTypes';
+import type { Cue } from '@lingotorte/domain';
+import {
+  activeCueAtTime,
+  activeLoopRangeForSelection,
+  applyLoopTolerance,
+  importFixtureMediaAndSubtitles,
+  importBrowserLocalFileHandles,
+  nativeTextForCue,
+  saveLexemeFromCue,
+  setView,
+  toggleLoopRange,
+  mediaPlaybackUrl,
+  needsMediaRelink,
+  handleNameFromMedia,
+  restoreBrowserMediaHandle,
+} from '../../model';
+import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
+import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
+import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
+import { renderPlayerControls, renderSourceRangePanel } from './controls.ts';
+import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
+
+export function renderPlayerView(model: AppModel): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'study-cockpit';
+  section.setAttribute('aria-label', 'Source-backed study cockpit');
+
+  const header = document.createElement('div');
+  header.className = 'study-cockpit-header card';
+  const headingGroup = document.createElement('div');
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Study cockpit';
+  const intro = document.createElement('p');
+  intro.textContent = 'Study from a local video segment, keep the transcript beside it, and preserve cue/time/source context for every saved item.';
+  headingGroup.append(h2, intro);
+  header.append(headingGroup, renderStudyStatusRail(model));
+  section.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'player-layout study-cockpit-grid';
+
+  const left = document.createElement('div');
+  left.className = 'artifact-workbench';
+  left.appendChild(renderSourceContextRow(model));
+  left.appendChild(renderVideoStage(model));
+  left.appendChild(renderPlayerControls(model));
+  left.appendChild(renderSourceRangePanel(model));
+  left.appendChild(renderSelectionPanel(model));
+  grid.appendChild(left);
+
+  const right = document.createElement('aside');
+  right.className = 'card transcript-copilot';
+  const transcriptHeading = document.createElement('h2');
+  transcriptHeading.textContent = 'Transcript co-pilot';
+  right.appendChild(transcriptHeading);
+  right.appendChild(renderTranscriptPanel(model));
+  grid.appendChild(right);
+
+  section.appendChild(grid);
+  return section;
+}
+
+function renderVideoStage(model: AppModel): HTMLElement {
+  const stage = document.createElement('div');
+  stage.className = `video-stage${model.currentMedia ? '' : ' video-stage-empty'}`;
+
+  if (!model.currentMedia) {
+    stage.appendChild(renderEmptyVideoPlaceholder(model));
+    return stage;
+  }
+
+  if (needsMediaRelink(model)) {
+    stage.appendChild(renderRelinkPlaceholder(model));
+    return stage;
+  }
+
+  const video = document.createElement('video');
+  video.setAttribute('controls', '');
+  video.setAttribute('preload', 'metadata');
+  video.setAttribute('role', 'img');
+  video.setAttribute('aria-label', model.currentMedia.title);
+  video.src = mediaPlaybackUrl(model);
+  video.playbackRate = model.player.playbackRate;
+  video.addEventListener('timeupdate', () => {
+    const timeMs = Math.round(video.currentTime * 1000);
+    model.player.currentTimeMs = timeMs;
+    const cue = activeCueAtTime(model.cues, timeMs);
+    if (cue && cue.id !== model.player.activeCueId) {
+      model.player.activeCueId = cue.id;
+      scrollCueIntoView(cue.id);
+    }
+    updateOverlay(stage, model, cue);
+    const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue, model.player.loopRange);
+    if (loopJump !== null) {
+      video.currentTime = loopJump / 1000;
+    }
+  });
+  const mediaId = model.currentMedia.id;
+  const mediaSource = mediaPlaybackUrl(model);
+  // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
+  const isCurrentVideo = () => video.isConnected
+    && model.currentMedia?.id === mediaId
+    && mediaPlaybackUrl(model) === mediaSource
+    && document.querySelector('.video-stage video') === video;
+  video.addEventListener('error', () => {
+    if (!isCurrentVideo()) return;
+    const code = video.error?.code ?? 0;
+    // lt-r4k.4: a re-rendered <video> with the same src fails again in real browsers. An error already
+    // recorded for this media/source/code is a repeat: no state replacement, no rerender, no re-announce.
+    const existing = model.player.mediaError;
+    if (existing && existing.mediaId === mediaId && existing.source === mediaSource && existing.code === code) return;
+    model.player.mediaError = { mediaId, source: mediaSource, code, message: mediaErrorMessage(code) };
+    model.player.isPlaying = false;
+    rerenderApp(model);
+  });
+  video.addEventListener('loadedmetadata', () => {
+    if (isCurrentVideo() && model.player.mediaError) {
+      model.player.mediaError = null;
+      stage.querySelector('.media-error-alert')?.remove();
+    }
+    model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
+    video.playbackRate = model.player.playbackRate;
+    if (model.player.isPlaying) {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => undefined);
+      }
+    }
+  });
+  video.addEventListener('play', () => {
+    model.player.isPlaying = true;
+  });
+  video.addEventListener('pause', () => {
+    model.player.isPlaying = false;
+  });
+  stage.appendChild(video);
+
+  const mediaError = model.player.mediaError;
+  if (mediaError && (mediaError.mediaId !== mediaId || mediaError.source !== mediaSource)) {
+    model.player.mediaError = null;
+  } else if (mediaError) {
+    const alert = document.createElement('p');
+    alert.className = 'status-banner error media-error-alert';
+    // Assertive role=alert only on the first render after the error; later re-renders use role=status so
+    // unrelated rerenders don't re-announce it.
+    alert.setAttribute('role', mediaError.announced ? 'status' : 'alert');
+    mediaError.announced = true;
+    alert.textContent = mediaError.message;
+    stage.appendChild(alert);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'subtitle-overlay';
+  overlay.setAttribute('aria-live', 'polite');
+  overlay.setAttribute('aria-atomic', 'true');
+  stage.appendChild(overlay);
+  (stage as any).__overlay = overlay;
+
+  // Initial overlay update after render tick.
+  const initialCue = activeCueAtTime(model.cues, model.player.currentTimeMs);
+  updateOverlay(stage, model, initialCue);
+
+  return stage;
+}
+
+// MediaError codes: 1 ABORTED, 2 NETWORK, 3 DECODE, 4 SRC_NOT_SUPPORTED. The codec is never guessed.
+function mediaErrorMessage(code: number): string {
+  const advice = ' The imported record is kept; relink or choose another file.';
+  switch (code) {
+    case 1: return `This media file could not load: playback was aborted before the browser finished reading it.${advice}`;
+    case 2: return `This media file could not load: the browser could not read the file (it may have moved or become unavailable).${advice}`;
+    case 3: return `This media file could not be played: the browser could not decode it (the file may be corrupt or use an unsupported codec).${advice}`;
+    case 4: return `This media file could not be played: the browser does not support its format or codec.${advice}`;
+    default: return `This media file could not be played: the browser reported an unknown media error.${advice}`;
+  }
+}
+
+function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'video-placeholder';
+
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '📁';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Start with owned local media';
+  const body = document.createElement('p');
+  body.textContent = 'Import a video/audio file and optional subtitle tracks, or load the synthetic fixture for a private smoke test.';
+
+  const actions = document.createElement('div');
+  actions.className = 'empty-video-actions';
+  const libraryBtn = document.createElement('button');
+  libraryBtn.className = 'btn-primary';
+  libraryBtn.type = 'button';
+  libraryBtn.textContent = 'Import local files';
+  libraryBtn.addEventListener('click', () => {
+    setView(model, 'library');
+    rerenderApp(model);
+  });
+  const fixtureBtn = document.createElement('button');
+  fixtureBtn.className = 'btn-secondary';
+  fixtureBtn.type = 'button';
+  fixtureBtn.textContent = 'Load synthetic fixture';
+  fixtureBtn.addEventListener('click', () => {
+    void importFixtureMediaAndSubtitles(
+      model,
+      'fixtures/media/synthetic-polish-dialogue.webm',
+      'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
+      'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
+    )
+      .then(() => {
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  actions.append(libraryBtn, fixtureBtn);
+  placeholder.append(icon, heading, body, actions);
+  return placeholder;
+}
+
+function renderRelinkPlaceholder(model: AppModel): HTMLElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'video-placeholder video-placeholder-relink';
+
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🔗';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Relink media';
+  const handleName = handleNameFromMedia(model);
+  const body = document.createElement('p');
+  body.textContent = handleName
+    ? `The browser-granted file handle for "${handleName}" is not available for playback. Regrant the saved handle or choose the owned media file again.`
+    : 'The browser-granted file handle or session object URL is not available for playback. Regrant the saved handle or choose the owned media file again.';
+
+  const permission = document.createElement('p');
+  permission.className = 'meta relink-permission-state';
+  permission.textContent = `Browser permission: ${model.browserLocalMedia.permissionState}${model.browserLocalMedia.lastError ? ` — ${model.browserLocalMedia.lastError}` : ''}`;
+
+  const boundary = document.createElement('p');
+  boundary.className = 'meta relink-boundary-note';
+  boundary.textContent = 'Browser file handles are playback and relink identity only. For local-service ASR, ffmpeg, ffprobe, embedded subtitle extraction, and source-media snippets, provide an explicit absolute owned local media path in Library → Transcript lifecycle.';
+
+  const actions = document.createElement('div');
+  actions.className = 'empty-video-actions';
+  const relinkBtn = document.createElement('button');
+  relinkBtn.className = 'btn-primary';
+  relinkBtn.type = 'button';
+  relinkBtn.textContent = 'Relink media';
+  relinkBtn.setAttribute('aria-label', 'Regrant the saved browser file handle for the current media');
+  relinkBtn.addEventListener('click', () => {
+    void restoreBrowserMediaHandle(model)
+      .then((restored) => {
+        if (!restored) {
+          model.importError = model.browserLocalMedia.lastError ?? 'Saved browser media handle could not be restored. Choose the media again from Library.';
+        } else {
+          model.importError = null;
+        }
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  const chooseAgainBtn = document.createElement('button');
+  chooseAgainBtn.className = 'btn-secondary';
+  chooseAgainBtn.type = 'button';
+  chooseAgainBtn.textContent = 'Choose media again';
+  chooseAgainBtn.addEventListener('click', () => {
+    const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
+    if (typeof picker !== 'function') {
+      model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
+      rerenderApp(model);
+      return;
+    }
+    void picker({
+      multiple: false,
+      types: [
+        {
+          description: 'Owned media files',
+          accept: {
+            'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
+            'audio/*': ['.mp3', '.m4a', '.wav'],
+          },
+        },
+      ],
+    })
+      .then((handles) => {
+        const mediaHandle = handles[0];
+        if (!mediaHandle) {
+          model.importError = 'No media handle was selected.';
+          rerenderApp(model);
+          return;
+        }
+        return importBrowserLocalFileHandles(model, { mediaHandle })
+          .catch((err: unknown) => {
+            handleMediaImportError(model, err, () => importBrowserLocalFileHandles(model, { mediaHandle }, { onNameConflict: 'import-new' }));
+            throw null;
+          });
+      })
+      .then(() => {
+        clearPendingMediaNameConflict();
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        if (err === null) return;
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  const libraryBtn = document.createElement('button');
+  libraryBtn.className = 'btn-secondary';
+  libraryBtn.type = 'button';
+  libraryBtn.textContent = 'Go to Library';
+  libraryBtn.addEventListener('click', () => {
+    setView(model, 'library');
+    rerenderApp(model);
+  });
+  actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
+  placeholder.append(icon, heading, body, permission, boundary, actions);
+  if (model.importError) {
+    const banner = document.createElement('p');
+    banner.className = 'status-banner error relink-error';
+    banner.setAttribute('role', 'alert');
+    banner.textContent = model.importError;
+    placeholder.appendChild(banner);
+  }
+  const conflictBox = renderMediaNameConflict(model);
+  if (conflictBox) placeholder.appendChild(conflictBox);
+  return placeholder;
+}
+
+type SubtitleWord = Readonly<{
+  text: string;
+  charStart: number;
+  charEnd: number;
+  tokenIndex: number;
+  startMs?: number;
+  endMs?: number;
+}>;
+
+const SUBTITLE_WINDOW_MAX_WORDS = 10;
+const SUBTITLE_WINDOW_MAX_CHARS = 84;
+const subtitleWordPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?/gu;
+
+function subtitleWordsForCue(model: AppModel, cue: Cue): SubtitleWord[] {
+  const timedWords = model.store
+    .listTranscriptWordTimingsForCue(cue.id)
+    .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
+    .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
+  if (timedWords.length > 0) {
+    return timedWords.map((word) => {
+      const charStart = Math.max(0, Math.min(word.charStart, cue.text.length));
+      const charEnd = Math.max(charStart, Math.min(word.charEnd, cue.text.length));
+      return {
+        text: cue.text.slice(charStart, charEnd) || word.text,
+        charStart,
+        charEnd,
+        tokenIndex: word.wordIndex,
+        startMs: word.startMs,
+        endMs: word.endMs,
+      };
+    });
+  }
+
+  const words: SubtitleWord[] = [];
+  subtitleWordPattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = subtitleWordPattern.exec(cue.text)) !== null) {
+    words.push({
+      text: match[0],
+      charStart: match.index,
+      charEnd: match.index + match[0].length,
+      tokenIndex: words.length,
+    });
+  }
+  return words;
+}
+
+function activeSubtitleWordIndex(words: readonly SubtitleWord[], cue: Cue, currentTimeMs: number): number {
+  if (words.length === 0) return -1;
+  const timedIndex = words.findIndex((word) =>
+    word.startMs !== undefined && word.endMs !== undefined && word.startMs <= currentTimeMs && word.endMs >= currentTimeMs,
+  );
+  if (timedIndex >= 0) return timedIndex;
+
+  const timedCandidates = words.filter((word) => word.startMs !== undefined && word.endMs !== undefined);
+  if (timedCandidates.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < words.length; index += 1) {
+      const word = words[index]!;
+      if (word.startMs === undefined || word.endMs === undefined) continue;
+      const midpoint = (word.startMs + word.endMs) / 2;
+      const distance = Math.abs(midpoint - currentTimeMs);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    return bestIndex;
+  }
+
+  const cueDuration = Math.max(1, cue.endMs - cue.startMs);
+  const ratio = Math.max(0, Math.min(1, (currentTimeMs - cue.startMs) / cueDuration));
+  const estimatedChar = ratio * cue.text.length;
+  const estimatedIndex = words.findIndex((word) => word.charStart <= estimatedChar && word.charEnd >= estimatedChar);
+  if (estimatedIndex >= 0) return estimatedIndex;
+  const nextIndex = words.findIndex((word) => word.charStart > estimatedChar);
+  return nextIndex >= 0 ? nextIndex : words.length - 1;
+}
+
+function chooseSubtitleWindow(words: readonly SubtitleWord[], cue: Cue, currentTimeMs: number): SubtitleWord[] {
+  if (words.length === 0) return [];
+  const fullCueIsCaptionSized = words.length <= SUBTITLE_WINDOW_MAX_WORDS && cue.text.trim().length <= SUBTITLE_WINDOW_MAX_CHARS;
+  if (fullCueIsCaptionSized) return [...words];
+
+  const activeIndex = Math.max(0, activeSubtitleWordIndex(words, cue, currentTimeMs));
+  const halfWindow = Math.floor(SUBTITLE_WINDOW_MAX_WORDS / 2);
+  let start = Math.max(0, Math.min(activeIndex - halfWindow, words.length - SUBTITLE_WINDOW_MAX_WORDS));
+  let end = Math.min(words.length, start + SUBTITLE_WINDOW_MAX_WORDS);
+
+  while (end - start > 1) {
+    const charStart = words[start]!.charStart;
+    const charEnd = words[end - 1]!.charEnd;
+    if (charEnd - charStart <= SUBTITLE_WINDOW_MAX_CHARS) break;
+    if (activeIndex - start > end - 1 - activeIndex) {
+      start += 1;
+    } else {
+      end -= 1;
+    }
+  }
+
+  return words.slice(start, end);
+}
+
+function clippedPlainSubtitleText(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= SUBTITLE_WINDOW_MAX_CHARS) return normalized;
+  return `${normalized.slice(0, SUBTITLE_WINDOW_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: Cue): void {
+  const words = subtitleWordsForCue(model, cue);
+  const windowWords = chooseSubtitleWindow(words, cue, model.player.currentTimeMs);
+  if (windowWords.length === 0) {
+    target.textContent = clippedPlainSubtitleText(cue.text);
+    return;
+  }
+
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const canSaveFromTargetTrack = targetTrack?.transcriptStatus === 'approved';
+  const firstWord = windowWords[0]!;
+  const lastWord = windowWords[windowWords.length - 1]!;
+  const hasLeadingText = firstWord !== words[0];
+  const hasTrailingText = lastWord !== words[words.length - 1];
+  const renderStartChar = hasLeadingText ? firstWord.charStart : 0;
+  const renderEndChar = hasTrailingText ? lastWord.charEnd : cue.text.length;
+  target.dataset.windowStartChar = String(renderStartChar);
+  target.dataset.windowEndChar = String(renderEndChar);
+
+  if (hasLeadingText) target.appendChild(document.createTextNode('… '));
+  let cursor = renderStartChar;
+  for (const word of windowWords) {
+    if (word.charStart > cursor) {
+      target.appendChild(document.createTextNode(cue.text.slice(cursor, word.charStart)));
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'subtitle-word';
+    button.textContent = cue.text.slice(word.charStart, word.charEnd) || word.text;
+    button.dataset.subtitleCueId = cue.id;
+    button.dataset.charStart = String(word.charStart);
+    button.dataset.charEnd = String(word.charEnd);
+    button.dataset.tokenIndex = String(word.tokenIndex);
+    button.setAttribute('aria-label', `Add ${button.textContent} to My Vocab`);
+    if (!canSaveFromTargetTrack) {
+      button.disabled = true;
+      button.title = 'Approve this transcript before saving learner study items.';
+    }
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!canSaveFromTargetTrack) return;
+      try {
+        const displayText = button.textContent ?? word.text;
+        const item = saveLexemeFromCue(model, cue, displayText, word.charStart, word.charEnd, word.tokenIndex);
+        if (item) {
+          model.player.lastTokenPreview = `Saved “${item.displayText}” to My Vocab`;
+        }
+      } catch (err: unknown) {
+        model.importError = err instanceof Error ? err.message : String(err);
+      }
+      rerenderApp(model);
+    });
+    button.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      if (!canSaveFromTargetTrack) return;
+      const range = activeLoopRangeForSelection(model, cue, word.charStart, word.charEnd);
+      if (range) {
+        toggleLoopRange(model, range.startMs, range.endMs);
+      } else {
+        toggleLoopRange(model, cue.startMs, cue.endMs);
+      }
+      rerenderApp(model);
+    });
+    target.appendChild(button);
+    cursor = word.charEnd;
+  }
+  if (cursor < renderEndChar) {
+    target.appendChild(document.createTextNode(cue.text.slice(cursor, renderEndChar)));
+  }
+  if (hasTrailingText) target.appendChild(document.createTextNode(' …'));
+}
+
+function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): void {
+  const overlay = (stage as any).__overlay as HTMLElement | undefined;
+  if (!overlay) return;
+  if (!cue) {
+    overlay.textContent = '';
+    return;
+  }
+  overlay.innerHTML = '';
+  const target = document.createElement('div');
+  target.className = 'subtitle-target';
+  appendSubtitleTargetWindow(target, model, cue);
+  overlay.appendChild(target);
+
+  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+  const nativeText = nativeTextForCue(cue, nativeTrack, nativeCues);
+  if (nativeText) {
+    const native = document.createElement('div');
+    native.className = 'subtitle-native';
+    native.textContent = clippedPlainSubtitleText(nativeText);
+    overlay.appendChild(native);
+  }
+}

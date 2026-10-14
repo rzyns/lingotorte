@@ -1,0 +1,339 @@
+import type { AppModel } from '../uiTypes';
+import { PAIR_AGAIN, type PairedTransport } from '../pairedTransport.ts';
+import type { Cue, LearnerExportManifest } from '@lingotorte/domain';
+import { formatTimeMs } from '../uiTypes';
+import {
+  activeCueAtTime,
+  captureLocalServiceTransport,
+  learnerProgress,
+  studyMetrics,
+  formatCompactDurationMs,
+  STUDY_ESTIMATE_MS_PER_ACTION,
+} from '../model';
+import { rerenderApp } from '../appShell.ts';
+
+export function captureUiServiceOwner(model: AppModel): PairedTransport | null {
+  try { return captureLocalServiceTransport(model); }
+  catch { model.localService.lastMessage = PAIR_AGAIN; rerenderApp(model); return null; }
+}
+export function uiOwnerCurrent(transport: PairedTransport): boolean {
+  try { transport.assertCurrent(); return true; } catch { return false; }
+}
+export type BrowserFileHandleLike = Readonly<{
+  name: string;
+  getFile(): Promise<File>;
+  queryPermission?: (opts: { mode: 'read' }) => Promise<string>;
+  requestPermission?: (opts: { mode: 'read' }) => Promise<string>;
+}>;
+
+export type BrowserFilePickerGlobal = typeof globalThis & Readonly<{
+  showOpenFilePicker?: (options?: unknown) => Promise<BrowserFileHandleLike[]>;
+}>;
+
+type BrowserFileWritableLike = {
+  write(data: string): Promise<void>;
+  close(): Promise<void>;
+};
+
+type BrowserFileSaveHandleLike = Readonly<{
+  name: string;
+  createWritable(): Promise<BrowserFileWritableLike>;
+  getFile(): Promise<File>;
+}>;
+
+export type BrowserFileSavePickerGlobal = typeof globalThis & Readonly<{
+  showSaveFilePicker?: (options?: unknown) => Promise<BrowserFileSaveHandleLike>;
+}>;
+
+export function appendDefinitionRow(list: HTMLDListElement, term: string, value: string): void {
+  const dt = document.createElement('dt');
+  dt.textContent = term;
+  const dd = document.createElement('dd');
+  dd.textContent = value;
+  list.append(dt, dd);
+}
+
+export function shortHash(hash: string): string {
+  const digest = hash.startsWith('sha256:') ? hash.slice('sha256:'.length) : hash;
+  return digest.length > 16 ? `${digest.slice(0, 12)}…${digest.slice(-8)}` : hash;
+}
+
+export function readPreviewManifest(model: AppModel): LearnerExportManifest | null {
+  if (!model.exportImport.manifestJson) return null;
+  try {
+    return JSON.parse(model.exportImport.manifestJson) as LearnerExportManifest;
+  } catch {
+    return null;
+  }
+}
+
+export function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
+}
+
+export function currentKeyboardCue(model: AppModel): Cue | null {
+  if (model.player.activeCueId) {
+    return model.cues.find((cue) => cue.id === model.player.activeCueId) ?? null;
+  }
+  return activeCueAtTime(model.cues, model.player.currentTimeMs) ?? model.cues[0] ?? null;
+}
+
+export function seekRenderedVideoToCue(cue: Cue): void {
+  const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+  if (video) {
+    video.currentTime = cue.startMs / 1000;
+  }
+}
+
+function renderStatusToken(label: string, tone: 'local' | 'approved' | 'draft' | 'warning' | 'neutral' = 'neutral'): HTMLElement {
+  const token = document.createElement('span');
+  token.className = `status-token status-token-${tone}`;
+  token.textContent = label;
+  return token;
+}
+
+export function formatCompactTimeMs(ms: number): string {
+  return formatTimeMs(ms).replace(/\.00$/, '');
+}
+
+export function compactPathLabel(path: string): string {
+  if (path.startsWith('blob:')) return 'browser-local media';
+  if (path.startsWith('youtube:')) return path;
+  const withoutQuery = path.split(/[?#]/)[0] ?? path;
+  const parts = withoutQuery.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+export function mediaLabel(model: AppModel, fallbackPath?: string): string {
+  if (model.currentMedia?.title) return model.currentMedia.title;
+  if (fallbackPath) return compactPathLabel(fallbackPath);
+  if (model.currentMedia?.originalPath) return compactPathLabel(model.currentMedia.originalPath);
+  return 'No media loaded';
+}
+
+export function renderUnresolvedSource(mediaPath: string): HTMLElement {
+  const note = document.createElement('p');
+  note.className = 'status-banner warning source-unresolved';
+  note.setAttribute('role', 'status');
+  note.dataset.testid = 'source-unresolved';
+  appendSourceDisclosure(note, `Source cue/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
+  return note;
+}
+
+export function appendSourceDisclosure(container: HTMLElement, summaryText: string, detailText: string): void {
+  const summary = document.createElement('span');
+  summary.className = 'source-compact-summary';
+  summary.textContent = summaryText;
+  container.appendChild(summary);
+
+  if (!detailText) return;
+  const details = document.createElement('details');
+  details.className = 'source-disclosure';
+  details.addEventListener('click', (event) => event.stopPropagation());
+  const disclosureSummary = document.createElement('summary');
+  disclosureSummary.textContent = 'details';
+  const code = document.createElement('code');
+  code.textContent = detailText;
+  details.append(disclosureSummary, code);
+  container.appendChild(details);
+}
+
+export function renderSourceMetaChip(text: string): HTMLElement {
+  const chip = document.createElement('span');
+  chip.className = 'source-meta-chip';
+  chip.textContent = text;
+  return chip;
+}
+
+export function renderStudyStatusRail(model: AppModel): HTMLElement {
+  const rail = document.createElement('div');
+  rail.className = 'status-token-rail';
+  rail.setAttribute('aria-label', 'Study status');
+  rail.appendChild(renderStatusToken('local/private', 'local'));
+
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const transcriptStatus = targetTrack?.transcriptStatus ?? 'no transcript';
+  const statusTone = transcriptStatus === 'approved'
+    ? 'approved'
+    : transcriptStatus === 'draft'
+      ? 'draft'
+      : transcriptStatus === 'correcting'
+        ? 'warning'
+        : 'neutral';
+  rail.appendChild(renderStatusToken(transcriptStatus, statusTone));
+
+  const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
+  rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
+
+  const progress = learnerProgress(model, model.clock());
+  const progressParts: string[] = [];
+  if (progress.savedItems > 0) progressParts.push(`${progress.savedItems} saved`);
+  if (progress.dueCards > 0) progressParts.push(`${progress.dueCards} due`);
+  if (progress.totalReviews > 0) progressParts.push(`${progress.totalReviews} reviews`);
+  if (progress.practiceAttempts > 0) progressParts.push(`${progress.practiceAttempts} practice`);
+  if (progressParts.length > 0) {
+    rail.appendChild(renderStatusToken(progressParts.join(' • '), 'neutral'));
+  }
+
+  const metrics = studyMetrics(model);
+  const today = formatCompactDurationMs(metrics.todayStudyTimeMs);
+  const total = formatCompactDurationMs(metrics.totalStudyTimeMs);
+  const streakText = metrics.streakDays > 0 ? `🔥 ${metrics.streakDays} day streak` : '🔥 Start a streak';
+  rail.appendChild(renderStatusToken(streakText, 'neutral'));
+  const timeToken = renderStatusToken(`~${today} today • ~${total} total (estimated)`, 'neutral');
+  timeToken.title = `Estimated study time: ${STUDY_ESTIMATE_MS_PER_ACTION / 1000} seconds per study action, from local events only`;
+  timeToken.setAttribute('aria-label', `Estimated study time: about ${today} today, about ${total} total`);
+  timeToken.dataset.estimate = 'true';
+  rail.appendChild(timeToken);
+  rail.dataset.streakDays = String(metrics.streakDays);
+  rail.dataset.todayStudyTime = today;
+  rail.dataset.totalStudyTime = total;
+
+  return rail;
+}
+
+export function renderSourceContextRow(model: AppModel): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'source-context-row';
+  row.setAttribute('aria-label', 'Current source context');
+
+  const activeCue = currentKeyboardCue(model);
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const parts: string[] = [];
+  const visibleParts: string[] = [];
+  if (model.currentMedia) {
+    const loadedCueEndMs = model.cues.reduce((maxEnd, cue) => Math.max(maxEnd, cue.endMs), model.currentMedia.durationMs);
+    parts.push(`media: ${model.currentMedia.originalPath}`);
+    parts.push(`media ${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
+    visibleParts.push(mediaLabel(model));
+    visibleParts.push(`${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
+  } else {
+    parts.push('no media loaded');
+    visibleParts.push('no media loaded');
+  }
+  if (activeCue) {
+    parts.push(`cue ${activeCue.cueIndex}`);
+    parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
+    visibleParts.push(`cue ${activeCue.cueIndex}`);
+    visibleParts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
+  } else {
+    parts.push('no active cue');
+    visibleParts.push('no active cue');
+  }
+  if (targetTrack) {
+    parts.push(`track v${targetTrack.trackVersion}`);
+    parts.push(targetTrack.transcriptStatus);
+    visibleParts.push(`track v${targetTrack.trackVersion}`);
+    visibleParts.push(targetTrack.transcriptStatus);
+  }
+  const primary = document.createElement('div');
+  primary.className = 'source-context-primary';
+  appendSourceDisclosure(primary, visibleParts.join(' • '), parts.join(' • '));
+  row.appendChild(primary);
+
+  if (model.currentMedia || activeCue || targetTrack) {
+    const chips = document.createElement('div');
+    chips.className = 'source-context-chips';
+    if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
+    if (activeCue) chips.appendChild(renderSourceMetaChip(`cue ${activeCue.cueIndex}`));
+    if (targetTrack) chips.appendChild(renderSourceMetaChip(targetTrack.transcriptStatus));
+    row.appendChild(chips);
+  }
+  return row;
+}
+
+function slugClass(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function renderRiskToken(label: string, tone: 'local' | 'warning' | 'draft' | 'neutral'): HTMLElement {
+  const token = renderStatusToken(label, tone);
+  token.classList.add('risk-token', `risk-token-${slugClass(label)}`);
+  return token;
+}
+
+function lifecycleStageState(model: AppModel, index: number): 'completed' | 'active' | 'pending' {
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  if (!targetTrack) return index === 0 ? 'active' : 'pending';
+  if (targetTrack.transcriptStatus === 'approved') return 'completed';
+  if (targetTrack.transcriptStatus === 'correcting') {
+    if (index < 4) return 'completed';
+    return 'active';
+  }
+  if (targetTrack.transcriptStatus === 'draft') {
+    if (index < 2) return 'completed';
+    if (index === 2) return 'active';
+    return 'pending';
+  }
+  return index === 0 ? 'active' : 'pending';
+}
+
+function renderLifecycleStageRail(model: AppModel): HTMLElement {
+  const rail = document.createElement('div');
+  rail.className = 'lifecycle-stage-rail';
+  rail.setAttribute('aria-label', 'Transcript lifecycle stages');
+  ['Source candidates', 'Draft evidence', 'Cue correction', 'Word timing', 'Approval'].forEach((label, index) => {
+    const stage = document.createElement('span');
+    const state = lifecycleStageState(model, index);
+    stage.className = `lifecycle-stage lifecycle-stage-${state}`;
+    stage.dataset.state = state;
+    if (state === 'active') stage.setAttribute('aria-current', 'step');
+    stage.textContent = `${index + 1} ${label}`;
+    rail.appendChild(stage);
+  });
+  return rail;
+}
+
+function renderSourceCandidateCard(title: string, body: string, risks: HTMLElement[]): HTMLElement {
+  const card = document.createElement('article');
+  card.className = 'source-candidate-card';
+  const heading = document.createElement('h4');
+  heading.textContent = title;
+  const riskRail = document.createElement('div');
+  riskRail.className = 'risk-token-rail';
+  riskRail.append(...risks);
+  const description = document.createElement('p');
+  description.textContent = body;
+  card.append(heading, riskRail, description);
+  return card;
+}
+
+export function renderTranscriptWorkbenchOverview(model: AppModel): HTMLElement {
+  const overview = document.createElement('div');
+  overview.className = 'transcript-workbench-overview';
+  overview.appendChild(renderLifecycleStageRail(model));
+
+  const candidates = document.createElement('div');
+  candidates.className = 'source-candidate-grid';
+  candidates.append(
+    renderSourceCandidateCard(
+      'Local files / existing subtitles',
+      'Best default: use owned media and explicit subtitle files already on this machine.',
+      [renderRiskToken('local safe', 'local')],
+    ),
+    renderSourceCandidateCard(
+      'Local ASR draft',
+      'Uses the configured local service and local tools when those dependencies are installed and explicitly chosen.',
+      [renderRiskToken('local dependency required', 'warning')],
+    ),
+    renderSourceCandidateCard(
+      'Public caption draft',
+      'Reads public caption metadata/text only after visible authorization; imported tracks remain drafts.',
+      [renderRiskToken('public metadata read', 'warning')],
+    ),
+    renderSourceCandidateCard(
+      'ElevenLabs Scribe v2 draft',
+      'Sends extracted audio to an online provider only after explicit consent and service configuration.',
+      [renderRiskToken('online audio upload', 'draft')],
+    ),
+  );
+  overview.appendChild(candidates);
+
+  const draftEvidence = document.createElement('div');
+  draftEvidence.className = 'draft-evidence-card';
+  draftEvidence.textContent = 'Drafts cannot create saved study items until corrected and approved.';
+  overview.appendChild(draftEvidence);
+  return overview;
+}
