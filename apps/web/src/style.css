@@ -1198,6 +1198,7 @@ textarea:focus-visible,
 }
 
 .button-row button,
+.source-range-actions button,
 .review-controls button,
 .practice-controls button,
 .practice-mode-row button,
@@ -1212,6 +1213,7 @@ textarea:focus-visible,
 }
 
 .button-row button:hover,
+.source-range-actions button:hover,
 .review-controls button:hover,
 .practice-controls button:hover,
 .practice-mode-row button:hover,
@@ -1221,6 +1223,7 @@ textarea:focus-visible,
 }
 
 .button-row button:disabled,
+.source-range-actions button:disabled,
 .review-controls button:disabled,
 .practice-controls button:disabled,
 .practice-mode-row button:disabled,
