@@ -2,7 +2,7 @@ import { SYNTHETIC_CAPABILITY, pairedModel } from './pairingFixture.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   connectLocalService, createAppModel, importFixtureMediaAndSubtitles, pairLocalService, persistIfLocalServiceAutosaveEnabled,
-  setLocalServiceAutosave,
+  saveLexemeFromCue, setLocalServiceAutosave,
 } from '../../apps/web/src/model';
 import {
   SNAPSHOT_CACHE_KEY, SNAPSHOT_CACHE_SCHEMA_VERSION, bootSnapshotCache, buildSnapshotCacheRecord, type SnapshotCacheBackend,
@@ -113,6 +113,71 @@ describe('lt-4ji autosave preference', () => {
     persistIfLocalServiceAutosaveEnabled(model); await settle();
     expect(puts.length - putsBefore).toBe(1);
     expect(model.localService.lastSavedAt).not.toBe(savedBefore);
+    expect(model.localService.lastSavedAt).not.toBeNull();
+  });
+});
+
+describe('lt-4ji connect never writes to the service', () => {
+  it('service equal to browser: zero writes on connect', async () => {
+    const model = pairedModel(); await loadFixture(model);
+    const snap = model.store.snapshot();
+    const puts = stubService(() => snap);
+    expect((await connectLocalService(model)).ok).toBe(true); await settle();
+    expect(puts).toHaveLength(0);
+  });
+
+  it('service differs: choice pending, zero writes on connect and after an edit', async () => {
+    const model = pairedModel(); await loadFixture(model);
+    const remote = pairedModel(); await loadFixture(remote); remote.store.putMediaAsset({ ...remote.currentMedia!, title: 'remote' });
+    const puts = stubService(() => remote.store.snapshot());
+    await connectLocalService(model); await settle();
+    expect(model.localService.syncState).toBe('choice');
+    expect(puts).toHaveLength(0);
+    model.store.putMediaAsset({ ...model.currentMedia!, title: 'edit-during-choice' });
+    persistIfLocalServiceAutosaveEnabled(model); await settle();
+    expect(puts).toHaveLength(0);
+  });
+
+  it('service empty, browser has content: zero writes on connect, first edit writes once', async () => {
+    const model = pairedModel(); await loadFixture(model);
+    const puts = stubService(() => createEmptyLocalStoreSnapshot());
+    await connectLocalService(model); await settle();
+    expect(puts).toHaveLength(0);
+    model.store.putMediaAsset({ ...model.currentMedia!, title: 'first-edit' });
+    persistIfLocalServiceAutosaveEnabled(model); await settle();
+    expect(puts).toHaveLength(1);
+  });
+
+  it("'unknown' cache read then non-empty service: loads service, one edit writes service content plus the edit", async () => {
+    const failing: SnapshotCacheBackend = { get: async () => { throw new Error('cache down'); }, put: vi.fn(async () => {}), delete: async () => {} };
+    const model = pairedModel();
+    expect(await bootSnapshotCache(model, failing)).toBe(false);
+    const remote = pairedModel(); await loadFixture(remote); remote.store.putMediaAsset({ ...remote.currentMedia!, title: 'service-prior' });
+    const remoteSnap = remote.store.snapshot();
+    const puts = stubService(() => remoteSnap);
+    expect((await connectLocalService(model)).ok).toBe(true); await settle();
+    expect(puts).toHaveLength(0);
+    expect(JSON.stringify(model.store.snapshot())).toContain('service-prior');
+    const asset = Object.values(remoteSnap.mediaAssets)[0]!;
+    model.store.putMediaAsset({ ...asset, id: `${asset.id}-edit`, title: 'new-edit' });
+    persistIfLocalServiceAutosaveEnabled(model); await settle();
+    expect(puts).toHaveLength(1);
+    expect(String(puts[0])).toContain('service-prior');
+    expect(String(puts[0])).toContain('new-edit');
+    expect(failing.put).not.toHaveBeenCalled();
+  });
+
+  it('acceptance: capturing a word through the Player save path writes once and updates lastSavedAt', async () => {
+    const model = pairedModel(); await loadFixture(model);
+    const puts = stubService(() => createEmptyLocalStoreSnapshot());
+    expect((await connectLocalService(model)).ok).toBe(true); await settle();
+    expect(puts).toHaveLength(0);
+    expect(model.localService.lastSavedAt).toBeNull();
+    const cue = model.cues[0]!; const word = cue.text.split(/\s+/)[0]!;
+    expect(saveLexemeFromCue(model, cue, word, 0, word.length, 0)).not.toBeNull();
+    await settle();
+    expect(puts).toHaveLength(1);
+    expect(String(puts[0])).toContain(word);
     expect(model.localService.lastSavedAt).not.toBeNull();
   });
 });
