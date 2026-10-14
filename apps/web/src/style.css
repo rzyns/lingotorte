@@ -1197,12 +1197,12 @@ textarea:focus-visible,
   align-items: center;
 }
 
-.button-row button,
-.source-range-actions button,
-.review-controls button,
-.practice-controls button,
-.practice-mode-row button,
-.practice-choices button,
+.button-row button:not(.btn-primary),
+.source-range-actions button:not(.btn-primary),
+.review-controls button:not(.btn-primary),
+.practice-controls button:not(.btn-primary),
+.practice-mode-row button:not(.btn-primary),
+.practice-choices button:not(.btn-primary),
 .analyse-words {
   background: transparent;
   border: 1px solid var(--border);
@@ -1212,25 +1212,25 @@ textarea:focus-visible,
   font-size: 0.9rem;
 }
 
-.button-row button:hover,
-.source-range-actions button:hover,
-.review-controls button:hover,
-.practice-controls button:hover,
-.practice-mode-row button:hover,
-.practice-choices button:hover,
+.button-row button:not(.btn-primary):hover,
+.source-range-actions button:not(.btn-primary):hover,
+.review-controls button:not(.btn-primary):hover,
+.practice-controls button:not(.btn-primary):hover,
+.practice-mode-row button:not(.btn-primary):hover,
+.practice-choices button:not(.btn-primary):hover,
 .analyse-words:hover {
   background: var(--surface-raised);
 }
 
-.button-row button:disabled,
-.source-range-actions button:disabled,
-.review-controls button:disabled,
-.practice-controls button:disabled,
-.practice-mode-row button:disabled,
-.practice-choices button:disabled,
+.button-row button:not(.btn-primary):disabled,
+.source-range-actions button:not(.btn-primary):disabled,
+.review-controls button:not(.btn-primary):disabled,
+.practice-controls button:not(.btn-primary):disabled,
+.practice-mode-row button:not(.btn-primary):disabled,
+.practice-choices button:not(.btn-primary):disabled,
 .analyse-words:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 /* Review */
