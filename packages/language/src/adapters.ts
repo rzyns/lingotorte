@@ -47,6 +47,39 @@ function inputHash(text: string, cueId: string): Promise<string> {
   return sha256Text(`${text}::${cueId}`);
 }
 
+// lt-z8s: synchronous core of the whitespace tokenizer so views can render clickable tokens without awaiting.
+export function tokenizeWhitespaceText(text: string, language: string): TokenizerOutputToken[] {
+  const tokens: TokenizerOutputToken[] = [];
+  const tokenPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?|[^\s\p{L}\p{M}\d]/gu;
+  let match: RegExpExecArray | null;
+  let tokenIndex = 0;
+  while ((match = tokenPattern.exec(text)) !== null) {
+    const surface = match[0];
+    const charStart = match.index;
+    const charEnd = charStart + surface.length;
+    const tokenKind: TokenizerOutputToken['tokenKind'] = /^\d+(?:[,.]\d+)?$/.test(surface)
+      ? 'number'
+      : /^[\p{L}\p{M}]/u.test(surface)
+        ? 'word'
+        : /^[.,!?;:…]+$/.test(surface)
+          ? 'punctuation'
+          : 'symbol';
+    const normalizedSurface = tokenKind === 'word' ? surface.toLocaleLowerCase(language) : surface;
+    tokens.push({
+      tokenIndex,
+      charStart,
+      charEnd,
+      surface,
+      normalizedSurface,
+      tokenKind,
+      joinToPrevious: tokenKind === 'punctuation',
+      joinToNext: false,
+    });
+    tokenIndex += 1;
+  }
+  return tokens;
+}
+
 export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
   const adapterId = 'lingotorte.whitespace-tokenizer';
   const adapterVersion = '0.0.0-p3';
@@ -62,34 +95,7 @@ export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
       if (!/\s/.test(input.text) && input.text.length > 10) {
         warnings.push('Input text contains no whitespace; tokenization may be inaccurate');
       }
-      const tokens: TokenizerOutputToken[] = [];
-      const tokenPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?|[^\s\p{L}\p{M}\d]/gu;
-      let match: RegExpExecArray | null;
-      let tokenIndex = 0;
-      while ((match = tokenPattern.exec(input.text)) !== null) {
-        const surface = match[0];
-        const charStart = match.index;
-        const charEnd = charStart + surface.length;
-        const tokenKind: TokenizerOutputToken['tokenKind'] = /^\d+(?:[,.]\d+)?$/.test(surface)
-          ? 'number'
-          : /^[\p{L}\p{M}]/u.test(surface)
-            ? 'word'
-            : /^[.,!?;:…]+$/.test(surface)
-              ? 'punctuation'
-              : 'symbol';
-        const normalizedSurface = tokenKind === 'word' ? surface.toLocaleLowerCase(language) : surface;
-        tokens.push({
-          tokenIndex,
-          charStart,
-          charEnd,
-          surface,
-          normalizedSurface,
-          tokenKind,
-          joinToPrevious: tokenKind === 'punctuation',
-          joinToNext: false,
-        });
-        tokenIndex += 1;
-      }
+      const tokens = tokenizeWhitespaceText(input.text, language);
       if (tokens.length === 0) {
         warnings.push('No tokens produced from input text');
       }

@@ -15,6 +15,7 @@ import {
   restoreBrowserMediaHandle,
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
+import { syncTranscriptCurrentWord } from './controls.ts';
 import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
@@ -91,6 +92,7 @@ function renderVideoStage(model: AppModel): HTMLElement {
       scrollCueIntoView(cue.id);
     }
     updateOverlay(stage, model, cue);
+    syncTranscriptCurrentWord(model.player.activeCueId, timeMs);
     const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue, model.player.loopRange);
     if (loopJump !== null) {
       video.currentTime = loopJump / 1000;

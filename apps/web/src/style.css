@@ -1449,17 +1449,31 @@ textarea:focus-visible,
   font-size: 0.85rem;
 }
 
+.cue-word,
 .timed-word {
-  appearance: none;
-  border: 0;
   border-radius: 0.25rem;
-  background: transparent;
-  color: inherit;
-  font: inherit;
 }
 
+/* Words are inline role="button" spans (not <button>) so native drag-select across words works;
+   focus ring comes from the global [tabindex]:focus-visible rule. */
+.cue-word {
+  cursor: pointer;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.cue-word:hover,
 .timed-word:hover {
   background: var(--surface-soft);
+}
+
+.cue-word[aria-pressed="true"] {
+  background: var(--surface-raised);
+  outline: 1px solid var(--accent);
+}
+
+.cue-word.current-word {
+  text-decoration: underline;
 }
 
 /* ===================== end lt-y1s gap-fill ===================== */

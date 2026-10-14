@@ -6,7 +6,7 @@ import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccur
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
 import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
-import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter } from '@lingotorte/language';
+import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter, tokenizeWhitespaceText } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type {
   Cue,
@@ -3995,6 +3995,17 @@ export function setExportImportConfirmReplace(model: AppModel, value: boolean): 
 
 export function setExportImportError(model: AppModel, error: string | null): void {
   model.exportImport.lastError = error;
+}
+
+/**
+ * lt-z8s: the single synchronous source of token indices for transcript capture. Word buttons (click,
+ * Shift+click, arrows) and drag-select both derive tokenStart/tokenEnd/charStart/charEnd from this, so
+ * the same word always yields the same anchor. Constraint: it is the built-in whitespace tokenizer, not
+ * model.adapters.tokenizer (which is async and only drives the "Show tokens" preview); a future adapter
+ * that should change capture indices must be wired in here for both paths at once.
+ */
+export function cueWordTokens(text: string): ReturnType<typeof tokenizeWhitespaceText> {
+  return tokenizeWhitespaceText(text, 'pl');
 }
 
 export async function tokenizeCueText(model: AppModel, cue: Cue): Promise<TokenInfo[]> {
