@@ -3051,25 +3051,41 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
   if (!model.selection || !model.currentMedia || !model.targetTrackId) return null;
   const cue = model.cues.find((c) => c.id === model.selection?.cueId);
   if (!cue || !model.selection) return null;
-  const selectionTimeRange = selectionTimeRangeForCue(model, cue, model.selection.charStart, model.selection.charEnd);
+  // lt-cms: a whole-cue sentence capture keeps saveSentenceFromCue's shape (cue time range, no word-range anchor).
+  const isSentence = model.selection.kind === 'sentence';
+  const selectionTimeRange = isSentence
+    ? { start: cue.startMs, end: cue.endMs }
+    : selectionTimeRangeForCue(model, cue, model.selection.charStart, model.selection.charEnd);
 
-  const sourceContext = buildSourceContext(
-    model.currentMedia.id,
-    model.currentMedia.originalPath,
-    model.currentMedia.contentSha256,
-    model.targetTrackId,
-    cue,
-    model.selection.tokenStart,
-    model.selection.tokenEnd,
-    model.selection.charStart,
-    model.selection.charEnd,
-    selectionTimeRange,
-  );
+  const sourceContext = isSentence
+    ? buildSourceContext(
+      model.currentMedia.id,
+      model.currentMedia.originalPath,
+      model.currentMedia.contentSha256,
+      model.targetTrackId,
+      cue,
+      0,
+      cue.text.split(/\s+/).filter(Boolean).length,
+      0,
+      cue.text.length,
+    )
+    : buildSourceContext(
+      model.currentMedia.id,
+      model.currentMedia.originalPath,
+      model.currentMedia.contentSha256,
+      model.targetTrackId,
+      cue,
+      model.selection.tokenStart,
+      model.selection.tokenEnd,
+      model.selection.charStart,
+      model.selection.charEnd,
+      selectionTimeRange,
+    );
 
   const result = model.savedOccurrenceService.saveSelection({
     kind: model.selection.kind,
     language: 'pl',
-    displayText: model.selection.text,
+    displayText: isSentence ? cue.text : model.selection.text,
     ...(model.pendingMeaning ? { meaning: model.pendingMeaning } : {}),
     ...(model.pendingNotes ? { notes: model.pendingNotes } : {}),
     mediaId: model.currentMedia.id,

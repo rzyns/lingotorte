@@ -1,20 +1,19 @@
 import type { AppModel } from '../../uiTypes';
 import { analyseCueMorphology, renderMorphologyPanel } from '../../morphologyPanel.ts';
 import type { Cue } from '@lingotorte/domain';
+import type { Selection } from '../../uiTypes';
 import { formatTimeMs } from '../../uiTypes';
 import {
   clearSelection,
   nativeTextForCue,
   saveSelection,
-  saveSentenceFromCue,
-  saveSelectedPhraseFromCue,
   seekToCue,
   setPendingMeaning,
   setPendingNotes,
   setTranscriptQuery,
   tokenizeCueText,
 } from '../../model';
-import { rerenderApp } from '../../appShell.ts';
+import { requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { renderCueSourceContext, renderCueTargetText } from './controls.ts';
 
@@ -98,7 +97,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     const actions = document.createElement('div');
     actions.className = 'cue-actions';
     const saveSentenceBtn = document.createElement('button');
-    saveSentenceBtn.textContent = 'Save sentence';
+    saveSentenceBtn.textContent = 'Save sentence…';
     saveSentenceBtn.setAttribute('aria-label', `Save sentence from cue at ${formatTimeMs(cue.startMs)}`);
     saveSentenceBtn.disabled = !canSaveFromTargetTrack;
     if (!canSaveFromTargetTrack) {
@@ -107,12 +106,16 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     saveSentenceBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!canSaveFromTargetTrack) return;
-      void saveSentenceFromCue(model, cue)
-        .then(() => rerenderApp(model))
-        .catch((err: unknown) => {
-          model.importError = err instanceof Error ? err.message : String(err);
-          rerenderApp(model);
-        });
+      // lt-cms: open the capture form instead of saving immediately.
+      openCapture(model, {
+        kind: 'sentence',
+        text: cue.text,
+        cueId: cue.id,
+        tokenStart: 0,
+        tokenEnd: cue.text.split(/\s+/).filter(Boolean).length,
+        charStart: 0,
+        charEnd: cue.text.length,
+      });
     });
     actions.appendChild(saveSentenceBtn);
 
@@ -178,37 +181,52 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
               t.surface.toLowerCase() === lower ||
               (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
           );
-          if (token) {
-            const item = saveSelectedPhraseFromCue(model, cue, token.surface, token.charStart, token.charEnd, token.tokenIndex, token.tokenIndex + 1);
-            if (item) {
-              model.selection = null;
-              model.pendingMeaning = '';
-              model.pendingNotes = '';
-            }
-          } else {
-            const phraseStart = cue.text.toLowerCase().indexOf(lower);
-            const item = saveSelectedPhraseFromCue(
-              model,
-              cue,
-              selectionText,
-              phraseStart >= 0 ? phraseStart : 0,
-              phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length,
-              0,
-              tokens.length,
-            );
-            if (item) {
-              model.selection = null;
-              model.pendingMeaning = '';
-              model.pendingNotes = '';
-            }
+          // lt-cms: build a capture selection; nothing is persisted until Save occurrence.
+          if (token && token.surface.toLowerCase() === lower) {
+            openCapture(model, {
+              kind: 'lexeme',
+              text: token.surface,
+              cueId: cue.id,
+              tokenStart: token.tokenIndex,
+              tokenEnd: token.tokenIndex + 1,
+              charStart: token.charStart,
+              charEnd: token.charEnd,
+            });
+            return;
           }
-          rerenderApp(model);
+          const phraseStart = cue.text.toLowerCase().indexOf(lower);
+          const charStart = phraseStart >= 0 ? phraseStart : 0;
+          const charEnd = phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length;
+          const overlapping = tokens.filter((t) => t.charStart < charEnd && t.charEnd > charStart);
+          const tokenStart = overlapping.length ? Math.min(...overlapping.map((t) => t.tokenIndex)) : 0;
+          const tokenEnd = overlapping.length ? Math.max(...overlapping.map((t) => t.tokenIndex)) + 1 : tokens.length;
+          openCapture(model, {
+            kind: overlapping.length === 1 ? 'lexeme' : 'phrase',
+            text: overlapping.length === 1 ? overlapping[0]!.surface : selectionText,
+            cueId: cue.id,
+            tokenStart,
+            tokenEnd,
+            charStart: overlapping.length === 1 ? overlapping[0]!.charStart : charStart,
+            charEnd: overlapping.length === 1 ? overlapping[0]!.charEnd : charEnd,
+          });
+          return;
         });
       }
     });
     panel.appendChild(row);
   }
   return panel;
+}
+
+function openCapture(model: AppModel, selection: NonNullable<Selection>): void {
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  if (targetTrack?.transcriptStatus !== 'approved') return;
+  model.selection = selection;
+  model.pendingMeaning = '';
+  model.pendingNotes = '';
+  window.getSelection()?.removeAllRanges();
+  requestFocusAfterRender(model, 'selection-meaning');
+  rerenderApp(model);
 }
 
 function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
@@ -309,18 +327,43 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn-primary';
   saveBtn.textContent = 'Save occurrence';
-  saveBtn.addEventListener('click', () => {
-    void saveSelection(model).then(() => {
-      clearSelection(model);
-      rerenderApp(model);
-    });
-  });
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const canSave = targetTrack?.transcriptStatus === 'approved';
+  saveBtn.disabled = !canSave;
+  if (!canSave) saveBtn.title = 'Approve this transcript before saving learner study items.';
+  const commit = () => {
+    if (!canSave) return;
+    void saveSelection(model)
+      .then(() => {
+        clearSelection(model);
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  };
+  const cancel = () => {
+    clearSelection(model);
+    rerenderApp(model);
+  };
+  saveBtn.addEventListener('click', commit);
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'btn-secondary';
   cancelBtn.textContent = 'Cancel';
-  cancelBtn.addEventListener('click', () => {
-    clearSelection(model);
-    rerenderApp(model);
+  cancelBtn.addEventListener('click', cancel);
+  meaningInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      commit();
+    }
+  });
+  form.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancel();
+    }
   });
   actions.append(cancelBtn, saveBtn);
   form.appendChild(actions);

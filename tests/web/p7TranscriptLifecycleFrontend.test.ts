@@ -105,7 +105,7 @@ describe('P7 transcript lifecycle frontend', () => {
     const playerButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Player') as HTMLButtonElement | null;
     playerButton?.click();
     expect(document.getElementById('app')?.textContent).toContain('Draft transcript: correct and approve before study use.');
-    const draftSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence') as HTMLButtonElement | null;
+    const draftSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence…') as HTMLButtonElement | null;
     expect(draftSave?.disabled).toBe(true);
 
     const libraryButton = Array.from(document.querySelectorAll('nav button')).find((button) => button.textContent === 'Library') as HTMLButtonElement | null;
@@ -138,9 +138,12 @@ describe('P7 transcript lifecycle frontend', () => {
     expect(document.getElementById('app')?.textContent).toContain('Transcript approved for study');
 
     playerButton?.click();
-    const approvedSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence') as HTMLButtonElement | null;
+    const approvedSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence…') as HTMLButtonElement | null;
     expect(approvedSave?.disabled).toBe(false);
     approvedSave?.click();
+    // lt-cms: Save sentence… opens the capture form; nothing is persisted until Save occurrence.
+    expect(Object.values(model.store.snapshot().savedItems).length).toBe(0);
+    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null)?.click();
     await waitFor(() => Object.values(model.store.snapshot().savedItems).length === 1);
     expect(Object.values(model.store.snapshot().savedItems)[0]?.displayText).toBe('Corrected provider caption.');
   });

@@ -360,11 +360,11 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     const draftId = model.targetTrackId!;
     model.view = 'player';
     rerenderApp(model);
-    expect(button('Save sentence').disabled).toBe(true);
+    expect(button('Save sentence…').disabled).toBe(true);
     const corrected = await createCorrectedTranscriptVersion(model, draftId, [{ cueId: model.cues[0]!.id, text: 'Poprawiona kwestia.' }]);
     approveTranscriptTrack(model, corrected.track.id);
     rerenderApp(model);
-    expect(button('Save sentence').disabled).toBe(false);
+    expect(button('Save sentence…').disabled).toBe(false);
     expect(JSON.stringify(model.store.snapshot())).not.toContain(privatePath);
     expect(exportLearnerState(model).manifestJson).not.toContain(privatePath);
   });
@@ -490,7 +490,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     expect(document.body.textContent).toContain('Embedded subtitle track imported as a draft; correct and approve it before study use.');
     model.view = 'player';
     rerenderApp(model);
-    expect(button('Save sentence').disabled).toBe(true);
+    expect(button('Save sentence…').disabled).toBe(true);
   });
 
   it('clears stale selection after a path change and redacts echoed extraction failures', async () => {
