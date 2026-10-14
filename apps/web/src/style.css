@@ -1150,3 +1150,313 @@ textarea:focus-visible,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==========================================================================
+   lt-y1s gap-fill: classes emitted by the TS views with no prior rule.
+   Existing tokens and patterns only; see docs/review/ux-audit-2026-10-13.md
+   Appendix A. Hooks intentionally left unstyled are listed in §5 (V1).
+   ========================================================================== */
+
+/* Shared (promoted from .saved-item / .import-form scopes) */
+.meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.file-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.occurrence-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.occurrence-link:hover {
+  text-decoration: underline;
+}
+
+.status-banner.info {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+  color: var(--accent);
+}
+
+.button-row,
+.review-controls,
+.practice-controls,
+.practice-mode-row,
+.practice-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.button-row button,
+.review-controls button,
+.practice-controls button,
+.practice-mode-row button,
+.practice-choices button,
+.analyse-words {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.button-row button:hover,
+.review-controls button:hover,
+.practice-controls button:hover,
+.practice-mode-row button:hover,
+.practice-choices button:hover,
+.analyse-words:hover {
+  background: var(--surface-raised);
+}
+
+.button-row button:disabled,
+.review-controls button:disabled,
+.practice-controls button:disabled,
+.practice-mode-row button:disabled,
+.practice-choices button:disabled,
+.analyse-words:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Review */
+.review-buckets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.bucket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.bucket-label {
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.bucket-count {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.review-reveal {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.review-target {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.review-meaning {
+  color: var(--teal);
+  margin: 0;
+}
+
+.review-context,
+.review-target-context,
+.review-native-context {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Saved */
+.saved-view {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.saved-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.saved-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.saved-tab:hover {
+  background: var(--surface-raised);
+}
+
+.saved-tab.active,
+.saved-tab[aria-selected="true"] {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #0b1020;
+  font-weight: 600;
+}
+
+.saved-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.occurrence-group {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.occurrence-context {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Practice */
+.practice-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.practice-prompt {
+  font-size: 1.25rem;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+}
+
+.practice-unavailable {
+  color: var(--warning);
+  font-size: 0.85rem;
+}
+
+.practice-audio-recall,
+.practice-answer,
+.sentence-builder {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sentence-builder-answer,
+.sentence-builder-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.sentence-builder-answer {
+  border: 1px dashed var(--border-strong);
+}
+
+.sentence-builder-pool {
+  border: 1px solid var(--border);
+}
+
+.sentence-builder-placeholder {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.sentence-builder-token {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+}
+
+.sentence-builder-token:hover {
+  border-color: var(--accent);
+}
+
+/* Export / Import */
+.export-import-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.export-import-group,
+.restore-preview,
+.restore-receipt,
+.restore-operation-preview {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.restore-preview,
+.restore-receipt {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface-raised);
+}
+
+.export-metadata,
+.restore-metadata {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* Settings */
+.local-service-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Transcript workbench */
+.transcript-workbench-overview,
+.embedded-subtitle-controls,
+.embedded-subtitle-track-list,
+.track-offset-editor,
+.word-timing-edit-list,
+.source-comparison {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.source-range-summary {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.timed-word {
+  appearance: none;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.timed-word:hover {
+  background: var(--surface-soft);
+}
+
+/* ===================== end lt-y1s gap-fill ===================== */
