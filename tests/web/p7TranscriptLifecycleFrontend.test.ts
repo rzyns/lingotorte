@@ -280,8 +280,10 @@ describe('P7 transcript lifecycle frontend', () => {
     const timedWordButtons = Array.from(document.querySelectorAll('button.timed-word')) as HTMLButtonElement[];
     expect(timedWordButtons.map((button) => button.textContent)).toEqual(['Serwis', 'lokalny']);
     const lokalnyButton = timedWordButtons.find((button) => button.textContent === 'lokalny')!;
-    lokalnyButton.click();
+    // lt-z8s: Alt+click replays the timed word; plain click collects it.
+    lokalnyButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, altKey: true }));
     expect(model.player.currentTimeMs).toBe(650);
+    (Array.from(document.querySelectorAll('button.timed-word')).find((button) => button.textContent === 'lokalny') as HTMLButtonElement).click();
     expect(model.selection).toMatchObject({ text: 'lokalny', charStart: 7, charEnd: 14 });
 
     const saveOccurrenceButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null;

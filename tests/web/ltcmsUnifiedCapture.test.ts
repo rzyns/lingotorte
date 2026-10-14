@@ -141,14 +141,17 @@ describe('lt-cms unified capture state', () => {
     expect(savedItems(model)).toHaveLength(0);
   });
 
-  it('timed-word click seeks, opens the form with meaning focused, and resets a prior pending meaning', () => {
+  it('timed-word click opens the form with meaning focused (no seek; lt-z8s moved replay to Alt+click), and resets a prior pending meaning', () => {
     const { model, cue } = installModel('approved', undefined, true);
     model.pendingMeaning = 'stale meaning';
     model.pendingNotes = 'stale notes';
     rerenderApp(model);
     const timed = Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'polskiego') as HTMLButtonElement;
     expect(timed).toBeTruthy();
-    timed.click();
+    timed.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, altKey: true }));
+    expect(model.player.currentTimeMs).toBe(2800);
+    expect(model.selection).toBeNull();
+    (Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'polskiego') as HTMLButtonElement).click();
     expect(model.player.currentTimeMs).toBe(2800);
     expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'polskiego', cueId: cue.id, tokenStart: 2 });
     expect(model.pendingMeaning).toBe('');
@@ -158,10 +161,11 @@ describe('lt-cms unified capture state', () => {
     expect(savedItems(model)).toHaveLength(0);
   });
 
-  it('timed-word click on a draft track still seeks but opens no capture', () => {
+  it('timed-word Alt+click on a draft track still seeks but opens no capture', () => {
     const { model } = installModel('draft', undefined, true);
     rerenderApp(model);
-    (Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'razem') as HTMLButtonElement).click();
+    (Array.from(document.querySelectorAll('.timed-word')).find((b) => b.textContent === 'razem') as HTMLButtonElement)
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, altKey: true }));
     expect(model.player.currentTimeMs).toBe(3200);
     expect(model.selection).toBeNull();
   });
@@ -225,10 +229,11 @@ describe('lt-cms unified capture state', () => {
     rerenderApp(model);
     const row = document.querySelector(`[data-cue-id="${cue.id}"]`) as HTMLElement;
     const textEl = row.querySelector('.cue-target') as HTMLElement;
-    const textNode = textEl.firstChild as Text;
+    // lt-z8s: words are buttons now; select the text inside the second 'tak' button (cue offset 6–9).
+    const textNode = textEl.querySelectorAll('.cue-word')[2]!.firstChild as Text;
     const range = document.createRange();
-    range.setStart(textNode, 6);
-    range.setEnd(textNode, 9);
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 3);
     const sel = dom.window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(range);

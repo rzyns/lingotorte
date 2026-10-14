@@ -15,7 +15,7 @@ import {
 import { rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
-import { renderCueSourceContext, renderCueTargetText } from './controls.ts';
+import { renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
 export function renderTranscriptPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
@@ -162,7 +162,11 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
       }
       rerenderApp(model);
     };
-    row.addEventListener('click', seek);
+    row.addEventListener('click', (e) => {
+      // lt-z8s: word buttons are handled by the panel's delegated listener; they never seek the row.
+      if ((e.target as Element | null)?.closest?.('.cue-word')) return;
+      seek();
+    });
     row.addEventListener('keydown', (e) => {
       // lt-r4k.3: only handle keys aimed at the row itself; nested buttons keep native activation.
       if (e.target !== row) return;
@@ -221,7 +225,93 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     });
     panel.appendChild(row);
   }
+  installCueWordDelegation(model, panel);
   return panel;
+}
+
+// lt-z8s: one delegated listener set per transcript panel (no per-token listeners). Word buttons carry
+// data-word-cue-id (not data-cue-id, which row selectors rely on)/data-token-index/data-char-start/data-char-end; timed ones also data-start-ms.
+function cueWordFromEvent(e: Event): HTMLButtonElement | null {
+  // Duck-typed (no instanceof) so it works across realms, e.g. jsdom windows in tests.
+  return ((e.target as Element | null)?.closest?.('button.cue-word') as HTMLButtonElement | null | undefined) ?? null;
+}
+
+function wordRange(button: HTMLElement) {
+  return {
+    tokenIndex: Number(button.dataset.tokenIndex),
+    charStart: Number(button.dataset.charStart),
+    charEnd: Number(button.dataset.charEnd),
+  };
+}
+
+/** Capture `button`; with `extend`, grow the current same-cue selection to include this word. */
+function captureCueWord(model: AppModel, cue: Cue, button: HTMLElement, extend: boolean): boolean {
+  const word = wordRange(button);
+  const prior = model.selection;
+  if (extend && prior && prior.cueId === cue.id && prior.kind !== 'sentence') {
+    const span = {
+      tokenStart: Math.min(prior.tokenStart, word.tokenIndex),
+      tokenEnd: Math.max(prior.tokenEnd, word.tokenIndex + 1),
+      charStart: Math.min(prior.charStart, word.charStart),
+      charEnd: Math.max(prior.charEnd, word.charEnd),
+    };
+    const multi = span.tokenEnd - span.tokenStart > 1;
+    return openCapture(model, { kind: multi ? 'phrase' : 'lexeme', text: cue.text.slice(span.charStart, span.charEnd), cueId: cue.id, ...span });
+  }
+  return openCapture(model, {
+    kind: 'lexeme',
+    text: cue.text.slice(word.charStart, word.charEnd),
+    cueId: cue.id,
+    tokenStart: word.tokenIndex,
+    tokenEnd: word.tokenIndex + 1,
+    charStart: word.charStart,
+    charEnd: word.charEnd,
+  });
+}
+
+function installCueWordDelegation(model: AppModel, panel: HTMLElement): void {
+  const cueFor = (button: HTMLElement) => model.cues.find((c: Cue) => c.id === button.dataset.wordCueId) ?? null;
+  panel.addEventListener('click', (e) => {
+    const button = cueWordFromEvent(e);
+    if (!button) return;
+    e.stopPropagation();
+    const cue = cueFor(button);
+    if (!cue) return;
+    if (e.altKey) {
+      // Alt+click replays a timed word; plain click collects.
+      if (button.dataset.startMs !== undefined) seekToTimedWord(model, cue, Number(button.dataset.startMs));
+      return;
+    }
+    captureCueWord(model, cue, button, e.shiftKey);
+  });
+  panel.addEventListener('dblclick', (e) => {
+    const button = cueWordFromEvent(e);
+    if (!button || button.dataset.startMs === undefined) return;
+    e.stopPropagation();
+    const cue = cueFor(button);
+    if (cue) toggleLoopForWord(model, cue, Number(button.dataset.charStart), Number(button.dataset.charEnd));
+  });
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const button = cueWordFromEvent(e);
+    if (!button) return;
+    const words = Array.from(button.parentElement?.querySelectorAll<HTMLButtonElement>('button.cue-word') ?? []);
+    const next = words[words.indexOf(button) + (e.key === 'ArrowRight' ? 1 : -1)];
+    e.preventDefault();
+    e.stopPropagation();
+    if (!next) return;
+    const cue = cueFor(button);
+    if (e.shiftKey && cue) {
+      const prior = model.selection;
+      if (!(prior && prior.cueId === cue.id && prior.kind !== 'sentence')) captureCueWord(model, cue, button, false);
+      if (!captureCueWord(model, cue, next, true)) return;
+      document.getElementById(next.id)?.focus();
+      return;
+    }
+    button.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus();
+  });
 }
 
 // lt-cms: anchor a drag-selection by its DOM Range offset within the cue's target-text element so a

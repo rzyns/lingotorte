@@ -28,8 +28,8 @@ import {
   togglePlay,
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
-import { openCapture } from '../../ui/capture.ts';
 import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
+import { tokenizeWhitespaceText } from '@lingotorte/language';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
 
 export function renderPlayerControls(model: AppModel): HTMLElement {
@@ -431,70 +431,73 @@ export function renderCueSourceContext(model: AppModel, cue: Cue): HTMLElement {
 }
 
 export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
+  // lt-z8s: every word/number token is a button (class cue-word) whether or not the cue has word timings;
+  // punctuation and whitespace stay plain text nodes so the element's textContent equals cue.text.
+  // Clicks/keys are handled by one delegated listener on the transcript panel (views/player/transcript.ts).
   const target = document.createElement('div');
   target.className = 'cue-target';
   const wordTimings = model.store
     .listTranscriptWordTimingsForCue(cue.id)
     .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
     .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
-  if (wordTimings.length === 0) {
-    target.textContent = cue.text;
-    return target;
-  }
-
+  const selection = model.selection && model.selection.cueId === cue.id && model.selection.kind !== 'sentence' ? model.selection : null;
+  const isActiveCue = cue.id === model.player.activeCueId;
   let cursor = 0;
-  for (const word of wordTimings) {
-    const start = Math.max(cursor, Math.min(word.charStart, cue.text.length));
-    const end = Math.max(start, Math.min(word.charEnd, cue.text.length));
-    if (start > cursor) {
-      target.appendChild(document.createTextNode(cue.text.slice(cursor, start)));
-    }
+  for (const token of tokenizeWhitespaceText(cue.text, 'pl')) {
+    if (token.tokenKind !== 'word' && token.tokenKind !== 'number') continue;
+    if (token.charStart > cursor) target.appendChild(document.createTextNode(cue.text.slice(cursor, token.charStart)));
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'timed-word';
-    button.dataset.wordTimingId = word.id;
-    button.dataset.cueId = cue.id;
-    button.dataset.startMs = String(word.startMs);
-    button.dataset.endMs = String(word.endMs);
-    button.textContent = cue.text.slice(start, end) || word.text;
-    button.title = `Replay ${formatTimeMs(word.startMs)}–${formatTimeMs(word.endMs)}`;
-    button.setAttribute('aria-label', `Replay word ${word.text} at ${formatTimeMs(word.startMs)}`);
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      seekToTime(model, word.startMs);
-      model.player.activeCueId = cue.id;
-      seekRenderedVideoToMs(word.startMs);
-      // lt-cms: the seek always happens; only the capture form is gated on an approved transcript.
-      const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
-      if (targetTrack?.transcriptStatus !== 'approved') {
-        rerenderApp(model);
-        return;
+    button.className = 'cue-word';
+    button.id = `cue-word-${cue.id}-${token.tokenIndex}`;
+    button.tabIndex = -1;
+    button.dataset.wordCueId = cue.id;
+    button.dataset.tokenIndex = String(token.tokenIndex);
+    button.dataset.charStart = String(token.charStart);
+    button.dataset.charEnd = String(token.charEnd);
+    button.textContent = token.surface;
+    const pressed = !!selection && token.tokenIndex >= selection.tokenStart && token.tokenIndex < selection.tokenEnd;
+    button.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    const word = wordTimings.find((w) => w.charStart < token.charEnd && w.charEnd > token.charStart);
+    if (word) {
+      button.classList.add('timed-word');
+      button.dataset.wordTimingId = word.id;
+      button.dataset.startMs = String(word.startMs);
+      button.dataset.endMs = String(word.endMs);
+      button.title = `Alt+click to replay ${formatTimeMs(word.startMs)}–${formatTimeMs(word.endMs)}`;
+      if (isActiveCue && word.startMs <= model.player.currentTimeMs && word.endMs >= model.player.currentTimeMs) {
+        button.classList.add('current-word');
       }
-      openCapture(model, {
-        kind: 'lexeme',
-        text: word.text,
-        cueId: cue.id,
-        tokenStart: word.wordIndex,
-        tokenEnd: word.wordIndex + 1,
-        charStart: word.charStart,
-        charEnd: word.charEnd,
-      });
-    });
-    button.addEventListener('dblclick', (event) => {
-      event.stopPropagation();
-      const range = activeLoopRangeForSelection(model, cue, word.charStart, word.charEnd);
-      if (range) {
-        toggleLoopRange(model, range.startMs, range.endMs);
-      } else {
-        toggleLoopRange(model, cue.startMs, cue.endMs);
-      }
-      rerenderApp(model);
-    });
+    }
     target.appendChild(button);
-    cursor = end;
+    cursor = token.charEnd;
   }
-  if (cursor < cue.text.length) {
-    target.appendChild(document.createTextNode(cue.text.slice(cursor)));
-  }
+  if (cursor < cue.text.length) target.appendChild(document.createTextNode(cue.text.slice(cursor)));
+  // Roving tabindex: one word per cue is reachable with Tab; arrows move within the cue.
+  const first = (target.querySelector('.cue-word[aria-pressed="true"]') ?? target.querySelector('.cue-word')) as HTMLElement | null;
+  if (first) first.tabIndex = 0;
   return target;
+}
+
+/** lt-z8s: toggle the current-word highlight in place during playback (no rerender). */
+export function syncTranscriptCurrentWord(cueId: string | null, timeMs: number): void {
+  for (const button of Array.from(document.querySelectorAll<HTMLElement>('.transcript-panel .cue-word.timed-word'))) {
+    const start = Number(button.dataset.startMs);
+    const end = Number(button.dataset.endMs);
+    button.classList.toggle('current-word', button.dataset.wordCueId === cueId && start <= timeMs && end >= timeMs);
+  }
+}
+
+export function seekToTimedWord(model: AppModel, cue: Cue, startMs: number): void {
+  seekToTime(model, startMs);
+  model.player.activeCueId = cue.id;
+  seekRenderedVideoToMs(startMs);
+  rerenderApp(model);
+}
+
+export function toggleLoopForWord(model: AppModel, cue: Cue, charStart: number, charEnd: number): void {
+  const range = activeLoopRangeForSelection(model, cue, charStart, charEnd);
+  if (range) toggleLoopRange(model, range.startMs, range.endMs);
+  else toggleLoopRange(model, cue.startMs, cue.endMs);
+  rerenderApp(model);
 }

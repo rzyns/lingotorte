@@ -1449,6 +1449,7 @@ textarea:focus-visible,
   font-size: 0.85rem;
 }
 
+.cue-word,
 .timed-word {
   appearance: none;
   border: 0;
@@ -1458,8 +1459,18 @@ textarea:focus-visible,
   font: inherit;
 }
 
+.cue-word:hover,
 .timed-word:hover {
   background: var(--surface-soft);
+}
+
+.cue-word[aria-pressed="true"] {
+  background: var(--surface-raised);
+  outline: 1px solid var(--accent);
+}
+
+.cue-word.current-word {
+  text-decoration: underline;
 }
 
 /* ===================== end lt-y1s gap-fill ===================== */
