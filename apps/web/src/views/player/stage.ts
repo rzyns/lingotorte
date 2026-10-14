@@ -129,14 +129,21 @@ function renderVideoStage(model: AppModel): HTMLElement {
     // lt-dlf.1: a rebuilt <video> starts at 0; restore the model position (incl. intended seeks).
     const targetS = model.player.currentTimeMs / 1000;
     if (isCurrentVideo() && targetS > 0 && Math.abs(video.currentTime - targetS) > 0.05) {
-      video.currentTime = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(targetS, video.duration) : targetS;
+      const durationS = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : model.player.durationMs > 0 ? model.player.durationMs / 1000 : Infinity;
+      video.currentTime = Math.min(targetS, durationS);
     }
     syncPlayerTransport(video);
     video.playbackRate = model.player.playbackRate;
     if (isCurrentVideo() && model.player.isPlaying) {
       const playPromise = video.play();
       if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(() => undefined);
+        playPromise.catch(() => {
+          if (!isCurrentVideo() || !video.paused) return;
+          model.player.isPlaying = false;
+          syncPlayButton(false);
+        });
       }
     }
   });

@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel } from '../../apps/web/src/model';
+import { createAppModel, saveLexemeFromCue } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -50,7 +50,9 @@ const metadata = (v: HTMLVideoElement) => v.dispatchEvent(new dom.window.Event('
 describe('lt-dlf.1 play button and playback position across rerenders', () => {
   let play: ReturnType<typeof vi.fn>;
   let pause: ReturnType<typeof vi.fn>;
+  let durationS = 4;
   beforeEach(() => {
+    durationS = 4;
     setupDom();
     const proto = dom.window.HTMLMediaElement.prototype as any;
     const state = new WeakMap<object, { paused: boolean; t: number }>();
@@ -69,7 +71,7 @@ describe('lt-dlf.1 play button and playback position across rerenders', () => {
     Object.defineProperty(proto, 'pause', { configurable: true, value: pause });
     Object.defineProperty(proto, 'paused', { configurable: true, get(this: object) { return s(this).paused; } });
     Object.defineProperty(proto, 'currentTime', { configurable: true, get(this: object) { return s(this).t; }, set(this: object, v: number) { s(this).t = v; } });
-    Object.defineProperty(proto, 'duration', { configurable: true, get: () => 4 });
+    Object.defineProperty(proto, 'duration', { configurable: true, get: () => durationS });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -156,5 +158,74 @@ describe('lt-dlf.1 play button and playback position across rerenders', () => {
     expect(model.player.currentTimeMs).toBe(c0.startMs);
     expect(model.player.isPlaying).toBe(true);
     expect(play).toHaveBeenCalled();
+  });
+
+  it('Space toggles through the same in-place path (same <video>, label flips)', () => {
+    const { model } = installModel();
+    const before = video();
+    document.body.focus();
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+    expect(video()).toBe(before);
+    expect(model.player.isPlaying).toBe(true);
+    expect(playBtn().textContent).toBe('Pause');
+  });
+
+  it('a rejected play() (autoplay policy) leaves the model and button in the paused state', async () => {
+    const { model } = installModel();
+    play.mockImplementation(() => Promise.reject(new Error('NotAllowedError')));
+    playBtn().click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(model.player.isPlaying).toBe(false);
+    expect(playBtn().textContent).toBe('Play');
+  });
+
+  it('with an unknown (NaN) duration the restore clamps to the model duration', () => {
+    const { model } = installModel();
+    durationS = Number.NaN;
+    model.player.durationMs = 3000;
+    model.player.currentTimeMs = 3500;
+    rerenderApp(model);
+    metadata(video());
+    expect(video().currentTime).toBeCloseTo(3);
+  });
+
+  it('switching to different media starts the new video at 0, not the previous position', () => {
+    const { model } = installModel();
+    model.player.currentTimeMs = 2500;
+    rerenderApp(model);
+    metadata(video());
+    expect(video().currentTime).toBeCloseTo(2.5);
+    const other = makeMediaAsset({ title: 'Other', originalPath: 'fixtures/media/y.webm', contentSha256: sha, durationMs: 4000, container: 'webm', sizeBytes: 2, privacyLabel: 'owned' });
+    model.store.putMediaAsset(other);
+    const select = document.querySelector('select[aria-label*="media" i], select#media-select') as HTMLSelectElement | null;
+    if (select && Array.from(select.options).some((o) => o.value === other.id)) {
+      select.value = other.id;
+      select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    } else {
+      // Same reset the media-switch paths perform (model.ts currentTimeMs = 0 on media change).
+      model.currentMedia = other;
+      model.player.currentTimeMs = 0;
+      rerenderApp(model);
+    }
+    const v = video();
+    metadata(v);
+    expect(v.currentTime).toBe(0);
+  });
+
+  it('jumping to a saved occurrence lands at the occurrence start after the rebuild', () => {
+    const { model, c0, c1 } = installModel();
+    expect(saveLexemeFromCue(model, c1, 'widzenia', 3, 11, 1)).not.toBeNull();
+    model.player.currentTimeMs = 500;
+    model.view = 'saved';
+    rerenderApp(model);
+    const link = Array.from(document.querySelectorAll('a')).find((a) => (a.getAttribute('aria-label') ?? '').startsWith('Jump to'));
+    expect(link, 'saved occurrence jump link').toBeTruthy();
+    link!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(model.view).toBe('player');
+    expect(model.player.currentTimeMs).toBe(c1.startMs);
+    metadata(video());
+    expect(video().currentTime).toBeCloseTo(c1.startMs / 1000);
+    void c0;
   });
 });

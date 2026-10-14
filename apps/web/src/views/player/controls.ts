@@ -255,7 +255,14 @@ export function togglePlaybackInPlace(model: AppModel): boolean {
   togglePlay(model);
   if (model.player.isPlaying) {
     const playPromise = video.play();
-    if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => undefined);
+    // A rejected play() (autoplay policy, decode error) fires no 'pause'; undo the optimistic state.
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        if (document.querySelector('.video-stage video') !== video || !video.paused) return;
+        model.player.isPlaying = false;
+        syncPlayButton(false);
+      });
+    }
   } else {
     video.pause();
   }
