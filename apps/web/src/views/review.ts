@@ -162,8 +162,11 @@ export function renderReviewView(model: AppModel): HTMLElement {
 
   const stats = document.createElement('p');
   stats.className = 'meta';
-  const totalCards = Object.keys(model.store.snapshot().reviewCards).length;
-  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck`;
+  // lt-uzo review: count only cards in review; archived (suspended) ones are reported separately.
+  const allCards = Object.values(model.store.snapshot().reviewCards).filter((card) => !card.deletedAt);
+  const totalCards = allCards.filter((card) => !card.suspendedAt).length;
+  const archivedCards = allCards.length - totalCards;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
   section.appendChild(stats);
   // lt-uzo: FSRS state/due are scheduling detail, kept behind a disclosure.
   const scheduling = document.createElement('details');

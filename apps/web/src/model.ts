@@ -3235,7 +3235,9 @@ export function ensureReviewCardForSavedItem(model: AppModel, item: SavedItem, o
 /** Saved-view toggle off: archive (suspend) the item's active cards. Card, state and review events are kept. */
 export function archiveReviewCardsForSavedItem(model: AppModel, savedItemId: string): void {
   const now = model.clock().toISOString();
-  for (const card of reviewCardsForSavedItem(model, savedItemId).active) model.store.putReviewCard({ ...card, suspendedAt: now });
+  const active = reviewCardsForSavedItem(model, savedItemId).active;
+  if (active.length === 0) return;
+  for (const card of active) model.store.putReviewCard({ ...card, suspendedAt: now });
   if (model.review.activeCardId && model.store.getReviewCard(model.review.activeCardId)?.suspendedAt !== undefined) model.review.activeCardId = null;
   persistIfLocalServiceAutosaveEnabled(model);
 }
@@ -3251,7 +3253,8 @@ export function addSavedItemToReview(model: AppModel, item: SavedItem, persist =
     result = rest;
     model.store.putReviewCard(result);
   } else {
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
+    const occurrence = [...model.savedOccurrenceService.listOccurrencesForItem(item.id)]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (occurrence) result = ensureReviewCardForSavedItem(model, item, occurrence);
   }
   if (persist) persistIfLocalServiceAutosaveEnabled(model);

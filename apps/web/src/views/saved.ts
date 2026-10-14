@@ -178,6 +178,7 @@ export function renderAddMeaning(model: AppModel, savedItemId: string): HTMLElem
   input.type = 'text';
   input.className = 'add-meaning-input';
   input.placeholder = 'Add meaning';
+  input.required = true;
   input.setAttribute('aria-label', 'Add meaning');
   const save = document.createElement('button');
   save.type = 'submit';

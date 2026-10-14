@@ -102,6 +102,19 @@ describe('lt-uzo auto review card', () => {
     expect(button('In review ✓')).toBeDefined();
   });
 
+  it('Review deck count excludes archived cards and reports them separately', async () => {
+    const { model, cues } = installModel();
+    await saveWord(model, cues[0]!, 'dom');
+    await saveWord(model, cues[1]!, 'stoi');
+    model.view = 'saved';
+    rerenderApp(model);
+    buttonsStarting('In review')[0]!.click();
+    model.view = 'review';
+    rerenderApp(model);
+    expect(document.querySelector('.review-card > p.meta')?.textContent).toBe('1 card in local deck (1 archived)');
+    expect(dueIds(model)).toHaveLength(1);
+  });
+
   it('toggle on creates a card for an item that has none (pre-lt-uzo data)', () => {
     const { model, cues } = installModel();
     const cue = cues[0]!;
