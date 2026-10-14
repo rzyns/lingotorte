@@ -85,7 +85,15 @@ function renderVideoStage(model: AppModel): HTMLElement {
   video.setAttribute('aria-label', model.currentMedia.title);
   video.src = mediaPlaybackUrl(model);
   video.playbackRate = model.player.playbackRate;
+  const mediaId = model.currentMedia.id;
+  const mediaSource = mediaPlaybackUrl(model);
+  // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
+  const isCurrentVideo = () => video.isConnected
+    && model.currentMedia?.id === mediaId
+    && mediaPlaybackUrl(model) === mediaSource
+    && document.querySelector('.video-stage video') === video;
   video.addEventListener('timeupdate', () => {
+    if (!isCurrentVideo()) return; // lt-dlf.1
     const timeMs = Math.round(video.currentTime * 1000);
     model.player.currentTimeMs = timeMs;
     const cue = activeCueAtTime(model.cues, timeMs);
@@ -101,13 +109,6 @@ function renderVideoStage(model: AppModel): HTMLElement {
       video.currentTime = loopJump / 1000;
     }
   });
-  const mediaId = model.currentMedia.id;
-  const mediaSource = mediaPlaybackUrl(model);
-  // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
-  const isCurrentVideo = () => video.isConnected
-    && model.currentMedia?.id === mediaId
-    && mediaPlaybackUrl(model) === mediaSource
-    && document.querySelector('.video-stage video') === video;
   video.addEventListener('error', () => {
     if (!isCurrentVideo()) return;
     const code = video.error?.code ?? 0;
@@ -125,12 +126,24 @@ function renderVideoStage(model: AppModel): HTMLElement {
       stage.querySelector('.media-error-alert')?.remove();
     }
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
+    // lt-dlf.1: a rebuilt <video> starts at 0; restore the model position (incl. intended seeks).
+    const targetS = model.player.currentTimeMs / 1000;
+    if (isCurrentVideo() && targetS > 0 && Math.abs(video.currentTime - targetS) > 0.05) {
+      const durationS = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : model.player.durationMs > 0 ? model.player.durationMs / 1000 : Infinity;
+      video.currentTime = Math.min(targetS, durationS);
+    }
     syncPlayerTransport(video);
     video.playbackRate = model.player.playbackRate;
-    if (model.player.isPlaying) {
+    if (isCurrentVideo() && model.player.isPlaying) {
       const playPromise = video.play();
       if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(() => undefined);
+        playPromise.catch(() => {
+          if (!isCurrentVideo() || !video.paused) return;
+          model.player.isPlaying = false;
+          syncPlayButton(false);
+        });
       }
     }
   });
@@ -139,11 +152,14 @@ function renderVideoStage(model: AppModel): HTMLElement {
     mutedByModel.set(model, video.muted);
     syncPlayerTransport(video);
   });
+  // lt-dlf.1: a detached element (rerender) fires 'pause'; only the live element owns play state.
   video.addEventListener('play', () => {
+    if (!isCurrentVideo()) return;
     model.player.isPlaying = true;
     syncPlayButton(true);
   });
   video.addEventListener('pause', () => {
+    if (!isCurrentVideo()) return;
     model.player.isPlaying = false;
     syncPlayButton(false);
   });
