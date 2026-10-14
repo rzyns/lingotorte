@@ -83,6 +83,7 @@ export function createAppModel(): AppModel {
   return {
     store,
     clock: () => new Date(),
+    ui: { toast: null },
     savedOccurrenceService: new SavedOccurrenceService(store),
     reviewService: new ReviewService(store, defaultFsrsConfig()),
     practiceService: new PracticeService(store),
@@ -569,7 +570,7 @@ export function markUnsavedBrowserEdits(model: AppModel): void {
   ++syncOwner(model).editGeneration;
   if (!['choice', 'conflict', 'error', 'saving'].includes(model.localService.syncState ?? '')) {
     model.localService.syncState = 'unsaved';
-    model.localService.lastMessage = 'Browser changes are unsaved (transcript form drafts are not saved until applied).';
+    model.localService.lastMessage = 'Changes not yet saved to the local service';
   }
   notifySync(model);
   signalSnapshotCache(model);
@@ -3061,10 +3062,57 @@ function selectionTimeRangeForCue(model: AppModel, cue: Cue, charStart: number, 
   };
 }
 
+/**
+ * lt-e0j: what one capture-form save created, so Undo removes exactly that and never a pre-existing item.
+ * `isNewItem` false + `isNewOccurrence` true is the lt-cms dedupe path (occurrence added to an existing item).
+ * `createdCardId` is set only when this save's lt-uzo ensureReviewCardForSavedItem created the card.
+ */
+export type SaveReceipt = Readonly<{
+  item: SavedItem;
+  occurrence: SavedOccurrence;
+  isNewItem: boolean;
+  isNewOccurrence: boolean;
+  createdCardId: string | null;
+  selection: NonNullable<AppModel['selection']>;
+  meaning: string;
+  notes: string;
+}>;
+
 export async function saveSelection(model: AppModel): Promise<SavedItem | null> {
+  return (await saveSelectionWithReceipt(model))?.item ?? null;
+}
+
+/**
+ * lt-e0j Undo. A new item is archived (archivedAt, the Saved view's existing archive) and its auto-created card
+ * is archived (suspendedAt, as the Saved-view toggle does); nothing is hard-deleted. A dedupe save only removes
+ * its own occurrence plus a card created by this save: occurrences have no archive field, and the fresh card
+ * references that occurrence and has no review history, so both are removed rather than left dangling.
+ */
+export function undoSave(model: AppModel, receipt: SaveReceipt): void {
+  const now = model.clock().toISOString();
+  if (receipt.isNewItem) {
+    const item = model.store.getSavedItem(receipt.item.id);
+    if (item && !item.archivedAt) model.store.putSavedItem({ ...item, archivedAt: now, updatedAt: now });
+    const card = receipt.createdCardId ? model.store.getReviewCard(receipt.createdCardId) : undefined;
+    if (card && card.suspendedAt === undefined) model.store.putReviewCard({ ...card, suspendedAt: now });
+  } else if (receipt.isNewOccurrence) {
+    if (receipt.createdCardId) {
+      model.store.removeReviewCard(receipt.createdCardId);
+      model.store.removeReviewCardState(receipt.createdCardId);
+    }
+    model.store.removeSavedOccurrence(receipt.occurrence.id);
+  }
+  if (receipt.createdCardId && model.review.activeCardId === receipt.createdCardId) model.review.activeCardId = null;
+  if (receipt.isNewItem || receipt.isNewOccurrence) persistIfLocalServiceAutosaveEnabled(model);
+}
+
+export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveReceipt | null> {
   if (!model.selection || !model.currentMedia || !model.targetTrackId) return null;
   const cue = model.cues.find((c) => c.id === model.selection?.cueId);
   if (!cue || !model.selection) return null;
+  const selection = model.selection;
+  const meaning = model.pendingMeaning;
+  const notes = model.pendingNotes;
   // lt-cms: a whole-cue sentence capture keeps saveSentenceFromCue's shape (cue time range, no word-range anchor).
   const isSentence = model.selection.kind === 'sentence';
   const selectionTimeRange = isSentence
@@ -3109,9 +3157,11 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
     sourceContext,
   });
   // lt-uzo: a saved item becomes one recognition card (idempotent per saved item, not per occurrence).
-  ensureReviewCardForSavedItem(model, result.item, result.occurrence);
+  const cardsBefore = reviewCardsForSavedItem(model, result.item.id);
+  const card = ensureReviewCardForSavedItem(model, result.item, result.occurrence);
+  const createdCardId = cardsBefore.active.length + cardsBefore.archived.length === 0 ? card.id : null;
   persistIfLocalServiceAutosaveEnabled(model);
-  return result.item;
+  return { ...result, createdCardId, selection, meaning, notes };
 }
 
 export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<SavedItem | null> {

@@ -5,7 +5,7 @@ import { formatTimeMs } from '../../uiTypes';
 import {
   clearSelection,
   nativeTextForCue,
-  saveSelection,
+  saveSelectionWithReceipt,
   seekToCue,
   setPendingMeaning,
   setPendingNotes,
@@ -14,7 +14,7 @@ import {
   tokenizeCueText,
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
-import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture } from '../../ui/capture.ts';
+import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
@@ -488,9 +488,10 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   if (!canSave) saveBtn.title = 'Approve this transcript before saving learner study items.';
   const commit = () => {
     if (!canSave) return;
-    void saveSelection(model)
-      .then(() => {
+    void saveSelectionWithReceipt(model)
+      .then((receipt) => {
         clearSelection(model);
+        if (receipt) showSaveToast(model, receipt);
         rerenderApp(model);
       })
       .catch((err: unknown) => {

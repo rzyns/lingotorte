@@ -104,6 +104,8 @@ export type AppModel = {
   };
   /** Live, injectable clock read at every review/practice query and submission boundary. */
   clock: () => Date;
+  /** lt-e0j: app-wide transient UI state. A new toast replaces the old one; expiry reads model.clock(). */
+  ui: { toast: Toast | null };
   review: {
     currentCardId: string | null;
     activeCardId: string | null;
@@ -165,6 +167,9 @@ export type AppModel = {
     restoreCapability?: string | null;
   };
 };
+
+/** lt-e0j: one point-of-action toast; `expiresAt` is epoch ms on model.clock(). */
+export type Toast = { id: string; text: string; undo?: () => void; expiresAt: number };
 
 export type ReviewBucketName = 'newCards' | 'learning' | 'review' | 'relearning' | 'mastered';
 
