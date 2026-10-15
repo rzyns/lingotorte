@@ -6,6 +6,7 @@ import {
   applyLoopTolerance,
   importFixtureMediaAndSubtitles,
   importBrowserLocalFileHandles,
+  relinkCurrentMediaFromFile,
   nativeTextForCue,
   setView,
   toggleLoopRange,
@@ -404,12 +405,51 @@ export function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   return placeholder;
 }
 
-/** Re-pick media through the persistent file picker (Relink placeholder's 'Choose media again'; also Library Relink). */
+const RELINK_MEDIA_ACCEPT = {
+  'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
+  'audio/*': ['.mp3', '.m4a', '.wav'],
+} as const;
+
+/**
+ * lt-ddy.4: fallback for browsers without showOpenFilePicker (Firefox). Opens a hidden file input
+ * synchronously (user activation), then reconnects the chosen file to the SAME media only when its
+ * content fingerprint matches. Firefox keeps no file handle, so the link lasts for this session.
+ */
+function chooseMediaAgainViaFileInput(model: AppModel): void {
+  for (const stale of Array.from(document.querySelectorAll('input.relink-file-input'))) stale.remove();
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = ['video/*', 'audio/*', ...RELINK_MEDIA_ACCEPT['video/*'], ...RELINK_MEDIA_ACCEPT['audio/*']].join(',');
+  input.className = 'relink-file-input';
+  input.hidden = true;
+  input.setAttribute('aria-hidden', 'true');
+  input.tabIndex = -1;
+  input.addEventListener('change', () => {
+    const mediaFile = input.files?.[0];
+    input.remove();
+    if (!mediaFile) return;
+    void relinkCurrentMediaFromFile(model, mediaFile)
+      .then(() => {
+        clearPendingMediaNameConflict();
+        model.importError = null;
+        rerenderApp(model);
+      })
+      .catch((err: unknown) => {
+        // Relink never offers Import as new: show the plain refusal; nothing was written.
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
+      });
+  });
+  input.addEventListener('cancel', () => input.remove());
+  document.body.appendChild(input);
+  input.click();
+}
+
+/** Re-pick media through the persistent file picker (Relink placeholder's 'Choose media again'). */
 export function chooseMediaAgainViaPicker(model: AppModel): void {
   const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
   if (typeof picker !== 'function') {
-    model.importError = 'This browser does not support persistent file handles. Re-import the media from the Library.';
-    rerenderApp(model);
+    chooseMediaAgainViaFileInput(model);
     return;
   }
   void picker({
@@ -417,10 +457,7 @@ export function chooseMediaAgainViaPicker(model: AppModel): void {
     types: [
       {
         description: 'Owned media files',
-        accept: {
-          'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
-          'audio/*': ['.mp3', '.m4a', '.wav'],
-        },
+        accept: RELINK_MEDIA_ACCEPT,
       },
     ],
   })
