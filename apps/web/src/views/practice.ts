@@ -172,7 +172,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
       if (!currentCue || !hasNativeInputPath(model, operationPath)) { snippet.status = 'path-required'; snippet.message = 'Enter the full path to the video file first.'; rerenderApp(model); return; }
       const transport = captureUiServiceOwner(model); if (!transport) return;
       const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
-      transport.onInvalidate(() => invalidatePracticeSnippet(model, 'Local service pairing changed; transient browser audio cleaned.'));
+      transport.onInvalidate(() => invalidatePracticeSnippet(model, 'Local service pairing changed; temporary browser audio cleaned.'));
       releaseSourceAudioSnippet(snippet);
       const generation = ++snippet.generation;
       const contextKey = practiceSnippetContextKey(model, snippet);
@@ -203,7 +203,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
       audioGroup.appendChild(audio);
       const cleanButton = document.createElement('button');
       cleanButton.type = 'button'; cleanButton.textContent = 'Clean browser audio';
-      cleanButton.addEventListener('click', () => { releaseSourceAudioSnippet(snippet); snippet.status = 'cleaned'; snippet.message = 'Transient browser audio cleaned.'; rerenderApp(model); });
+      cleanButton.addEventListener('click', () => { releaseSourceAudioSnippet(snippet); snippet.status = 'cleaned'; snippet.message = 'Temporary browser audio cleaned.'; rerenderApp(model); });
       audioGroup.appendChild(cleanButton);
     }
     const status = document.createElement('p');
@@ -212,7 +212,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
     privacy.className = 'meta';
-    privacy.textContent = 'Source snippets use transient local scratch, bounded session cleanup, and are not exported.';
+    privacy.textContent = 'Source snippets use temporary local files, are cleaned up after the session, and are not exported.';
     audioGroup.appendChild(privacy);
     const answerLabel = document.createElement('label'); answerLabel.htmlFor = 'practice-answer'; answerLabel.textContent = 'Your answer';
     const answerInput = document.createElement('input');

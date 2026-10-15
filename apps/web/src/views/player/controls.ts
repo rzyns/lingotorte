@@ -29,6 +29,7 @@ import {
   togglePlay,
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
+import { renderShortcutHelpButton } from '../../ui/shortcutHelp.ts';
 import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
 
@@ -230,9 +231,10 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   time.setAttribute('aria-live', 'off');
   controls.appendChild(time);
 
+  // lt-dlf.8 H10: a short hint plus a '?' button that opens the shortcut-help dialog.
   const shortcuts = document.createElement('p');
   shortcuts.className = 'keyboard-shortcuts meta';
-  shortcuts.textContent = 'Shortcuts: Space play/pause, [ previous line, ] next line, R replay line, , slower, . faster';
+  shortcuts.append(renderShortcutHelpButton(), ' Keyboard shortcuts (or press ? anywhere)');
   controls.appendChild(shortcuts);
 
   return controls;
@@ -409,7 +411,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   clearRange.disabled = range === null;
   clearRange.addEventListener('click', () => {
     clearVisualSourceRange(model);
-    invalidateSourceRangeSnippet(model, 'Selected range cleared; transient browser audio cleaned.');
+    invalidateSourceRangeSnippet(model, 'Selected range cleared; temporary browser audio cleaned.');
     rerenderApp(model);
   });
   const useTranscriptSelection = document.createElement('button');
@@ -478,7 +480,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     const contextKey = sourceRangeContextKey(model, snippet);
     snippet.contextKey = contextKey;
     snippet.status = 'preparing';
-    snippet.message = 'Preparing range-bounded transient source audio…';
+    snippet.message = 'Preparing temporary source audio for this range…';
     const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
     rerenderApp(model);
     void prepareSourceAudioSnippet({
@@ -517,7 +519,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     clean.type = 'button';
     clean.textContent = 'Clean browser audio';
     clean.addEventListener('click', () => {
-      invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned.');
+      invalidateSourceRangeSnippet(model, 'Temporary browser audio cleaned.');
       rerenderApp(model);
     });
     panel.appendChild(clean);
@@ -538,7 +540,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const privacy = document.createElement('p');
   privacy.className = 'meta';
-  privacy.textContent = 'Videos chosen in the browser are for playback only. The configured service needs an absolute path to the same owned local media. Practice audio is temporary: it never autoplays and is not saved, exported, or backed up.';
+  privacy.textContent = 'Videos chosen in the browser are for playback only. The local service needs the full path to the same video file. Practice audio is temporary: it never autoplays and is not saved, exported, or backed up.';
   panel.appendChild(privacy);
   return panel;
 }

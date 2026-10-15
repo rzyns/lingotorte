@@ -200,7 +200,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
 
   const hint = document.createElement('p');
   hint.className = 'review-shortcut-hint';
-  hint.textContent = 'Space: show answer \u00b7 1\u20134: rate (Again, Hard, Good, Easy)';
+  hint.textContent = 'Space: show answer \u00b7 1\u20134: rate (Again, Hard, Good, Easy) \u00b7 ?: all shortcuts';
   section.appendChild(hint);
 
   const stats = document.createElement('p');

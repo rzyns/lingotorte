@@ -488,7 +488,7 @@ describe('P6 frontend export / import local learner state', () => {
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Video file path on the local service');
     expect(app.textContent).toContain('Prepare audio for practice');
-    expect(app.textContent).toContain('transient local scratch');
+    expect(app.textContent).toContain('temporary local files');
     expect(app.textContent).not.toContain('Nagrywaj');
     expect(app.textContent).not.toContain('Dyktafon');
     expect(app.textContent).not.toContain(firstCue.text);

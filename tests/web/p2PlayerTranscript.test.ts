@@ -252,7 +252,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
       rerenderApp(m);
       return m;
     });
-    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('R replay line');
+    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('press ? anywhere'); // lt-dlf.8 H10
 
     document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ']', bubbles: true }));
     expect(model.player.activeCueId).toBe(model.cues[1]?.id ?? null);

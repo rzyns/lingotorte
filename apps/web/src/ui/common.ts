@@ -343,7 +343,7 @@ export function renderTranscriptWorkbenchOverview(model: AppModel): HTMLElement 
       [renderRiskToken('local safe', 'local')],
     ),
     renderSourceCandidateCard(
-      'Local ASR draft',
+      'Local auto-transcript draft',
       'Uses the configured local service and local tools when those dependencies are installed and explicitly chosen.',
       [renderRiskToken('local dependency required', 'warning')],
     ),

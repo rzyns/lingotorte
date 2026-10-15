@@ -44,7 +44,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
   if (model.cues.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No transcript loaded yet. Import subtitles in the Library view, or use Generate local ASR draft after connecting the configured local service.';
+    empty.textContent = 'No transcript loaded yet. Import subtitles in the Library view, or use Auto-transcribe locally after connecting the configured local service.';
     panel.appendChild(empty);
     return panel;
   }

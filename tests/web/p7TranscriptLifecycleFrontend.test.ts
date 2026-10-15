@@ -221,7 +221,7 @@ describe('P7 transcript lifecycle frontend', () => {
     }) as typeof fetch;
 
     rerenderApp(model);
-    const asrButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Generate local ASR draft') as HTMLButtonElement | null;
+    const asrButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Auto-transcribe locally') as HTMLButtonElement | null;
     expect(asrButton).toBeTruthy();
     asrButton!.click();
     await waitFor(() => model.cues.length === 1);

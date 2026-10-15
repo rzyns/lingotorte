@@ -52,17 +52,17 @@ export function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   heading.textContent = 'Embedded subtitle tracks';
   const boundary = document.createElement('p');
   boundary.className = 'gate-note';
-  boundary.textContent = 'Provide an explicit absolute path to owned local media. The path stays in this browser session and is never saved as transcript provenance.';
+  boundary.textContent = 'Enter the full path to the video file on this computer. The path stays in this browser session and is never saved as transcript provenance.';
 
   const pathLabel = document.createElement('label');
   pathLabel.htmlFor = 'embedded-subtitle-media-path';
-  pathLabel.textContent = 'Video file path on the local service (absolute)';
+  pathLabel.textContent = 'Full path to the video file';
   const pathInput = document.createElement('input');
   pathInput.id = 'embedded-subtitle-media-path';
   pathInput.name = 'embedded-subtitle-media-path';
   pathInput.type = 'text';
   pathInput.value = state.mediaPath;
-  pathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.mkv' : '/absolute/path/to/owned-media.mkv';
+  pathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.mkv' : '/full/path/to/video.mkv';
   pathLabel.appendChild(pathInput);
 
   const languageLabel = document.createElement('label');

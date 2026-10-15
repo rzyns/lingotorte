@@ -59,7 +59,7 @@ function sourceRangeSnippetState(model: AppModel): SourceRangeSnippetUiState {
     mediaPath,
     status: mediaPath ? 'idle' : 'path-required',
     message: mediaPath
-      ? 'Select a range to prepare transient source audio.'
+      ? 'Select a range to prepare temporary source audio.'
       : 'Enter the full path to the video file first.',
     generation: 0,
     contextKey: '',
@@ -129,7 +129,7 @@ export function synchronizePracticeSnippet(model: AppModel): PracticeSnippetUiSt
   const state = practiceSnippetState(model);
   if (state.contextKey !== practiceSnippetContextKey(model, state)) {
     return invalidatePracticeSnippet(model, state.objectUrl || state.status === 'preparing'
-      ? 'Card, mode, view, media path or service changed; transient browser audio cleaned.'
+      ? 'Card, mode, view, media path or service changed; temporary browser audio cleaned.'
       : state.message);
   }
   return state;

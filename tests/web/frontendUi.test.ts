@@ -447,8 +447,8 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('Relink media');
-    expect(app.textContent).toContain('playback and relink identity only');
-    expect(app.textContent).toContain('absolute owned local media path');
+    expect(app.textContent).toContain('for playback only'); // lt-dlf.8: plain-language copy
+    expect(app.textContent).toContain('full path to the video file');
   });
 
   it('restores a persisted browser media handle after loading local-service durable state', async () => {
@@ -534,7 +534,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(createObjectURL).toHaveBeenCalledWith(mediaFile);
     expect(revokeObjectURL).not.toHaveBeenCalled();
     expect(app.textContent).toContain('No transcript loaded yet');
-    expect(app.textContent).toContain('Generate local ASR draft');
+    expect(app.textContent).toContain('Auto-transcribe locally');
     model.view = 'library';
     rerenderApp(model);
     expect(document.getElementById('app')?.textContent).toContain('Browser handles and blob URLs are playback-only');
