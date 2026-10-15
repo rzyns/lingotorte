@@ -473,7 +473,7 @@ describe('P6 frontend export / import local learner state', () => {
     const fetcher = vi.fn<typeof fetch>(() => waiting); vi.stubGlobal('fetch', fetcher);
     const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:forbidden');
     try {
-      ([...document.querySelectorAll('button')].find(button => button.textContent === 'Prepare source audio') as HTMLButtonElement).click();
+      ([...document.querySelectorAll('button')].find(button => button.textContent === 'Prepare audio for practice') as HTMLButtonElement).click();
       await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
       setLocalServiceBaseUrl(model, 'http://selected-private-host:7514'); rerenderApp(model); const before = document.getElementById('app')?.textContent;
       finish(new Response(JSON.stringify({ job: { id: 'old-job' } }))); await new Promise(resolve => setTimeout(resolve, 20));
@@ -486,8 +486,8 @@ describe('P6 frontend export / import local learner state', () => {
     setPracticeMode(model, 'audio-recall');
     renderPractice(model);
     const app = document.getElementById('app')!;
-    expect(app.textContent).toContain('Owned local media path');
-    expect(app.textContent).toContain('Prepare source audio');
+    expect(app.textContent).toContain('Video file path on the local service');
+    expect(app.textContent).toContain('Prepare audio for practice');
     expect(app.textContent).toContain('transient local scratch');
     expect(app.textContent).not.toContain('Nagrywaj');
     expect(app.textContent).not.toContain('Dyktafon');

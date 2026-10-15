@@ -1690,3 +1690,14 @@ textarea:focus-visible,
     animation: none;
   }
 }
+
+/* lt-dlf.6: clip and audio tools disclosure at the end of the Player's left column */
+.source-tools-disclosure {
+  margin-top: var(--space-3);
+}
+
+.source-tools-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  padding: var(--space-2) 0;
+}

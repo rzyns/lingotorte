@@ -170,7 +170,7 @@ describe('lt-3bi cross-surface learning loop', { timeout: 60_000 }, () => {
     const p1 = model.review.activeCardId!;
     expect([lexA, lexB]).toContain(p1);
     typeInto('#practice-audio-media-path', '/owned/episode.webm');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Preparing'));
     // Changing mode while the snippet is pending must discard the late completion and leak no URL.
     setPracticeMode(model, 'typed-input'); rerenderApp(model);

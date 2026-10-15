@@ -144,7 +144,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     const snippet = synchronizePracticeSnippet(model);
     const pathLabel = document.createElement('label');
     pathLabel.htmlFor = 'practice-audio-media-path';
-    pathLabel.textContent = 'Owned local media path';
+    pathLabel.textContent = 'Video file path on the local service';
     const pathInput = document.createElement('input');
     pathInput.id = 'practice-audio-media-path';
     pathInput.name = 'practice-audio-media-path';
@@ -162,7 +162,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     const prepareButton = document.createElement('button');
     prepareButton.type = 'button';
     prepareButton.className = 'btn-primary';
-    prepareButton.textContent = 'Prepare source audio';
+    prepareButton.textContent = 'Prepare audio for practice';
     prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, snippet.mediaPath);
     pathInput.addEventListener('input', () => {
       prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, pathInput.value);

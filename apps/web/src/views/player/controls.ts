@@ -442,7 +442,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const pathLabel = document.createElement('label');
   pathLabel.htmlFor = 'source-range-media-path';
-  pathLabel.textContent = 'Owned local media path';
+  pathLabel.textContent = 'Video file path on the local service';
   const pathInput = document.createElement('input');
   pathInput.id = 'source-range-media-path';
   pathInput.name = 'source-range-media-path';
@@ -466,7 +466,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   const prepare = document.createElement('button');
   prepare.type = 'button';
   prepare.className = 'btn-primary';
-  prepare.textContent = 'Prepare source audio';
+  prepare.textContent = 'Prepare audio for practice';
   prepare.disabled = range === null || rangeTooLong || !pathValid || !mediaExtractable || model.localService.status !== 'connected' || snippet.status === 'preparing';
   prepare.addEventListener('click', () => {
     const operationRange = model.player.sourceRange;
