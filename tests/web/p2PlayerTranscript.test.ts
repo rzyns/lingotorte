@@ -403,13 +403,13 @@ describe('P2 player dual-subtitle and transcript projection', () => {
 
     const loopRangeBtn = document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement | null;
     expect(loopRangeBtn).toBeTruthy();
-    expect(loopRangeBtn?.textContent).toBe('Loop range off');
+    expect(loopRangeBtn?.textContent).toBe('Loop selection');
     loopRangeBtn?.click();
     expect(model.player.loopRange).not.toBeNull();
     rerenderApp(model);
     const loopRangeBtnAfter = document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement | null;
-    expect(loopRangeBtnAfter?.textContent).toBe('Loop range on');
-    expect(loopRangeBtnAfter?.getAttribute('aria-pressed')).toBe('true');
+    expect(loopRangeBtnAfter?.textContent).toBe('Stop looping');
+    expect(loopRangeBtnAfter?.hasAttribute('aria-pressed')).toBe(false);
   });
 
   it('study status rail shows streak, today, and total study time after review or practice', async () => {

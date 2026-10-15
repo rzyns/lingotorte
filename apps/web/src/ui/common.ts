@@ -267,7 +267,7 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
     const chips = document.createElement('div');
     chips.className = 'source-context-chips';
     if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
-    if (activeCue) chips.appendChild(renderSourceMetaChip(`line ${linePosition(model, activeCue)}`));
+    if (activeCue) { const lineChip = renderSourceMetaChip(`line ${linePosition(model, activeCue)}`); lineChip.classList.add('source-line-chip'); chips.appendChild(lineChip); }
     row.appendChild(chips);
   }
   return row;

@@ -107,7 +107,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   if (currentMediaPath.startsWith('blob:') || currentMediaPath.startsWith('browser-file-handle:')) {
     const localAsrPathNote = document.createElement('p');
     localAsrPathNote.className = 'gate-note local-service-media-path-note';
-    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; the configured local service still needs an explicit absolute owned local media path for ASR, ffmpeg, ffprobe, and source-media snippets.';
+    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; to auto-transcribe, extract subtitles or make practice audio, the local service needs the full path to the video file.';
     gateControls.appendChild(localAsrPathNote);
   }
   panel.appendChild(gateControls);
@@ -200,7 +200,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
-        model.transcriptLifecycle.lastMessage = 'Local service ASR draft generated';
+        model.transcriptLifecycle.lastMessage = 'Auto-transcript draft created';
         model.importError = null;
         rerenderApp(model);
       })
@@ -641,7 +641,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 const lifecycleDisclosureOpen = new WeakMap<AppModel, boolean>();
 
 function lifecycleDisclosureDefaultOpen(model: AppModel): boolean {
-  if (!model.currentMedia || !model.targetTrackId) return true;
+  // lt-dlf.7 (N9): an empty Library leads with Add media; transcript tools stay closed.
+  if (!model.currentMedia) return false;
+  if (!model.targetTrackId) return true;
   const status = model.store.getSubtitleTrack(model.targetTrackId)?.transcriptStatus;
   return status === undefined || status === 'draft' || status === 'correcting';
 }
@@ -951,7 +953,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const renderedOpen = lifecycleDisclosureOpen.get(model) ?? lifecycleDisclosureDefaultOpen(model);
   disclosure.open = renderedOpen;
   const summary = document.createElement('summary');
-  summary.textContent = 'Transcript tools (ASR drafts, captions, embedded tracks)';
+  summary.textContent = 'Transcript tools (auto-transcribe, captions, built-in subtitles)';
   disclosure.appendChild(summary);
   disclosure.appendChild(renderTranscriptLifecyclePanel(model));
   // Setting open programmatically fires an async 'toggle'; record only genuine changes away from the rendered state.

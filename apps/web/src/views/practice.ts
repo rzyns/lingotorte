@@ -150,11 +150,11 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     pathInput.name = 'practice-audio-media-path';
     pathInput.type = 'text';
     pathInput.value = snippet.mediaPath;
-    pathInput.placeholder = 'Absolute path (kept only in this session)';
+    pathInput.placeholder = 'Full path to the video file (not saved)';
     pathInput.addEventListener('input', () => {
       const hadAudio = snippet.objectUrl !== null || snippet.status === 'preparing';
       snippet.mediaPath = pathInput.value;
-      invalidatePracticeSnippet(model, pathInput.value.trim() ? 'Media path changed; prepare fresh source audio.' : 'Provide an explicit absolute owned local media path.');
+      invalidatePracticeSnippet(model, pathInput.value.trim() ? 'Media path changed; prepare fresh source audio.' : 'Enter the full path to the video file first.');
       if (hadAudio) rerenderApp(model);
     });
     pathLabel.appendChild(pathInput);
@@ -169,7 +169,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     });
     prepareButton.addEventListener('click', () => {
       const operationPath = snippet.mediaPath;
-      if (!currentCue || !hasNativeInputPath(model, operationPath)) { snippet.status = 'path-required'; snippet.message = 'An explicit absolute owned local media path is required.'; rerenderApp(model); return; }
+      if (!currentCue || !hasNativeInputPath(model, operationPath)) { snippet.status = 'path-required'; snippet.message = 'Enter the full path to the video file first.'; rerenderApp(model); return; }
       const transport = captureUiServiceOwner(model); if (!transport) return;
       const stillOwned = () => { try { transport.assertCurrent(); return true; } catch { return false; } };
       transport.onInvalidate(() => invalidatePracticeSnippet(model, 'Local service pairing changed; transient browser audio cleaned.'));
@@ -208,7 +208,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     }
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
-    status.textContent = model.localService.status !== 'connected' ? 'Local storage service unavailable or disconnected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
+    status.textContent = model.localService.status === 'connecting' ? 'Connecting to the local service…' : model.localService.status !== 'connected' ? 'Local service not connected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
     privacy.className = 'meta';

@@ -178,7 +178,7 @@ describe('lt-unl learner-facing copy', () => {
     expect(chips).toContain('Transcript ready');
     expect(chips.some((c) => /\b2 saved\b/.test(c))).toBe(true);
     const headings = Array.from(document.querySelectorAll('h2')).map((h) => h.textContent);
-    expect(headings).toEqual(expect.arrayContaining(['Player', 'Transcript', 'Save a word or phrase']));
+    expect(headings).toEqual(expect.arrayContaining(['Player', 'Transcript', 'Save a word']));
     expect(document.querySelector('.source-context-primary .source-compact-summary')?.textContent).toContain('line 1');
   });
 
