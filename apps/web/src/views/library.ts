@@ -778,6 +778,46 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   localIntro.className = 'file-hint';
   localIntro.textContent = 'Files stay on this device. Subtitles are optional; you can create a draft transcript later.';
   localImportGroup.append(localHeading, localIntro);
+  // lt-ddy.3: subtitle fields are shared by the picker and the session-only import, so they come first.
+  const subtitleHeading = document.createElement('h4');
+  subtitleHeading.textContent = 'Subtitles (optional)';
+  const subtitleHint = document.createElement('p');
+  subtitleHint.className = 'file-hint';
+  subtitleHint.textContent = 'Used by both import buttons below.';
+  const subtitleGrid = document.createElement('div');
+  subtitleGrid.className = 'local-file-grid add-media-subtitles';
+  const targetLabel = document.createElement('label');
+  targetLabel.htmlFor = 'local-target-subtitle-file';
+  targetLabel.textContent = 'Target subtitle file (.srt, optional)';
+  const targetInput = document.createElement('input');
+  targetInput.id = 'local-target-subtitle-file';
+  targetInput.name = 'local-target-subtitle-file';
+  targetInput.type = 'file';
+  targetInput.accept = '.srt,text/plain,application/x-subrip';
+  const targetField = document.createElement('div');
+  targetField.className = 'file-field';
+  const targetHint = document.createElement('p');
+  targetHint.className = 'file-hint';
+  targetHint.textContent = 'Optional target-language .srt. Without it, use a draft ASR workflow later.';
+  targetField.append(targetLabel, targetInput, targetHint);
+  subtitleGrid.appendChild(targetField);
+
+  const nativeLabel = document.createElement('label');
+  nativeLabel.htmlFor = 'local-native-subtitle-file';
+  nativeLabel.textContent = 'Native subtitle file (.srt, optional)';
+  const nativeInput = document.createElement('input');
+  nativeInput.id = 'local-native-subtitle-file';
+  nativeInput.name = 'local-native-subtitle-file';
+  nativeInput.type = 'file';
+  nativeInput.accept = '.srt,text/plain,application/x-subrip';
+  const nativeField = document.createElement('div');
+  nativeField.className = 'file-field';
+  const nativeHint = document.createElement('p');
+  nativeHint.className = 'file-hint';
+  nativeHint.textContent = 'Optional native-language support track for dual subtitles.';
+  nativeField.append(nativeLabel, nativeInput, nativeHint);
+  subtitleGrid.appendChild(nativeField);
+  localImportGroup.append(subtitleHeading, subtitleHint, subtitleGrid);
   // lt-dlf.3: the persistent picker (when available) is the primary action, ahead of the session-only fields.
   const pickerSlot = document.createElement('div');
   pickerSlot.className = 'add-media-picker';
@@ -802,37 +842,6 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   mediaField.append(mediaLabel, mediaInput, mediaHint);
   localFileGrid.appendChild(mediaField);
 
-  const targetLabel = document.createElement('label');
-  targetLabel.htmlFor = 'local-target-subtitle-file';
-  targetLabel.textContent = 'Target subtitle file (.srt, optional)';
-  const targetInput = document.createElement('input');
-  targetInput.id = 'local-target-subtitle-file';
-  targetInput.name = 'local-target-subtitle-file';
-  targetInput.type = 'file';
-  targetInput.accept = '.srt,text/plain,application/x-subrip';
-  const targetField = document.createElement('div');
-  targetField.className = 'file-field';
-  const targetHint = document.createElement('p');
-  targetHint.className = 'file-hint';
-  targetHint.textContent = 'Optional target-language .srt. Without it, use a draft ASR workflow later.';
-  targetField.append(targetLabel, targetInput, targetHint);
-  localFileGrid.appendChild(targetField);
-
-  const nativeLabel = document.createElement('label');
-  nativeLabel.htmlFor = 'local-native-subtitle-file';
-  nativeLabel.textContent = 'Native subtitle file (.srt, optional)';
-  const nativeInput = document.createElement('input');
-  nativeInput.id = 'local-native-subtitle-file';
-  nativeInput.name = 'local-native-subtitle-file';
-  nativeInput.type = 'file';
-  nativeInput.accept = '.srt,text/plain,application/x-subrip';
-  const nativeField = document.createElement('div');
-  nativeField.className = 'file-field';
-  const nativeHint = document.createElement('p');
-  nativeHint.className = 'file-hint';
-  nativeHint.textContent = 'Optional native-language support track for dual subtitles.';
-  nativeField.append(nativeLabel, nativeInput, nativeHint);
-  localFileGrid.appendChild(nativeField);
   localImportGroup.appendChild(localFileGrid);
 
   const localImportBtn = document.createElement('button');
@@ -869,6 +878,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const showOpenFilePicker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
   if (typeof showOpenFilePicker === 'function') {
     let lastPickedHandle: BrowserFileHandleLike | null = null;
+    let lastPickedSubtitles: { targetSubtitleFile: File | null; nativeSubtitleFile: File | null } = { targetSubtitleFile: null, nativeSubtitleFile: null };
     const persistentImportBtn = document.createElement('button');
     persistentImportBtn.className = 'btn-primary';
     persistentImportBtn.textContent = 'Choose video (recommended — stays linked after reload)';
@@ -894,7 +904,9 @@ export function renderLibraryView(model: AppModel): HTMLElement {
             return;
           }
           lastPickedHandle = mediaHandle;
-          return importBrowserLocalFileHandles(model, { mediaHandle }).then(() => {
+          // lt-ddy.3: same subtitle inputs as 'Import local media'; captured once so the import-new retry reuses them.
+          lastPickedSubtitles = { targetSubtitleFile: targetInput.files?.[0] ?? null, nativeSubtitleFile: nativeInput.files?.[0] ?? null };
+          return importBrowserLocalFileHandles(model, { mediaHandle, ...lastPickedSubtitles }).then(() => {
             clearPendingMediaNameConflict();
             if (!model.importError) {
               setView(model, 'player');
@@ -906,13 +918,13 @@ export function renderLibraryView(model: AppModel): HTMLElement {
         .catch((err: unknown) => {
           handleMediaImportError(model, err, () => {
             const retryHandle = lastPickedHandle;
-            return retryHandle ? importBrowserLocalFileHandles(model, { mediaHandle: retryHandle }, { onNameConflict: 'import-new' }) : Promise.reject(err);
+            return retryHandle ? importBrowserLocalFileHandles(model, { mediaHandle: retryHandle, ...lastPickedSubtitles }, { onNameConflict: 'import-new' }) : Promise.reject(err);
           });
         });
     });
     const sessionOnlyHint = document.createElement('p');
     sessionOnlyHint.className = 'file-hint';
-    sessionOnlyHint.textContent = 'Or import a copy for this session only:';
+    sessionOnlyHint.textContent = 'Or import a video copy for this session only (uses the same subtitles):';
     pickerSlot.append(persistentImportBtn, sessionOnlyHint);
   } else {
     pickerSlot.remove();
