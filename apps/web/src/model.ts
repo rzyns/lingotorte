@@ -1211,6 +1211,9 @@ export type BrowserLocalFileHandleImportInput = Readonly<{
   mediaHandle: BrowserFileHandleLike;
   targetSubtitleHandle?: BrowserFileHandleLike | null;
   nativeSubtitleHandle?: BrowserFileHandleLike | null;
+  /** lt-ddy.3: plain subtitle files (e.g. from <input type=file>), used when no subtitle handle is given. */
+  targetSubtitleFile?: File | null;
+  nativeSubtitleFile?: File | null;
   targetLanguage?: string;
   nativeLanguage?: string;
 }>;
@@ -1449,8 +1452,8 @@ export async function importBrowserLocalFileHandles(
   options: Readonly<{ onNameConflict?: BrowserMediaNameConflictChoice }> = {},
 ): Promise<void> {
   const mediaFile = await input.mediaHandle.getFile();
-  const targetSubtitleFile = input.targetSubtitleHandle ? await input.targetSubtitleHandle.getFile() : null;
-  const nativeSubtitleFile = input.nativeSubtitleHandle ? await input.nativeSubtitleHandle.getFile() : null;
+  const targetSubtitleFile = input.targetSubtitleHandle ? await input.targetSubtitleHandle.getFile() : (input.targetSubtitleFile ?? null);
+  const nativeSubtitleFile = input.nativeSubtitleHandle ? await input.nativeSubtitleHandle.getFile() : (input.nativeSubtitleFile ?? null);
   const importInput: BrowserLocalFileImportInput = {
     mediaFile,
     targetSubtitleFile,

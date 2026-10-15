@@ -151,7 +151,7 @@ describe('lt-1ur Add media card', () => {
     const model = pairedModel();
     library(model);
     const picker = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Choose video (recommended — stays linked after reload)')!;
-    const firstInput = document.querySelector('.add-media-card input[type="file"]')!;
+    const firstInput = document.querySelector('#local-media-file')!; // lt-ddy.3: shared subtitle fields now precede the picker
     expect(picker.compareDocumentPosition(firstInput) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(Array.from(document.querySelectorAll('.local-import-actions button')).map((b) => b.textContent)).toEqual(['Import local media']);
     expect(document.querySelector('label[for="local-media-file"]')?.textContent).toBe('Import copy for this session only');

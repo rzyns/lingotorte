@@ -34,13 +34,13 @@ const pickerText = 'Choose video (recommended — stays linked after reload)';
 const findBtn = (text: string) => Array.from(document.querySelectorAll('button')).find((b) => b.textContent === text);
 
 describe('lt-dlf.3 Add media order', () => {
-  it('puts the picker before the first file input when showOpenFilePicker exists', () => {
+  it('puts the picker before the session-only video input when showOpenFilePicker exists', () => {
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: vi.fn() });
     const model = pairedModel();
     model.view = 'library';
     rerenderApp(model);
     const picker = findBtn(pickerText)!;
-    const firstInput = document.querySelector('.add-media-card input[type="file"]')!;
+    const firstInput = document.querySelector('#local-media-file')!; // lt-ddy.3: shared subtitle fields now precede the picker
     expect(picker).toBeTruthy();
     expect(picker.compareDocumentPosition(firstInput) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(findBtn('Import local media')).toBeTruthy();
