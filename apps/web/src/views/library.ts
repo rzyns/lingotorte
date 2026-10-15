@@ -778,6 +778,10 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   localIntro.className = 'file-hint';
   localIntro.textContent = 'Files stay on this device. Subtitles are optional; you can create a draft transcript later.';
   localImportGroup.append(localHeading, localIntro);
+  // lt-dlf.3: the persistent picker (when available) is the primary action, ahead of the session-only fields.
+  const pickerSlot = document.createElement('div');
+  pickerSlot.className = 'add-media-picker';
+  localImportGroup.appendChild(pickerSlot);
 
   const localFileGrid = document.createElement('div');
   localFileGrid.className = 'local-file-grid';
@@ -866,7 +870,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   if (typeof showOpenFilePicker === 'function') {
     let lastPickedHandle: BrowserFileHandleLike | null = null;
     const persistentImportBtn = document.createElement('button');
-    persistentImportBtn.className = 'btn-secondary';
+    persistentImportBtn.className = 'btn-primary';
     persistentImportBtn.textContent = 'Choose video (recommended — stays linked after reload)';
     persistentImportBtn.setAttribute('aria-label', 'Choose video through a browser persistent file handle (recommended — stays linked after reload)');
     persistentImportBtn.addEventListener('click', () => {
@@ -906,7 +910,12 @@ export function renderLibraryView(model: AppModel): HTMLElement {
           });
         });
     });
-    localImportActions.prepend(persistentImportBtn);
+    const sessionOnlyHint = document.createElement('p');
+    sessionOnlyHint.className = 'file-hint';
+    sessionOnlyHint.textContent = 'Or import a copy for this session only:';
+    pickerSlot.append(persistentImportBtn, sessionOnlyHint);
+  } else {
+    pickerSlot.remove();
   }
   localImportGroup.appendChild(localImportActions);
   const fixtureActions = document.createElement('div');

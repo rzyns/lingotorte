@@ -1140,7 +1140,8 @@ async function importBrowserSyntheticFixture(
   }
   const mediaBytes = await response.arrayBuffer();
   const container = mediaPath.split('.').pop()?.toLowerCase() ?? 'webm';
-  const durationMs = Math.max(1000, Math.round(mediaBytes.byteLength / 50_000) * 1000);
+  // lt-dlf.3: fixtures/manifest.json records the synthetic clip at 2000 ms; loadedmetadata corrects drift.
+  const durationMs = 2000;
   const asset = makeMediaAsset({
     title: 'Synthetic Polish Dialogue',
     originalPath: browserFixtureMediaUrl,
