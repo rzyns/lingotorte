@@ -24,7 +24,7 @@ import {
   PRACTICE_SPEAKING_UNAVAILABLE,
 } from '../model';
 import { PRACTICE_SUCCESSORS, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, compactPathLabel, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
 import { hasNativeInputPath, invalidatePracticeSnippet, practiceSnippetContextKey, practiceSnippetStates, synchronizePracticeSnippet } from '../ui/snippets.ts';
 
 export function renderPracticeView(model: AppModel): HTMLElement {
@@ -411,7 +411,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     }
     const sourceNote = document.createElement('p');
     sourceNote.className = 'meta';
-    appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
+    appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
     context.appendChild(sourceNote);
   } else {
     context.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));

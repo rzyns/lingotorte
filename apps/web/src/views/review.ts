@@ -9,7 +9,7 @@ import {
   toggleReviewReveal,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, compactPathLabel, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
 import { renderAddMeaning } from './saved.ts';
 
 export function renderReviewView(model: AppModel): HTMLElement {
@@ -96,7 +96,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
       }
       const sourceNote = document.createElement('p');
       sourceNote.className = 'meta';
-      appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
+      appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
     } else {

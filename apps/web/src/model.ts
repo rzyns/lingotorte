@@ -3643,13 +3643,13 @@ export function practiceContractFor(model: AppModel, active: ActiveDueCard, mode
     const lead = mode === 'audio-recall'
       ? 'Listen to the owned source cue, then type what you hear.'
       : 'Build the source cue from the shuffled words.';
-    const hint = native && !leaks(native, expected) ? ` Native cue: ${native}` : '';
+    const hint = native && !leaks(native, expected) ? ` Translation: ${native}` : '';
     return { mode, prompt: `${lead}${hint}`, expected, expectedSource: 'cue-transcription', hesitationAllowed: mode === 'audio-recall' };
   }
   const expected = active.savedItem.displayText;
   const parts: string[] = [];
   if (active.savedItem.meaning) parts.push(`Meaning: ${active.savedItem.meaning}`);
-  if (native) parts.push(`Native cue: ${native}`);
+  if (native) parts.push(`Translation: ${native}`);
   const span = active.occurrence.sourceContext.charSpan;
   if (cue && span && (span.start > 0 || span.end < cue.text.length)) {
     parts.push(`Context: ${cue.text.slice(0, span.start)}${MASK}${cue.text.slice(span.end)}`);
