@@ -90,7 +90,7 @@ export async function installBatchDriver(requireUi = true) {
       }
       case 'name-conflict': { const box = find('.media-name-conflict'); click(arg.choice === 'import-new' ? 'Import as new media' : 'Cancel', box); await wait(() => !document.querySelector('.media-name-conflict')); return { resolved: true, cancelledMessage: (document.body.textContent ?? '').includes('Import cancelled. Existing media was not changed.') }; }
       case 'relink-surface': { nav('Player'); const again = btn('Choose media again'); return { chooseAgainPresent: !!again, pickerAvailable: typeof globalThis.showOpenFilePicker === 'function', secureContext: globalThis.isSecureContext === true }; }
-      case 'choose-again-no-picker': { nav('Player'); click('Choose media again'); await new Promise((r) => setTimeout(r, 50)); return { visibleError: (document.body.textContent ?? '').includes('does not support persistent file handles') }; }
+      case 'choose-again-no-picker': { nav('Player'); click('Choose media again'); await new Promise((r) => setTimeout(r, 50)); return { fileChooserOpened: document.querySelector('input.relink-file-input[type=file]') !== null, deadEndMessage: (document.body.textContent ?? '').includes('does not support persistent file handles') }; }
       case 'permission-query': { const p = globalThis.showOpenFilePicker; return { pickerAvailable: typeof p === 'function', secureContext: globalThis.isSecureContext === true, permissionsApi: typeof navigator.permissions?.query === 'function' }; }
       case 'transcript-open': {
         // Select the seeded media + target track through the learner UI (Saved occurrence link sets

@@ -698,7 +698,7 @@ class BatchDriver:
         self.journal.append('checkpoint', P, 'observed', ok=True, disposition=controller.OBSERVED, value={'pickerAvailable': q['pickerAvailable'], 'secureContext': q['secureContext'], 'permissionsApi': q['permissionsApi']})
         if not q['pickerAvailable']:
             e = self.invoke('choose-again-no-picker')
-            self.ok(P, 'no-picker-visible-error', e['visibleError'])
+            self.ok(P, 'no-picker-file-chooser', e['fileChooserOpened'] and not e['deadEndMessage'])  # lt-ddy.4: fallback file input, no dead end
         return controller.OBSERVED  # phase disposition OBSERVED, never PASS
 
     # ---- lt-13i transcript approval ----

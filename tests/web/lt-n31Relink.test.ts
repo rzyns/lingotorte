@@ -187,15 +187,19 @@ describe('lt-n31 media relink identity', () => {
     expect(after.tracks).toEqual(before.tracks);
   });
 
-  it('(d) non-handle origin: Choose media again without showOpenFilePicker reports a visible error and changes nothing', async () => {
+  it('(d) non-handle origin: Choose media again without showOpenFilePicker opens a plain file chooser and changes nothing until a file is chosen', async () => {
     const model = pairedModel();
     const before = await importWithAnchors(model);
     model.browserLocalMedia = { ...model.browserLocalMedia, objectUrl: null };
     model.view = 'player';
     rerenderApp(model);
+    // lt-ddy.4 replaced the former dead-end message with a hidden <input type=file> fallback.
+    const clickSpy = vi.spyOn(dom.window.HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
     Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Choose media again')!.click();
-    expect(model.importError).toContain('does not support persistent file handles');
-    expect(document.getElementById('app')?.textContent).toContain('does not support persistent file handles');
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
+    expect(model.importError).toBeNull();
+    expect(document.getElementById('app')?.textContent).not.toContain('persistent file handles');
     expect(snapshotIdentity(model)).toEqual(before);
   });
 

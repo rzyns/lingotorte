@@ -1350,6 +1350,26 @@ async function relinkExistingBrowserMedia(
   persistIfLocalServiceAutosaveEnabled(model);
 }
 
+/**
+ * lt-ddy.4: relink the CURRENT media from a plain File (browsers without showOpenFilePicker, e.g. Firefox).
+ * The chosen file must have the same content fingerprint as the stored media; otherwise nothing changes.
+ * Media without a stored fingerprint fall back to the ordinary content-matched import (which may refuse on a
+ * name conflict) so a mismatch is never silently written over an existing record.
+ */
+export async function relinkCurrentMediaFromFile(model: AppModel, mediaFile: File): Promise<string> {
+  const media = model.currentMedia;
+  if (!media) throw new Error('No video is open to reconnect.');
+  const expected = media.contentSha256;
+  if (typeof expected === 'string' && /^sha256:[0-9a-f]{64}$/.test(expected)) {
+    const actual = await sha256Bytes(await mediaFile.arrayBuffer());
+    if (model.currentMedia?.id !== media.id) throw new Error('The open video changed while the file was being checked. Nothing was reconnected.');
+    if (actual !== expected) {
+      throw new Error(`"${mediaFile.name}" is not the same file as "${media.title}". Nothing was changed. Choose the original video file, or add this one as new media in the Library.`);
+    }
+  }
+  return importBrowserLocalFiles(model, { mediaFile });
+}
+
 export async function importBrowserLocalFiles(
   model: AppModel,
   input: BrowserLocalFileImportInput,
