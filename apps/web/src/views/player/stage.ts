@@ -7,7 +7,6 @@ import {
   importFixtureMediaAndSubtitles,
   importBrowserLocalFileHandles,
   relinkCurrentMediaFromFile,
-  importBrowserLocalFiles,
   nativeTextForCue,
   setView,
   toggleLoopRange,
@@ -417,6 +416,7 @@ const RELINK_MEDIA_ACCEPT = {
  * content fingerprint matches. Firefox keeps no file handle, so the link lasts for this session.
  */
 function chooseMediaAgainViaFileInput(model: AppModel): void {
+  for (const stale of Array.from(document.querySelectorAll('input.relink-file-input'))) stale.remove();
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = ['video/*', 'audio/*', ...RELINK_MEDIA_ACCEPT['video/*'], ...RELINK_MEDIA_ACCEPT['audio/*']].join(',');
@@ -435,8 +435,9 @@ function chooseMediaAgainViaFileInput(model: AppModel): void {
         rerenderApp(model);
       })
       .catch((err: unknown) => {
-        // Only reachable for legacy media without a stored fingerprint: the learner explicitly chooses Import as new.
-        handleMediaImportError(model, err, () => importBrowserLocalFiles(model, { mediaFile }, { onNameConflict: 'import-new' }).then(() => undefined));
+        // Relink never offers Import as new: show the plain refusal; nothing was written.
+        model.importError = err instanceof Error ? err.message : String(err);
+        rerenderApp(model);
       });
   });
   input.addEventListener('cancel', () => input.remove());
@@ -444,7 +445,7 @@ function chooseMediaAgainViaFileInput(model: AppModel): void {
   input.click();
 }
 
-/** Re-pick media through the persistent file picker (Relink placeholder's 'Choose media again'; also Library Relink). */
+/** Re-pick media through the persistent file picker (Relink placeholder's 'Choose media again'). */
 export function chooseMediaAgainViaPicker(model: AppModel): void {
   const picker = (globalThis as BrowserFilePickerGlobal).showOpenFilePicker;
   if (typeof picker !== 'function') {

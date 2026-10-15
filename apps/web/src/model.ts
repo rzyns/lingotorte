@@ -1353,21 +1353,35 @@ async function relinkExistingBrowserMedia(
 /**
  * lt-ddy.4: relink the CURRENT media from a plain File (browsers without showOpenFilePicker, e.g. Firefox).
  * The chosen file must have the same content fingerprint as the stored media; otherwise nothing changes.
- * Media without a stored fingerprint fall back to the ordinary content-matched import (which may refuse on a
- * name conflict) so a mismatch is never silently written over an existing record.
+ * Media without a stored fingerprint are refused: nothing is written and no other or new media record is touched.
+ * The file is read and hashed once; on a match the existing record is relinked directly (id, tracks and saved items kept).
  */
 export async function relinkCurrentMediaFromFile(model: AppModel, mediaFile: File): Promise<string> {
   const media = model.currentMedia;
   if (!media) throw new Error('No video is open to reconnect.');
   const expected = media.contentSha256;
-  if (typeof expected === 'string' && /^sha256:[0-9a-f]{64}$/.test(expected)) {
-    const actual = await sha256Bytes(await mediaFile.arrayBuffer());
-    if (model.currentMedia?.id !== media.id) throw new Error('The open video changed while the file was being checked. Nothing was reconnected.');
-    if (actual !== expected) {
-      throw new Error(`"${mediaFile.name}" is not the same file as "${media.title}". Nothing was changed. Choose the original video file, or add this one as new media in the Library.`);
-    }
+  if (typeof expected !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(expected)) {
+    throw new Error("This video was added before the app could check files, so it can't be reconnected here. Add it again from the Library.");
   }
-  return importBrowserLocalFiles(model, { mediaFile });
+  if (typeof URL.createObjectURL !== 'function') {
+    throw new TypeError('Browser local media import requires URL.createObjectURL support.');
+  }
+  const actual = await sha256Bytes(await mediaFile.arrayBuffer());
+  if (model.currentMedia?.id !== media.id) throw new Error('The open video changed while the file was being checked. Nothing was reconnected.');
+  if (actual !== expected) {
+    throw new Error(`"${mediaFile.name}" is not the same file as "${media.title}". Nothing was changed. Choose the original video file, or add this one as new media in the Library.`);
+  }
+  const stored = model.store.getMediaAsset(media.id);
+  if (!stored || stored.contentSha256 !== expected) throw new Error('This video is no longer in the Library. Nothing was reconnected.');
+  const objectUrl = URL.createObjectURL(mediaFile);
+  try {
+    await relinkExistingBrowserMedia(model, stored, { mediaFile }, objectUrl, objectUrl, null, null);
+  } catch (err) {
+    URL.revokeObjectURL(objectUrl);
+    throw err;
+  }
+  if (model.currentMedia?.id !== media.id) throw new Error('The open video changed while the file was being reconnected.');
+  return media.id;
 }
 
 export async function importBrowserLocalFiles(

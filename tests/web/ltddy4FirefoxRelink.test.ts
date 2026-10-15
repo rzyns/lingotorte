@@ -106,6 +106,39 @@ describe('lt-ddy.4 Firefox relink fallback', () => {
     expect(document.querySelector('.video-placeholder-relink [role="alert"]')?.textContent).toMatch(/not the same file|does not match/i);
   });
 
+  it('refuses media without a stored fingerprint and writes nothing (no new media, no other asset relinked)', async () => {
+    const { model, mediaId } = await sessionCopyThenReload();
+    const legacy = { ...model.store.getMediaAsset(mediaId)!, contentSha256: 'sha256:legacy' as const };
+    model.store.putMediaAsset(legacy);
+    model.currentMedia = legacy;
+    rerenderApp(model);
+    const before = JSON.stringify(model.store.snapshot());
+    const input = clickChooseAgainCapturingInput();
+    choose(input, file([5, 6, 7], 'fresh.webm'));
+    await settle(() => model.importError !== null);
+    expect(model.importError).toMatch(/can't be reconnected here/i);
+    expect(model.store.listMediaAssets()).toHaveLength(1);
+    expect(model.currentMedia!.id).toBe(mediaId);
+    expect(JSON.stringify(model.store.snapshot())).toBe(before);
+    expect(document.body.textContent).not.toContain('Import as new');
+  });
+
+  it('clicking Choose media again twice leaves only one relink input', async () => {
+    const { model } = await sessionCopyThenReload();
+    rerenderApp(model);
+    clickChooseAgainCapturingInput();
+    clickChooseAgainCapturingInput();
+    expect(document.querySelectorAll('input.relink-file-input')).toHaveLength(1);
+  });
+
+  it('cancel removes the relink input', async () => {
+    const { model } = await sessionCopyThenReload();
+    rerenderApp(model);
+    const input = clickChooseAgainCapturingInput();
+    input.dispatchEvent(new dom.window.Event('cancel'));
+    expect(document.querySelectorAll('input.relink-file-input')).toHaveLength(0);
+  });
+
   it('keeps the Chromium path: calls showOpenFilePicker and opens no file input', async () => {
     const { model } = await sessionCopyThenReload();
     const picker = vi.fn(async () => []);
