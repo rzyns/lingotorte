@@ -13,6 +13,7 @@ import {
   needsMediaRelink,
   handleNameFromMedia,
   restoreBrowserMediaHandle,
+  persistIfLocalServiceAutosaveEnabled,
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
 import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
@@ -246,6 +247,17 @@ function createVideoStage(model: AppModel): HTMLElement {
       stage.querySelector('.media-error-alert')?.remove();
     }
     model.player.durationMs = Math.round(video.duration * 1000) || model.player.durationMs;
+    // lt-dlf.3: correct a stored duration guess once the element knows the real one (only on >250 ms drift).
+    if (isCurrentVideo() && Number.isFinite(video.duration) && video.duration > 0) {
+      const actualMs = Math.round(video.duration * 1000);
+      const stored = model.store.getMediaAsset(mediaId);
+      if (stored && Math.abs(stored.durationMs - actualMs) > 250) {
+        const corrected = { ...stored, durationMs: actualMs };
+        model.store.putMediaAsset(corrected);
+        if (model.currentMedia?.id === mediaId) model.currentMedia = corrected;
+        persistIfLocalServiceAutosaveEnabled(model);
+      }
+    }
     // lt-dlf.1: a rebuilt <video> starts at 0; restore the model position (incl. intended seeks).
     const targetS = model.player.currentTimeMs / 1000;
     if (isCurrentVideo() && targetS > 0 && Math.abs(video.currentTime - targetS) > 0.05) {

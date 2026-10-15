@@ -150,8 +150,10 @@ describe('lt-1ur Add media card', () => {
     Object.defineProperty(globalThis, 'showOpenFilePicker', { configurable: true, value: vi.fn() });
     const model = pairedModel();
     library(model);
-    const buttons = Array.from(document.querySelectorAll('.local-import-actions button')).map((b) => b.textContent);
-    expect(buttons).toEqual(['Choose video (recommended — stays linked after reload)', 'Import local media']);
+    const picker = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Choose video (recommended — stays linked after reload)')!;
+    const firstInput = document.querySelector('.add-media-card input[type="file"]')!;
+    expect(picker.compareDocumentPosition(firstInput) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Array.from(document.querySelectorAll('.local-import-actions button')).map((b) => b.textContent)).toEqual(['Import local media']);
     expect(document.querySelector('label[for="local-media-file"]')?.textContent).toBe('Import copy for this session only');
   });
 });
