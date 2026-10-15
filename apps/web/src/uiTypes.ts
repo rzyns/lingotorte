@@ -85,6 +85,8 @@ export type AppModel = {
   cues: Cue[];
   selection: Selection;
   importError: string | null;
+  /** lt-ddy.5: non-blocking import warning (e.g. a subtitle file that could not be read); shown on every view until dismissed. */
+  importWarning: string | null;
   pendingMeaning: string;
   pendingNotes: string;
   view: ViewName;

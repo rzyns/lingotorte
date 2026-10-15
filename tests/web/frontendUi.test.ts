@@ -540,7 +540,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(document.getElementById('app')?.textContent).toContain('Browser handles and blob URLs are playback-only');
   });
 
-  it('shows local subtitle parse errors and revokes the failed object URL', async () => {
+  it('lt-ddy.5: imports the video, skips an unreadable local subtitle and warns naming it', async () => {
     const model = pairedModel();
     model.view = 'library';
     const createObjectURL = vi.fn(() => 'blob:bad-local-video');
@@ -556,12 +556,14 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
 
     const importButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Import local media');
     importButton!.click();
-    await vi.waitFor(() => { if (!model.importError) throw new Error('import error pending'); }, { timeout: 5_000, interval: 5 });
+    await vi.waitFor(() => { if (!model.importWarning) throw new Error('import warning pending'); }, { timeout: 5_000, interval: 5 });
 
-    expect(model.currentMedia).toBeNull();
-    expect(model.importError).toMatch(/SRT block|Invalid SRT|missing numeric cue id/);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:bad-local-video');
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(model.importError!);
+    expect(model.importError).toBeNull();
+    expect(model.currentMedia?.title).toBe('bad');
+    expect(model.store.listSubtitleTracksForMedia(model.currentMedia!.id)).toEqual([]);
+    expect(model.importWarning).toMatch(/"bad\.srt" \(target subtitles\) could not be read: (the timing on block \d+ is not valid|it is not a valid subtitle file)\./);
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:bad-local-video');
+    expect(document.querySelector('.import-subtitle-warning[role="status"]')?.textContent).toContain(model.importWarning!);
   });
 
   it('revokes the previous local object URL when replacing browser-selected media', async () => {

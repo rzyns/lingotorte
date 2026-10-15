@@ -108,6 +108,7 @@ export function createAppModel(): AppModel {
     cues: [],
     selection: null,
     importError: null,
+    importWarning: null,
     pendingMeaning: '',
     pendingNotes: '',
     view: 'player',
@@ -1188,6 +1189,7 @@ async function importBrowserSyntheticFixture(
   model.player.durationMs = durationMs;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+  model.importWarning = null;
 }
 
 export type BrowserLocalFileImportInput = Readonly<{
@@ -1291,6 +1293,59 @@ function pickTrackForRelink(tracks: readonly SubtitleTrack[], role: 'target' | '
   return (roleTracks.find((track) => track.isActive) ?? roleTracks[0])?.id ?? null;
 }
 
+export type SubtitleImportFailure = Readonly<{ fileName: string; role: 'target' | 'native'; reason: string }>;
+
+/** lt-ddy.5: read and parse one subtitle file; on failure record it and return null so the video still imports. */
+async function tryParseBrowserSubtitle(
+  failures: SubtitleImportFailure[],
+  file: File,
+  text: string | null,
+  input: Readonly<{ mediaId: string; language: string; role: 'target' | 'native' }>,
+): Promise<{ track: SubtitleTrack; cues: Cue[] } | null> {
+  if (text === null) return null;
+  // An explicitly chosen but empty file is reported for either role, never skipped silently.
+  if (text.trim().length === 0) {
+    failures.push({ fileName: file.name, role: input.role, reason: 'the file is empty' });
+    return null;
+  }
+  try {
+    return await parseBrowserSrtText({ ...input, path: file.name, text, sourceKind: 'owned' });
+  } catch (err) {
+    failures.push({ fileName: file.name, role: input.role, reason: plainSubtitleFailureReason(err) });
+    return null;
+  }
+}
+
+/** lt-ddy.5: read a subtitle file's text; an unreadable file is recorded as a failure, never thrown. */
+async function readSubtitleText(failures: SubtitleImportFailure[], file: File | null | undefined, role: 'target' | 'native'): Promise<string | null> {
+  if (!file) return null;
+  try {
+    return await file.text();
+  } catch {
+    failures.push({ fileName: file.name, role, reason: 'the file could not be opened' });
+    return null;
+  }
+}
+
+/**
+ * lt-ddy.5: parser messages can echo subtitle lines (file content); map them to plain wording that never
+ * repeats the file's text. Only the block number is kept, so the learner can find the problem.
+ */
+export function plainSubtitleFailureReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const block = /\b(?:block|cue) (\d+)\b/i.exec(message)?.[1];
+  if (block && /timing|timestamp/i.test(message)) return `the timing on block ${block} is not valid`;
+  if (block && /empty cue text/i.test(message)) return `block ${block} has no text`;
+  return 'it is not a valid subtitle file';
+}
+
+export function subtitleImportWarning(failures: readonly SubtitleImportFailure[]): string | null {
+  if (failures.length === 0) return null;
+  const parts = failures.map((f) => `"${f.fileName}" (${f.role} subtitles) could not be read: ${f.reason}.`);
+  const pronoun = failures.length === 1 ? 'it' : 'them';
+  return `${parts.join(' ')} The video was imported without ${pronoun}. To add ${pronoun} later, fix the file and import the same video again with ${pronoun}.`;
+}
+
 async function relinkExistingBrowserMedia(
   model: AppModel,
   existing: MediaAsset,
@@ -1299,6 +1354,7 @@ async function relinkExistingBrowserMedia(
   mediaSourceLabel: string,
   targetText: string | null,
   nativeText: string | null,
+  failures: SubtitleImportFailure[] = [],
 ): Promise<void> {
   const existingTracks = model.store.listSubtitleTracksForMedia(existing.id);
   const previousTarget = model.currentMedia?.id === existing.id ? model.targetTrackId : null;
@@ -1319,7 +1375,8 @@ async function relinkExistingBrowserMedia(
       continue;
     }
     // Explicitly supplied different subtitles are added beside existing tracks; existing tracks/cues are never replaced.
-    const parsed = await parseBrowserSrtText({ mediaId: existing.id, language, role, path: file.name, text, sourceKind: 'owned' });
+    const parsed = await tryParseBrowserSubtitle(failures, file, text, { mediaId: existing.id, language, role });
+    if (!parsed) continue;
     newTracks.push(parsed);
     if (role === 'target') targetTrackId = parsed.track.id; else nativeTrackId = parsed.track.id;
   }
@@ -1347,6 +1404,7 @@ async function relinkExistingBrowserMedia(
   model.player.currentTimeMs = 0;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
+  model.importWarning = subtitleImportWarning(failures);
   persistIfLocalServiceAutosaveEnabled(model);
 }
 
@@ -1402,11 +1460,14 @@ export async function importBrowserLocalFiles(
   }
   const objectUrl = URL.createObjectURL(input.mediaFile);
   try {
-    const targetText = input.targetSubtitleFile ? await input.targetSubtitleFile.text() : null;
-    const nativeText = input.nativeSubtitleFile ? await input.nativeSubtitleFile.text() : null;
+    // lt-ddy.5: each subtitle is read and parsed independently BEFORE anything is written; a bad file is
+    // skipped (recorded in failures) and the video plus any valid subtitle still import together.
+    const failures: SubtitleImportFailure[] = [];
+    const targetText = await readSubtitleText(failures, input.targetSubtitleFile, 'target');
+    const nativeText = await readSubtitleText(failures, input.nativeSubtitleFile, 'native');
     const mediaSourceLabel = input.mediaSourceLabel ?? objectUrl;
     if (existingSameContent) {
-      await relinkExistingBrowserMedia(model, existingSameContent, input, objectUrl, mediaSourceLabel, targetText, nativeText);
+      await relinkExistingBrowserMedia(model, existingSameContent, input, objectUrl, mediaSourceLabel, targetText, nativeText, failures);
       return existingSameContent.id;
     }
     const asset = makeMediaAsset({
@@ -1418,25 +1479,11 @@ export async function importBrowserLocalFiles(
       sizeBytes: input.mediaFile.size,
       privacyLabel: 'owned',
     });
-    const targetParsed = input.targetSubtitleFile && targetText !== null
-      ? await parseBrowserSrtText({
-          mediaId: asset.id,
-          language: input.targetLanguage ?? 'pl',
-          role: 'target',
-          path: input.targetSubtitleFile.name,
-          text: targetText,
-          sourceKind: 'owned',
-        })
+    const targetParsed = input.targetSubtitleFile
+      ? await tryParseBrowserSubtitle(failures, input.targetSubtitleFile, targetText, { mediaId: asset.id, language: input.targetLanguage ?? 'pl', role: 'target' })
       : null;
-    const nativeParsed = nativeText && input.nativeSubtitleFile
-      ? await parseBrowserSrtText({
-          mediaId: asset.id,
-          language: input.nativeLanguage ?? 'en',
-          role: 'native',
-          path: input.nativeSubtitleFile.name,
-          text: nativeText,
-          sourceKind: 'owned',
-        })
+    const nativeParsed = input.nativeSubtitleFile
+      ? await tryParseBrowserSubtitle(failures, input.nativeSubtitleFile, nativeText, { mediaId: asset.id, language: input.nativeLanguage ?? 'en', role: 'native' })
       : null;
     const allParsedCues = [...(targetParsed?.cues ?? []), ...(nativeParsed?.cues ?? [])];
     const durationMs = Math.max(1000, ...allParsedCues.map((cue) => cue.endMs));
@@ -1472,6 +1519,7 @@ export async function importBrowserLocalFiles(
     model.player.currentTimeMs = 0;
     model.player.activeCueId = model.cues[0]?.id ?? null;
     model.importError = null;
+    model.importWarning = subtitleImportWarning(failures);
     persistIfLocalServiceAutosaveEnabled(model);
     return assetWithDuration.id;
   } catch (err) {
