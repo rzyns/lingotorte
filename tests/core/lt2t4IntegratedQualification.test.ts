@@ -136,7 +136,8 @@ describe('lt-2t4 integrated request/restore qualification', () => {
       expect((await h.state()).revision).toBe(committed.json.revision);
       console.info(JSON.stringify({ lt2t4RestoreDenials: denials }));
     } finally { await h.service.close(); await rm(root, { recursive: true, force: true }); }
-  });
+    // lt-04k.1: 50+ oracle snapshots; ~1-2s alone, >5s default under full-suite load.
+  }, 30_000);
 
   it.each(MODES)('T01/T14 %s: serialized linked practice merges twice over HTTP, ordinary save, service close/reopen exact', async mode => {
     const root = await mkdtemp(join(tmpdir(), 'lt-2t4-t01-'));

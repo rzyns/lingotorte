@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { socketDelivery, nativeTerminalDelivery } from './privateDelivery.ts';
-import { admit, deny, canonicalOrigin, freezePolicy, type AdmissionPolicy } from './requestAdmission.ts';
+import { admit, deny, canonicalOrigin, freezePolicy, DENIAL_LINGER_MS, DENIAL_LINGER_BYTES, DENIAL_LINGER_HEADER_STAGE_BYTES, type AdmissionPolicy } from './requestAdmission.ts';
+import type { Socket } from 'node:net';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -707,6 +708,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   const deliveryReady = runtime.deliveryReady ?? (async () => true);
   if (!await deliveryReady()) throw new TypeError('Private delivery is unavailable.');
   let admissionReady = false;
+  // lt-04k.1: denial sockets lingering to discard unread bodies; destroyed on close() so shutdown never waits on them.
+  const lingeringSockets = new Set<Socket>();
+  const denialLinger = Object.freeze({ ms: DENIAL_LINGER_MS, bytes: DENIAL_LINGER_BYTES, headerStageBytes: DENIAL_LINGER_HEADER_STAGE_BYTES, sockets: lingeringSockets });
   let dispatch: ((request: IncomingMessage, response: ServerResponse, path: string, body?: Record<string, unknown>) => Promise<void>) | undefined;
   const boundary = async (request: IncomingMessage, response: ServerResponse, expectContinue = false) => {
     if (!admissionReady || !policy || !dispatch) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
@@ -716,7 +720,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       if (!admissionReady || !await deliveryReady() || !admissionReady) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
       if (admitted.preflight) { response.writeHead(204); response.end(); return; }
       await dispatch(request, response, admitted.path, admitted.body);
-    } catch (error) { if (!response.headersSent) deny(response, error); else response.destroy(); }
+    } catch (error) { if (!response.headersSent) deny(response, error, denialLinger); else response.destroy(); }
   };
   const server: Server = createServer((request, response) => { void boundary(request, response); });
   server.on('checkContinue', (request, response) => { void boundary(request, response, true); });
@@ -1182,12 +1186,14 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     async close() {
       admissionReady = false;
       snippetLifecycle = 'closing';
-      await new Promise<void>((resolvePromise, rejectPromise) => {
+      const closed = new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => {
           if (error) rejectPromise(error);
           else resolvePromise();
         });
       });
+      for (const socket of lingeringSockets) socket.destroy();
+      await closed;
       if (artifactCleanupPromise !== undefined) await artifactCleanupPromise;
       await drainSnippetJobs();
       snippets.clear();

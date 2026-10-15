@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { isIP } from 'node:net';
+import { isIP, Socket } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -132,14 +132,7 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   const limit = ROUTE_BODY_LIMITS[path] ?? MAX_BODY_BYTES;
   if (Number(fields.get('content-length')?.[0] ?? 0) > limit) throw new AdmissionError(413);
   if (expectContinue) response.writeContinue();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > limit) throw new AdmissionError(413);
-    chunks.push(bytes);
-  }
+  const chunks = await readBoundedBody(request, limit);
   let body: unknown;
   try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }
   catch { throw new AdmissionError(400); }
@@ -147,9 +140,74 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   if ((path.endsWith('/cancel') || path === '/api/artifacts/cleanup') && Object.keys(body).length) throw new AdmissionError(400);
   return { path, body: body as Record<string, unknown>, preflight: false };
 }
-export function deny(response: ServerResponse, error: unknown): void {
-  response.setHeader('connection', 'close');
+// lt-04k.1: bounded read that never destroys the request on overflow (an async-iterator throw would
+// destroy the IncomingMessage and its socket, resetting the connection before the 413 is delivered).
+// On overflow the stream is paused with listeners removed; deny() then discards the remainder.
+function readBoundedBody(request: IncomingMessage, limit: number): Promise<Buffer[]> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []; let size = 0; let settled = false;
+    const done = (error?: unknown) => {
+      if (settled) return; settled = true;
+      request.off('data', onData); request.off('end', onEnd); request.off('error', onError); request.off('close', onClose);
+      if (error) { request.pause(); reject(error); } else resolve(chunks);
+    };
+    const onData = (chunk: Buffer | string) => {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > limit) done(new AdmissionError(413)); else chunks.push(bytes);
+    };
+    const onEnd = () => done(); const onError = (error: unknown) => done(error);
+    // Client aborted mid-body ('aborted' always precedes 'close'): reject like the former async
+    // iterator did (ERR_STREAM_PREMATURE_CLOSE, a non-AdmissionError, which deny() maps to 400).
+    const onClose = () => { if (!request.complete) done(Object.assign(new Error('Premature close'), { code: 'ERR_STREAM_PREMATURE_CLOSE' })); };
+    request.on('data', onData); request.once('end', onEnd); request.once('error', onError); request.once('close', onClose);
+  });
+}
+/** lt-04k.1: bounded lingering close for denials sent before the request body was consumed. */
+export const DENIAL_LINGER_MS = 2_000;
+/** Byte cap for body-limit (413) denials; must exceed realistic oversized uploads (lt2t4 sends 30 MiB). */
+export const DENIAL_LINGER_BYTES = 64 * 1024 * 1024;
+/** Smaller byte cap for header-stage denials (400/401/403/404/405/415): those clients sent no admissible body. */
+export const DENIAL_LINGER_HEADER_STAGE_BYTES = 8 * 1024 * 1024;
+export type DenialLinger = Readonly<{ ms: number; bytes: number; headerStageBytes: number; sockets?: Set<Socket> }>;
+const DEFAULT_LINGER: DenialLinger = Object.freeze({ ms: DENIAL_LINGER_MS, bytes: DENIAL_LINGER_BYTES, headerStageBytes: DENIAL_LINGER_HEADER_STAGE_BYTES });
+// Closing a socket with unread inbound bytes sends RST; on Windows the RST also discards the
+// already-delivered denial from the client's receive buffer (ECONNRESET instead of e.g. 413).
+// Half-close after the denial and discard (never buffer or parse) the remainder at the transport
+// level, bounded by time and bytes, then destroy. No handler runs; no application state is touched.
+// Design: linger applies to every denial with an unread body, including header-stage ones (an
+// unauthenticated client gets at most ms/headerStageBytes of discard per socket). There is no
+// separate linger concurrency cap: the server's existing bounds apply (headersTimeout 10s,
+// requestTimeout/timeout 15s; maxConnections is not set), and each lingering socket is bounded
+// by wall clock, so the linger adds no more exposure than a slow request already has. Limits are
+// code constants (tests may pass smaller ones); nothing derived from the request selects them.
+// Sockets are registered in `sockets` (when given) so service shutdown can destroy them promptly.
+function lingerUnreadBody(response: ServerResponse, byteCap: number, linger: DenialLinger): void {
+  const request = response.req; const socket = response.socket;
+  if (!request || request.complete || !socket || socket.destroyed) return;
+  let discarded = 0;
+  const stop = () => { clearTimeout(timer); socket.destroy(); };
+  const timer = setTimeout(stop, linger.ms); timer.unref();
+  linger.sockets?.add(socket);
+  socket.once('close', () => { clearTimeout(timer); linger.sockets?.delete(socket); });
+  // Node's HTTP server calls socket.destroySoon() after a `connection: close` response, which would
+  // destroy the socket with the unread body still inbound (RST). Overriding it relies on Node HTTP
+  // internals; if a future Node stops calling destroySoon, this override is simply unused and the
+  // server falls back to its own close (an immediate close/RST, i.e. the pre-fix behavior) while the
+  // timer/byte bounds still destroy the socket: it fails safe, never leaks an unbounded socket.
+  // lingerUsesDestroySoon() lets tests detect the dependency disappearing.
+  socket.destroySoon = () => { if (socket.writable) socket.end(); };
+  request.on('data', (chunk: Buffer) => { discarded += chunk.length; if (discarded > byteCap) stop(); });
+  request.once('end', () => { if (socket.writableFinished) stop(); else socket.once('finish', stop); });
+  request.once('error', stop);
+  request.resume();
+}
+/** Test hook: true while Node's net.Socket still exposes the destroySoon the linger overrides. */
+export function lingerUsesDestroySoon(): boolean { return typeof (Socket.prototype as { destroySoon?: unknown }).destroySoon === 'function'; }
+export function deny(response: ServerResponse, error: unknown, linger: DenialLinger = DEFAULT_LINGER): void {
   const status = error instanceof AdmissionError ? error.status : 400;
+  lingerUnreadBody(response, status === 413 ? linger.bytes : linger.headerStageBytes, linger);
+  response.setHeader('connection', 'close');
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   response.end(JSON.stringify({ ok: false, error: status === 401 ? 'Pair again.' : 'Request rejected.' }));
 }
