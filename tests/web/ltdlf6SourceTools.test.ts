@@ -84,4 +84,26 @@ describe('lt-dlf.6 source tools disclosure', () => {
     rerenderApp(model);
     expect(disclosure().open).toBe(false);
   });
+
+  // jsdom does not fire 'toggle' when open is set, so user toggles are dispatched by hand.
+  it('an active range opens it even after the user closed it; clearing the range restores the user choice', async () => {
+    const model = await playerModel();
+    let d = disclosure(); d.open = true; d.dispatchEvent(new window.Event('toggle'));
+    rerenderApp(model);
+    d = disclosure(); d.open = false; d.dispatchEvent(new window.Event('toggle'));
+    rerenderApp(model);
+    expect(disclosure().open).toBe(false);
+    setLoopRange(model, 100, 900); rerenderApp(model);
+    expect(disclosure().open).toBe(true);
+    clearLoopRange(model); rerenderApp(model);
+    expect(disclosure().open).toBe(false);
+  });
+
+  it('a user-opened panel stays open after the range is cleared', async () => {
+    const model = await playerModel();
+    const d = disclosure(); d.open = true; d.dispatchEvent(new window.Event('toggle'));
+    setLoopRange(model, 100, 900); rerenderApp(model);
+    clearLoopRange(model); rerenderApp(model);
+    expect(disclosure().open).toBe(true);
+  });
 });

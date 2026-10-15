@@ -56,7 +56,7 @@ export function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
 
   const pathLabel = document.createElement('label');
   pathLabel.htmlFor = 'embedded-subtitle-media-path';
-  pathLabel.textContent = 'Owned local media path (absolute)';
+  pathLabel.textContent = 'Video file path on the local service (absolute)';
   const pathInput = document.createElement('input');
   pathInput.id = 'embedded-subtitle-media-path';
   pathInput.name = 'embedded-subtitle-media-path';

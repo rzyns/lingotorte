@@ -86,6 +86,8 @@ function renderSourceToolsDisclosure(model: AppModel): HTMLElement {
   summary.textContent = 'Clip and audio tools (loop a range, prepare audio for practice)';
   details.appendChild(summary);
   details.appendChild(renderSourceRangePanel(model));
+  // An active range always opens the panel (never hide active state); closing it while a range is active
+  // lasts until the next render. The remembered user choice applies again once the range is cleared.
   const active = model.player.loopRange !== null || model.player.sourceRange !== null;
   const renderedOpen = active || (sourceToolsOpenByUser.get(model) ?? false);
   details.open = renderedOpen;
