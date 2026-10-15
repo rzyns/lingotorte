@@ -23,7 +23,9 @@
     "test:no-network": "vitest run tests/no-network",
     "test:web": "vitest run tests/web",
     "test:all": "vitest run",
-    "scan:privacy": "node scripts/check-privacy-boundaries.mjs"
+    "scan:privacy": "node scripts/check-privacy-boundaries.mjs",
+    "e2e": "node scripts/run-e2e.mjs",
+    "e2e:host": "playwright test -c apps/web/e2e/playwright.config.ts"
   },
   "keywords": [
     "local-first",
@@ -33,6 +35,7 @@
   ],
   "license": "UNLICENSED",
   "devDependencies": {
+    "@playwright/test": "1.62.0",
     "@types/jsdom": "^28.0.3",
     "@types/node": "26.0.0",
     "jsdom": "^29.1.1",

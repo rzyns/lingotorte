@@ -63,6 +63,25 @@ services:
     init: true
     command: ["node", "node_modules/vitest/vitest.mjs", "run"]
     # No host source, media, state or credentials are mounted into verification.
+  e2e:
+    # lt-42o: Playwright smoke runner; use `npm run e2e` (scripts/run-e2e.mjs), which enrolls
+    # http://web:4173 for its own disposable project only. Internal network only: no egress.
+    image: ${LINGOTORTE_E2E_IMAGE:-lingotorte:e2e-runner}
+    build:
+      context: .
+      target: e2e
+    profiles: [tools]
+    init: true
+    # Chromium needs more than Docker's 64 MB /dev/shm; shm_size keeps IPC isolated (no ipc: host).
+    shm_size: '1gb'
+    environment:
+      LINGOTORTE_E2E_BASE_URL: http://web:4173
+    volumes:
+      - ./apps/web/e2e/artifacts:/app/apps/web/e2e/artifacts
+    depends_on:
+      web:
+        condition: service_started
+    networks: [private]
 volumes:
   state:
   scratch:

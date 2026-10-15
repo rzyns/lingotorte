@@ -24,3 +24,12 @@ FROM contributor AS runtime
 ARG VITE_LOCAL_SERVICE_BASE_URL=/
 ENV VITE_LOCAL_SERVICE_BASE_URL=${VITE_LOCAL_SERVICE_BASE_URL}
 RUN node node_modules/vite/bin/vite.js build --config vite.config.ts
+
+# lt-42o: Playwright runner for apps/web/e2e (tools profile). Browsers are baked into the
+# official image matching the pinned @playwright/test version; nothing is downloaded at run time.
+FROM mcr.microsoft.com/playwright:v1.62.0-noble@sha256:baed2032d533817f3dbe6425de795788430ba345e819a1201337009ba17c9d07 AS e2e
+COPY --from=contributor --chown=pwuser:pwuser /app /app
+WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+USER pwuser
+ENTRYPOINT ["node", "node_modules/@playwright/test/cli.js", "test", "-c", "apps/web/e2e/playwright.config.ts"]
