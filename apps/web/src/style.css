@@ -770,6 +770,33 @@ textarea:focus-visible,
   gap: var(--space-2);
 }
 
+/* lt-dlf.5: an open capture form renders at the top of the transcript aside. On desktop it pins inside
+   the aside's own scroll region (the search unpins meanwhile); on mobile it flows normally. */
+.transcript-copilot.capture-open > .selection-panel {
+  margin-bottom: var(--space-2);
+}
+
+@media (min-width: 900px) {
+  .transcript-copilot.capture-open > .selection-panel {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    /* WCAG 2.4.11: cap the pinned form so a short viewport still leaves room for the clicked row. */
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  /* The clicked row is scrolled with block 'end'; never let it settle under the pinned form. */
+  .transcript-copilot.capture-open .cue-row {
+    scroll-margin-top: 55vh;
+  }
+
+  .transcript-copilot.capture-open .transcript-search {
+    position: static;
+  }
+}
+
 .selection-form label {
   display: block;
   font-size: var(--fs-sm);

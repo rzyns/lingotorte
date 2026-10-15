@@ -76,6 +76,25 @@ describe('lt-dlf.4 review keyboard flow', () => {
     expect(document.activeElement?.id).toBe('review-reveal-toggle');
   });
 
+  // lt-dlf.5: requestFocusAfterRender focuses with preventScroll, then reveals with block 'nearest'.
+  it('a Review focus request after rating focuses the reveal toggle with preventScroll and a nearest scroll', async () => {
+    const model = await reviewModel(2);
+    const focusOpts: { id: string; opts: FocusOptions | undefined }[] = [];
+    const origFocus = dom.window.HTMLElement.prototype.focus;
+    vi.spyOn(dom.window.HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, opts?: FocusOptions) {
+      focusOpts.push({ id: this.id, opts });
+      return origFocus.call(this, opts);
+    });
+    const scrolls: { id: string; opts: unknown }[] = [];
+    (dom.window.Element.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = function (this: Element, opts: unknown) { scrolls.push({ id: this.id, opts }); };
+    key(' ');
+    key('3');
+    expect(model.review.revealed).toBe(false);
+    expect(document.activeElement?.id).toBe('review-reveal-toggle');
+    expect(focusOpts.at(-1)).toEqual({ id: 'review-reveal-toggle', opts: { preventScroll: true } });
+    expect(scrolls.filter((s) => s.id === 'review-reveal-toggle').at(-1)?.opts).toEqual({ block: 'nearest' });
+  });
+
   it('ignores keys in editable fields and with Ctrl/Meta/Alt', async () => {
     const model = await reviewModel(1);
     const input = document.createElement('input');

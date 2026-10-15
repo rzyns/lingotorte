@@ -13,7 +13,7 @@ import {
   cueWordTokens,
   tokenizeCueText,
 } from '../../model';
-import { rerenderApp } from '../../appShell.ts';
+import { requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
@@ -71,6 +71,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     row.className = `cue-row${isActive ? ' active' : ''}`;
     row.setAttribute('role', 'button');
     row.setAttribute('tabindex', '0');
+    row.id = `cue-row-${cue.id}`;
     row.setAttribute('data-cue-id', cue.id);
     row.setAttribute('aria-label', `Line at ${formatTimeMs(cue.startMs)}: ${cue.text}`);
     if (isActive) row.setAttribute('aria-current', 'true');
@@ -487,11 +488,15 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const canSave = targetTrack?.transcriptStatus === 'approved';
   saveBtn.disabled = !canSave;
   if (!canSave) saveBtn.title = 'Approve this transcript before saving learner study items.';
+  // lt-dlf.5 (audit N10): closing the form destroys Meaning as the panel moves back to the left column,
+  // so hand focus to the clicked cue row (preventScroll + 'nearest'); the toast's Undo never takes focus.
+  const returnFocusToRow = `cue-row-${model.selection.cueId}`;
   const commit = () => {
     if (!canSave) return;
     void saveSelectionWithReceipt(model)
       .then((receipt) => {
         clearSelection(model);
+        requestFocusAfterRender(model, returnFocusToRow);
         if (receipt) showSaveToast(model, receipt);
         rerenderApp(model);
       })
@@ -502,6 +507,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   };
   const cancel = () => {
     clearSelection(model);
+    requestFocusAfterRender(model, returnFocusToRow);
     rerenderApp(model);
   };
   saveBtn.addEventListener('click', commit);

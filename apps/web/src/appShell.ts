@@ -307,6 +307,9 @@ const pendingFocusRequests = new WeakMap<AppModel, readonly string[]>();
 export const PRACTICE_SUCCESSORS = ['practice-feedback', 'practice-empty', 'practice-prompt'] as const;
 
 /** Ask the next rerenderApp(model) to focus the first of `ids` that exists after rendering. */
+// lt-dlf.5: applies to every caller (capture, library, practice, review): the successor is focused with
+// preventScroll and then revealed with scrollIntoView({ block: 'nearest' }) after the cue scroll, so the
+// page moves only as far as needed to keep the focused control unobscured (WCAG 2.4.11).
 // Callers must request immediately before a synchronous rerenderApp. If a request is ever made before an
 // await, add an activeElement check so focus is not pulled away from where the user has since moved.
 export function requestFocusAfterRender(model: AppModel, ...ids: string[]): void {
@@ -366,7 +369,8 @@ export function rerenderApp(model: AppModel): void {
   resumePersistentVideoAfterRender(model);
   const successor = requested?.map((id) => document.getElementById(id)).find((el): el is HTMLElement => el !== null);
   if (successor) {
-    successor.focus();
+    // lt-dlf.5: no default focus jump; the field is revealed with block 'nearest' after the cue scroll below.
+    successor.focus({ preventScroll: true });
   } else if (focused) {
     const el = document.getElementById(focused);
     // lt-z8s: word spans have no tabindex at rest; give a temporary one (removed on blur) so focus sticks.
@@ -376,15 +380,19 @@ export function rerenderApp(model: AppModel): void {
     }
     el?.focus();
   }
-  scrollCueIntoView(model.player.activeCueId);
+  // lt-dlf.5: while capturing, keep the clicked line visible below the sticky form in the aside.
+  if (model.selection) scrollCueIntoView(model.selection.cueId, 'end');
+  else scrollCueIntoView(model.player.activeCueId);
+  // Last, so the focused field is never left obscured (WCAG 2.4.11) and the page moves only as needed.
+  if (successor && typeof successor.scrollIntoView === 'function') successor.scrollIntoView({ block: 'nearest' });
   scheduleLearningWake(model);
 }
 
-export function scrollCueIntoView(cueId: string | null): void {
+export function scrollCueIntoView(cueId: string | null, block: ScrollLogicalPosition = 'center'): void {
   if (!cueId) return;
   const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(cueId) : cueId.replace(/"/g, '\\"');
   const row = document.querySelector(`[data-cue-id="${escaped}"]`);
   if (row && typeof row.scrollIntoView === 'function') {
-    row.scrollIntoView({ behavior: 'auto', block: 'center' });
+    row.scrollIntoView({ behavior: 'auto', block });
   }
 }
