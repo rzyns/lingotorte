@@ -255,7 +255,7 @@ describe('lt-aur.1 UI and handler approval path', () => {
     rerenderApp(model);
     const parentId = model.targetTrackId!;
     type(FIELD_INPUT.cueText, 'Niezastosowana zmiana.');
-    const split = button('Split cue 1');
+    const split = button('Split line 1');
     expect(split.disabled).toBe(true);
     split.disabled = false;
     split.click();

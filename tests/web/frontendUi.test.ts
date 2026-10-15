@@ -92,7 +92,11 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(cockpit?.querySelector('.transcript-copilot .transcript-panel')).toBeTruthy();
 
     const statusTokens = Array.from(cockpit?.querySelectorAll('.status-token') ?? []).map((token) => token.textContent?.trim());
-    expect(statusTokens).toContain('local/private'); // lt-unl: now in the collapsed study-status footer
+    // lt-unl: local/private lives inside the collapsed study-status footer, not the hero rail.
+    const footerTokens = Array.from(cockpit?.querySelectorAll('details.study-status-footer .status-token') ?? []).map((token) => token.textContent?.trim());
+    expect(footerTokens).toContain('local/private');
+    const heroTokens = Array.from(cockpit?.querySelectorAll('[aria-label="Study status"] .status-token') ?? []).map((token) => token.textContent?.trim());
+    expect(heroTokens).not.toContain('local/private');
     expect(statusTokens).toContain('Transcript ready');
 
     const sourceContext = cockpit?.querySelector('.source-context-row');

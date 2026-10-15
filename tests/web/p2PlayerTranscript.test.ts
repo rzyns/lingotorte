@@ -252,7 +252,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
       rerenderApp(m);
       return m;
     });
-    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('R replay cue');
+    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('R replay line');
 
     document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: ']', bubbles: true }));
     expect(model.player.activeCueId).toBe(model.cues[1]?.id ?? null);
@@ -345,15 +345,15 @@ describe('P2 player dual-subtitle and transcript projection', () => {
       expect(controls).toBeTruthy();
       const labels = Array.from(controls!.querySelectorAll('button')).map((b) => b.textContent);
       expect(labels).toContain('Play');
-      expect(labels).toContain('Prev cue');
-      expect(labels).toContain('Next cue');
+      expect(labels).toContain('Prev line');
+      expect(labels).toContain('Next line');
       expect(labels).toContain('Loop off');
       const prevBtn = Array.from(controls!.querySelectorAll('button')).find(
-        (b) => b.textContent === 'Prev cue',
+        (b) => b.textContent === 'Prev line',
       ) as HTMLButtonElement | null;
       expect(prevBtn?.disabled).toBe(true);
       const nextBtn = Array.from(controls!.querySelectorAll('button')).find(
-        (b) => b.textContent === 'Next cue',
+        (b) => b.textContent === 'Next line',
       ) as HTMLButtonElement | null;
       expect(nextBtn?.disabled).toBe(false);
       return m;

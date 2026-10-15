@@ -99,10 +99,10 @@ describe('lt-7lq learner-subset export limits (frontend)', () => {
       const app = document.getElementById('app')!;
       const missing = app.querySelector('[data-testid="source-unresolved"]');
       expect(missing, view).toBeTruthy();
-      expect(missing!.textContent).toContain('Source cue/media not available in this app');
+      expect(missing!.textContent).toContain('Source line/media not available in this app');
       expect(missing!.textContent).toContain('playback unresolved');
       expect(missing!.textContent).toContain(occurrence.sourceContext.mediaPath);
-      const replay = Array.from(app.querySelectorAll('button')).find(b => b.textContent === 'Replay source cue') as HTMLButtonElement | undefined;
+      const replay = Array.from(app.querySelectorAll('button')).find(b => b.textContent === 'Replay source line') as HTMLButtonElement | undefined;
       expect(replay?.disabled).toBe(true);
     }
   });

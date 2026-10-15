@@ -96,7 +96,7 @@ describe('P6 frontend local practice attempts', () => {
     (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Reveal answer') as HTMLButtonElement).click();
     expect(app.textContent).toContain(firstCue.text);
     expect(app.textContent).toContain(mediaPath);
-    expect(app.textContent).toContain('Replay source cue');
+    expect(app.textContent).toContain('Replay source line');
     expect(app.textContent).toMatch(/due: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/);
     expect(app.textContent).not.toMatch(/due: \d{4,}:/);
 
@@ -147,7 +147,7 @@ describe('P6 frontend local practice attempts', () => {
     const { value: { model, firstCue } } = await createPracticeModel();
     renderPractice(model);
 
-    const replayBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Replay source cue'));
+    const replayBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Replay source line'));
     expect(replayBtn).toBeTruthy();
     replayBtn!.click();
 

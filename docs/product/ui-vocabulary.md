@@ -11,7 +11,8 @@ Introduced by `lt-unl`. Applies to learner-facing labels in `apps/web/src`.
 | Save occurrence (button) | unchanged text (scripts click it); aria-label "Save word with the video and time it came from" |
 | cue N | line N |
 | track vN | omitted from the primary line (kept in details) |
-| approved / draft chip | Transcript ready / Transcript draft — approve before saving words |
+| approved / draft chip | Transcript ready / Transcript draft — approve before saving words (short form in rows and chips: Transcript draft) |
+| no target track | No transcript yet |
 | Study cockpit | Player |
 | Transcript co-pilot | Transcript |
 | Selection | Save a word or phrase |

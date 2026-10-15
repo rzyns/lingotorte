@@ -191,7 +191,7 @@ describe('lt-e8z morphology UI', () => {
     expect(panel().textContent).toContain(MEANINGS_UNAVAILABLE);
     expect(document.getElementById('morphology-status')!.textContent).toContain('Analyse words');
     const analyse = document.querySelector<HTMLButtonElement>('button.analyse-words')!;
-    expect(analyse.getAttribute('aria-label')).toMatch(/^Analyse word grammar for cue at/);
+    expect(analyse.getAttribute('aria-label')).toMatch(/^Analyse word grammar for line at/);
     const seekBefore = model.player.activeCueId;
     analyse.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(model.player.activeCueId).toBe(seekBefore);

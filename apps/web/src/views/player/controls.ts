@@ -46,8 +46,8 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   controls.appendChild(playBtn);
 
   const prevBtn = document.createElement('button');
-  prevBtn.textContent = 'Prev cue';
-  prevBtn.setAttribute('aria-label', 'Go to previous cue');
+  prevBtn.textContent = 'Prev line';
+  prevBtn.setAttribute('aria-label', 'Go to previous line');
   const currentCueForNav = activeCueAtTime(model.cues, model.player.currentTimeMs);
   const hasPrev = currentCueForNav ? previousCue(model.cues, currentCueForNav.id) !== null : model.cues.length > 0;
   prevBtn.disabled = !hasPrev;
@@ -70,8 +70,8 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   controls.appendChild(prevBtn);
 
   const nextBtn = document.createElement('button');
-  nextBtn.textContent = 'Next cue';
-  nextBtn.setAttribute('aria-label', 'Go to next cue');
+  nextBtn.textContent = 'Next line';
+  nextBtn.setAttribute('aria-label', 'Go to next line');
   const hasNext = currentCueForNav ? nextCue(model.cues, currentCueForNav.id) !== null : model.cues.length > 1;
   nextBtn.disabled = !hasNext;
   nextBtn.addEventListener('click', () => {
@@ -94,7 +94,7 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
 
   const loopBtn = document.createElement('button');
   loopBtn.textContent = model.player.loopCue ? 'Loop on' : 'Loop off';
-  loopBtn.setAttribute('aria-label', model.player.loopCue ? 'Turn cue loop off' : 'Turn cue loop on');
+  loopBtn.setAttribute('aria-label', model.player.loopCue ? 'Turn line loop off' : 'Turn line loop on');
   loopBtn.setAttribute('aria-pressed', String(model.player.loopCue));
   loopBtn.addEventListener('click', () => {
     toggleLoopCue(model);
@@ -234,7 +234,7 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
 
   const shortcuts = document.createElement('p');
   shortcuts.className = 'keyboard-shortcuts meta';
-  shortcuts.textContent = 'Shortcuts: Space play/pause, [ previous cue, ] next cue, R replay cue, , slower, . faster';
+  shortcuts.textContent = 'Shortcuts: Space play/pause, [ previous line, ] next line, R replay line, , slower, . faster';
   controls.appendChild(shortcuts);
 
   return controls;

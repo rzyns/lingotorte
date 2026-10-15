@@ -327,8 +327,8 @@ export function renderPracticeView(model: AppModel): HTMLElement {
 
   const replayBtn = document.createElement('button');
   replayBtn.className = 'btn-secondary';
-  replayBtn.textContent = 'Replay source cue';
-  replayBtn.setAttribute('aria-label', 'Jump back to the source cue in the player');
+  replayBtn.textContent = 'Replay source line';
+  replayBtn.setAttribute('aria-label', 'Jump back to the source line in the player');
   replayBtn.disabled = !currentCue;
   replayBtn.addEventListener('click', () => {
     if (!currentCue) return;

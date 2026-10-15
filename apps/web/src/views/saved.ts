@@ -3,7 +3,7 @@ import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
 import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, nativeTextForCue, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
 import { rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, compactPathLabel } from '../ui/common.ts';
+import { appendSourceDisclosure, mediaDisplayName } from '../ui/common.ts';
 
 export function renderSavedView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -106,7 +106,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
       const cue = model.store.getCue(occurrence.cueId);
       const cueText = cue?.text ?? occurrence.selectionText;
       link.textContent = `▶ ${formatTimeMs(occurrence.startMs)} — ${cueText}`;
-      link.setAttribute('aria-label', `Jump to ${formatTimeMs(occurrence.startMs)} in ${occurrence.sourceContext.mediaPath}`);
+      link.setAttribute('aria-label', `Jump to ${formatTimeMs(occurrence.startMs)} in ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`);
       link.addEventListener('click', (e) => {
         e.preventDefault();
         setView(model, 'player');
@@ -137,7 +137,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
       // lt-unl: token/char spans are provenance; they stay inside the disclosure, off the primary line.
       appendSourceDisclosure(
         contextLine,
-        `saved from ${compactPathLabel(occurrence.sourceContext.mediaPath)} at ${formatTimeMs(occurrence.startMs)}`,
+        `saved from ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)} at ${formatTimeMs(occurrence.startMs)}`,
         `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
       );
       occurrenceGroup.appendChild(contextLine);

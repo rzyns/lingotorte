@@ -106,6 +106,15 @@ export function compactPathLabel(path: string): string {
   return parts.at(-1) ?? path;
 }
 
+/** lt-unl: learner-facing media name: asset title, else the path's file name; never a data URL or hash. */
+export function mediaDisplayName(model: AppModel, mediaId: string | undefined, mediaPath: string): string {
+  const title = mediaId ? model.store.getMediaAsset(mediaId)?.title : undefined;
+  if (title) return title;
+  if (mediaPath.startsWith('data:')) return 'media file';
+  const name = compactPathLabel(mediaPath);
+  return /[A-Za-z0-9+/]{20,}={0,2}/.test(name) ? 'media file' : name;
+}
+
 export function mediaLabel(model: AppModel, fallbackPath?: string): string {
   if (model.currentMedia?.title) return model.currentMedia.title;
   if (fallbackPath) return compactPathLabel(fallbackPath);
@@ -118,7 +127,7 @@ export function renderUnresolvedSource(mediaPath: string): HTMLElement {
   note.className = 'status-banner warning source-unresolved';
   note.setAttribute('role', 'status');
   note.dataset.testid = 'source-unresolved';
-  appendSourceDisclosure(note, `Source cue/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
+  appendSourceDisclosure(note, `Source line/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
   return note;
 }
 
@@ -210,6 +219,12 @@ export function renderStudyStatusFooter(model: AppModel): HTMLElement {
   return footer;
 }
 
+/** lt-unl: 1-based position in the loaded cue list (stored cueIndex may be 0-based, e.g. VTT without ids). */
+export function linePosition(model: AppModel, cue: Cue): number {
+  const idx = model.cues.findIndex((candidate) => candidate.id === cue.id);
+  return idx >= 0 ? idx + 1 : cue.cueIndex;
+}
+
 export function renderSourceContextRow(model: AppModel): HTMLElement {
   const row = document.createElement('div');
   row.className = 'source-context-row';
@@ -232,7 +247,7 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
   if (activeCue) {
     parts.push(`cue ${activeCue.cueIndex}`);
     parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
-    visibleParts.push(`line ${activeCue.cueIndex}`);
+    visibleParts.push(`line ${linePosition(model, activeCue)}`);
     visibleParts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
   } else {
     parts.push('no active cue');
@@ -252,7 +267,7 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
     const chips = document.createElement('div');
     chips.className = 'source-context-chips';
     if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
-    if (activeCue) chips.appendChild(renderSourceMetaChip(`line ${activeCue.cueIndex}`));
+    if (activeCue) chips.appendChild(renderSourceMetaChip(`line ${linePosition(model, activeCue)}`));
     row.appendChild(chips);
   }
   return row;
@@ -288,7 +303,7 @@ function renderLifecycleStageRail(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'lifecycle-stage-rail';
   rail.setAttribute('aria-label', 'Transcript lifecycle stages');
-  ['Source candidates', 'Draft evidence', 'Cue correction', 'Word timing', 'Approval'].forEach((label, index) => {
+  ['Source candidates', 'Draft evidence', 'Line correction', 'Word timing', 'Approval'].forEach((label, index) => {
     const stage = document.createElement('span');
     const state = lifecycleStageState(model, index);
     stage.className = `lifecycle-stage lifecycle-stage-${state}`;

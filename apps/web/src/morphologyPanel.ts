@@ -243,7 +243,7 @@ export function renderMorphologyPanel(model: AppModel, rerender: () => void): HT
   const view = state.current;
   if (state.pendingCueId) status.textContent = 'Analysing words…';
   else if (state.failure) status.textContent = state.failure;
-  else if (!view) status.textContent = 'Choose “Analyse words” on a cue, or a subtitle word, to see its grammar.';
+  else if (!view) status.textContent = 'Choose “Analyse words” on a line, or a subtitle word, to see its grammar.';
   else status.textContent = morphologyStatusText(view);
   if (!view) return section;
 

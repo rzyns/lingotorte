@@ -53,8 +53,8 @@ describe('lt-1ur Library media list', () => {
     const [first, second] = rows();
     expect(first!.querySelector('.media-row-title')?.textContent).toBe('newer');
     expect(first!.querySelector('.media-row-duration')?.textContent).toMatch(/\d/);
-    expect(first!.querySelector('.media-row-status')?.textContent).toBe('transcript: none');
-    expect(second!.querySelector('.media-row-status')?.textContent).toMatch(/transcript: (draft|approved)/);
+    expect(first!.querySelector('.media-row-status')?.textContent).toBe('No transcript yet');
+    expect(second!.querySelector('.media-row-status')?.textContent).toMatch(/^Transcript (draft|ready)$/);
     expect(first!.querySelector('.media-row-privacy')?.textContent).toBe(newer.privacyLabel);
   });
 

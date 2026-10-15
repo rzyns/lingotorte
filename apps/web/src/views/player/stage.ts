@@ -26,7 +26,7 @@ import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
 export function renderPlayerView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
   section.className = 'study-cockpit';
-  section.setAttribute('aria-label', 'Source-backed study cockpit');
+  section.setAttribute('aria-label', 'Study player');
 
   const header = document.createElement('div');
   header.className = 'study-cockpit-header card';
@@ -438,9 +438,10 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   relinkBtn.type = 'button';
   // lt-aot: at boot a 'prompt' permission needs one user gesture to reconnect.
   relinkBtn.textContent = model.browserLocalMedia.permissionState === 'prompt' && handleName ? `Reconnect ${handleName}` : 'Relink media';
-  relinkBtn.setAttribute('aria-label', relinkBtn.textContent.startsWith('Reconnect')
-    ? `Reconnect ${handleName}: grant read access to the saved browser file handle`
-    : 'Regrant the saved browser file handle for the current media');
+  // lt-unl: the accessible name is the visible text (WCAG 2.5.3); the purpose goes in the description.
+  relinkBtn.title = relinkBtn.textContent.startsWith('Reconnect')
+    ? `Reconnect ${handleName}: allow this app to read the file again`
+    : 'Relink media: choose the file for this video again';
   relinkBtn.addEventListener('click', () => {
     void restoreBrowserMediaHandle(model)
       .then((restored) => {
