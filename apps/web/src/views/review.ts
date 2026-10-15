@@ -30,6 +30,11 @@ function rateReviewCard(model: AppModel, cardId: string, rating: ReviewRatingNam
  */
 export function handleReviewShortcut(model: AppModel, event: KeyboardEvent): boolean {
   if (model.view !== 'review') return false;
+  // Auto-repeat must not rate successive cards or flicker reveal; swallow repeats of keys we own.
+  if (event.repeat) {
+    if (['1', '2', '3', '4', ' ', 'Spacebar'].includes(event.key)) { event.preventDefault(); return true; }
+    return false;
+  }
   // Act on the card the learner is looking at (the rendered one), not a freshly re-resolved one.
   const cardId = model.review.currentCardId;
   if (!cardId || !document.getElementById('review-reveal-toggle')) return false;
@@ -147,6 +152,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
   const revealBtn = document.createElement('button');
   revealBtn.className = 'btn-secondary';
   revealBtn.id = 'review-reveal-toggle';
+  revealBtn.setAttribute('aria-keyshortcuts', 'Space');
   revealBtn.textContent = model.review.revealed ? 'Hide answer' : 'Show answer / context';
   revealBtn.addEventListener('click', () => {
     toggleReviewReveal(model);
@@ -185,6 +191,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
       btn.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
       btn.setAttribute('aria-label', `Rate ${rating}`);
       btn.dataset.shortcut = String(REVIEW_RATINGS.indexOf(rating) + 1);
+      btn.setAttribute('aria-keyshortcuts', btn.dataset.shortcut);
       btn.addEventListener('click', () => rateReviewCard(model, card.id, rating));
       buttons.appendChild(btn);
     }

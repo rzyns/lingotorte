@@ -126,6 +126,7 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
     if (currentModel.view === 'review') {
       // lt-dlf.4: review owns Space/1-4; player shortcuts never fire here.
       handleReviewShortcut(currentModel, event);
+      // Intentional: unhandled keys still return so Player shortcuts never act on an off-screen video.
       return;
     }
     const cue = currentKeyboardCue(currentModel);

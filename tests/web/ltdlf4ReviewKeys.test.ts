@@ -138,4 +138,48 @@ describe('lt-dlf.4 review keyboard flow', () => {
       expect(model.review.revealed).toBe(false);
     }
   });
+
+  it('auto-repeat keydowns never rate or toggle (review fix 1)', async () => {
+    const model = await reviewModel(2);
+    key(' ');
+    expect(model.review.revealed).toBe(true);
+    const e = key('3', document.body, { repeat: true });
+    expect(e.defaultPrevented).toBe(true);
+    expect(events(model)).toHaveLength(0);
+    expect(model.review.revealed).toBe(true);
+    key(' ', document.body, { repeat: true });
+    expect(model.review.revealed).toBe(true);
+    expect(revealed()).toBe(true);
+  });
+
+  it('Space on the focused reveal toggle after rating toggles exactly once', async () => {
+    const model = await reviewModel(2);
+    key(' ');
+    key('3');
+    expect(events(model)).toHaveLength(1);
+    const toggle = document.getElementById('review-reveal-toggle') as HTMLButtonElement;
+    toggle.focus();
+    const e = key(' ', toggle);
+    expect(e.defaultPrevented).toBe(false);
+    expect(model.review.revealed).toBe(false);
+    toggle.click(); // native activation of the focused button
+    expect(model.review.revealed).toBe(true);
+  });
+
+  it('two quick 3 presses rate exactly one card per reveal', async () => {
+    const model = await reviewModel(3);
+    key(' ');
+    key('3');
+    const second = key('3');
+    expect(second.defaultPrevented).toBe(false);
+    expect(events(model)).toHaveLength(1);
+  });
+
+  it('exposes aria-keyshortcuts on toggle and rating buttons', async () => {
+    await reviewModel(1);
+    expect(document.getElementById('review-reveal-toggle')!.getAttribute('aria-keyshortcuts')).toBe('Space');
+    key(' ');
+    const shortcuts = [...document.querySelectorAll('.review-buttons button')].map((b) => b.getAttribute('aria-keyshortcuts'));
+    expect(shortcuts).toEqual(['1', '2', '3', '4']);
+  });
 });
