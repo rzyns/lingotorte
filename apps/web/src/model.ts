@@ -1303,10 +1303,15 @@ async function tryParseBrowserSubtitle(
   input: Readonly<{ mediaId: string; language: string; role: 'target' | 'native' }>,
 ): Promise<{ track: SubtitleTrack; cues: Cue[] } | null> {
   if (text === null) return null;
+  // An explicitly chosen but empty file is reported for either role, never skipped silently.
+  if (text.trim().length === 0) {
+    failures.push({ fileName: file.name, role: input.role, reason: 'the file is empty' });
+    return null;
+  }
   try {
     return await parseBrowserSrtText({ ...input, path: file.name, text, sourceKind: 'owned' });
   } catch (err) {
-    failures.push({ fileName: file.name, role: input.role, reason: err instanceof Error ? err.message : String(err) });
+    failures.push({ fileName: file.name, role: input.role, reason: plainSubtitleFailureReason(err) });
     return null;
   }
 }
@@ -1316,16 +1321,29 @@ async function readSubtitleText(failures: SubtitleImportFailure[], file: File | 
   if (!file) return null;
   try {
     return await file.text();
-  } catch (err) {
-    failures.push({ fileName: file.name, role, reason: err instanceof Error ? err.message : String(err) });
+  } catch {
+    failures.push({ fileName: file.name, role, reason: 'the file could not be opened' });
     return null;
   }
+}
+
+/**
+ * lt-ddy.5: parser messages can echo subtitle lines (file content); map them to plain wording that never
+ * repeats the file's text. Only the block number is kept, so the learner can find the problem.
+ */
+export function plainSubtitleFailureReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const block = /\b(?:block|cue) (\d+)\b/i.exec(message)?.[1];
+  if (block && /timing|timestamp/i.test(message)) return `the timing on block ${block} is not valid`;
+  if (block && /empty cue text/i.test(message)) return `block ${block} has no text`;
+  return 'it is not a valid subtitle file';
 }
 
 export function subtitleImportWarning(failures: readonly SubtitleImportFailure[]): string | null {
   if (failures.length === 0) return null;
   const parts = failures.map((f) => `"${f.fileName}" (${f.role} subtitles) could not be read: ${f.reason}.`);
-  return `${parts.join(' ')} The video was imported without ${failures.length === 1 ? 'it' : 'them'}.`;
+  const pronoun = failures.length === 1 ? 'it' : 'them';
+  return `${parts.join(' ')} The video was imported without ${pronoun}. To add ${pronoun} later, fix the file and import the same video again with ${pronoun}.`;
 }
 
 async function relinkExistingBrowserMedia(
@@ -1464,8 +1482,7 @@ export async function importBrowserLocalFiles(
     const targetParsed = input.targetSubtitleFile
       ? await tryParseBrowserSubtitle(failures, input.targetSubtitleFile, targetText, { mediaId: asset.id, language: input.targetLanguage ?? 'pl', role: 'target' })
       : null;
-    // An empty native file was previously ignored silently; keep that.
-    const nativeParsed = nativeText && input.nativeSubtitleFile
+    const nativeParsed = input.nativeSubtitleFile
       ? await tryParseBrowserSubtitle(failures, input.nativeSubtitleFile, nativeText, { mediaId: asset.id, language: input.nativeLanguage ?? 'en', role: 'native' })
       : null;
     const allParsedCues = [...(targetParsed?.cues ?? []), ...(nativeParsed?.cues ?? [])];

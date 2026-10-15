@@ -72,7 +72,9 @@ function renderImportWarning(model: AppModel): HTMLElement | null {
   if (!model.importWarning) return null;
   const box = document.createElement('div');
   box.className = 'status-banner warning import-subtitle-warning';
-  box.setAttribute('role', 'alert');
+  // Non-blocking warning: a polite status region, so rerenders do not re-announce it assertively.
+  box.setAttribute('role', 'status');
+  box.setAttribute('aria-live', 'polite');
   const text = document.createElement('p');
   text.textContent = model.importWarning;
   const dismiss = document.createElement('button');

@@ -88,7 +88,11 @@ describe('lt-ddy.5 malformed subtitle does not block the video import', () => {
         // No partial track: no cue belongs to a track that is not stored.
         expect(model.store.listCuesForTrack(model.nativeTrackId!).length).toBeGreaterThan(0);
         expect(model.importWarning).toContain('"bad.target.srt" (target subtitles) could not be read');
-        expect(model.importWarning).toContain('invalid timing line');
+        expect(model.importWarning).toContain('the timing on block 1 is not valid');
+        expect(model.importWarning).not.toContain('this is not a timing line');
+        expect(warningText()).toContain('To add it later, fix the file and import the same video again with it.');
+        expect(document.querySelector('.import-subtitle-warning')?.getAttribute('role')).toBe('status');
+        expect(document.querySelector('[role="alert"].import-subtitle-warning')).toBeNull();
         expect(warningText()).toContain('bad.target.srt');
         expect(warningText()).toContain('The video was imported without it.');
       });
@@ -100,7 +104,8 @@ describe('lt-ddy.5 malformed subtitle does not block the video import', () => {
         expect(tracks(model)).toEqual([]);
         expect(model.cues).toEqual([]);
         expect(warningText()).toContain('"bad.target.srt" (target subtitles)');
-        expect(warningText()).toContain('"bad.native.srt" (native subtitles)');
+        expect(warningText()).toContain('"bad.native.srt" (native subtitles) could not be read: it is not a valid subtitle file.');
+        expect(warningText()).not.toContain('garbage');
       });
 
       it('dedupe path: same video already present keeps existing tracks, adds valid native, warns about bad target', async () => {
@@ -116,6 +121,32 @@ describe('lt-ddy.5 malformed subtitle does not block the video import', () => {
         expect(tracks(model).map((t) => t.role).sort()).toEqual(['native', 'target']);
         expect(model.targetTrackId).toBe(before[0]!.id);
         expect(warningText()).toContain('"bad.target.srt" (target subtitles) could not be read');
+      });
+
+      it('recovery: re-importing the same video with the fixed target attaches it to the same media', async () => {
+        const model = createAppModel();
+        await run(model, srt(badSrt, 'bad.target.srt'), srt(nativeSrt, 'good.native.srt'), webm([9, 9], 'r.webm'));
+        const mediaId = model.currentMedia!.id;
+        expect(model.cues).toEqual([]);
+        model.importWarning = null;
+        await run(model, srt(targetSrt, 'fixed.target.srt'), null, webm([9, 9], 'r.webm'));
+        expectPlayable(model);
+        expect(model.store.listMediaAssets()).toHaveLength(1);
+        expect(model.currentMedia!.id).toBe(mediaId);
+        expect(tracks(model).map((t) => t.role).sort()).toEqual(['native', 'target']);
+        expect(model.cues.length).toBeGreaterThan(0);
+        expect(model.importWarning).toBeNull();
+        expect(document.querySelectorAll('.cue-row').length).toBeGreaterThan(0);
+        expect(document.querySelector('.cue-native')?.textContent).toBeTruthy();
+      });
+
+      it('an explicitly chosen empty file warns for either role', async () => {
+        const model = createAppModel();
+        await run(model, srt('', 'empty.target.srt'), srt('  \n', 'empty.native.srt'));
+        expectPlayable(model);
+        expect(tracks(model)).toEqual([]);
+        expect(warningText()).toContain('"empty.target.srt" (target subtitles) could not be read: the file is empty.');
+        expect(warningText()).toContain('"empty.native.srt" (native subtitles) could not be read: the file is empty.');
       });
 
       it('a clean import shows no warning', async () => {

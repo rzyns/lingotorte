@@ -561,9 +561,9 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(model.importError).toBeNull();
     expect(model.currentMedia?.title).toBe('bad');
     expect(model.store.listSubtitleTracksForMedia(model.currentMedia!.id)).toEqual([]);
-    expect(model.importWarning).toMatch(/"bad\.srt" \(target subtitles\) could not be read: .*(SRT block|missing numeric cue id)/);
+    expect(model.importWarning).toMatch(/"bad\.srt" \(target subtitles\) could not be read: (the timing on block \d+ is not valid|it is not a valid subtitle file)\./);
     expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:bad-local-video');
-    expect(document.querySelector('.import-subtitle-warning[role="alert"]')?.textContent).toContain(model.importWarning!);
+    expect(document.querySelector('.import-subtitle-warning[role="status"]')?.textContent).toContain(model.importWarning!);
   });
 
   it('revokes the previous local object URL when replacing browser-selected media', async () => {
