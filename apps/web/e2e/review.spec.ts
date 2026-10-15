@@ -7,9 +7,9 @@ test('C: after saving a word, Review shows 1 due card; reveal; Good → no longe
   const word = await saveFirstWord(page, 'hello (e2e)');
   await nav(page, 'Saved');
   const item = page.locator('.saved-item').filter({ has: page.getByRole('heading', { name: word, exact: true }) });
-  const addToReview = item.getByRole('button', { name: 'Add to review' });
-  if (await addToReview.count()) await addToReview.click();
-  await expect(item.getByRole('button', { name: 'In review ✓' })).toBeVisible();
+  // lt-uzo: saving creates the review card (views/saved.ts), so the toggle is already on; no click.
+  await expect(item.getByRole('button', { name: 'In review ✓' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(item.getByRole('button', { name: 'Add to review' })).toHaveCount(0);
 
   await nav(page, 'Review');
   const review = page.locator('section.review-card');
@@ -18,6 +18,7 @@ test('C: after saving a word, Review shows 1 due card; reveal; Good → no longe
   const stats = review.locator('p.meta').filter({ hasText: 'next due' });
   await expect(stats).toContainText('1 card');
   const dueBefore = await stats.innerText();
+  expect(dueBefore).toMatch(/1 card · next due now/);
 
   await review.getByRole('button', { name: 'Show answer / context' }).click();
   await expect(review.locator('.review-target')).toHaveText(word);
@@ -26,5 +27,7 @@ test('C: after saving a word, Review shows 1 due card; reveal; Good → no longe
   await expect(review.locator('#review-empty')).toBeVisible();
   await expect(review.locator('.review-prompt')).toHaveCount(0);
   await expect(review.locator('.bucket-chip').filter({ hasText: 'New' }).locator('.bucket-count')).toHaveText('0');
-  console.log(`[review] before rating: ${JSON.stringify(dueBefore)}`);
+  // After Good the only card is scheduled in the future: nothing is due, so no prompt/stats render.
+  await expect(stats).toHaveCount(0);
+  console.log(`[review] before rating: ${JSON.stringify(dueBefore)}; after rating: due prompts 0, New 0`);
 });

@@ -4,7 +4,7 @@ import { test, expect, nav, loadSyntheticFixture, saveFirstWord } from './suppor
 // without pairing the local service in Settings.
 test('D: reload keeps the saved item and transcript without opening Settings', async ({ page }) => {
   await loadSyntheticFixture(page);
-  const cueText = (await page.locator('.cue-row').first().locator('.cue-target, .cue-text').first().innerText()).trim();
+  const cueText = (await page.locator('.cue-row').first().locator('.cue-target').innerText()).trim();
   const word = await saveFirstWord(page, 'hello (e2e)');
   await nav(page, 'Saved');
   await expect(page.locator('.saved-item h3', { hasText: word })).toHaveCount(1);

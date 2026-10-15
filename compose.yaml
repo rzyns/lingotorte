@@ -72,7 +72,8 @@ services:
       target: e2e
     profiles: [tools]
     init: true
-    ipc: host
+    # Chromium needs more than Docker's 64 MB /dev/shm; shm_size keeps IPC isolated (no ipc: host).
+    shm_size: '1gb'
     environment:
       LINGOTORTE_E2E_BASE_URL: http://web:4173
     volumes:
