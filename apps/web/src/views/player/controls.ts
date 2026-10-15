@@ -106,8 +106,6 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   const currentCue = currentKeyboardCue(model);
   const loopRangeActive = Boolean(model.player.loopRange && currentCue);
   loopRangeBtn.textContent = loopRangeActive ? 'Stop looping' : 'Loop selection';
-  loopRangeBtn.setAttribute('aria-label', loopRangeActive ? 'Clear word-span loop range' : 'Set word-span loop range for selected words');
-  loopRangeBtn.setAttribute('aria-pressed', String(loopRangeActive));
   loopRangeBtn.disabled = !currentCue;
   loopRangeBtn.dataset.testid = 'loop-range-btn';
   loopRangeBtn.addEventListener('click', () => {
@@ -453,7 +451,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     snippet.mediaPath = pathInput.value;
     invalidateSourceRangeSnippet(model, hasNativeInputPath(model, pathInput.value)
       ? 'Media path changed; prepare fresh source audio.'
-      : 'An explicit absolute owned local media path is required.');
+      : 'Enter the full path to the video file first.');
     rerenderApp(model);
   });
   pathLabel.appendChild(pathInput);
@@ -530,10 +528,10 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   status.setAttribute('role', 'status');
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
-  else if (model.localService.status !== 'connected') status.textContent = 'Local service not connected.';
+  else if (model.localService.status !== 'connected') status.textContent = model.localService.status === 'connecting' ? 'Connecting to the local service…' : 'Local service not connected.';
   else if (!readNativePathPolicy(model.localService.pathPolicy)) status.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   else if (!mediaExtractable) status.textContent = 'Source audio requires a current owned or synthetic media asset.';
-  else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
+  else if (!pathValid) status.textContent = 'Enter the full path to the video file first.';
   else if (rangeTooLong) status.textContent = `Source audio has a 30-second maximum; current duration is ${formatTimeMs(selectedDurationMs)}. This range can still be looped.`;
   else status.textContent = snippet.message;
   panel.appendChild(status);

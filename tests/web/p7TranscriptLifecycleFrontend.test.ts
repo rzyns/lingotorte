@@ -249,7 +249,7 @@ describe('P7 transcript lifecycle frontend', () => {
       modelName: 'whisperx-align-pl',
       modelVersion: 'fake-service-1',
     });
-    expect(document.getElementById('app')?.textContent).toContain('Local service ASR draft generated');
+    expect(document.getElementById('app')?.textContent).toContain('Auto-transcript draft created');
 
     const secondWordStart = document.querySelector('input[name="transcript-word-timing-cue-1-word-1-start-ms"]') as HTMLInputElement | null;
     const secondWordEnd = document.querySelector('input[name="transcript-word-timing-cue-1-word-1-end-ms"]') as HTMLInputElement | null;

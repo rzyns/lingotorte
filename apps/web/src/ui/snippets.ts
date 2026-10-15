@@ -60,7 +60,7 @@ function sourceRangeSnippetState(model: AppModel): SourceRangeSnippetUiState {
     status: mediaPath ? 'idle' : 'path-required',
     message: mediaPath
       ? 'Select a range to prepare transient source audio.'
-      : 'An explicit absolute owned local media path is required.',
+      : 'Enter the full path to the video file first.',
     generation: 0,
     contextKey: '',
     mediaId: model.currentMedia?.id ?? null,
@@ -98,7 +98,7 @@ export function synchronizeSourceRangeSnippet(model: AppModel): SourceRangeSnipp
 function practiceSnippetState(model: AppModel): PracticeSnippetUiState {
   const existing = practiceSnippetStates.get(model);
   if (existing) return existing;
-  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Provide an explicit absolute owned local media path.', generation: 0, contextKey: '' };
+  const created: PracticeSnippetUiState = { objectUrl: null, mediaPath: '', status: 'path-required', message: 'Enter the full path to the video file first.', generation: 0, contextKey: '' };
   created.contextKey = practiceSnippetContextKey(model, created);
   practiceSnippetStates.set(model, created);
   return created;

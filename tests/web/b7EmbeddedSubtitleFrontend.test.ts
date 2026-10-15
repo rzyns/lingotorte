@@ -126,7 +126,7 @@ describe('B7 embedded subtitle transcript lifecycle UI', () => {
     pathInput.value = mediaPath;
     pathInput.dispatchEvent(new dom.window.Event('input'));
     button('List embedded subtitle tracks').click();
-    await waitFor(() => document.body.textContent?.includes('An explicit absolute owned local media path is required. Browser blob and handle labels do not qualify.') === true);
+    await waitFor(() => document.body.textContent?.includes('Enter the full path to the video file first. Browser file picks and blob links cannot be used here.') === true);
     expect(fetchCalls).toBe(0);
   });
 

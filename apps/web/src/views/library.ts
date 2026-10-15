@@ -107,7 +107,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   if (currentMediaPath.startsWith('blob:') || currentMediaPath.startsWith('browser-file-handle:')) {
     const localAsrPathNote = document.createElement('p');
     localAsrPathNote.className = 'gate-note local-service-media-path-note';
-    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; the configured local service still needs an explicit absolute owned local media path for ASR, ffmpeg, ffprobe, and source-media snippets.';
+    localAsrPathNote.textContent = 'Browser handles and blob URLs are playback-only; to auto-transcribe, extract subtitles or make practice audio, the local service needs the full path to the video file.';
     gateControls.appendChild(localAsrPathNote);
   }
   panel.appendChild(gateControls);
@@ -200,7 +200,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         model.transcriptLifecycle.pendingCueEdits = {};
         model.transcriptLifecycle.pendingCueTimingEdits = {};
         model.transcriptLifecycle.pendingWordTimingEdits = {};
-        model.transcriptLifecycle.lastMessage = 'Local service ASR draft generated';
+        model.transcriptLifecycle.lastMessage = 'Auto-transcript draft created';
         model.importError = null;
         rerenderApp(model);
       })

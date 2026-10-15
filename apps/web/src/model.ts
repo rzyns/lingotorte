@@ -1950,7 +1950,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const EMBEDDED_PATH_ERROR = 'An explicit absolute owned local media path is required. Browser blob and handle labels do not qualify.';
+const EMBEDDED_PATH_ERROR = 'Enter the full path to the video file first. Browser file picks and blob links cannot be used here.';
 const EMBEDDED_SERVICE_ERROR = 'Local service unreachable. Connect the loopback service and retry.';
 
 export type EmbeddedSubtitleJobOptions = Readonly<{

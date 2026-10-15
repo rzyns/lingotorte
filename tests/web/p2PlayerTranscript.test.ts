@@ -409,7 +409,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     rerenderApp(model);
     const loopRangeBtnAfter = document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement | null;
     expect(loopRangeBtnAfter?.textContent).toBe('Stop looping');
-    expect(loopRangeBtnAfter?.getAttribute('aria-pressed')).toBe('true');
+    expect(loopRangeBtnAfter?.hasAttribute('aria-pressed')).toBe(false);
   });
 
   it('study status rail shows streak, today, and total study time after review or practice', async () => {

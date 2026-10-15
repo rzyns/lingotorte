@@ -230,10 +230,10 @@ describe('B6 visual source range player UI', () => {
 
   it.each([
     ['disconnected service', 'disconnected', '/owned/movie.mkv', 'not connected'],
-    ['blank path', 'connected', '', 'absolute owned local media path'],
-    ['relative path', 'connected', 'movie.mkv', 'absolute owned local media path'],
-    ['blob path', 'connected', 'blob:private-media', 'absolute owned local media path'],
-    ['HTTP path', 'connected', 'https://example.invalid/private.mkv', 'absolute owned local media path'],
+    ['blank path', 'connected', '', 'full path to the video file'],
+    ['relative path', 'connected', 'movie.mkv', 'full path to the video file'],
+    ['blob path', 'connected', 'blob:private-media', 'full path to the video file'],
+    ['HTTP path', 'connected', 'https://example.invalid/private.mkv', 'full path to the video file'],
   ] as const)('rejects %s before fetch', async (_label, serviceStatus, configuredPath, expectedStatus) => {
     const fetchImpl = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchImpl);

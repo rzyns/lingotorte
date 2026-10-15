@@ -66,18 +66,21 @@ describe('lt-dlf.7 N2 capture form order and heading', () => {
 });
 
 describe('lt-dlf.7 H6 loop-range button labels the action', () => {
-  it('reads "Loop selection" then "Stop looping" with aria-pressed, without quoting an old label', () => {
+  it('reads "Loop selection" then "Stop looping" with name = visible text, no aria-pressed/aria-label', () => {
     const { model, cue } = playerModel();
     model.selection = { kind: 'lexeme', text: 'Uczymy', cueId: cue.id, tokenStart: 0, tokenEnd: 1, charStart: 0, charEnd: 6 };
     rerenderApp(model);
     const btn = () => document.querySelector('[data-testid="loop-range-btn"]') as HTMLButtonElement;
     expect(btn().textContent).toBe('Loop selection');
-    expect(btn().getAttribute('aria-pressed')).toBe('false');
+    expect(btn().hasAttribute('aria-pressed')).toBe(false);
+    expect(btn().hasAttribute('aria-label')).toBe(false);
     expect(visibleText()).not.toMatch(/Loop range (on|off)/);
     btn().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     rerenderApp(model);
     expect(btn().textContent).toBe('Stop looping');
-    expect(btn().getAttribute('aria-pressed')).toBe('true');
+    expect(btn().hasAttribute('aria-pressed')).toBe(false);
+    expect(btn().hasAttribute('aria-label')).toBe(false);
+    expect(document.body.innerHTML).not.toContain('word-span');
   });
 });
 
@@ -123,6 +126,37 @@ describe('lt-dlf.7 N3 mobile Player compaction', () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync(new URL('../../apps/web/src/style.css', import.meta.url), 'utf8');
     const block = css.match(/@media \(max-width: 599px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    for (const sel of ['.lingotorte-header p', '.study-cockpit-header > div > p', '.source-context-row .source-context-chips']) expect(block).toContain(sel);
+    for (const sel of ['.lingotorte-header p', '.study-cockpit-header > div > p', '.source-context-row .source-line-chip']) expect(block).toContain(sel);
+    expect(block).not.toMatch(/source-context-chips|source-meta-chip|privacy/);
+  });
+
+  it('marks only the line chip for mobile hiding; privacy chip stays unmarked', () => {
+    const { model } = playerModel();
+    rerenderApp(model);
+    const chips = Array.from(document.querySelectorAll('.source-context-chips > *'));
+    expect(chips.some((c) => c.textContent === 'owned' && !c.classList.contains('source-line-chip'))).toBe(true);
+    expect(chips.some((c) => /^line \d+$/.test(c.textContent ?? '') && c.classList.contains('source-line-chip'))).toBe(true);
+  });
+});
+
+describe('lt-dlf.7 review fixes: service status and path copy', () => {
+  it('Player shows no "absolute owned local media" copy while connecting', () => {
+    const { model } = playerModel();
+    model.localService.status = 'connecting';
+    rerenderApp(model);
+    for (const d of Array.from(document.querySelectorAll('details'))) d.open = true;
+    rerenderApp(model);
+    expect(document.body.innerHTML).not.toMatch(/absolute owned local media|Absolute path \(/);
+  });
+
+  it('source files use plain path copy and a connecting branch', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const f of ['views/practice.ts', 'views/player/controls.ts', 'ui/snippets.ts', 'views/library.ts']) {
+      const src = readFileSync(new URL(`../../apps/web/src/${f}`, import.meta.url), 'utf8');
+      expect(src).not.toMatch(/Absolute path \(|absolute owned local media|ASR draft generated/);
+    }
+    for (const f of ['views/practice.ts', 'views/player/controls.ts']) {
+      expect(readFileSync(new URL(`../../apps/web/src/${f}`, import.meta.url), 'utf8')).toContain('Connecting to the local service…');
+    }
   });
 });
