@@ -92,12 +92,12 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(cockpit?.querySelector('.transcript-copilot .transcript-panel')).toBeTruthy();
 
     const statusTokens = Array.from(cockpit?.querySelectorAll('.status-token') ?? []).map((token) => token.textContent?.trim());
-    expect(statusTokens).toContain('local/private');
-    expect(statusTokens).toContain('approved');
+    expect(statusTokens).toContain('local/private'); // lt-unl: now in the collapsed study-status footer
+    expect(statusTokens).toContain('Transcript ready');
 
     const sourceContext = cockpit?.querySelector('.source-context-row');
     expect(sourceContext?.textContent).toContain('fixtures/media/synthetic-polish-dialogue.webm');
-    expect(sourceContext?.textContent).toContain('cue 1');
+    expect(sourceContext?.textContent).toContain('line 1');
     expect(sourceContext?.textContent).toContain('0:00–0:02');
   });
 
@@ -328,7 +328,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(mediaHandle.getFile).not.toHaveBeenCalled();
     expect(model.browserLocalMedia.permissionState).toBe('denied');
     expect(document.getElementById('app')?.textContent).toContain('Browser permission: denied');
-    expect(document.getElementById('app')?.textContent).toContain('Regrant the saved handle');
+    expect(document.getElementById('app')?.textContent).toContain('Reconnect it, or choose the video file again');
   });
 
   it('reports a clear error when the saved browser handle is missing from the store', async () => {

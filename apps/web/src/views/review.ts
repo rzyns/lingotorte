@@ -1,5 +1,5 @@
 import type { AppModel } from '../uiTypes';
-import { formatDueAt, formatTimeMs } from '../uiTypes';
+import { formatDueAt, formatRelativeDue, formatTimeMs } from '../uiTypes';
 import {
   listReviewBuckets,
   nativeTextForCue,
@@ -166,7 +166,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
   const allCards = Object.values(model.store.snapshot().reviewCards).filter((card) => !card.deletedAt);
   const totalCards = allCards.filter((card) => !card.suspendedAt).length;
   const archivedCards = allCards.length - totalCards;
-  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} · next due ${formatRelativeDue(state.dueAt, model.clock())}${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
   section.appendChild(stats);
   // lt-uzo: FSRS state/due are scheduling detail, kept behind a disclosure.
   const scheduling = document.createElement('details');

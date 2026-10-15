@@ -130,7 +130,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     const app = document.getElementById('app');
     const phraseCards = app?.querySelectorAll('.saved-item');
     expect(phraseCards?.length).toBe(1);
-    expect(app?.textContent).toContain('1 occurrence');
+    expect(app?.textContent).toContain('saved 1 time');
   });
 
   it('keeps source anchors visible: cue text, time, media path, token span, char span', async () => {

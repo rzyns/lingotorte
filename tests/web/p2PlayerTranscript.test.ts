@@ -420,7 +420,8 @@ describe('P2 player dual-subtitle and transcript projection', () => {
       return m;
     });
 
-    const rail = document.querySelector('[aria-label="Study status"]') as HTMLElement | null;
+    // lt-unl: streak and the study-time estimate moved from the hero rail into the collapsed study-status footer.
+    const rail = document.querySelector('.study-status-footer-rail') as HTMLElement | null;
     expect(rail).toBeTruthy();
     expect(rail?.dataset.streakDays).toBe('0');
     expect(rail?.dataset.todayStudyTime).toBe('0s');
@@ -455,7 +456,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     } as import('../../packages/domain/src/coreTypes').ReviewEvent);
     rerenderApp(model);
 
-    const railAfter = document.querySelector('[aria-label="Study status"]') as HTMLElement | null;
+    const railAfter = document.querySelector('.study-status-footer-rail') as HTMLElement | null;
     expect(railAfter?.dataset.streakDays).toBe('2');
     expect(railAfter?.dataset.todayStudyTime).toBe('45s');
     expect(railAfter?.dataset.totalStudyTime).toBe('1m 30s');

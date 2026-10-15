@@ -89,11 +89,11 @@ describe('lt-r4k.3 cue row nested button keyboard activation', () => {
       });
     });
 
-    it(`${JSON.stringify(key)} on Show tokens tokenizes and does not seek`, async () => {
+    it(`${JSON.stringify(key)} on Show words tokenizes and does not seek`, async () => {
       const { model, cue } = installModel();
       rerenderApp(model);
       const btn = Array.from(document.querySelectorAll(`[data-cue-id="${cue.id}"] .cue-actions button`))
-        .find((b) => b.textContent === 'Show tokens') as HTMLButtonElement;
+        .find((b) => b.textContent === 'Show words') as HTMLButtonElement;
       const ev = pressKey(dom, btn, key);
       expect(ev.defaultPrevented).toBe(false);
       expect(model.player.activeCueId).toBeNull();

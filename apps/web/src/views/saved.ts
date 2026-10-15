@@ -86,7 +86,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
     card.appendChild(title);
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `${item.kind} • ${item.language} • ${occurrences.length} occurrence${occurrences.length === 1 ? '' : 's'}`;
+    meta.textContent = `${item.kind === 'lexeme' ? 'word' : item.kind} • ${item.language} • saved ${occurrences.length} time${occurrences.length === 1 ? '' : 's'}`;
     card.appendChild(meta);
     if (item.meaning) {
       const meaning = document.createElement('div');
@@ -134,9 +134,10 @@ export function renderSavedView(model: AppModel): HTMLElement {
       const tokenSpanText = occurrence.sourceContext.tokenSpan.startToken === occurrence.sourceContext.tokenSpan.endToken - 1
         ? `token ${occurrence.sourceContext.tokenSpan.startToken}`
         : `tokens ${occurrence.sourceContext.tokenSpan.startToken}–${occurrence.sourceContext.tokenSpan.endToken - 1}`;
+      // lt-unl: token/char spans are provenance; they stay inside the disclosure, off the primary line.
       appendSourceDisclosure(
         contextLine,
-        `${compactPathLabel(occurrence.sourceContext.mediaPath)} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
+        `saved from ${compactPathLabel(occurrence.sourceContext.mediaPath)} at ${formatTimeMs(occurrence.startMs)}`,
         `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
       );
       occurrenceGroup.appendChild(contextLine);

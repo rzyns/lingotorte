@@ -344,7 +344,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   handles.className = 'source-range-handles';
   const makeHandle = (kind: 'start' | 'end'): HTMLLabelElement => {
     const label = document.createElement('label');
-    label.textContent = kind === 'start' ? 'Start handle' : 'End handle';
+    label.textContent = kind === 'start' ? 'Start' : 'End';
     const input = document.createElement('input');
     input.type = 'range';
     input.min = '0';
@@ -382,7 +382,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   summary.textContent = range
     ? `Start ${formatTimeMs(range.startMs)} • End ${formatTimeMs(range.endMs)} • Duration ${formatTimeMs(range.endMs - range.startMs)}`
     : durationMs > 0
-      ? 'Move either handle to select a source range.'
+      ? 'Move the Start or End slider to select a part of the video.'
       : 'Media duration/range unavailable.';
   panel.appendChild(summary);
 
@@ -530,7 +530,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   status.setAttribute('role', 'status');
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
-  else if (model.localService.status !== 'connected') status.textContent = 'Local service unavailable or disconnected.';
+  else if (model.localService.status !== 'connected') status.textContent = 'Local storage service unavailable or disconnected.';
   else if (!readNativePathPolicy(model.localService.pathPolicy)) status.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   else if (!mediaExtractable) status.textContent = 'Source audio requires a current owned or synthetic media asset.';
   else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
@@ -540,7 +540,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const privacy = document.createElement('p');
   privacy.className = 'meta';
-  privacy.textContent = 'Browser handles and object URLs are playback-only. The configured service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
+  privacy.textContent = 'Videos chosen in the browser are for playback only. The configured service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
   panel.appendChild(privacy);
   return panel;
 }

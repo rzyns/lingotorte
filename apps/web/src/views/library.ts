@@ -91,7 +91,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 
   const localAsrPathLabel = document.createElement('label');
   localAsrPathLabel.htmlFor = 'local-asr-media-path';
-  localAsrPathLabel.textContent = 'Local service ASR media path (absolute; optional if current media already has one)';
+  localAsrPathLabel.textContent = 'Local storage service ASR media path (absolute; optional if current media already has one)';
   const localAsrPathInput = document.createElement('input');
   localAsrPathInput.id = 'local-asr-media-path';
   localAsrPathInput.name = 'local-asr-media-path';

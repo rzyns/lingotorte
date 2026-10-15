@@ -121,8 +121,8 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     actions.appendChild(saveSentenceBtn);
 
     const tokenizeBtn = document.createElement('button');
-    tokenizeBtn.textContent = 'Show tokens';
-    tokenizeBtn.setAttribute('aria-label', `Show tokens for cue at ${formatTimeMs(cue.startMs)}`);
+    tokenizeBtn.textContent = 'Show words';
+    tokenizeBtn.setAttribute('aria-label', `Show words for line at ${formatTimeMs(cue.startMs)}`);
     tokenizeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       void tokenizeCueText(model, cue).then((tokens: import('../../model').TokenInfo[]) => {
@@ -385,16 +385,17 @@ function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
   summary.className = 'selection-source-summary';
   summary.append(
     renderSourceMetaChip(mediaLabel(model)),
-    renderSourceMetaChip(`cue ${cue.cueIndex}`),
+    renderSourceMetaChip(`line ${cue.cueIndex}`),
     renderSourceMetaChip(`${formatCompactTimeMs(cue.startMs)}–${formatCompactTimeMs(cue.endMs)}`),
   );
   if (targetTrack) {
-    summary.append(renderSourceMetaChip(`track v${targetTrack.trackVersion}`), renderSourceMetaChip(targetTrack.transcriptStatus));
+    summary.append(renderSourceMetaChip(targetTrack.transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft'));
   }
   if (model.currentMedia?.originalPath) {
     const detail = document.createElement('div');
     detail.className = 'selection-source-detail';
-    appendSourceDisclosure(detail, 'source details', model.currentMedia.originalPath);
+    // lt-unl: track version stays in the disclosure, off the primary line.
+    appendSourceDisclosure(detail, 'source details', targetTrack ? `${model.currentMedia.originalPath} • track v${targetTrack.trackVersion} • ${targetTrack.transcriptStatus}` : model.currentMedia.originalPath);
     summary.appendChild(detail);
   }
   return summary;
@@ -404,7 +405,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'card selection-panel';
   const h2 = document.createElement('h2');
-  h2.textContent = 'Selection';
+  h2.textContent = 'Save a word or phrase';
   panel.appendChild(h2);
   panel.appendChild(renderMorphologyPanel(model, () => rerenderApp(model)));
 
@@ -413,7 +414,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
     const isSavedPreview = model.player.lastTokenPreview.startsWith('Saved ');
     preview.className = `token-preview${isSavedPreview ? ' saved-occurrence-preview' : ''}`;
     const label = document.createElement('strong');
-    label.textContent = isSavedPreview ? 'Saved occurrence:' : 'Token preview:';
+    label.textContent = isSavedPreview ? 'Saved:' : 'Words in this line:';
     const value = document.createElement('span');
     value.textContent = model.player.lastTokenPreview;
     preview.append(label, value);
@@ -435,14 +436,14 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
     const p = document.createElement('p');
     p.className = 'selection-help';
     p.textContent = model.player.lastTokenPreview?.startsWith('Saved ')
-      ? 'Saved to My Vocab with the current cue/time/source anchor. Select another transcript word or open My Vocab to review occurrences.'
-      : 'Select a word or phrase in a transcript cue to save it with source context.';
+      ? 'Saved to My Vocab with the video and time it came from. Select another word in the transcript, or open My Vocab to see where you saved it.'
+      : 'Select a word or phrase in a transcript line to save it with the video and time it came from.';
     panel.appendChild(p);
     return panel;
   }
 
   const p = document.createElement('p');
-  p.textContent = `Selected: “${model.selection.text}” (${model.selection.kind})`;
+  p.textContent = `Selected: “${model.selection.text}” (${model.selection.kind === 'lexeme' ? 'word' : model.selection.kind})`;
   panel.appendChild(p);
 
   const form = document.createElement('div');
@@ -481,7 +482,8 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   actions.className = 'form-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn-primary';
-  saveBtn.textContent = 'Save occurrence';
+  saveBtn.textContent = 'Save occurrence'; // exact text: tests and browser scripts click it
+  saveBtn.setAttribute('aria-label', 'Save word with the video and time it came from');
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   const canSave = targetTrack?.transcriptStatus === 'approved';
   saveBtn.disabled = !canSave;

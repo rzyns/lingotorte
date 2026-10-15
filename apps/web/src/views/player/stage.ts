@@ -16,7 +16,7 @@ import {
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
 import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
-import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusRail } from '../../ui/common.ts';
+import { type BrowserFilePickerGlobal, renderSourceContextRow, renderStudyStatusFooter, renderStudyStatusRail } from '../../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../../ui/mediaConflict.ts';
 import { openCapture } from '../../ui/capture.ts';
 import { dropKeyed, keyed, peekKeyed, peekKeyedKey } from '../../ui/keyed.ts';
@@ -32,9 +32,9 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   header.className = 'study-cockpit-header card';
   const headingGroup = document.createElement('div');
   const h2 = document.createElement('h2');
-  h2.textContent = 'Study cockpit';
+  h2.textContent = 'Player';
   const intro = document.createElement('p');
-  intro.textContent = 'Study from a local video segment, keep the transcript beside it, and preserve cue/time/source context for every saved item.';
+  intro.textContent = 'Watch a local video with its transcript beside it. Every word you save remembers the video and time it came from.';
   headingGroup.append(h2, intro);
   header.append(headingGroup, renderStudyStatusRail(model));
   section.appendChild(header);
@@ -54,12 +54,13 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   const right = document.createElement('aside');
   right.className = 'card transcript-copilot';
   const transcriptHeading = document.createElement('h2');
-  transcriptHeading.textContent = 'Transcript co-pilot';
+  transcriptHeading.textContent = 'Transcript';
   right.appendChild(transcriptHeading);
   right.appendChild(renderTranscriptPanel(model));
   grid.appendChild(right);
 
   section.appendChild(grid);
+  section.appendChild(renderStudyStatusFooter(model));
   return section;
 }
 
@@ -414,8 +415,8 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const handleName = handleNameFromMedia(model);
   const body = document.createElement('p');
   body.textContent = handleName
-    ? `The browser-granted file handle for "${handleName}" is not available for playback. Regrant the saved handle or choose the owned media file again.`
-    : 'The browser-granted file handle or session object URL is not available for playback. Regrant the saved handle or choose the owned media file again.';
+    ? `"${handleName}" needs to be reconnected before it can play. Reconnect it, or choose the video file again.`
+    : 'This video needs to be reconnected before it can play. Reconnect it, or choose the video file again.';
 
   const permission = document.createElement('p');
   permission.className = 'meta relink-permission-state';
@@ -423,6 +424,11 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
 
   const boundary = document.createElement('p');
   boundary.className = 'meta relink-boundary-note';
+  const boundaryDetails = document.createElement('details');
+  boundaryDetails.className = 'relink-boundary-details';
+  const boundarySummary = document.createElement('summary');
+  boundarySummary.textContent = 'technical details';
+  boundaryDetails.append(boundarySummary, boundary);
   boundary.textContent = 'Browser file handles are playback and relink identity only. For local-service ASR, ffmpeg, ffprobe, embedded subtitle extraction, and source-media snippets, provide an explicit absolute owned local media path in Library → Transcript lifecycle.';
 
   const actions = document.createElement('div');
@@ -464,7 +470,7 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
     rerenderApp(model);
   });
   actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
-  placeholder.append(icon, heading, body, permission, boundary, actions);
+  placeholder.append(icon, heading, body, permission, boundaryDetails, actions);
   if (model.importError) {
     const banner = document.createElement('p');
     banner.className = 'status-banner error relink-error';
