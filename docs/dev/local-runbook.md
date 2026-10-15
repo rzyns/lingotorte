@@ -211,7 +211,7 @@ The P7 transcript lane is implemented as a local/fakeable lifecycle slice. Defau
 3. Enter or keep a public YouTube URL/video id, check **I authorize a public caption metadata read**, and click **Import gated demo caption draft**.
 4. Verify the current transcript is labeled `draft` with `youtube-auto-caption` provenance/warnings.
 5. Open **Player** and verify **Save sentence** is disabled with the approval-gate message.
-6. Return to **Library**, edit cue text/timing or word timing fields, optionally use **Split cue N** / **Merge cue N with next**, and click **Create corrected transcript version**.
+6. Return to **Library**, edit cue text/timing or word timing fields, optionally use **Split line N** / **Merge line N with next**, and click **Create corrected transcript version**.
 7. Verify the current transcript is `correcting`, then click **Approve transcript for study**.
 8. Return to **Player** and verify **Save sentence** is enabled and saves the corrected cue text.
 9. Optional local ASR path: start `npm run local` or `npm run dev:local-service`, keep **Settings → Local service URL** pointed at `http://127.0.0.1:5174`, load or keep a current media asset, enter an absolute owned local media path in **Local service ASR media path** when the current browser media is a `blob:` URL, fixture URL, or `browser-file-handle:<name>` label, then click **Generate local ASR draft**. Verify the resulting track is a `draft` `local-asr` track with `asrDraft` warnings and first-class word timings when the local adapter returns them. Browser handles/blob URLs are playback-only; the loopback service needs a filesystem path it can read for ASR, ffmpeg/ffprobe, and source-media snippets.

@@ -212,7 +212,7 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
     revealBtn?.click();
     renderReview(model);
 
-    const replayBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Replay source cue'));
+    const replayBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('Replay source line'));
     expect(replayBtn).toBeTruthy();
     replayBtn?.click();
 

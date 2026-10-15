@@ -106,6 +106,15 @@ export function compactPathLabel(path: string): string {
   return parts.at(-1) ?? path;
 }
 
+/** lt-unl: learner-facing media name: asset title, else the path's file name; never a data URL or hash. */
+export function mediaDisplayName(model: AppModel, mediaId: string | undefined, mediaPath: string): string {
+  const title = mediaId ? model.store.getMediaAsset(mediaId)?.title : undefined;
+  if (title) return title;
+  if (mediaPath.startsWith('data:')) return 'media file';
+  const name = compactPathLabel(mediaPath);
+  return /[A-Za-z0-9+/]{20,}={0,2}/.test(name) ? 'media file' : name;
+}
+
 export function mediaLabel(model: AppModel, fallbackPath?: string): string {
   if (model.currentMedia?.title) return model.currentMedia.title;
   if (fallbackPath) return compactPathLabel(fallbackPath);
@@ -118,7 +127,7 @@ export function renderUnresolvedSource(mediaPath: string): HTMLElement {
   note.className = 'status-banner warning source-unresolved';
   note.setAttribute('role', 'status');
   note.dataset.testid = 'source-unresolved';
-  appendSourceDisclosure(note, `Source cue/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
+  appendSourceDisclosure(note, `Source line/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
   return note;
 }
 
@@ -151,7 +160,6 @@ export function renderStudyStatusRail(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'status-token-rail';
   rail.setAttribute('aria-label', 'Study status');
-  rail.appendChild(renderStatusToken('local/private', 'local'));
 
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   const transcriptStatus = targetTrack?.transcriptStatus ?? 'no transcript';
@@ -162,20 +170,37 @@ export function renderStudyStatusRail(model: AppModel): HTMLElement {
       : transcriptStatus === 'correcting'
         ? 'warning'
         : 'neutral';
-  rail.appendChild(renderStatusToken(transcriptStatus, statusTone));
-
-  const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
-  rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
+  // lt-unl: hero rail holds at most 3 chips (transcript readiness, N saved, due today); the rest is in a details footer.
+  const readiness = transcriptStatus === 'approved'
+    ? 'Transcript ready'
+    : transcriptStatus === 'no transcript'
+      ? 'No transcript yet'
+      : 'Transcript draft — approve before saving words';
+  rail.appendChild(renderStatusToken(readiness, statusTone));
 
   const progress = learnerProgress(model, model.clock());
+  rail.appendChild(renderStatusToken(`${progress.savedItems} saved`, 'neutral'));
+  rail.appendChild(renderStatusToken(`${progress.dueCards} due today`, 'neutral'));
+  return rail;
+}
+
+/** lt-unl: secondary study status (privacy, transcript source, activity, streak, time estimate), collapsed by default. */
+export function renderStudyStatusFooter(model: AppModel): HTMLElement {
+  const footer = document.createElement('details');
+  footer.className = 'study-status-footer';
+  const summary = document.createElement('summary');
+  summary.textContent = 'More study status';
+  const rail = document.createElement('div');
+  rail.className = 'status-token-rail study-status-footer-rail';
+  rail.appendChild(renderStatusToken('local/private', 'local'));
+  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
+  rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
+  const progress = learnerProgress(model, model.clock());
   const progressParts: string[] = [];
-  if (progress.savedItems > 0) progressParts.push(`${progress.savedItems} saved`);
-  if (progress.dueCards > 0) progressParts.push(`${progress.dueCards} due`);
   if (progress.totalReviews > 0) progressParts.push(`${progress.totalReviews} reviews`);
   if (progress.practiceAttempts > 0) progressParts.push(`${progress.practiceAttempts} practice`);
-  if (progressParts.length > 0) {
-    rail.appendChild(renderStatusToken(progressParts.join(' • '), 'neutral'));
-  }
+  if (progressParts.length > 0) rail.appendChild(renderStatusToken(progressParts.join(' • '), 'neutral'));
 
   const metrics = studyMetrics(model);
   const today = formatCompactDurationMs(metrics.todayStudyTimeMs);
@@ -190,8 +215,14 @@ export function renderStudyStatusRail(model: AppModel): HTMLElement {
   rail.dataset.streakDays = String(metrics.streakDays);
   rail.dataset.todayStudyTime = today;
   rail.dataset.totalStudyTime = total;
+  footer.append(summary, rail);
+  return footer;
+}
 
-  return rail;
+/** lt-unl: 1-based position in the loaded cue list (stored cueIndex may be 0-based, e.g. VTT without ids). */
+export function linePosition(model: AppModel, cue: Cue): number {
+  const idx = model.cues.findIndex((candidate) => candidate.id === cue.id);
+  return idx >= 0 ? idx + 1 : cue.cueIndex;
 }
 
 export function renderSourceContextRow(model: AppModel): HTMLElement {
@@ -216,17 +247,16 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
   if (activeCue) {
     parts.push(`cue ${activeCue.cueIndex}`);
     parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
-    visibleParts.push(`cue ${activeCue.cueIndex}`);
+    visibleParts.push(`line ${linePosition(model, activeCue)}`);
     visibleParts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
   } else {
     parts.push('no active cue');
-    visibleParts.push('no active cue');
+    visibleParts.push('no current line');
   }
   if (targetTrack) {
     parts.push(`track v${targetTrack.trackVersion}`);
     parts.push(targetTrack.transcriptStatus);
-    visibleParts.push(`track v${targetTrack.trackVersion}`);
-    visibleParts.push(targetTrack.transcriptStatus);
+    visibleParts.push(targetTrack.transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft');
   }
   const primary = document.createElement('div');
   primary.className = 'source-context-primary';
@@ -237,8 +267,7 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
     const chips = document.createElement('div');
     chips.className = 'source-context-chips';
     if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
-    if (activeCue) chips.appendChild(renderSourceMetaChip(`cue ${activeCue.cueIndex}`));
-    if (targetTrack) chips.appendChild(renderSourceMetaChip(targetTrack.transcriptStatus));
+    if (activeCue) chips.appendChild(renderSourceMetaChip(`line ${linePosition(model, activeCue)}`));
     row.appendChild(chips);
   }
   return row;
@@ -274,7 +303,7 @@ function renderLifecycleStageRail(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'lifecycle-stage-rail';
   rail.setAttribute('aria-label', 'Transcript lifecycle stages');
-  ['Source candidates', 'Draft evidence', 'Cue correction', 'Word timing', 'Approval'].forEach((label, index) => {
+  ['Source candidates', 'Draft evidence', 'Line correction', 'Word timing', 'Approval'].forEach((label, index) => {
     const stage = document.createElement('span');
     const state = lifecycleStageState(model, index);
     stage.className = `lifecycle-stage lifecycle-stage-${state}`;

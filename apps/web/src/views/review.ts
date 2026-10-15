@@ -1,5 +1,5 @@
 import type { AppModel } from '../uiTypes';
-import { formatDueAt, formatTimeMs } from '../uiTypes';
+import { formatDueAt, formatRelativeDue, formatTimeMs } from '../uiTypes';
 import {
   listReviewBuckets,
   nativeTextForCue,
@@ -9,7 +9,7 @@ import {
   toggleReviewReveal,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, compactPathLabel, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
 import { renderAddMeaning } from './saved.ts';
 
 export function renderReviewView(model: AppModel): HTMLElement {
@@ -96,7 +96,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
       }
       const sourceNote = document.createElement('p');
       sourceNote.className = 'meta';
-      appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
+      appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
     } else {
@@ -120,8 +120,8 @@ export function renderReviewView(model: AppModel): HTMLElement {
 
   const replayBtn = document.createElement('button');
   replayBtn.className = 'btn-secondary';
-  replayBtn.textContent = 'Replay source cue';
-  replayBtn.setAttribute('aria-label', 'Jump back to the source cue in the player');
+  replayBtn.textContent = 'Replay source line';
+  replayBtn.setAttribute('aria-label', 'Jump back to the source line in the player');
   replayBtn.disabled = !currentCue;
   replayBtn.addEventListener('click', () => {
     if (!currentCue) return;
@@ -166,7 +166,15 @@ export function renderReviewView(model: AppModel): HTMLElement {
   const allCards = Object.values(model.store.snapshot().reviewCards).filter((card) => !card.deletedAt);
   const totalCards = allCards.filter((card) => !card.suspendedAt).length;
   const archivedCards = allCards.length - totalCards;
-  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} in local deck${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
+  // lt-unl: "next due" is the earliest due instant across cards in review, not the displayed card's.
+  const reviewStates = model.store.snapshot().reviewCardStates;
+  const nextDueMs = allCards
+    .filter((c) => !c.suspendedAt)
+    .map((c) => (reviewStates[c.id] ? new Date(reviewStates[c.id]!.dueAt).valueOf() : Number.NaN))
+    .filter((ms) => Number.isFinite(ms))
+    .reduce((min, ms) => Math.min(min, ms), Number.POSITIVE_INFINITY);
+  const nextDue = Number.isFinite(nextDueMs) ? new Date(nextDueMs) : state.dueAt;
+  stats.textContent = `${totalCards} card${totalCards === 1 ? '' : 's'} · next due ${formatRelativeDue(nextDue, model.clock())}${archivedCards > 0 ? ` (${archivedCards} archived)` : ''}`;
   section.appendChild(stats);
   // lt-uzo: FSRS state/due are scheduling detail, kept behind a disclosure.
   const scheduling = document.createElement('details');

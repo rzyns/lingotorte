@@ -59,7 +59,7 @@ describe('P7 transcript lifecycle frontend', () => {
     expect(stages).toEqual([
       '1 Source candidates',
       '2 Draft evidence',
-      '3 Cue correction',
+      '3 Line correction',
       '4 Word timing',
       '5 Approval',
     ]);
@@ -416,8 +416,8 @@ describe('P7 transcript lifecycle frontend', () => {
     await waitFor(() => model.cues.length === 2);
     const parentTrackId = model.targetTrackId!;
 
-    await waitFor(() => Boolean(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split cue 1')));
-    const splitButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split cue 1') as HTMLButtonElement | null;
+    await waitFor(() => Boolean(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split line 1')));
+    const splitButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Split line 1') as HTMLButtonElement | null;
     expect(splitButton).toBeTruthy();
     splitButton!.click();
     await waitFor(() => model.cues.length === 3);
@@ -429,7 +429,7 @@ describe('P7 transcript lifecycle frontend', () => {
     expect(model.cues[1]!.text.length).toBeGreaterThan(0);
 
     const splitTrackId = model.targetTrackId!;
-    const mergeButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Merge cue 1 with next') as HTMLButtonElement | null;
+    const mergeButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Merge line 1 with next') as HTMLButtonElement | null;
     expect(mergeButton).toBeTruthy();
     mergeButton!.click();
     await waitFor(() => model.targetTrackId !== splitTrackId && model.cues.length === 2);

@@ -24,7 +24,7 @@ import {
   PRACTICE_SPEAKING_UNAVAILABLE,
 } from '../model';
 import { PRACTICE_SUCCESSORS, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, compactPathLabel, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
 import { hasNativeInputPath, invalidatePracticeSnippet, practiceSnippetContextKey, practiceSnippetStates, synchronizePracticeSnippet } from '../ui/snippets.ts';
 
 export function renderPracticeView(model: AppModel): HTMLElement {
@@ -208,7 +208,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     }
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
-    status.textContent = model.localService.status !== 'connected' ? 'Local service unavailable or disconnected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
+    status.textContent = model.localService.status !== 'connected' ? 'Local storage service unavailable or disconnected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
     privacy.className = 'meta';
@@ -327,8 +327,8 @@ export function renderPracticeView(model: AppModel): HTMLElement {
 
   const replayBtn = document.createElement('button');
   replayBtn.className = 'btn-secondary';
-  replayBtn.textContent = 'Replay source cue';
-  replayBtn.setAttribute('aria-label', 'Jump back to the source cue in the player');
+  replayBtn.textContent = 'Replay source line';
+  replayBtn.setAttribute('aria-label', 'Jump back to the source line in the player');
   replayBtn.disabled = !currentCue;
   replayBtn.addEventListener('click', () => {
     if (!currentCue) return;
@@ -411,7 +411,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     }
     const sourceNote = document.createElement('p');
     sourceNote.className = 'meta';
-    appendSourceDisclosure(sourceNote, `Media: ${compactPathLabel(occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
+    appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
     context.appendChild(sourceNote);
   } else {
     context.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));

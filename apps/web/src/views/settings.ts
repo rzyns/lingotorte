@@ -50,7 +50,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   servicePanel.appendChild(serviceHeading);
 
   const serviceDescription = document.createElement('p');
-  serviceDescription.textContent = 'Connect to the configured private local service when you want SQLite-backed state, local transcription jobs, and scratch-artifact cleanup. Use Docker for same-origin access on a trusted private LAN, never the public internet. This connection is explicit; browser handles are playback-only and Docker media paths start with /media/.';
+  serviceDescription.textContent = 'Connect to the configured private local service when you want SQLite-backed state, local transcription jobs, and scratch-artifact cleanup. Use Docker for same-origin access on a trusted private LAN, never the public internet. This connection is explicit; files you choose in the browser are for playback only, and Docker media paths start with /media/.';
   servicePanel.appendChild(serviceDescription);
 
   const urlLabel = document.createElement('label');

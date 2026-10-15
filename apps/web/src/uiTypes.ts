@@ -236,6 +236,19 @@ export function formatDueAt(dueAt: string | Date): string {
   return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
 }
 
+/** lt-unl: learner-facing relative due time in local time ("now", "today at 14:05", "tomorrow at 09:00", "in 3 days"). */
+export function formatRelativeDue(dueAt: string | Date, asOf: Date): string {
+  const date = typeof dueAt === 'string' ? new Date(dueAt) : dueAt;
+  if (Number.isNaN(date.valueOf())) return 'unknown';
+  if (date.valueOf() <= asOf.valueOf()) return 'now';
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).valueOf();
+  const days = Math.round((dayStart(date) - dayStart(asOf)) / 86_400_000);
+  if (days === 0) return `today at ${hhmm}`;
+  if (days === 1) return `tomorrow at ${hhmm}`;
+  return `in ${days} days`;
+}
+
 export function buildSourceContext(
   mediaId: string,
   mediaPath: string,

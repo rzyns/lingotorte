@@ -147,17 +147,17 @@ describe('lt-dlf.1 play button and playback position across rerenders', () => {
     expect(playBtn().textContent).toBe('Play');
   });
 
-  it('Next/Prev cue while playing keeps playing at the cue start', () => {
+  it('Next/Prev line while playing keeps playing at the cue start', () => {
     const { model, c0, c1 } = installModel();
     playBtn().click();
-    const next = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Next cue')!;
+    const next = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Next line')!;
     next.click();
     expect(model.player.currentTimeMs).toBe(c1.startMs);
     metadata(video());
     expect(model.player.isPlaying).toBe(true);
     expect(video().currentTime).toBeCloseTo(c1.startMs / 1000);
     expect(playBtn().textContent).toBe('Pause');
-    const prev = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Prev cue')!;
+    const prev = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Prev line')!;
     play.mockClear();
     prev.click();
     metadata(video());

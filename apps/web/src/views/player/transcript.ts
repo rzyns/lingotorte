@@ -15,7 +15,7 @@ import {
 } from '../../model';
 import { rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
-import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
+import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
 export function renderTranscriptPanel(model: AppModel): HTMLElement {
@@ -72,7 +72,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     row.setAttribute('role', 'button');
     row.setAttribute('tabindex', '0');
     row.setAttribute('data-cue-id', cue.id);
-    row.setAttribute('aria-label', `Cue at ${formatTimeMs(cue.startMs)}: ${cue.text}`);
+    row.setAttribute('aria-label', `Line at ${formatTimeMs(cue.startMs)}: ${cue.text}`);
     if (isActive) row.setAttribute('aria-current', 'true');
 
     const time = document.createElement('div');
@@ -99,7 +99,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     actions.className = 'cue-actions';
     const saveSentenceBtn = document.createElement('button');
     saveSentenceBtn.textContent = 'Save sentence…';
-    saveSentenceBtn.setAttribute('aria-label', `Save sentence from cue at ${formatTimeMs(cue.startMs)}`);
+    saveSentenceBtn.setAttribute('aria-label', `Save sentence from line at ${formatTimeMs(cue.startMs)}`);
     saveSentenceBtn.disabled = !canSaveFromTargetTrack;
     if (!canSaveFromTargetTrack) {
       saveSentenceBtn.title = 'Approve this transcript before saving learner study items.';
@@ -121,8 +121,8 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     actions.appendChild(saveSentenceBtn);
 
     const tokenizeBtn = document.createElement('button');
-    tokenizeBtn.textContent = 'Show tokens';
-    tokenizeBtn.setAttribute('aria-label', `Show tokens for cue at ${formatTimeMs(cue.startMs)}`);
+    tokenizeBtn.textContent = 'Show words';
+    tokenizeBtn.setAttribute('aria-label', `Show words for line at ${formatTimeMs(cue.startMs)}`);
     tokenizeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       void tokenizeCueText(model, cue).then((tokens: import('../../model').TokenInfo[]) => {
@@ -140,7 +140,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     // Stable id so rerenderApp restores keyboard focus to this button after the analysis renders.
     analyseBtn.id = `analyse-words-${cue.id}`;
     analyseBtn.textContent = 'Analyse words';
-    analyseBtn.setAttribute('aria-label', `Analyse word grammar for cue at ${formatTimeMs(cue.startMs)}`);
+    analyseBtn.setAttribute('aria-label', `Analyse word grammar for line at ${formatTimeMs(cue.startMs)}`);
     analyseBtn.setAttribute('aria-controls', 'morphology-panel');
     analyseBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -385,16 +385,17 @@ function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
   summary.className = 'selection-source-summary';
   summary.append(
     renderSourceMetaChip(mediaLabel(model)),
-    renderSourceMetaChip(`cue ${cue.cueIndex}`),
+    renderSourceMetaChip(`line ${linePosition(model, cue)}`),
     renderSourceMetaChip(`${formatCompactTimeMs(cue.startMs)}–${formatCompactTimeMs(cue.endMs)}`),
   );
   if (targetTrack) {
-    summary.append(renderSourceMetaChip(`track v${targetTrack.trackVersion}`), renderSourceMetaChip(targetTrack.transcriptStatus));
+    summary.append(renderSourceMetaChip(targetTrack.transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft'));
   }
   if (model.currentMedia?.originalPath) {
     const detail = document.createElement('div');
     detail.className = 'selection-source-detail';
-    appendSourceDisclosure(detail, 'source details', model.currentMedia.originalPath);
+    // lt-unl: track version stays in the disclosure, off the primary line.
+    appendSourceDisclosure(detail, 'source details', targetTrack ? `${model.currentMedia.originalPath} • track v${targetTrack.trackVersion} • ${targetTrack.transcriptStatus}` : model.currentMedia.originalPath);
     summary.appendChild(detail);
   }
   return summary;
@@ -404,7 +405,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'card selection-panel';
   const h2 = document.createElement('h2');
-  h2.textContent = 'Selection';
+  h2.textContent = 'Save a word or phrase';
   panel.appendChild(h2);
   panel.appendChild(renderMorphologyPanel(model, () => rerenderApp(model)));
 
@@ -413,7 +414,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
     const isSavedPreview = model.player.lastTokenPreview.startsWith('Saved ');
     preview.className = `token-preview${isSavedPreview ? ' saved-occurrence-preview' : ''}`;
     const label = document.createElement('strong');
-    label.textContent = isSavedPreview ? 'Saved occurrence:' : 'Token preview:';
+    label.textContent = isSavedPreview ? 'Saved:' : 'Words in this line:';
     const value = document.createElement('span');
     value.textContent = model.player.lastTokenPreview;
     preview.append(label, value);
@@ -435,14 +436,14 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
     const p = document.createElement('p');
     p.className = 'selection-help';
     p.textContent = model.player.lastTokenPreview?.startsWith('Saved ')
-      ? 'Saved to My Vocab with the current cue/time/source anchor. Select another transcript word or open My Vocab to review occurrences.'
-      : 'Select a word or phrase in a transcript cue to save it with source context.';
+      ? 'Saved to My Vocab with the video and time it came from. Select another word in the transcript, or open My Vocab to see where you saved it.'
+      : 'Select a word or phrase in a transcript line to save it with the video and time it came from.';
     panel.appendChild(p);
     return panel;
   }
 
   const p = document.createElement('p');
-  p.textContent = `Selected: “${model.selection.text}” (${model.selection.kind})`;
+  p.textContent = `Selected: “${model.selection.text}” (${model.selection.kind === 'lexeme' ? 'word' : model.selection.kind})`;
   panel.appendChild(p);
 
   const form = document.createElement('div');
@@ -481,7 +482,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   actions.className = 'form-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn-primary';
-  saveBtn.textContent = 'Save occurrence';
+  saveBtn.textContent = 'Save occurrence'; // exact text: tests and browser scripts click it
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   const canSave = targetTrack?.transcriptStatus === 'approved';
   saveBtn.disabled = !canSave;

@@ -22,7 +22,7 @@ export function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrac
 
   const comparison = document.createElement('div');
   comparison.className = 'source-comparison';
-  comparison.setAttribute('aria-label', `Cue ${cue.cueIndex} source comparison`);
+  comparison.setAttribute('aria-label', `Line ${cue.cueIndex} source comparison`);
   const heading = document.createElement('div');
   heading.className = 'meta';
   heading.textContent = 'Source comparison';
@@ -36,7 +36,7 @@ export function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrac
     const row = document.createElement('p');
     row.className = 'meta source-comparison-row';
     const sourceLabel = track.provenance.parentTrackId === currentTrackId ? 'child' : 'source';
-    row.textContent = `${sourceLabel} ${track.transcriptSourceKind}/${track.transcriptStatus}: ${sourceCue?.text ?? 'No aligned cue'}`;
+    row.textContent = `${sourceLabel} ${track.transcriptSourceKind}/${track.transcriptStatus}: ${sourceCue?.text ?? 'No aligned line'}`;
     comparison.appendChild(row);
   }
 

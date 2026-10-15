@@ -91,7 +91,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 
   const localAsrPathLabel = document.createElement('label');
   localAsrPathLabel.htmlFor = 'local-asr-media-path';
-  localAsrPathLabel.textContent = 'Local service ASR media path (absolute; optional if current media already has one)';
+  localAsrPathLabel.textContent = 'Video path on the local service (for draft transcripts; optional if the current video already has one)';
   const localAsrPathInput = document.createElement('input');
   localAsrPathInput.id = 'local-asr-media-path';
   localAsrPathInput.name = 'local-asr-media-path';
@@ -310,7 +310,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         return;
       }
       const shifted = applyTrackOffsetMs([firstCue, lastCue], offsetMs);
-      offsetPreview.textContent = `Preview: cue 1 ${formatTimeMs(firstCue.startMs)} → ${formatTimeMs(shifted[0]!.startMs)}, cue ${lastCue.cueIndex} ${formatTimeMs(lastCue.endMs)} → ${formatTimeMs(shifted[1]!.endMs)}`;
+      offsetPreview.textContent = `Preview: line 1 ${formatTimeMs(firstCue.startMs)} → ${formatTimeMs(shifted[0]!.startMs)}, line ${model.cues.length} ${formatTimeMs(lastCue.endMs)} → ${formatTimeMs(shifted[1]!.endMs)}`;
     }
     updateOffsetPreview();
     offsetInput.addEventListener('input', updateOffsetPreview);
@@ -353,7 +353,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       cueEditor.className = 'transcript-cue-editor';
       const label = document.createElement('label');
       label.htmlFor = `transcript-correction-cue-${cue.cueIndex}`;
-      label.textContent = `Cue ${cue.cueIndex} correction`;
+      label.textContent = `Line ${cue.cueIndex} correction`;
       const textarea = document.createElement('textarea');
       textarea.id = `transcript-correction-cue-${cue.cueIndex}`;
       textarea.name = `transcript-correction-cue-${cue.cueIndex}`;
@@ -460,19 +460,19 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       structureRow.className = 'cue-structure-edit-row';
       const splitCueButton = document.createElement('button');
       splitCueButton.type = 'button';
-      splitCueButton.textContent = `Split cue ${cue.cueIndex}`;
+      splitCueButton.textContent = `Split line ${cue.cueIndex}`;
       editGuardedButtons.push(splitCueButton);
       splitCueButton.addEventListener('click', () => {
         if (editorBlocked()) { refreshApprovalGate(); return; }
         splitCueButton.disabled = true;
-        model.transcriptLifecycle.lastMessage = `Splitting cue ${cue.cueIndex}…`;
+        model.transcriptLifecycle.lastMessage = `Splitting line ${cue.cueIndex}…`;
         rerenderApp(model);
         splitTranscriptCueInCorrectedVersion(model, model.targetTrackId!, cue.id)
           .then(() => {
             model.transcriptLifecycle.pendingCueEdits = {};
             model.transcriptLifecycle.pendingCueTimingEdits = {};
             model.transcriptLifecycle.pendingWordTimingEdits = {};
-            model.transcriptLifecycle.lastMessage = `Split cue ${cue.cueIndex} into a corrected version`;
+            model.transcriptLifecycle.lastMessage = `Split line ${cue.cueIndex} into a corrected version`;
             model.importError = null;
             rerenderApp(model);
           })
@@ -483,21 +483,21 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       });
       const mergeCueButton = document.createElement('button');
       mergeCueButton.type = 'button';
-      mergeCueButton.textContent = `Merge cue ${cue.cueIndex} with next`;
+      mergeCueButton.textContent = `Merge line ${cue.cueIndex} with next`;
       const mergeHasNext = model.cues.some((candidate) => candidate.cueIndex === cue.cueIndex + 1);
       mergeCueButton.disabled = !mergeHasNext;
       if (mergeHasNext) editGuardedButtons.push(mergeCueButton);
       mergeCueButton.addEventListener('click', () => {
         if (!mergeHasNext || editorBlocked()) { refreshApprovalGate(); return; }
         mergeCueButton.disabled = true;
-        model.transcriptLifecycle.lastMessage = `Merging cue ${cue.cueIndex} with next…`;
+        model.transcriptLifecycle.lastMessage = `Merging line ${cue.cueIndex} with next…`;
         rerenderApp(model);
         mergeTranscriptCueWithNextInCorrectedVersion(model, model.targetTrackId!, cue.id)
           .then(() => {
             model.transcriptLifecycle.pendingCueEdits = {};
             model.transcriptLifecycle.pendingCueTimingEdits = {};
             model.transcriptLifecycle.pendingWordTimingEdits = {};
-            model.transcriptLifecycle.lastMessage = `Merged cue ${cue.cueIndex} with next into a corrected version`;
+            model.transcriptLifecycle.lastMessage = `Merged line ${cue.cueIndex} with next into a corrected version`;
             model.importError = null;
             rerenderApp(model);
           })
@@ -681,7 +681,7 @@ function renderMediaList(model: AppModel): HTMLElement {
     duration.textContent = formatTimeMs(asset.durationMs);
     const status = activeTargetTrackForMedia(model, asset.id)?.transcriptStatus;
     const statusLabel = status === 'approved' ? 'approved' : status ? 'draft' : 'none';
-    const statusToken = renderStatusToken(`transcript: ${statusLabel}`, statusLabel === 'approved' ? 'approved' : statusLabel === 'draft' ? 'draft' : 'neutral');
+    const statusToken = renderStatusToken(statusLabel === 'approved' ? 'Transcript ready' : statusLabel === 'draft' ? 'Transcript draft' : 'No transcript yet', statusLabel === 'approved' ? 'approved' : statusLabel === 'draft' ? 'draft' : 'neutral');
     statusToken.classList.add('media-row-status');
     const privacy = renderStatusToken(asset.privacyLabel, 'local');
     privacy.classList.add('media-row-privacy');

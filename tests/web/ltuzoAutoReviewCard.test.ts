@@ -111,7 +111,7 @@ describe('lt-uzo auto review card', () => {
     buttonsStarting('In review')[0]!.click();
     model.view = 'review';
     rerenderApp(model);
-    expect(document.querySelector('.review-card > p.meta')?.textContent).toBe('1 card in local deck (1 archived)');
+    expect(document.querySelector('.review-card > p.meta')?.textContent).toBe('1 card · next due now (1 archived)');
     expect(dueIds(model)).toHaveLength(1);
   });
 
@@ -193,6 +193,6 @@ describe('lt-uzo auto review card', () => {
     const details = document.querySelector('details.review-scheduling')!;
     expect(details.querySelector('summary')?.textContent).toBe('scheduling');
     expect(details.textContent).toContain('state: new • due: 2030-01-01 00:00:00 UTC');
-    expect(document.querySelector('.review-card > p.meta')?.textContent).toBe('1 card in local deck');
+    expect(document.querySelector('.review-card > p.meta')?.textContent).toBe('1 card · next due now');
   });
 });
