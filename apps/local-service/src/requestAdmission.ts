@@ -132,14 +132,7 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   const limit = ROUTE_BODY_LIMITS[path] ?? MAX_BODY_BYTES;
   if (Number(fields.get('content-length')?.[0] ?? 0) > limit) throw new AdmissionError(413);
   if (expectContinue) response.writeContinue();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > limit) throw new AdmissionError(413);
-    chunks.push(bytes);
-  }
+  const chunks = await readBoundedBody(request, limit);
   let body: unknown;
   try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }
   catch { throw new AdmissionError(400); }
@@ -147,7 +140,47 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   if ((path.endsWith('/cancel') || path === '/api/artifacts/cleanup') && Object.keys(body).length) throw new AdmissionError(400);
   return { path, body: body as Record<string, unknown>, preflight: false };
 }
+// lt-04k.1: bounded read that never destroys the request on overflow (an async-iterator throw would
+// destroy the IncomingMessage and its socket, resetting the connection before the 413 is delivered).
+// On overflow the stream is paused with listeners removed; deny() then discards the remainder.
+function readBoundedBody(request: IncomingMessage, limit: number): Promise<Buffer[]> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []; let size = 0;
+    const done = (error?: unknown) => {
+      request.off('data', onData); request.off('end', onEnd); request.off('error', onError);
+      if (error) { request.pause(); reject(error); } else resolve(chunks);
+    };
+    const onData = (chunk: Buffer | string) => {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > limit) done(new AdmissionError(413)); else chunks.push(bytes);
+    };
+    const onEnd = () => done(); const onError = (error: unknown) => done(error);
+    request.on('data', onData); request.once('end', onEnd); request.once('error', onError);
+  });
+}
+/** lt-04k.1: bounded lingering close for denials sent before the request body was consumed. */
+export const DENIAL_LINGER_MS = 2_000;
+export const DENIAL_LINGER_BYTES = 64 * 1024 * 1024;
+// Closing a socket with unread inbound bytes sends RST; on Windows the RST also discards the
+// already-delivered denial from the client's receive buffer (ECONNRESET instead of e.g. 413).
+// Half-close after the denial and discard (never buffer or parse) the remainder at the transport
+// level, bounded by time and bytes, then destroy. No handler runs; no application state is touched.
+function lingerUnreadBody(response: ServerResponse): void {
+  const request = response.req; const socket = response.socket;
+  if (!request || request.complete || !socket || socket.destroyed) return;
+  let discarded = 0;
+  const stop = () => { clearTimeout(timer); socket.destroy(); };
+  const timer = setTimeout(stop, DENIAL_LINGER_MS); timer.unref();
+  socket.once('close', () => clearTimeout(timer));
+  socket.destroySoon = () => { if (socket.writable) socket.end(); };
+  request.on('data', (chunk: Buffer) => { discarded += chunk.length; if (discarded > DENIAL_LINGER_BYTES) stop(); });
+  request.once('end', () => { if (socket.writableFinished) stop(); else socket.once('finish', stop); });
+  request.once('error', stop);
+  request.resume();
+}
 export function deny(response: ServerResponse, error: unknown): void {
+  lingerUnreadBody(response);
   response.setHeader('connection', 'close');
   const status = error instanceof AdmissionError ? error.status : 400;
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });

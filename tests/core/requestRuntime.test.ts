@@ -353,7 +353,8 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
       }
       console.info(JSON.stringify({ seededExpandedDenials: expanded, admissionFaults: faults.length, routeClasses: routes.length, positiveJobKinds: 8, preflightControls, fullTablesFilesRevisionSaveLRU: true, pausedWorkerDenials: 4, fakeProviderCalls: providerCalls }));
     } finally { boundarySpy.mockRestore(); release(); database.close(); saveSpy.mockRestore(); await service.close(); await otherService.close(); await rm(other.root, { recursive: true, force: true }); await rm(root, { recursive: true, force: true }); }
-  }, 30_000);
+    // lt-04k.1: ~1,150 whole-tree hash + all-table oracles dominate (~22-27s alone on Windows); 30s was below full-suite load.
+  }, 120_000);
 
   it('configured preview and localhost origins admit real JSON/WAV/cancel/delete dispatch', async () => {
     for (const uiOrigin of ['http://127.0.0.1:4173', 'http://localhost:5173']) {
