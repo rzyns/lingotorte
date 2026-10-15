@@ -23,7 +23,7 @@ import { renderLibraryView } from './views/library.ts';
 import { fullscreenPersistentStage, pausePersistentVideoOffPlayer, renderPlayerView, resumePersistentVideoAfterRender, updatePersistentStageInPlace } from './views/player/stage.ts';
 import { syncPlayButton, syncPlayerTransport, togglePlaybackInPlace } from './views/player/controls.ts';
 import { renderPracticeView } from './views/practice.ts';
-import { renderReviewView } from './views/review.ts';
+import { handleReviewShortcut, renderReviewView } from './views/review.ts';
 import { renderSavedView } from './views/saved.ts';
 import { renderSettingsView } from './views/settings.ts';
 
@@ -123,6 +123,12 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
     const currentModel = keyboardShortcutsModel;
     if (!currentModel || isEditableShortcutTarget(event.target)) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (currentModel.view === 'review') {
+      // lt-dlf.4: review owns Space/1-4; player shortcuts never fire here.
+      handleReviewShortcut(currentModel, event);
+      // Intentional: unhandled keys still return so Player shortcuts never act on an off-screen video.
+      return;
+    }
     const cue = currentKeyboardCue(currentModel);
     let handled = false;
     if (event.key === ' ' || event.key === 'Spacebar') {
