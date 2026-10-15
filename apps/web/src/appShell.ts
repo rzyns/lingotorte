@@ -307,6 +307,9 @@ const pendingFocusRequests = new WeakMap<AppModel, readonly string[]>();
 export const PRACTICE_SUCCESSORS = ['practice-feedback', 'practice-empty', 'practice-prompt'] as const;
 
 /** Ask the next rerenderApp(model) to focus the first of `ids` that exists after rendering. */
+// lt-dlf.5: applies to every caller (capture, library, practice, review): the successor is focused with
+// preventScroll and then revealed with scrollIntoView({ block: 'nearest' }) after the cue scroll, so the
+// page moves only as far as needed to keep the focused control unobscured (WCAG 2.4.11).
 // Callers must request immediately before a synchronous rerenderApp. If a request is ever made before an
 // await, add an activeElement check so focus is not pulled away from where the user has since moved.
 export function requestFocusAfterRender(model: AppModel, ...ids: string[]): void {

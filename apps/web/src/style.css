@@ -782,6 +782,14 @@ textarea:focus-visible,
     top: 0;
     z-index: 2;
     background: var(--surface);
+    /* WCAG 2.4.11: cap the pinned form so a short viewport still leaves room for the clicked row. */
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  /* The clicked row is scrolled with block 'end'; never let it settle under the pinned form. */
+  .transcript-copilot.capture-open .cue-row {
+    scroll-margin-top: 55vh;
   }
 
   .transcript-copilot.capture-open .transcript-search {

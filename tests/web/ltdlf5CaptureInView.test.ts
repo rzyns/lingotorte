@@ -120,12 +120,100 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     expect(model.selection).toBeNull();
     expect(document.querySelector('.toast-region')?.textContent ?? '').toContain('Saved');
     expect(document.querySelector('.artifact-workbench .selection-panel')).toBeTruthy();
-    expect(aside.isConnected ? aside.classList.contains('capture-open') : document.querySelector('.transcript-copilot')!.classList.contains('capture-open')).toBe(false);
+    expect(document.querySelector('.transcript-copilot')!.classList.contains('capture-open')).toBe(false);
+  });
+
+  // Finding 4 / audit N10: closing the form must not drop focus to <body>.
+  const closePaths: [string, (d: JSDOM) => void][] = [
+    ['Enter in Meaning', (d) => { key(d, meaning()!, 'Enter'); }],
+    ['Save occurrence', () => { (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement).click(); }],
+    ['Cancel', () => { (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Cancel') as HTMLButtonElement).click(); }],
+    ['Escape', (d) => { key(d, meaning()!, 'Escape'); }],
+  ];
+  for (const [name, close] of closePaths) {
+    it(`${name} closes the form and returns focus to the clicked cue row without a page jump`, async () => {
+      const { model, cue } = installModel();
+      rerenderApp(model);
+      const focusOpts: { el: Element; opts: FocusOptions | undefined }[] = [];
+      const origFocus = dom.window.HTMLElement.prototype.focus;
+      vi.spyOn(dom.window.HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, opts?: FocusOptions) {
+        focusOpts.push({ el: this, opts });
+        return origFocus.call(this, opts);
+      });
+      click(dom, word(cue.id, 'polskiego'));
+      close(dom);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(model.selection).toBeNull();
+      expect(document.activeElement).toBe(row(cue.id));
+      expect(focusOpts.at(-1)).toEqual({ el: row(cue.id), opts: { preventScroll: true } });
+      // The toast's Undo never takes focus.
+      expect(document.activeElement?.closest('.toast-region')).toBeNull();
+    });
+  }
+
+  // Finding 3: every capture entry point puts the form in the aside and focuses Meaning.
+  const inAside = () => {
+    expect(document.querySelector('.transcript-copilot.capture-open > .selection-panel')).toBeTruthy();
+    expect(document.querySelector('.artifact-workbench .selection-panel')).toBeNull();
+    expect(document.activeElement?.id).toBe('selection-meaning');
+  };
+  it('Shift+click extend keeps the form in the aside', () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    click(dom, word(cue.id, 'Uczymy'));
+    click(dom, word(cue.id, 'polskiego'), { shiftKey: true });
+    expect(model.selection).toMatchObject({ kind: 'phrase', tokenStart: 0, tokenEnd: 3 });
+    inAside();
+  });
+  it('drag-select opens the form in the aside', () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    vi.spyOn(dom.window, 'getSelection').mockImplementation(() => ({ toString: () => 'się polskiego', removeAllRanges: () => undefined }) as unknown as Selection);
+    row(cue.id).dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+    expect(model.selection).toMatchObject({ text: 'się polskiego' });
+    inAside();
+  });
+  it('Enter on a focused word (lt-z8s) opens the form in the aside', () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    row(cue.id).focus();
+    key(dom, row(cue.id), 'ArrowLeft');
+    key(dom, document.activeElement as HTMLElement, 'Enter');
+    expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem' });
+    inAside();
+  });
+  it('Save sentence… opens the form in the aside', () => {
+    const { model } = installModel();
+    rerenderApp(model);
+    (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save sentence…') as HTMLButtonElement).click();
+    expect(model.selection).toMatchObject({ kind: 'sentence' });
+    inAside();
+  });
+  it('an overlay subtitle word opens the form in the aside', () => {
+    const { model } = installModel('approved', undefined, true);
+    rerenderApp(model);
+    (Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find((b) => b.textContent === 'razem') as HTMLElement).click();
+    expect(model.selection).toMatchObject({ text: 'razem' });
+    inAside();
+  });
+  it('lt-e0j Undo reopens the form in the aside', async () => {
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    click(dom, word(cue.id, 'razem'));
+    (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement).click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(model.selection).toBeNull();
+    document.querySelector<HTMLButtonElement>('.toast-region button')!.click();
+    expect(model.selection).toMatchObject({ text: 'razem' });
+    inAside();
   });
 
   it('pins the open form only on desktop and keeps tokenised CSS', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('apps/web/src/style.css', 'utf8');
     expect(css).toMatch(/@media \(min-width: 900px\) \{\s*\.transcript-copilot\.capture-open > \.selection-panel \{[^}]*position: sticky;/);
+    // Finding 2: the pinned form is height-capped so the clicked row can sit below it.
+    expect(css).toMatch(/\.transcript-copilot\.capture-open > \.selection-panel \{[^}]*max-height: 55vh;[^}]*overflow-y: auto;/);
+    expect(css).toMatch(/\.transcript-copilot\.capture-open \.cue-row \{[^}]*scroll-margin-top: 55vh;/);
   });
 });
