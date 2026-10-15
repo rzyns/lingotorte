@@ -49,14 +49,18 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   left.appendChild(renderVideoStage(model));
   left.appendChild(renderPlayerControls(model));
   left.appendChild(renderSourceRangePanel(model));
-  left.appendChild(renderSelectionPanel(model));
+  // lt-dlf.5: while a capture is open the form renders at the top of the transcript aside (sticky,
+  // next to the clicked line) so the video and the line stay on screen; otherwise it stays here.
+  const captureOpen = Boolean(model.selection);
+  if (!captureOpen) left.appendChild(renderSelectionPanel(model));
   grid.appendChild(left);
 
   const right = document.createElement('aside');
-  right.className = 'card transcript-copilot';
+  right.className = `card transcript-copilot${captureOpen ? ' capture-open' : ''}`;
   const transcriptHeading = document.createElement('h2');
   transcriptHeading.textContent = 'Transcript';
   right.appendChild(transcriptHeading);
+  if (captureOpen) right.appendChild(renderSelectionPanel(model));
   right.appendChild(renderTranscriptPanel(model));
   grid.appendChild(right);
 
