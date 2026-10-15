@@ -35,3 +35,4 @@
 **/*.log
 **/*secret*
 **/*credential*
+**/e2e/artifacts

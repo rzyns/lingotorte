@@ -85,3 +85,32 @@ alternatives_considered: Custom FSRS port (high maintenance and risk of drift fr
 review_status: accepted
 review_task_id: t_e7002e1e
 ```
+
+## @playwright/test
+
+```yaml
+dependency_name: "@playwright/test"
+package_or_repo: npm package @playwright/test (pulls playwright and playwright-core at the same version)
+intended_slice: lt-42o
+why_needed: Real-browser (Chromium) smoke tests of the core learner tasks against the Docker stack (apps/web/e2e). jsdom cannot exercise real media duration, mouse drag-selection or IndexedDB reload.
+source_url: https://registry.npmjs.org/@playwright/test/-/test-1.62.0.tgz
+retrieval_date_utc: 2026-10-15
+exact_version_or_commit: 1.62.0
+lockfile_entry_or_hash: |
+  @playwright/test 1.62.0 integrity: sha512-9zOJ6ZQRAena31MpOH9VSzIz8Ou3YJ/wtY/eQm5T2uhfhG7/U3COrMS8xOtUrZrp9OgdmzEnIYODye3nY1VqzA==
+  playwright 1.62.0 integrity: sha512-Z14dG305dgaLu6foB1TXQagFiW8JfSUIUaUuPaKQ6NtBPKF1P/qXcqfh6c6K/icPqdy37JmjbiBXf6JNg6Sylw==
+  playwright-core 1.62.0 integrity: sha512-nsNRyq0r2zsG8AcRHWknc9QRA5XCueC7gWMrs+Gx2tlZn9hcl8zudfh00lhJPY1DE7NmZ6bDsT9g2yey8mXljA==
+  runner image: mcr.microsoft.com/playwright:v1.62.0-noble@sha256:baed2032d533817f3dbe6425de795788430ba345e819a1201337009ba17c9d07 (Chromium revision 1234 baked in)
+license_name_claimed: Apache-2.0
+license_file_path_or_url: node_modules/@playwright/test/LICENSE (identical in node_modules/playwright and node_modules/playwright-core)
+license_file_sha256: 45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb
+local_offline_behavior: Dev-only test runner. Browsers come from the pinned runner image (Docker) or an existing local ms-playwright cache; the contributor image installs with --ignore-scripts, so no browser download happens during npm ci.
+network_behavior_when_disabled: The e2e service is attached only to the internal compose network; each spec fails if the page requests any origin other than the stack's web origin. Not imported by application code or the production bundle.
+privacy_data_classes_processed:
+  - synthetic fixtures only
+redistribution_or_export_constraints: Apache-2.0; dev toolchain only, not shipped in the web bundle.
+security_maintenance_notes: Pinned exactly (no caret) in package.json and package-lock.json; the runner image tag/digest must be bumped in lockstep with the npm version (browser revision must match).
+alternatives_considered: jsdom only (cannot test real media/drag/IndexedDB reload); puppeteer (no test runner, separate browser download). 1.62.0 chosen over 1.64.1 because its Chromium revision 1234 is already in the local cache, enabling the documented host fallback without a download.
+review_status: proposed
+review_task_id: lt-42o
+```
