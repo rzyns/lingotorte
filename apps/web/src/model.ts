@@ -1380,7 +1380,7 @@ export async function relinkCurrentMediaFromFile(model: AppModel, mediaFile: Fil
     URL.revokeObjectURL(objectUrl);
     throw err;
   }
-  if (model.currentMedia?.id !== media.id) throw new Error('The open video changed while the file was being reconnected.');
+  // The relink is already written; if another video was opened meanwhile, it simply stays open.
   return media.id;
 }
 
