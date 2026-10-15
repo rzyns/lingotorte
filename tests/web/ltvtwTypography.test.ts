@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 // lt-vtw: tokenized type scale, target-language text largest, sticky desktop transcript.
 const css = readFileSync(resolve(__dirname, '../../apps/web/src/style.css'), 'utf8');
-const XS_META = new Set(['.lingotorte-footer', '.provider-status', '.source-disclosure code', '.cue-time', '.saved-item .meta', '.meta', '.file-hint', '.import-form .file-hint', '.restore-metadata', '.export-metadata']);
+const XS_META = new Set(['.lingotorte-footer', '.provider-status', '.source-disclosure code', '.cue-time', '.restore-metadata', '.export-metadata']);
 const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: (m[1] ?? '').trim(), body: m[2] ?? '' }));
-const fontSizeOf = (sel: string) => rules.filter((r) => r.sel === sel).map((r) => /font-size:\s*([^;]+);/.exec(r.body)?.[1]).filter(Boolean);
-const TOKENS: Record<string, number> = { '--fs-xs': 0.78, '--fs-sm': 0.875, '--fs-md': 1, '--fs-lg': 1.125, '--fs-xl': 1.4 };
+const fontSizeOf = (sel: string) => rules.filter((r) => r.sel.split(',').some((p) => p.trim() === sel)).map((r) => /font-size:\s*([^;]+);/.exec(r.body)?.[1]).filter(Boolean);
+const TOKENS: Record<string, number> = { '--fs-xs': 0.78, '--fs-sm': 0.875, '--fs-md': 1, '--fs-lg': 1.125, '--fs-xl': 1.4, '--fs-2xl': 1.6 };
 
 describe('lt-vtw typography', () => {
   it('defines the type scale and spacing tokens on :root', () => {
@@ -21,10 +21,8 @@ describe('lt-vtw typography', () => {
     for (const r of rules) {
       const v = /font-size:\s*([^;]+);/.exec(r.body)?.[1];
       if (!v) continue;
-      for (const m of v.matchAll(/(\d*\.?\d+)(rem|px)/g)) {
-        const rem = m[2] === 'px' ? Number(m[1]) / 16 : Number(m[1]);
-        expect(rem, `${r.sel}: ${v}`).toBeGreaterThanOrEqual(0.875);
-      }
+      // Every rem/px literal (incl. inside clamp/min/max) is banned: font sizes must use --fs-* tokens.
+      expect([...v.matchAll(/\d*\.?\d+(rem|px)\b/g)].map((m) => m[0]), `${r.sel}: ${v}`).toEqual([]);
       if (v.includes('--fs-xs')) for (const part of r.sel.split(',')) expect(XS_META.has(part.trim()), part).toBe(true);
     }
   });
@@ -34,8 +32,9 @@ describe('lt-vtw typography', () => {
       const vals = fontSizeOf(sel);
       expect(vals.length, sel).toBeGreaterThan(0);
       for (const v of vals) {
-        const first = /var\((--fs-[a-z]+)\)/.exec(v ?? '')?.[1] ?? '';
-        expect(TOKENS[first] ?? 0, `${sel}: ${v}`).toBeGreaterThanOrEqual(1.125);
+        const toks = [...(v ?? '').matchAll(/var\((--fs-[a-z0-9]+)\)/g)].map((m) => m[1] ?? '');
+        expect(toks.length, `${sel}: ${v}`).toBeGreaterThan(0);
+        for (const t of toks) expect(TOKENS[t] ?? 0, `${sel}: ${v}`).toBeGreaterThanOrEqual(1.125);
       }
     }
     expect(rules.find((r) => r.sel === '.cue-target')?.body ?? '').toMatch(/max-width:\s*60ch/);
@@ -50,5 +49,15 @@ describe('lt-vtw typography', () => {
     expect(media?.[1]).toMatch(/max-height:\s*calc\(100vh - 2rem\)/);
     const panel = rules.find((r) => r.sel === '.transcript-panel')?.body ?? '';
     expect(panel).not.toMatch(/max-height:\s*70vh/);
+    // Sticky search must pin flush (no card padding above it) on an opaque card-coloured strip.
+    expect(css).toMatch(/@media \(min-width: 900px\) \{[^@]*\.transcript-copilot \{[^}]*padding-top:\s*0;/);
+    expect(rules.find((r) => r.sel === '.transcript-search')?.body ?? '').toMatch(/background:\s*var\(--surface\)/);
+  });
+
+  it('learner-facing meta/hint text is >= --fs-sm and cue action buttons wrap whole', () => {
+    for (const sel of ['.meta', '.saved-item .meta', '.file-hint', '.import-form .file-hint']) expect(fontSizeOf(sel), sel).toEqual(['var(--fs-sm)']);
+    expect(fontSizeOf('.source-candidate-card h4')).toEqual(['var(--fs-md)']);
+    expect(rules.find((r) => r.sel === '.cue-actions')?.body ?? '').toMatch(/flex-wrap:\s*wrap/);
+    expect(rules.find((r) => r.sel === '.cue-actions button')?.body ?? '').toMatch(/white-space:\s*nowrap/);
   });
 });

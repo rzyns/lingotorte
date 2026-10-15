@@ -23,6 +23,7 @@
   --fs-md: 1rem;
   --fs-lg: 1.125rem;
   --fs-xl: 1.4rem;
+  --fs-2xl: 1.6rem;
   --space-1: 0.5rem;
   --space-2: 0.75rem;
   --space-3: 1rem;
@@ -382,7 +383,7 @@ textarea:focus-visible,
 .video-placeholder h3 {
   margin: 0;
   color: var(--text);
-  font-size: clamp(var(--fs-lg), 2.4vw, 1.45rem);
+  font-size: clamp(var(--fs-lg), 2.4vw, var(--fs-xl));
 }
 
 .video-placeholder p {
@@ -417,7 +418,7 @@ textarea:focus-visible,
 
 .subtitle-target {
   max-width: min(92%, 68ch);
-  font-size: clamp(var(--fs-lg), 2.4vw, 1.6rem);
+  font-size: clamp(var(--fs-lg), 2.4vw, var(--fs-2xl));
   font-weight: 600;
   line-height: 1.35;
   color: #fff;
@@ -622,6 +623,13 @@ textarea:focus-visible,
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    /* lt-vtw: no top padding on the scroll container, so the sticky search pins flush to the card
+       edge and cues cannot show through a gap above it; the padding moves onto the search strip. */
+    padding-top: 0;
+  }
+
+  .transcript-copilot .transcript-search {
+    padding-top: var(--space-3);
   }
 }
 
@@ -690,6 +698,7 @@ textarea:focus-visible,
 
 .cue-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   margin-top: 0.25rem;
 }
@@ -699,8 +708,9 @@ textarea:focus-visible,
   border: 1px solid var(--border);
   color: var(--text-muted);
   border-radius: 0.4rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem var(--space-1);
   font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 
 .cue-actions button:hover {
@@ -827,7 +837,7 @@ textarea:focus-visible,
 }
 
 .saved-item .meta {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -1064,7 +1074,7 @@ textarea:focus-visible,
 
 .source-candidate-card h4 {
   margin: 0 0 0.45rem;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
 }
 
 .source-candidate-card p {
@@ -1159,7 +1169,7 @@ textarea:focus-visible,
 }
 
 .import-form .file-hint {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -1258,12 +1268,12 @@ textarea:focus-visible,
 
 /* Shared (promoted from .saved-item / .import-form scopes) */
 .meta {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
 .file-hint {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
