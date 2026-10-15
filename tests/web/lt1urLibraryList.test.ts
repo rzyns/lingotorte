@@ -107,7 +107,7 @@ describe('lt-1ur transcript tools disclosure', () => {
     await importBrowserLocalFiles(model, { mediaFile: media([7], 'solo.webm') });
     library(model);
     expect(details().open).toBe(true);
-    expect(details().querySelector('summary')?.textContent).toBe('Transcript tools (ASR drafts, captions, embedded tracks)');
+    expect(details().querySelector('summary')?.textContent).toBe('Transcript tools (auto-transcribe, captions, built-in subtitles)');
     expect(details().querySelector('.transcript-lifecycle-panel')).toBeTruthy();
 
     const approved = clockModel();
@@ -160,10 +160,10 @@ describe('lt-1ur Add media card', () => {
 
 describe('lt-1ur review fixes', () => {
   const tick = () => new Promise((r) => setTimeout(r, 0));
-  it('programmatic open at render is not remembered as a user choice (empty -> approved closes)', async () => {
+  it('programmatic open at render is not remembered as a user choice (empty stays closed (lt-dlf.7), approved closes)', async () => {
     const model = clockModel();
     library(model);
-    expect(details().open).toBe(true);
+    expect(details().open).toBe(false);
     // Browsers fire 'toggle' asynchronously when open is set programmatically.
     details().dispatchEvent(new dom.window.Event('toggle'));
     await tick();

@@ -208,7 +208,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     }
     const status = document.createElement('p');
     status.setAttribute('role', 'status');
-    status.textContent = model.localService.status !== 'connected' ? 'Local storage service unavailable or disconnected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
+    status.textContent = model.localService.status !== 'connected' ? 'Local service not connected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
     privacy.className = 'meta';

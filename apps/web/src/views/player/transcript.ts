@@ -406,9 +406,11 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'card selection-panel';
   const h2 = document.createElement('h2');
-  h2.textContent = 'Save a word or phrase';
+  // lt-dlf.7 (N2): heading names what is being saved; the grammar block sits below the form.
+  const kind = model.selection?.kind;
+  h2.textContent = kind === 'sentence' ? 'Save a sentence' : kind === 'phrase' ? 'Save a phrase' : kind === 'lexeme' ? 'Save a word' : 'Save a word or phrase';
   panel.appendChild(h2);
-  panel.appendChild(renderMorphologyPanel(model, () => rerenderApp(model)));
+  const morphology = renderMorphologyPanel(model, () => rerenderApp(model));
 
   if (model.player.lastTokenPreview) {
     const preview = document.createElement('div');
@@ -440,6 +442,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
       ? 'Saved to My Vocab with the video and time it came from. Select another word in the transcript, or open My Vocab to see where you saved it.'
       : 'Select a word or phrase in a transcript line to save it with the video and time it came from.';
     panel.appendChild(p);
+    panel.appendChild(morphology);
     return panel;
   }
 
@@ -531,6 +534,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   actions.append(cancelBtn, saveBtn);
   form.appendChild(actions);
   panel.appendChild(form);
+  panel.appendChild(morphology);
 
   return panel;
 }

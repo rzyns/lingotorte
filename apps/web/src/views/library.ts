@@ -641,7 +641,9 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 const lifecycleDisclosureOpen = new WeakMap<AppModel, boolean>();
 
 function lifecycleDisclosureDefaultOpen(model: AppModel): boolean {
-  if (!model.currentMedia || !model.targetTrackId) return true;
+  // lt-dlf.7 (N9): an empty Library leads with Add media; transcript tools stay closed.
+  if (!model.currentMedia) return false;
+  if (!model.targetTrackId) return true;
   const status = model.store.getSubtitleTrack(model.targetTrackId)?.transcriptStatus;
   return status === undefined || status === 'draft' || status === 'correcting';
 }
@@ -951,7 +953,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const renderedOpen = lifecycleDisclosureOpen.get(model) ?? lifecycleDisclosureDefaultOpen(model);
   disclosure.open = renderedOpen;
   const summary = document.createElement('summary');
-  summary.textContent = 'Transcript tools (ASR drafts, captions, embedded tracks)';
+  summary.textContent = 'Transcript tools (auto-transcribe, captions, built-in subtitles)';
   disclosure.appendChild(summary);
   disclosure.appendChild(renderTranscriptLifecyclePanel(model));
   // Setting open programmatically fires an async 'toggle'; record only genuine changes away from the rendered state.

@@ -229,7 +229,7 @@ describe('B6 visual source range player UI', () => {
   });
 
   it.each([
-    ['disconnected service', 'disconnected', '/owned/movie.mkv', 'disconnected'],
+    ['disconnected service', 'disconnected', '/owned/movie.mkv', 'not connected'],
     ['blank path', 'connected', '', 'absolute owned local media path'],
     ['relative path', 'connected', 'movie.mkv', 'absolute owned local media path'],
     ['blob path', 'connected', 'blob:private-media', 'absolute owned local media path'],

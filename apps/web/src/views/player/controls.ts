@@ -105,7 +105,7 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   const loopRangeBtn = document.createElement('button');
   const currentCue = currentKeyboardCue(model);
   const loopRangeActive = Boolean(model.player.loopRange && currentCue);
-  loopRangeBtn.textContent = loopRangeActive ? 'Loop range on' : 'Loop range off';
+  loopRangeBtn.textContent = loopRangeActive ? 'Stop looping' : 'Loop selection';
   loopRangeBtn.setAttribute('aria-label', loopRangeActive ? 'Clear word-span loop range' : 'Set word-span loop range for selected words');
   loopRangeBtn.setAttribute('aria-pressed', String(loopRangeActive));
   loopRangeBtn.disabled = !currentCue;
@@ -138,9 +138,9 @@ export function renderPlayerControls(model: AppModel): HTMLElement {
   if (model.player.loopRange && currentCue) {
     loopRangeHelp.textContent = `Looping ${formatTimeMs(model.player.loopRange.startMs)}–${formatTimeMs(model.player.loopRange.endMs)}`;
   } else if (model.selection && currentCue && model.selection.cueId === currentCue.id) {
-    loopRangeHelp.textContent = 'Click “Loop range off” to loop the selected span.';
+    loopRangeHelp.textContent = '';
   } else {
-    loopRangeHelp.textContent = 'Select a word/phrase in the transcript, then click “Loop range off” to loop that span.';
+    loopRangeHelp.textContent = 'Select words in the transcript to loop just those.';
   }
   controls.appendChild(loopRangeHelp);
 
@@ -448,7 +448,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   pathInput.name = 'source-range-media-path';
   pathInput.type = 'text';
   pathInput.value = snippet.mediaPath;
-  pathInput.placeholder = 'Absolute path (session only)';
+  pathInput.placeholder = 'Full path to the video file (not saved)';
   pathInput.addEventListener('input', () => {
     snippet.mediaPath = pathInput.value;
     invalidateSourceRangeSnippet(model, hasNativeInputPath(model, pathInput.value)
@@ -530,7 +530,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   status.setAttribute('role', 'status');
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
-  else if (model.localService.status !== 'connected') status.textContent = 'Local storage service unavailable or disconnected.';
+  else if (model.localService.status !== 'connected') status.textContent = 'Local service not connected.';
   else if (!readNativePathPolicy(model.localService.pathPolicy)) status.textContent = NATIVE_PATH_COMPATIBILITY_MESSAGE;
   else if (!mediaExtractable) status.textContent = 'Source audio requires a current owned or synthetic media asset.';
   else if (!pathValid) status.textContent = 'An explicit absolute owned local media path is required.';
@@ -540,7 +540,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
 
   const privacy = document.createElement('p');
   privacy.className = 'meta';
-  privacy.textContent = 'Videos chosen in the browser are for playback only. The configured service needs an absolute path to the same owned local media. Snippets are transient, never autoplay, and are not saved, exported, or backed up.';
+  privacy.textContent = 'Videos chosen in the browser are for playback only. The configured service needs an absolute path to the same owned local media. Practice audio is temporary: it never autoplays and is not saved, exported, or backed up.';
   panel.appendChild(privacy);
   return panel;
 }

@@ -217,6 +217,15 @@ textarea:focus-visible,
   max-width: 68ch;
 }
 
+/* lt-dlf.7 (N3): on phones keep the video above the fold; drop the tagline, intro and duplicate chips. */
+@media (max-width: 599px) {
+  .lingotorte-header { padding: var(--space-2) 0; }
+  .lingotorte-header p,
+  .study-cockpit-header > div > p,
+  .source-context-row .source-context-chips { display: none; }
+  .study-cockpit-header h2 { margin-bottom: 0; }
+}
+
 .status-token-rail {
   display: flex;
   align-items: center;
