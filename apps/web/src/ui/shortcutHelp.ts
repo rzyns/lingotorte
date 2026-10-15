@@ -31,7 +31,23 @@ function closeDialog(dialog: HTMLDialogElement): void {
   dialog.remove();
   const back = opener;
   opener = null;
-  if (back && back.isConnected) back.focus();
+  if (back && back.isConnected) {
+    back.focus();
+    return;
+  }
+  // The opener was re-rendered away: focus a stable fallback rather than dropping focus to <body>.
+  const button = document.querySelector<HTMLElement>('.shortcut-help-button');
+  if (button) {
+    button.focus();
+    return;
+  }
+  const landmark = document.querySelector<HTMLElement>('h1') ?? document.querySelector<HTMLElement>('main');
+  if (!landmark) return;
+  if (!landmark.hasAttribute('tabindex')) {
+    landmark.setAttribute('tabindex', '-1');
+    landmark.addEventListener('blur', () => landmark.removeAttribute('tabindex'), { once: true });
+  }
+  landmark.focus();
 }
 
 export function isShortcutHelpOpen(): boolean {

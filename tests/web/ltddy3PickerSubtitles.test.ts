@@ -113,4 +113,26 @@ describe('lt-ddy.3 picker imports selected subtitles', () => {
     expect(model.cues.length).toBeGreaterThan(0);
     expect(map.get(`media-handle:${id}`)).toEqual({ handle, mediaId: id });
   });
+
+  it('lt-dlf.8: keeps auto-assigned subtitles (one multi picker) on the Import as new retry', async () => {
+    installHandleStore();
+    const model = createAppModel();
+    await importBrowserLocalFiles(model, { mediaFile: webm([8, 8], 'pair.webm') });
+    const firstId = model.currentMedia!.id;
+    const handle = makeHandle(webm([6, 6, 6], 'pair.webm'));
+    libraryWithPicker(model, handle);
+    setFiles('local-subtitle-files', [srt(nativeSrt, 'pair.en.srt'), srt(targetSrt, 'pair.pl.srt')]);
+    document.getElementById('local-subtitle-files')!.dispatchEvent(new dom.window.Event('change'));
+    expect(document.querySelector('.subtitle-assignment')!.textContent).toContain('Target: pair.pl.srt · Native: pair.en.srt');
+    findBtn(pickerText)!.click();
+    await until(() => !!document.querySelector('.media-name-conflict'));
+    const box = document.querySelector('.media-name-conflict')!;
+    (Array.from(box.querySelectorAll('button')).find((b) => b.textContent === 'Import as new media') as HTMLButtonElement).click();
+    await until(() => model.currentMedia?.id !== firstId && model.cues.length > 0);
+    const id = model.currentMedia!.id;
+    expect(id).not.toBe(firstId);
+    const tracks = model.store.listSubtitleTracksForMedia(id);
+    expect(tracks.map((t) => [t.role, t.language]).sort()).toEqual([['native', 'en'], ['target', 'pl']]);
+    expect(document.body.textContent).toContain('Cześć, to jest lokalny test.');
+  });
 });

@@ -339,7 +339,7 @@ export function renderTranscriptWorkbenchOverview(model: AppModel): HTMLElement 
   candidates.append(
     renderSourceCandidateCard(
       'Local files / existing subtitles',
-      'Best default: use owned media and explicit subtitle files already on this machine.',
+      'Best default: use your own videos and subtitle files already on this computer.',
       [renderRiskToken('local safe', 'local')],
     ),
     renderSourceCandidateCard(

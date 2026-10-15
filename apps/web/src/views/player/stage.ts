@@ -456,7 +456,7 @@ export function chooseMediaAgainViaPicker(model: AppModel): void {
     multiple: false,
     types: [
       {
-        description: 'Owned media files',
+        description: 'Video and audio files',
         accept: RELINK_MEDIA_ACCEPT,
       },
     ],

@@ -98,7 +98,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   localAsrPathInput.name = 'local-asr-media-path';
   localAsrPathInput.type = 'text';
   localAsrPathInput.value = model.transcriptLifecycle.localAsrMediaPath;
-  localAsrPathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.webm' : '/full/path/to/video.webm';
+  localAsrPathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Videos\\my-video.webm' : '/full/path/to/video.webm';
   localAsrPathInput.addEventListener('input', () => {
     model.transcriptLifecycle.localAsrMediaPath = localAsrPathInput.value;
   });
@@ -898,7 +898,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   mediaField.className = 'file-field file-field-required';
   const mediaHint = document.createElement('p');
   mediaHint.className = 'file-hint';
-  mediaHint.textContent = 'Required. Use owned media from this machine.';
+  mediaHint.textContent = 'Required. Use a video from this computer.';
   mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Choose video'), mediaHint);
   localFileGrid.appendChild(mediaField);
 
@@ -948,7 +948,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
         multiple: false,
         types: [
           {
-            description: 'Owned media files',
+            description: 'Video and audio files',
             accept: {
               'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
               'audio/*': ['.mp3', '.m4a', '.wav'],

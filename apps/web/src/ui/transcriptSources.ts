@@ -62,7 +62,7 @@ export function renderEmbeddedSubtitleControls(model: AppModel): HTMLElement {
   pathInput.name = 'embedded-subtitle-media-path';
   pathInput.type = 'text';
   pathInput.value = state.mediaPath;
-  pathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.mkv' : '/full/path/to/video.mkv';
+  pathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Videos\\my-video.mkv' : '/full/path/to/video.mkv';
   pathLabel.appendChild(pathInput);
 
   const languageLabel = document.createElement('label');

@@ -1,10 +1,13 @@
 import { JSDOM } from 'jsdom';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAppModel } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 import { assignSubtitleFiles } from '../../apps/web/src/ui/fileControls';
+import { openShortcutHelp } from '../../apps/web/src/ui/shortcutHelp';
 
 // lt-dlf.8: UX cosmetic batch from the 2026-10-14 audit (N4, N5, H10, V12, residual jargon, Task A).
 
@@ -82,6 +85,30 @@ describe('lt-dlf.8 H10 shortcut help', () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it('when the opener was re-rendered away, focus goes to the new ? button, else a heading, not body', () => {
+    const { model } = playerModel();
+    rerenderApp(model);
+    const stale = document.querySelector('.shortcut-help-button') as HTMLButtonElement;
+    stale.click();
+    rerenderApp(model); // replaces the opener
+    expect(stale.isConnected).toBe(false);
+    press(document.querySelector('dialog.shortcut-help button')!, 'Escape');
+    const fresh = document.querySelector('.shortcut-help-button');
+    expect(fresh).toBeTruthy();
+    expect(document.activeElement).toBe(fresh);
+
+    document.body.innerHTML = '<main id="app"><h1>Library</h1><button id="gone">x</button></main>';
+    const gone = document.getElementById('gone') as HTMLButtonElement;
+    openShortcutHelp(gone);
+    gone.remove();
+    press(document.querySelector('dialog.shortcut-help button')!, 'Escape');
+    const h1 = document.querySelector('h1')!;
+    expect(document.activeElement).toBe(h1);
+    expect(h1.getAttribute('tabindex')).toBe('-1');
+    h1.blur();
+    expect(h1.hasAttribute('tabindex')).toBe(false);
+  });
+
   it("the '?' key opens the help, but not while typing in an input", () => {
     const { model } = playerModel();
     rerenderApp(model);
@@ -113,6 +140,28 @@ describe('lt-dlf.8 residual jargon (source scan of visible strings)', () => {
       for (const line of visible) expect(line, `${f}: ${line.trim()}`).not.toMatch(/\bASR\b|[Tt]ransient|absolute|owned local media/);
     }
   });
+
+  // Explicit, short allowlist of non-user-facing string literals (exact literal -> reason). Empty today:
+  // ASR is matched case-sensitively, so internal ids such as 'local-asr' / 'local-asr-media-path' never hit.
+  const ALLOWED: ReadonlyMap<string, string> = new Map();
+  const JARGON = /\bASR\b|[Tt]ransient|[Oo]wned (local )?media|[Aa]bsolute owned/;
+  const srcRoot = fileURLToPath(new URL('../../apps/web/src/', import.meta.url));
+  const listTs = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? listTs(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
+  it('no string literal anywhere in apps/web/src carries ASR / transient / owned media jargon', () => {
+    const hits: string[] = [];
+    for (const file of listTs(srcRoot)) {
+      const src = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('//'))
+        .join('\n');
+      for (const [lit] of src.matchAll(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g)) {
+        if (JARGON.test(lit) && !ALLOWED.has(lit)) hits.push(`${file.slice(srcRoot.length)}: ${lit}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
 });
 
 describe('lt-dlf.8 Task A subtitle assignment', () => {
@@ -134,6 +183,22 @@ describe('lt-dlf.8 Task A subtitle assignment', () => {
     expect(assignSubtitleFiles([f('a.srt'), f('b.srt')], 'pl', 'en')).toEqual({ target: null, native: null, ambiguous: true });
     expect(assignSubtitleFiles([f('a.pl.en.srt'), f('b.srt')], 'pl', 'en').ambiguous).toBe(true);
     expect(assignSubtitleFiles([f('a.pl.srt'), f('b.en.srt'), f('c.srt')], 'pl', 'en').ambiguous).toBe(true);
+  });
+  it('one positively identified file plus an untagged, unrecognised or same-tag file is ambiguous', () => {
+    const none = { target: null, native: null, ambiguous: true };
+    expect(assignSubtitleFiles([f('movie.pl.srt'), f('movie.de.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('movie.de.srt'), f('movie.pl.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('a.pl.srt'), f('b.pl.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('a.en.srt'), f('b.en.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('a.target.srt'), f('b.target.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('ep.pl.srt'), f('ep.srt')], 'pl', 'en')).toEqual(none);
+  });
+  it('a single file tagged native is not made the target (ambiguous, per-role inputs open)', () => {
+    const none = { target: null, native: null, ambiguous: true };
+    expect(assignSubtitleFiles([f('movie.en.srt')], 'pl', 'en')).toEqual(none);
+    expect(assignSubtitleFiles([f('movie.native.srt')], 'pl', 'en')).toEqual(none);
+    const pl = f('movie.pl.srt');
+    expect(assignSubtitleFiles([pl], 'pl', 'en')).toEqual({ target: pl, native: null, ambiguous: false });
   });
   it('the multi picker shows the assignment with a Swap, and the import uses it', () => {
     const model = createAppModel();
