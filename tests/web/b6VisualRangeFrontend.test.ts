@@ -77,7 +77,7 @@ describe('B6 visual source range player UI', () => {
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     model.localService.status = 'connected'; model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
-    setVisualSourceRange(model, 100, 1000); rerenderApp(model); buttonByText('Prepare source audio').click();
+    setVisualSourceRange(model, 100, 1000); rerenderApp(model); buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     setLocalServiceBaseUrl(model, 'http://selected-private-host:7514'); rerenderApp(model);
     const before = document.querySelector('[data-testid="source-range-panel"]')?.textContent;
@@ -187,13 +187,13 @@ describe('B6 visual source range player UI', () => {
     rerenderApp(model);
 
     let panel = document.querySelector('[data-testid="source-range-panel"]')!;
-    let prepare = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    let prepare = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     expect(prepare.disabled).toBe(false);
 
     setVisualSourceRange(model, 1_000, 31_001);
     rerenderApp(model);
     panel = document.querySelector('[data-testid="source-range-panel"]')!;
-    prepare = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    prepare = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     const loop = Array.from(panel.querySelectorAll('button')).find((button) => button.textContent === 'Loop selected range') as HTMLButtonElement;
     expect(prepare.disabled).toBe(true);
     expect(loop.disabled).toBe(false);
@@ -214,7 +214,7 @@ describe('B6 visual source range player UI', () => {
     model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
     rerenderApp(model);
 
-    let prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    let prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     expect(prepare.disabled).toBe(true);
     prepare.click();
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -222,7 +222,7 @@ describe('B6 visual source range player UI', () => {
 
     model.currentMedia = null;
     rerenderApp(model);
-    prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     expect(prepare.disabled).toBe(true);
     prepare.click();
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -246,7 +246,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = configuredPath;
     rerenderApp(model);
 
-    const prepare = buttonByText('Prepare source audio');
+    const prepare = buttonByText('Prepare audio for practice');
     expect(prepare.disabled).toBe(true);
     prepare.click();
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -278,7 +278,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = privatePath;
     rerenderApp(model);
 
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toMatch(/failed/i));
     const visible = document.querySelector('[data-testid="source-range-panel"]')?.textContent ?? '';
     expect(visible).not.toContain(privatePath);
@@ -303,7 +303,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"]')?.textContent).toContain('deletion failed'));
     const panel = document.querySelector('[data-testid="source-range-panel"]')!;
     expect(panel.textContent).not.toContain('/private/scratch/opaque.wav');
@@ -332,7 +332,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     rerenderApp(model);
 
-    const prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    const prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     prepare.click();
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
 
@@ -400,13 +400,13 @@ describe('B6 visual source range player UI', () => {
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
 
-    let prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    let prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     prepare.click();
     await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/old'))).toBe(true));
 
     setVisualSourceRange(model, 3_000, 4_000);
     rerenderApp(model);
-    prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement;
+    prepare = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement;
     prepare.click();
     await vi.waitFor(() => expect((document.querySelector('[data-testid="source-range-panel"] audio') as HTMLAudioElement | null)?.src).toContain('blob:new'));
 
@@ -441,12 +441,12 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
-    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement).click();
+    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/old-failure'))).toBe(true));
 
     setVisualSourceRange(model, 3_000, 4_000);
     rerenderApp(model);
-    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement).click();
+    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
     rejectOldPoll(new Error('failed at /private/owned/movie.mkv'));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -482,7 +482,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/same-id-success'))).toBe(true));
 
     model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
@@ -515,7 +515,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/same-id-failure'))).toBe(true));
 
     model.currentMedia = { ...model.currentMedia!, privacyLabel: 'licensed' };
@@ -549,7 +549,7 @@ describe('B6 visual source range player UI', () => {
     model.transcriptLifecycle.localAsrMediaPath = '/owned/movie.mkv';
     setVisualSourceRange(model, 1_000, 2_000);
     rerenderApp(model);
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(fetchImpl.mock.calls.some(([input]) => String(input).endsWith('/api/jobs/stale-failure'))).toBe(true));
 
     if (invalidation === 'path') {
@@ -597,7 +597,7 @@ describe('B6 visual source range player UI', () => {
     setVisualSourceRange(model, 1_000, 2_000);
     const prepareAndWait = async () => {
       rerenderApp(model);
-      (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare source audio') as HTMLButtonElement).click();
+      (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Prepare audio for practice') as HTMLButtonElement).click();
       await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
     };
 
@@ -670,7 +670,7 @@ describe('B6 visual source range player UI', () => {
 
     buttonByText('Use transcript selection').click();
     buttonByText('Loop selected range').click();
-    buttonByText('Prepare source audio').click();
+    buttonByText('Prepare audio for practice').click();
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
     expect(model.selection).toMatchObject({ cueId: cue.id, charStart: 0, charEnd: 6 });
 

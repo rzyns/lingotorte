@@ -110,9 +110,9 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     fakeService([{ poll: old.promise, snippet: 1, blob: 'old' }, { poll: () => completed(2), snippet: 2, blob: 'new' }]);
     const urls = fakeObjectUrls(['blob:new', 'blob:old']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Preparing'));
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:new'));
     old.resolve(completed(1));
     await waitFor(() => expect(urls.revoke).toHaveBeenCalledWith('blob:old'));
@@ -127,9 +127,9 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     fakeService([{ poll: old.promise, snippet: 1 }, { poll: () => completed(2), snippet: 2 }]);
     fakeObjectUrls(['blob:new']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Preparing'));
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:new'));
     old.reject(new Error('failed at /private/owned/movie.mkv'));
     await settle();
@@ -146,7 +146,7 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     const urls = fakeObjectUrls(['blob:late']);
     setPath('/owned/movie.mkv');
     const firstCard = model.practice.cardId;
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Preparing'));
     button('Submit attempt').click(); // empty answer = skip; the queue may re-present the same card
     expect(model.store.listPracticeAttemptsForCard(firstCard!).length).toBe(1);
@@ -162,13 +162,13 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     fakeService([{ poll: () => completed(1), snippet: 1 }, { poll: () => completed(2), snippet: 2 }]);
     const urls = fakeObjectUrls(['blob:a', 'blob:b']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:a'));
     button('Submit attempt').click();
     expect(urls.revoke).toHaveBeenCalledWith('blob:a');
     expect(audioEl()).toBeNull();
     // Second card ready, then an lt-0g9 syncPracticeCard reset to another card id.
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:b'));
     syncPracticeCard(model, null); model.review.activeCardId = null;
     rerenderApp(model);
@@ -181,7 +181,7 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     fakeService([{ poll: () => completed(1), snippet: 1 }]);
     const urls = fakeObjectUrls(['blob:keep']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:keep'));
     rerenderApp(model); rerenderApp(model);
     expect(urls.revoke).not.toHaveBeenCalled();
@@ -203,27 +203,27 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     ]);
     const urls = fakeObjectUrls(['blob:p', 'blob:m', 'blob:v', 'blob:r']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:p'));
     setPath('/owned/other.mkv');
     expect(urls.revoke).toHaveBeenCalledWith('blob:p');
     expect(audioEl()).toBeNull();
 
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:m'));
     setPracticeMode(model, 'typed-input'); rerenderApp(model);
     expect(urls.revoke).toHaveBeenCalledWith('blob:m');
     setPracticeMode(model, 'audio-recall'); rerenderApp(model);
     expect(audioEl()).toBeNull();
 
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:v'));
     setView(model, 'library'); rerenderApp(model);
     expect(urls.revoke).toHaveBeenCalledWith('blob:v');
     setView(model, 'practice'); rerenderApp(model);
     expect(audioEl()).toBeNull();
 
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Preparing'));
     setLocalServiceBaseUrl(model, 'http://127.0.0.1:7999');
     pairLocalService(model, SYNTHETIC_CAPABILITY);
@@ -241,7 +241,7 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     fakeService([{ poll: () => completed(1), snippet: 1 }]);
     const urls = fakeObjectUrls(['blob:d']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:d'));
     model.localService.status = 'disconnected';
     rerenderApp(model);
@@ -258,15 +258,15 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     ]);
     const urls = fakeObjectUrls(['blob:ok']);
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Local source audio preparation failed'));
     expect(audioEl()).toBeNull();
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(statusText()).toContain('Source snippet deletion failed.'));
     expect(audioEl()).toBeNull();
     expect(urls.create).not.toHaveBeenCalled();
-    expect(button('Prepare source audio').disabled).toBe(false);
-    button('Prepare source audio').click();
+    expect(button('Prepare audio for practice').disabled).toBe(false);
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:ok'));
     expect([...urls.live]).toEqual(['blob:ok']);
     void model;
@@ -279,7 +279,7 @@ describe('lt-q3d Practice source-audio guards', { timeout: 30_000 }, () => {
     const play = vi.fn();
     Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', { configurable: true, value: play });
     setPath('/owned/movie.mkv');
-    button('Prepare source audio').click();
+    button('Prepare audio for practice').click();
     await waitFor(() => expect(audioEl()?.src).toBe('blob:quiet'));
     expect(audioEl()!.autoplay).toBe(false);
     expect(audioEl()!.hasAttribute('autoplay')).toBe(false);

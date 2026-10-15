@@ -48,11 +48,11 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   left.appendChild(renderSourceContextRow(model));
   left.appendChild(renderVideoStage(model));
   left.appendChild(renderPlayerControls(model));
-  left.appendChild(renderSourceRangePanel(model));
   // lt-dlf.5: while a capture is open the form renders at the top of the transcript aside (sticky,
   // next to the clicked line) so the video and the line stay on screen; otherwise it stays here.
   const captureOpen = Boolean(model.selection);
   if (!captureOpen) left.appendChild(renderSelectionPanel(model));
+  left.appendChild(renderSourceToolsDisclosure(model));
   grid.appendChild(left);
 
   const right = document.createElement('aside');
@@ -67,6 +67,35 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   section.appendChild(grid);
   section.appendChild(renderStudyStatusFooter(model));
   return section;
+}
+
+/** lt-dlf.6: genuine user toggles of the clip/audio tools disclosure, remembered per session. */
+const sourceToolsOpenByUser = new WeakMap<AppModel, boolean>();
+
+/**
+ * lt-dlf.6: source range + source-audio tools live in a closed-by-default disclosure at the end of the
+ * left column. Active state (a loop range or an edited source range) forces it open so it is never hidden.
+ * The 'toggle' event also fires when `open` is set at render (lt-1ur), so only a change away from the
+ * rendered state is recorded as a user choice.
+ */
+function renderSourceToolsDisclosure(model: AppModel): HTMLElement {
+  const details = document.createElement('details');
+  details.className = 'source-tools-disclosure';
+  details.dataset.testid = 'source-tools-disclosure';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Clip and audio tools (loop a range, prepare audio for practice)';
+  details.appendChild(summary);
+  details.appendChild(renderSourceRangePanel(model));
+  // An active range always opens the panel (never hide active state); closing it while a range is active
+  // lasts until the next render. The remembered user choice applies again once the range is cleared.
+  const active = model.player.loopRange !== null || model.player.sourceRange !== null;
+  const renderedOpen = active || (sourceToolsOpenByUser.get(model) ?? false);
+  details.open = renderedOpen;
+  details.addEventListener('toggle', () => {
+    if (details.open === renderedOpen) return;
+    sourceToolsOpenByUser.set(model, details.open);
+  });
+  return details;
 }
 
 const VIDEO_STAGE_SLOT = 'player-video-stage';
