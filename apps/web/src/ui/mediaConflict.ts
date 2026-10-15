@@ -14,6 +14,7 @@ export function handleMediaImportError(model: AppModel, err: unknown, importAsNe
   } else {
     pendingMediaNameConflict = null;
     model.importError = err instanceof Error ? err.message : String(err);
+    model.importWarning = null;
   }
   rerenderApp(model);
 }

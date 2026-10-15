@@ -45,6 +45,8 @@ export function renderApp(model: AppModel): HTMLElement {
   syncStatus.dataset.localServiceSync = 'true';
   syncStatus.setAttribute('role', 'status');
   root.appendChild(syncStatus);
+  const importWarning = renderImportWarning(model);
+  if (importWarning) root.appendChild(importWarning);
   const updateSyncStatus = () => {
     for (const node of root.querySelectorAll<HTMLElement>('[data-local-service-sync]')) {
       renderSyncBannerContent(model, node);
@@ -63,6 +65,23 @@ export function renderApp(model: AppModel): HTMLElement {
   // lt-e0j: one persistent live region (keyed), re-appended into each new root.
   root.appendChild(renderToastRegion(model));
   return root;
+}
+
+/** lt-ddy.5: a skipped subtitle file stays visible across views (the import navigates to Player) until dismissed. */
+function renderImportWarning(model: AppModel): HTMLElement | null {
+  if (!model.importWarning) return null;
+  const box = document.createElement('div');
+  box.className = 'status-banner warning import-subtitle-warning';
+  box.setAttribute('role', 'alert');
+  const text = document.createElement('p');
+  text.textContent = model.importWarning;
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'btn-secondary';
+  dismiss.textContent = 'Dismiss';
+  dismiss.addEventListener('click', () => { model.importWarning = null; rerenderApp(model); });
+  box.append(text, dismiss);
+  return box;
 }
 
 /**
