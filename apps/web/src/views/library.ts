@@ -1,5 +1,6 @@
 import { readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE } from '../../../../packages/domain/src/nativePaths.ts';
 import type { AppModel } from '../uiTypes';
+import { assignSubtitleFiles, renderFilePicker } from '../ui/fileControls.ts';
 import { formatTimeMs } from '../uiTypes';
 import {
   applyTrackOffsetMs,
@@ -43,7 +44,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   panel.appendChild(heading);
 
   const intro = document.createElement('p');
-  intro.textContent = 'Provider/ASR transcripts enter as drafts. Correct and approve a transcript before creating learner study items from it.';
+  intro.textContent = 'Auto-transcripts and provider transcripts enter as drafts. Correct and approve a transcript before creating learner study items from it.';
   panel.appendChild(intro);
   panel.appendChild(renderTranscriptWorkbenchOverview(model));
 
@@ -86,7 +87,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   elevenLabsAuthCheckbox.addEventListener('change', () => {
     model.transcriptLifecycle.elevenLabsAuthorized = elevenLabsAuthCheckbox.checked;
   });
-  elevenLabsAuthLabel.append(elevenLabsAuthCheckbox, document.createTextNode(' I authorize sending extracted audio to ElevenLabs Scribe v2 for an online ASR draft.'));
+  elevenLabsAuthLabel.append(elevenLabsAuthCheckbox, document.createTextNode(' I authorize sending extracted audio to ElevenLabs Scribe v2 for an online auto-transcript draft.'));
   gateControls.appendChild(elevenLabsAuthLabel);
 
   const localAsrPathLabel = document.createElement('label');
@@ -97,7 +98,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   localAsrPathInput.name = 'local-asr-media-path';
   localAsrPathInput.type = 'text';
   localAsrPathInput.value = model.transcriptLifecycle.localAsrMediaPath;
-  localAsrPathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Media\\owned-media.webm' : '/absolute/path/to/owned-media.webm';
+  localAsrPathInput.placeholder = model.localService.pathPolicy?.platform === 'win32' ? 'C:\\Videos\\my-video.webm' : '/full/path/to/video.webm';
   localAsrPathInput.addEventListener('input', () => {
     model.transcriptLifecycle.localAsrMediaPath = localAsrPathInput.value;
   });
@@ -185,7 +186,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
 
   const asrBtn = document.createElement('button');
   asrBtn.className = 'btn-secondary';
-  asrBtn.textContent = 'Generate local ASR draft';
+  asrBtn.textContent = 'Auto-transcribe locally';
   asrBtn.disabled = !model.currentMedia || !hasNativeInputPath(model, model.transcriptLifecycle.localAsrMediaPath || currentMediaPath);
   asrBtn.addEventListener('click', () => {
     const transport = captureUiServiceOwner(model); if (!transport) return;
@@ -785,7 +786,23 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   subtitleHeading.textContent = 'Subtitles (optional)';
   const subtitleHint = document.createElement('p');
   subtitleHint.className = 'file-hint';
-  subtitleHint.textContent = 'Used by both import buttons below.';
+  subtitleHint.textContent = 'Pick one or two .srt files; they are used by both import buttons below.';
+  // lt-dlf.8 Task A: one multi-select picker; roles are assigned by filename and shown with a Swap button.
+  const multiInput = document.createElement('input');
+  multiInput.id = 'local-subtitle-files';
+  multiInput.name = 'local-subtitle-files';
+  multiInput.type = 'file';
+  multiInput.multiple = true;
+  multiInput.accept = '.srt,text/plain,application/x-subrip';
+  const multiLabel = document.createElement('label');
+  multiLabel.htmlFor = 'local-subtitle-files';
+  multiLabel.className = 'sr-only';
+  multiLabel.textContent = 'Subtitle files (.srt, up to two)';
+  const assignmentLine = document.createElement('div');
+  assignmentLine.className = 'subtitle-assignment';
+  assignmentLine.setAttribute('aria-live', 'polite');
+  let autoTarget: File | null = null;
+  let autoNative: File | null = null;
   const subtitleGrid = document.createElement('div');
   subtitleGrid.className = 'local-file-grid add-media-subtitles';
   const targetLabel = document.createElement('label');
@@ -800,8 +817,8 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   targetField.className = 'file-field';
   const targetHint = document.createElement('p');
   targetHint.className = 'file-hint';
-  targetHint.textContent = 'Optional target-language .srt. Without it, use a draft ASR workflow later.';
-  targetField.append(targetLabel, targetInput, targetHint);
+  targetHint.textContent = 'Optional target-language .srt. Without it, you can auto-transcribe later.';
+  targetField.append(targetLabel, renderFilePicker(targetInput, 'Choose target .srt'), targetHint);
   subtitleGrid.appendChild(targetField);
 
   const nativeLabel = document.createElement('label');
@@ -817,9 +834,50 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const nativeHint = document.createElement('p');
   nativeHint.className = 'file-hint';
   nativeHint.textContent = 'Optional native-language support track for dual subtitles.';
-  nativeField.append(nativeLabel, nativeInput, nativeHint);
+  nativeField.append(nativeLabel, renderFilePicker(nativeInput, 'Choose native .srt'), nativeHint);
   subtitleGrid.appendChild(nativeField);
-  localImportGroup.append(subtitleHeading, subtitleHint, subtitleGrid);
+  const resolvedTarget = (): File | null => targetInput.files?.[0] ?? autoTarget;
+  const resolvedNative = (): File | null => nativeInput.files?.[0] ?? autoNative;
+  const renderAssignment = (ambiguous: boolean): void => {
+    assignmentLine.replaceChildren();
+    if (ambiguous) {
+      assignmentLine.textContent = 'Could not tell which subtitle is which from the file names. Choose them separately below.';
+      separateToggle.open = true;
+      return;
+    }
+    const target = resolvedTarget();
+    const native = resolvedNative();
+    if (!target && !native) return;
+    const text = document.createElement('span');
+    text.textContent = `Target: ${target?.name ?? 'none'} \u00b7 Native: ${native?.name ?? 'none'}`;
+    assignmentLine.appendChild(text);
+    if (autoTarget && autoNative && !targetInput.files?.length && !nativeInput.files?.length) {
+      const swap = document.createElement('button');
+      swap.type = 'button';
+      swap.className = 'btn-link subtitle-swap';
+      swap.textContent = 'Swap';
+      swap.addEventListener('click', () => {
+        [autoTarget, autoNative] = [autoNative, autoTarget];
+        renderAssignment(false);
+      });
+      assignmentLine.appendChild(swap);
+    }
+  };
+  multiInput.addEventListener('change', () => {
+    const files = Array.from(multiInput.files ?? []);
+    const assignment = assignSubtitleFiles(files, 'pl', 'en');
+    autoTarget = assignment.target;
+    autoNative = assignment.native;
+    renderAssignment(assignment.ambiguous);
+  });
+  targetInput.addEventListener('change', () => renderAssignment(false));
+  nativeInput.addEventListener('change', () => renderAssignment(false));
+  const separateToggle = document.createElement('details');
+  separateToggle.className = 'subtitle-separate';
+  const separateSummary = document.createElement('summary');
+  separateSummary.textContent = 'Choose target and native separately';
+  separateToggle.append(separateSummary, subtitleGrid);
+  localImportGroup.append(subtitleHeading, subtitleHint, multiLabel, renderFilePicker(multiInput, 'Choose subtitles'), assignmentLine, separateToggle);
   // lt-dlf.3: the persistent picker (when available) is the primary action, ahead of the session-only fields.
   const pickerSlot = document.createElement('div');
   pickerSlot.className = 'add-media-picker';
@@ -840,8 +898,8 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   mediaField.className = 'file-field file-field-required';
   const mediaHint = document.createElement('p');
   mediaHint.className = 'file-hint';
-  mediaHint.textContent = 'Required. Use owned media from this machine.';
-  mediaField.append(mediaLabel, mediaInput, mediaHint);
+  mediaHint.textContent = 'Required. Use a video from this computer.';
+  mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Choose video'), mediaHint);
   localFileGrid.appendChild(mediaField);
 
   localImportGroup.appendChild(localFileGrid);
@@ -852,10 +910,10 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   localImportBtn.setAttribute('aria-label', 'Import local media');
   localImportBtn.addEventListener('click', () => {
     const mediaFile = mediaInput.files?.[0];
-    const targetSubtitleFile = targetInput.files?.[0];
-    const nativeSubtitleFile = nativeInput.files?.[0] ?? null;
+    const targetSubtitleFile = resolvedTarget() ?? undefined;
+    const nativeSubtitleFile = resolvedNative();
     if (!mediaFile) {
-      model.importError = 'Choose a local media file before importing. A target .srt subtitle file is optional; you can generate an ASR draft afterward.';
+      model.importError = 'Choose a local media file before importing. A target .srt subtitle file is optional; you can auto-transcribe afterward.';
       rerenderApp(model);
       return;
     }
@@ -890,7 +948,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
         multiple: false,
         types: [
           {
-            description: 'Owned media files',
+            description: 'Video and audio files',
             accept: {
               'video/*': ['.mp4', '.m4v', '.webm', '.mkv', '.mov'],
               'audio/*': ['.mp3', '.m4a', '.wav'],
@@ -907,7 +965,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
           }
           lastPickedHandle = mediaHandle;
           // lt-ddy.3: same subtitle inputs as 'Import local media'; captured once so the import-new retry reuses them.
-          lastPickedSubtitles = { targetSubtitleFile: targetInput.files?.[0] ?? null, nativeSubtitleFile: nativeInput.files?.[0] ?? null };
+          lastPickedSubtitles = { targetSubtitleFile: resolvedTarget(), nativeSubtitleFile: resolvedNative() };
           return importBrowserLocalFileHandles(model, { mediaHandle, ...lastPickedSubtitles }).then(() => {
             clearPendingMediaNameConflict();
             if (!model.importError) {

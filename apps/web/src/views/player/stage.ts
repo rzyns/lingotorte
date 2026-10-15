@@ -366,7 +366,7 @@ export function renderEmptyVideoPlaceholder(model: AppModel): HTMLElement {
   icon.setAttribute('aria-hidden', 'true');
   icon.textContent = '📁';
   const heading = document.createElement('h3');
-  heading.textContent = 'Start with owned local media';
+  heading.textContent = 'Start with a video from this computer';
   const body = document.createElement('p');
   body.textContent = 'Import a video/audio file and optional subtitle tracks, or load the synthetic fixture for a private smoke test.';
 
@@ -456,7 +456,7 @@ export function chooseMediaAgainViaPicker(model: AppModel): void {
     multiple: false,
     types: [
       {
-        description: 'Owned media files',
+        description: 'Video and audio files',
         accept: RELINK_MEDIA_ACCEPT,
       },
     ],
@@ -511,7 +511,7 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const boundarySummary = document.createElement('summary');
   boundarySummary.textContent = 'technical details';
   boundaryDetails.append(boundarySummary, boundary);
-  boundary.textContent = 'Browser file handles are playback and relink identity only. For local-service ASR, ffmpeg, ffprobe, embedded subtitle extraction, and source-media snippets, provide an explicit absolute owned local media path in Library → Transcript lifecycle.';
+  boundary.textContent = 'Videos chosen in the browser are for playback only. To auto-transcribe, extract built-in subtitles, or make audio snippets, enter the full path to the video file in Library → Transcript tools.';
 
   const actions = document.createElement('div');
   actions.className = 'empty-video-actions';

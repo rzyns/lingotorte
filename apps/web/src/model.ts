@@ -2279,7 +2279,7 @@ async function extractSelectedEmbeddedSubtitleDraftImpl(
     throw new TypeError(EMBEDDED_SERVICE_ERROR);
   }
   const media = model.currentMedia;
-  if (!media) throw new TypeError('Embedded subtitle draft import requires current owned local media.');
+  if (!media) throw new TypeError('Open a video first, then import its built-in subtitles.');
   const pathAtStart = state.mediaPath;
   let mediaPath = '';
   let completedResultReceived = false;
@@ -2744,7 +2744,7 @@ export async function importYouTubeCaptionCandidate(
 
 export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrProvider, language = 'pl'): Promise<TranscriptImportResult> {
   if (!model.currentMedia) {
-    throw new TypeError('Local ASR draft generation requires a current local/owned media asset.');
+    throw new TypeError('Open a video first, then auto-transcribe it.');
   }
   provider.assertCurrent?.();
   const result = await provider.transcribe({ media: model.currentMedia, language });
@@ -2792,7 +2792,7 @@ export async function generateElevenLabsScribeDraft(
     throw new TypeError('ElevenLabs Scribe draft generation disabled: explicit provider consent is required.');
   }
   if (!model.currentMedia) {
-    throw new TypeError('ElevenLabs Scribe draft generation requires a current local/owned media asset.');
+    throw new TypeError('Open a video first, then transcribe it with ElevenLabs.');
   }
   provider.assertCurrent?.();
   const result = await provider.transcribe({ media: model.currentMedia, language: input.language });

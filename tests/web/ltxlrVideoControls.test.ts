@@ -62,7 +62,7 @@ describe('lt-xlr custom video controls', () => {
     expect(video().getAttribute('aria-label')).toBe('Clip');
     const playButtons = Array.from(document.querySelectorAll('button')).filter((b) => /^(Play|Pause)$/.test(b.textContent ?? ''));
     expect(playButtons).toHaveLength(1);
-    expect(document.querySelector('.keyboard-shortcuts')?.textContent).toContain('Space play/pause');
+    expect(document.querySelector('.keyboard-shortcuts .shortcut-help-button')).toBeTruthy(); // lt-dlf.8 H10: full list moved to the '?' dialog
   });
 
   it('seek slider updates in place on timeupdate and seeks the video on input', () => {

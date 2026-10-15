@@ -17,6 +17,7 @@ import {
 } from './model';
 import { renderToastRegion } from './ui/toast.ts';
 import { currentKeyboardCue, isEditableShortcutTarget, seekRenderedVideoToCue } from './ui/common.ts';
+import { isShortcutHelpOpen, openShortcutHelp } from './ui/shortcutHelp.ts';
 import { invalidateSourceRangeSnippet, practiceSnippetStates, sourceRangeSnippetStates, synchronizePracticeSnippet, synchronizeSourceRangeSnippet } from './ui/snippets.ts';
 import { renderExportImportView } from './views/exportImport.ts';
 import { renderLibraryView } from './views/library.ts';
@@ -34,7 +35,7 @@ export function renderApp(model: AppModel): HTMLElement {
   if (sourceRangeSnippetStates.has(model)) {
     const snippet = synchronizeSourceRangeSnippet(model);
     if (model.view !== 'player' && snippet.objectUrl) {
-      invalidateSourceRangeSnippet(model, 'Transient browser audio cleaned after leaving Player.');
+      invalidateSourceRangeSnippet(model, 'Temporary browser audio cleaned after leaving Player.');
     }
   }
   if (practiceSnippetStates.has(model)) synchronizePracticeSnippet(model);
@@ -144,6 +145,13 @@ function installGlobalKeyboardShortcuts(model: AppModel): void {
     const currentModel = keyboardShortcutsModel;
     if (!currentModel || isEditableShortcutTarget(event.target)) return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === '?') {
+      // lt-dlf.8 H10: '?' opens the shortcut help from any view (never while typing).
+      event.preventDefault();
+      openShortcutHelp(event.target instanceof HTMLElement && event.target !== document.body ? event.target : null);
+      return;
+    }
+    if (isShortcutHelpOpen()) return;
     if (currentModel.view === 'review') {
       // lt-dlf.4: review owns Space/1-4; player shortcuts never fire here.
       handleReviewShortcut(currentModel, event);
