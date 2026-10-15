@@ -12,6 +12,42 @@ import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
 import { renderAddMeaning } from './saved.ts';
 
+const REVIEW_RATINGS = ['again', 'hard', 'good', 'easy'] as const;
+type ReviewRatingName = (typeof REVIEW_RATINGS)[number];
+
+function rateReviewCard(model: AppModel, cardId: string, rating: ReviewRatingName): void {
+  submitReviewRating(model, cardId, rating, model.clock());
+  model.review.activeCardId = null;
+  model.review.revealed = false;
+  requestFocusAfterRender(model, 'review-reveal-toggle', 'review-empty');
+  rerenderApp(model);
+}
+
+/**
+ * lt-dlf.4: Review keyboard flow. Space toggles reveal (unless an interactive control has focus, which
+ * keeps native activation); 1-4 rate Again/Hard/Good/Easy once revealed. Returns true when handled.
+ * Callers have already rejected editable targets and modifier keys.
+ */
+export function handleReviewShortcut(model: AppModel, event: KeyboardEvent): boolean {
+  if (model.view !== 'review') return false;
+  // Act on the card the learner is looking at (the rendered one), not a freshly re-resolved one.
+  const cardId = model.review.currentCardId;
+  if (!cardId || !document.getElementById('review-reveal-toggle')) return false;
+  if (event.key === ' ' || event.key === 'Spacebar') {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('button, [role="button"], a[href], summary, input, select, textarea, [tabindex]:not(body):not(#review-empty)')) return false;
+    event.preventDefault();
+    toggleReviewReveal(model);
+    rerenderApp(model);
+    return true;
+  }
+  const index = ['1', '2', '3', '4'].indexOf(event.key);
+  if (index < 0 || !model.review.revealed) return false;
+  event.preventDefault();
+  rateReviewCard(model, cardId, REVIEW_RATINGS[index]!);
+  return true;
+}
+
 export function renderReviewView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
   section.className = 'card review-card';
@@ -143,22 +179,22 @@ export function renderReviewView(model: AppModel): HTMLElement {
     buttons.className = 'review-buttons';
     buttons.setAttribute('role', 'group');
     buttons.setAttribute('aria-label', 'Rate your recall');
-    for (const rating of ['again', 'hard', 'good', 'easy'] as const) {
+    for (const rating of REVIEW_RATINGS) {
       const btn = document.createElement('button');
       btn.className = rating;
       btn.textContent = rating.charAt(0).toUpperCase() + rating.slice(1);
       btn.setAttribute('aria-label', `Rate ${rating}`);
-      btn.addEventListener('click', () => {
-        submitReviewRating(model, card.id, rating, model.clock());
-        model.review.activeCardId = null;
-        model.review.revealed = false;
-        requestFocusAfterRender(model, 'review-reveal-toggle', 'review-empty');
-        rerenderApp(model);
-      });
+      btn.dataset.shortcut = String(REVIEW_RATINGS.indexOf(rating) + 1);
+      btn.addEventListener('click', () => rateReviewCard(model, card.id, rating));
       buttons.appendChild(btn);
     }
     section.appendChild(buttons);
   }
+
+  const hint = document.createElement('p');
+  hint.className = 'review-shortcut-hint';
+  hint.textContent = 'Space: show answer \u00b7 1\u20134: rate (Again, Hard, Good, Easy)';
+  section.appendChild(hint);
 
   const stats = document.createElement('p');
   stats.className = 'meta';
