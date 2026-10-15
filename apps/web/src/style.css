@@ -631,6 +631,12 @@ textarea:focus-visible,
   .transcript-copilot .transcript-search {
     padding-top: var(--space-3);
   }
+
+  /* The heading scrolls away above the pinned search; give it back the card's top padding. */
+  .transcript-copilot > h2 {
+    margin-top: 0;
+    padding-top: var(--space-3);
+  }
 }
 
 .transcript-search {
