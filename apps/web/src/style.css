@@ -17,7 +17,17 @@
   --focus: #8da9ff;
   --radius: 0.75rem;
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* lt-vtw: type scale and spacing rhythm */
+  --fs-xs: 0.78rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.4rem;
+  --space-1: 0.5rem;
+  --space-2: 0.75rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  font-family: system-ui, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
   background: var(--bg);
 }
@@ -94,13 +104,14 @@ textarea:focus-visible,
 
 .lingotorte-header h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--fs-xl);
+  font-weight: 750;
   letter-spacing: -0.02em;
 }
 
 .lingotorte-header p {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -116,7 +127,7 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 999px;
   padding: 0.4rem 0.9rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   transition: background 150ms, border-color 150ms;
 }
 
@@ -139,7 +150,7 @@ textarea:focus-visible,
   padding: 1rem 0;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -155,14 +166,14 @@ textarea:focus-visible,
   border-radius: 999px;
   background: rgba(245, 193, 100, 0.12);
   color: var(--warning);
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: var(--space-3);
   box-shadow: var(--shadow);
 }
 
@@ -172,8 +183,9 @@ textarea:focus-visible,
 
 .card h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .card p {
@@ -184,7 +196,7 @@ textarea:focus-visible,
 
 .study-cockpit {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 .study-cockpit-header {
@@ -221,10 +233,8 @@ textarea:focus-visible,
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-muted);
-  font-size: 0.73rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
 }
 
 .status-token-local {
@@ -248,19 +258,19 @@ textarea:focus-visible,
 
 .artifact-workbench {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .source-context-row {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   background: var(--surface-soft);
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
 
@@ -286,7 +296,7 @@ textarea:focus-visible,
 .source-disclosure summary {
   color: var(--accent);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
 }
 
 .source-disclosure code {
@@ -294,7 +304,7 @@ textarea:focus-visible,
   margin-top: 0.35rem;
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -315,9 +325,8 @@ textarea:focus-visible,
   border: 1px solid rgba(199, 210, 254, 0.18);
   background: rgba(255, 255, 255, 0.035);
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
-  letter-spacing: 0.03em;
 }
 
 .transcript-copilot {
@@ -326,7 +335,7 @@ textarea:focus-visible,
 
 .player-layout {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 @media (min-width: 900px) {
@@ -373,7 +382,7 @@ textarea:focus-visible,
 .video-placeholder h3 {
   margin: 0;
   color: var(--text);
-  font-size: clamp(1.05rem, 2.4vw, 1.45rem);
+  font-size: clamp(var(--fs-lg), 2.4vw, 1.45rem);
 }
 
 .video-placeholder p {
@@ -408,7 +417,7 @@ textarea:focus-visible,
 
 .subtitle-target {
   max-width: min(92%, 68ch);
-  font-size: clamp(1rem, 2.2vw, 1.35rem);
+  font-size: clamp(var(--fs-lg), 2.4vw, 1.6rem);
   font-weight: 600;
   line-height: 1.35;
   color: #fff;
@@ -445,7 +454,7 @@ textarea:focus-visible,
 
 .subtitle-native {
   max-width: min(92%, 72ch);
-  font-size: clamp(0.8rem, 1.6vw, 1rem);
+  font-size: clamp(var(--fs-sm), 1.6vw, var(--fs-md));
   line-height: 1.3;
   color: rgba(255, 255, 255, 0.82);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
@@ -465,7 +474,7 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   min-height: 36px;
 }
 
@@ -478,7 +487,7 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -510,13 +519,13 @@ textarea:focus-visible,
   border-radius: 4px;
   background: rgb(0 0 0 / 55%);
   color: #fff;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   pointer-events: none;
 }
 
 .source-range-panel {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .source-range-panel h3,
@@ -534,7 +543,7 @@ textarea:focus-visible,
   display: grid;
   gap: 0.35rem;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
 }
 
 .source-range-handles input[type="range"] {
@@ -567,7 +576,7 @@ textarea:focus-visible,
   display: grid;
   gap: 0.35rem;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
 }
 
 .source-range-panel > label input {
@@ -585,7 +594,7 @@ textarea:focus-visible,
 }
 
 .source-range-status {
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-1) var(--space-2);
   border-left: 3px solid var(--accent);
   background: var(--surface-raised);
 }
@@ -598,10 +607,22 @@ textarea:focus-visible,
 .transcript-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-height: 70vh;
-  overflow-y: auto;
+  gap: var(--space-2);
   padding-right: 0.25rem;
+}
+
+/* lt-vtw: on desktop the aside is the single scroll region beside the video; the search stays pinned
+   (position: sticky; top: 0 inside .transcript-panel) and the cue list scrolls. Mobile: normal flow. */
+@media (min-width: 900px) {
+  .transcript-copilot {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+    max-height: calc(100vh - 2rem);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
 }
 
 .transcript-search {
@@ -620,13 +641,13 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .cue-row {
   display: grid;
   gap: 0.25rem;
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-1) var(--space-2);
   border-radius: 0.6rem;
   border: 1px solid transparent;
   background: var(--surface-raised);
@@ -644,23 +665,24 @@ textarea:focus-visible,
 }
 
 .cue-time {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .cue-target {
-  font-size: 0.95rem;
+  max-width: 60ch;
+  font-size: var(--fs-lg);
   color: var(--text);
 }
 
 .cue-native {
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
 .cue-context {
-  font-size: 0.7rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
@@ -678,7 +700,7 @@ textarea:focus-visible,
   color: var(--text-muted);
   border-radius: 0.4rem;
   padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
 }
 
 .cue-actions button:hover {
@@ -697,7 +719,7 @@ textarea:focus-visible,
 .token-preview {
   display: grid;
   gap: 0.5rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   background: var(--surface-raised);
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
@@ -729,12 +751,12 @@ textarea:focus-visible,
 
 .selection-panel {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .selection-form label {
   display: block;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   margin-bottom: 0.3rem;
 }
@@ -748,7 +770,7 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .selection-form textarea {
@@ -769,7 +791,7 @@ textarea:focus-visible,
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .btn-primary:disabled {
@@ -783,36 +805,36 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .saved-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .saved-item {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 0.6rem;
-  padding: 0.75rem;
+  padding: var(--space-2);
 }
 
 .saved-item h3 {
   margin: 0 0 0.35rem;
-  font-size: 1rem;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
 .saved-item .meta {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 .saved-item .occurrence-link {
   display: inline-block;
   margin-top: 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--accent);
   text-decoration: none;
 }
@@ -823,13 +845,16 @@ textarea:focus-visible,
 
 .review-card {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 .review-prompt {
-  font-size: 1.25rem;
+  font-size: var(--fs-xl);
+  max-width: 50ch;
+  margin-inline: auto;
+  width: 100%;
   text-align: center;
-  padding: 1.5rem 1rem;
+  padding: var(--space-4) var(--space-3);
   background: var(--surface-raised);
   border-radius: var(--radius);
 }
@@ -871,12 +896,12 @@ textarea:focus-visible,
 
 .import-form {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .card label {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 
@@ -931,8 +956,8 @@ textarea:focus-visible,
 .transcript-gate-controls,
 .transcript-cue-editor {
   display: grid;
-  gap: 0.75rem;
-  padding: 0.85rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.025);
@@ -945,7 +970,7 @@ textarea:focus-visible,
 
 .local-file-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 @media (min-width: 900px) {
@@ -958,7 +983,7 @@ textarea:focus-visible,
   display: grid;
   align-content: start;
   gap: 0.45rem;
-  padding: 0.75rem;
+  padding: var(--space-2);
   border: 1px solid rgba(199, 210, 254, 0.14);
   border-radius: 0.7rem;
   background: rgba(141, 169, 255, 0.055);
@@ -975,8 +1000,8 @@ textarea:focus-visible,
 
 .transcript-workbench {
   display: grid;
-  gap: 0.85rem;
-  padding: 0.9rem;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.025);
@@ -997,7 +1022,7 @@ textarea:focus-visible,
   border: 1px solid var(--border);
   background: var(--surface-raised);
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
 }
 
@@ -1020,7 +1045,7 @@ textarea:focus-visible,
 
 .source-candidate-grid {
   display: grid;
-  gap: 0.6rem;
+  gap: var(--space-1);
 }
 
 @media (min-width: 760px) {
@@ -1034,17 +1059,17 @@ textarea:focus-visible,
   border: 1px solid var(--border);
   border-radius: 0.65rem;
   background: var(--surface-soft);
-  padding: 0.75rem;
+  padding: var(--space-2);
 }
 
 .source-candidate-card h4 {
   margin: 0 0 0.45rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .source-candidate-card p {
   margin: 0.5rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 
 .risk-token-rail {
@@ -1055,7 +1080,7 @@ textarea:focus-visible,
 
 .draft-evidence-card {
   color: var(--warning);
-  font-size: 0.84rem;
+  font-size: var(--fs-sm);
 }
 
 .transcript-gate-controls {
@@ -1078,7 +1103,7 @@ textarea:focus-visible,
 .gate-note {
   margin: -0.2rem 0 0;
   color: var(--warning);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
 }
 
 .transcript-action-row {
@@ -1092,7 +1117,7 @@ textarea:focus-visible,
 
 .transcript-correction-list {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .transcript-cue-editor label {
@@ -1134,14 +1159,14 @@ textarea:focus-visible,
 }
 
 .import-form .file-hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 /* lt-1ur Library media list + lifecycle disclosure */
 .media-rows {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1157,8 +1182,8 @@ textarea:focus-visible,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
-  padding: 0.6rem 0.75rem;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -1185,12 +1210,12 @@ textarea:focus-visible,
 }
 
 .status-banner {
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-1) var(--space-2);
   border-radius: 0.5rem;
   border: 1px solid var(--border);
   background: var(--surface-raised);
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .status-banner.error {
@@ -1233,19 +1258,19 @@ textarea:focus-visible,
 
 /* Shared (promoted from .saved-item / .import-form scopes) */
 .meta {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 .file-hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 .occurrence-link {
   display: inline-block;
   margin-top: 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--accent);
   text-decoration: none;
 }
@@ -1283,7 +1308,7 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .button-row button:not(.btn-primary):hover,
@@ -1326,15 +1351,13 @@ textarea:focus-visible,
 
 .bucket-label {
   color: var(--text-muted);
-  font-size: 0.73rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
 }
 
 .bucket-count {
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
 }
 
@@ -1344,7 +1367,7 @@ textarea:focus-visible,
 }
 
 .review-target {
-  font-size: 1.1rem;
+  font-size: var(--fs-lg);
   font-weight: 600;
   margin: 0;
 }
@@ -1358,14 +1381,14 @@ textarea:focus-visible,
 .review-target-context,
 .review-native-context {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   margin: 0;
 }
 
 /* Saved */
 .saved-view {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .saved-tabs {
@@ -1380,7 +1403,7 @@ textarea:focus-visible,
   color: var(--text);
   border-radius: 999px;
   padding: 0.4rem 0.9rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .saved-tab:hover {
@@ -1397,7 +1420,7 @@ textarea:focus-visible,
 
 .saved-panel {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 .occurrence-group {
@@ -1408,26 +1431,26 @@ textarea:focus-visible,
 
 .occurrence-context {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 /* Practice */
 .practice-card {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 .practice-prompt {
-  font-size: 1.25rem;
+  font-size: var(--fs-xl);
   text-align: center;
-  padding: 1.5rem 1rem;
+  padding: var(--space-4) var(--space-3);
   background: var(--surface-raised);
   border-radius: var(--radius);
 }
 
 .practice-unavailable {
   color: var(--warning);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .practice-audio-recall,
@@ -1457,7 +1480,7 @@ textarea:focus-visible,
 
 .sentence-builder-placeholder {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .sentence-builder-token {
@@ -1475,7 +1498,7 @@ textarea:focus-visible,
 /* Export / Import */
 .export-import-card {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 .export-import-group,
@@ -1488,7 +1511,7 @@ textarea:focus-visible,
 
 .restore-preview,
 .restore-receipt {
-  padding: 0.75rem;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 0.6rem;
   background: var(--surface-raised);
@@ -1497,14 +1520,14 @@ textarea:focus-visible,
 .export-metadata,
 .restore-metadata {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   margin: 0;
 }
 
 /* Settings */
 .local-service-panel {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-2);
 }
 
 /* Transcript workbench */
@@ -1520,7 +1543,7 @@ textarea:focus-visible,
 
 .source-range-summary {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 
 .cue-word,
@@ -1574,9 +1597,9 @@ textarea:focus-visible,
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-1);
   flex-wrap: wrap;
-  padding: 0.75rem 1rem;
+  padding: var(--space-2) var(--space-3);
   background: var(--surface-raised);
   color: var(--text);
   border: 1px solid var(--accent-strong);
