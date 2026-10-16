@@ -258,6 +258,8 @@ class SourceTraceTests(unittest.TestCase):
             needle = v.replace('\\', '')
             if needle.startswith('input[name='):
                 needle = needle.split('"')[1]
+            elif needle.startswith('[data-action='):
+                needle = needle.split('"')[1]  # lt-dlf.13: data hook value must exist in the app
             with self.subTest(v=v):
                 self.assertIn(needle, app)
         for sel in ("'local-target-subtitle-file'", "'local-native-subtitle-file'", "'practice-mode'", "'practice-answer'", "'morphology-status'",
