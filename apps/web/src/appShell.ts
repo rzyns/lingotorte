@@ -410,7 +410,7 @@ export function rerenderApp(model: AppModel): void {
     el?.focus();
   }
   // lt-foe.4: on desktop the form sits in the main column, so the clicked line only needs a minimal
-  // ('nearest') scroll inside the aside's own scroll region; the sheet layouts keep 'end' above the sheet.
+  // ('nearest') scroll inside the aside's own scroll region; stacked layouts keep 'end'.
   // lt-dlf.10: below the two-column breakpoint the transcript is in the page flow, so scrolling a row would
   // scroll the window (and the video) away. Only nudge a row that is already on screen (a transcript click)
   // into the band between the sticky video and the sheet; an off-screen row (subtitle click) is left alone.

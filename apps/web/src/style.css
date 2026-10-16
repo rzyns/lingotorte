@@ -836,12 +836,12 @@ textarea:focus-visible,
 }
 
 .selection-panel {
+  /* lt-foe.4: the open capture form renders in the main column under the player controls at full width,
+     in normal flow on desktop (no sticky pin, no height cap); the aside keeps its normal layout.
+     .capture-sheet is only a hook on desktop; it becomes a fixed sheet below 900px. */
   display: grid;
   gap: var(--space-2);
 }
-
-/* lt-foe.4: the open capture form renders in the main column under the player controls at full width,
-   in normal flow on desktop (no sticky pin, no height cap); the aside keeps its normal layout. */
 
 /* lt-dlf.10: below the two-column breakpoint the aside stacks under the video, so an in-flow form would
    pull the page (and the video) away. Render the open form as a fixed bottom sheet instead: the page does

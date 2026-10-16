@@ -101,6 +101,7 @@ describe('lt-dlf.5 / lt-foe.4 capture form keeps the video and the clicked line 
     expect(aside.querySelector('.selection-panel')).toBeNull();
     expect(document.querySelector('.player-layout')!.classList.contains('capture-open')).toBe(true);
     const workbench = document.querySelector('.artifact-workbench')!;
+    // .capture-sheet is a hook on every breakpoint; CSS makes it a fixed sheet only below 900px.
     const panel = workbench.querySelector(':scope > .selection-panel.capture-sheet')!;
     expect(panel).toBeTruthy();
     // Directly after the player controls.
