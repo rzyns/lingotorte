@@ -18,6 +18,98 @@ import {
   rememberPairingOptedIn,
   setRememberPairingOptIn,
 } from '../rememberedPairing.ts';
+import { clearSnapshotCache, suspendSnapshotCacheWrites, type SnapshotCacheBackend } from '../browserSnapshotCache.ts';
+
+export const CLEAR_CACHE_BUTTON_LABEL = "Clear this browser's cached state";
+export const CLEAR_CACHE_EXPLANATION = "Removes the copy of your saved words, transcripts, review progress and connection preferences that this browser keeps so a reload can show your last work. Nothing stored in the local service is deleted, and remembered pairing and remembered video files are not affected. The page reloads afterwards; reconnect to the local service to load your saved state.";
+export const CLEAR_CACHE_CONFIRM_TEXT = 'Clear the cached copy in this browser and reload the page?';
+export const CLEAR_CACHE_UNSAVED_WARNING = 'You have changes that are not yet saved to the local service. Clearing will lose them permanently. Use “Save state now” first to keep them.';
+export const CLEAR_CACHE_CONFIRM_LABEL = 'Yes, clear it';
+export const CLEAR_CACHE_DONE_MESSAGE = "Cleared this browser's cached state. Reloading…";
+export const CLEAR_CACHE_FAILED_MESSAGE = "Could not clear this browser's cached state (browser storage unavailable). Nothing was changed in the local service.";
+
+/** Injection points for tests; production uses IndexedDB and a real page reload. */
+export const clearCacheDeps: { backend: SnapshotCacheBackend | null | undefined; reload: () => void } = {
+  backend: undefined,
+  reload: () => window.location.reload(),
+};
+
+type ClearPhase = 'idle' | 'confirm' | 'clearing' | 'done' | 'failed';
+const clearPhase = new WeakMap<AppModel, ClearPhase>();
+
+function hasUnsavedServiceChanges(model: AppModel): boolean {
+  return ['unsaved', 'saving', 'choice', 'conflict', 'error'].includes(model.localService.syncState ?? '');
+}
+
+function renderClearCachePanel(model: AppModel): HTMLElement {
+  const panel = document.createElement('div');
+  panel.className = 'clear-cache-panel';
+  panel.dataset.clearCache = 'true';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Browser cache';
+  panel.appendChild(heading);
+  const explain = document.createElement('p');
+  explain.textContent = CLEAR_CACHE_EXPLANATION;
+  panel.appendChild(explain);
+  const phase = clearPhase.get(model) ?? 'idle';
+  const rerender = (next: ClearPhase) => { clearPhase.set(model, next); rerenderApp(model); };
+  if (phase === 'confirm' || phase === 'clearing') {
+    const confirm = document.createElement('div');
+    confirm.setAttribute('role', 'group');
+    confirm.setAttribute('aria-label', 'Confirm clearing browser cache');
+    const text = document.createElement('p');
+    text.textContent = CLEAR_CACHE_CONFIRM_TEXT;
+    confirm.appendChild(text);
+    if (hasUnsavedServiceChanges(model)) {
+      const warn = document.createElement('p');
+      warn.className = 'clear-cache-warning';
+      warn.dataset.clearCacheUnsaved = 'true';
+      warn.textContent = CLEAR_CACHE_UNSAVED_WARNING;
+      confirm.appendChild(warn);
+    }
+    const row = document.createElement('div');
+    row.className = 'button-row';
+    const yes = document.createElement('button');
+    yes.className = 'btn-danger';
+    yes.textContent = CLEAR_CACHE_CONFIRM_LABEL;
+    yes.dataset.clearCacheConfirm = 'true';
+    yes.disabled = phase === 'clearing';
+    yes.addEventListener('click', () => {
+      // Suspend first so no debounced/pagehide write can restore the record before the reload.
+      suspendSnapshotCacheWrites();
+      rerender('clearing');
+      void clearSnapshotCache(clearCacheDeps.backend).then((ok) => {
+        rerender(ok ? 'done' : 'failed');
+        if (ok) clearCacheDeps.reload();
+      });
+    });
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.dataset.clearCacheCancel = 'true';
+    cancel.disabled = phase === 'clearing';
+    cancel.addEventListener('click', () => rerender('idle'));
+    row.append(yes, cancel);
+    confirm.appendChild(row);
+    panel.appendChild(confirm);
+  } else {
+    const button = document.createElement('button');
+    button.className = 'btn-danger-secondary';
+    button.textContent = CLEAR_CACHE_BUTTON_LABEL;
+    button.dataset.clearCacheStart = 'true';
+    button.disabled = phase === 'done';
+    button.addEventListener('click', () => rerender('confirm'));
+    panel.appendChild(button);
+  }
+  if (phase === 'done' || phase === 'failed') {
+    const result = document.createElement('div');
+    result.className = `status-banner ${phase === 'failed' ? 'error' : 'success'}`;
+    result.setAttribute('role', 'status');
+    result.dataset.clearCacheResult = phase;
+    result.textContent = phase === 'done' ? CLEAR_CACHE_DONE_MESSAGE : CLEAR_CACHE_FAILED_MESSAGE;
+    panel.appendChild(result);
+  }
+  return panel;
+}
 
 export function renderSettingsView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -180,6 +272,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   serviceStatus.textContent = model.localService.lastMessage ?? 'Local service not connected.';
   servicePanel.appendChild(serviceStatus);
   section.appendChild(servicePanel);
+  section.appendChild(renderClearCachePanel(model));
 
   const status = document.createElement('div');
   status.className = 'status-banner';
