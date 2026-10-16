@@ -38,12 +38,12 @@ type GlossResponse =
   | { status: 'available';
       source: { id; name; licence; url; attribution; dumpDate };          // attribution = GLOSS_ATTRIBUTION verbatim
       results: { queryIndex: number; found: boolean;
-                 via: 'lemma' | 'form-of' | 'alternative' | null;
+                 via: 'lemma' | 'form-of' | 'form-of-text' | 'alternative' | null;
                  lemma: string;            // lemma whose glosses are returned (form-of hop target, else the queried/alternative lemma)
                  upos: string | null;      // UPOS of the first returned sense; query/alt upos when found:false
                  formOf?: string;          // the queried form (hop source) when a form-of hop occurred
                  senses: Sense[];          // ≤ maxSenses
-                 otherReadings: { lemma: string; upos: string | null; via: 'lemma' | 'form-of'; formOf?: string; senses: Sense[] }[] }[] }
+                 otherReadings: { lemma: string; upos: string | null; via: 'lemma' | 'form-of' | 'form-of-text'; formOf?: string; senses: Sense[] }[] }[] }
   // Sense = { gloss: string; pos: string; upos: string | null; tags: string[] }
   | { status: 'unavailable'; reason: 'not-installed' | 'disabled' | 'unsupported-language' | 'invalid-dictionary' }
   | { status: 'error'; code: 'lookup-failed' | 'internal' };
@@ -51,12 +51,13 @@ type GlossResponse =
 
 - One result per query, in order, `queryIndex` = array index.
 - **No entry** is a query-level state, not a route state: `found:false, via:null, senses:[]`, `lemma` = the query lemma.
-- `via` says how the chosen lemma was reached; `formOf` is present **iff** a form-of hop occurred: required with `via:'form-of'`, allowed with `via:'alternative'` (the alternative itself was an inflected form), absent with `via:'lemma'`/`null`. Example: `domu` → `{via:'form-of', lemma:'dom', formOf:'domu'}`. Same rule inside `otherReadings` (`via` there is only `lemma|form-of`).
+- `via` says how the chosen lemma was reached; `formOf` is present **iff** a form-of hop occurred: required with `via:'form-of'`, allowed with `via:'alternative'` (the alternative itself was an inflected form), absent with `via:'lemma'`/`null`. Example: `domu` → `{via:'form-of', lemma:'dom', formOf:'domu'}`. Same rule inside `otherReadings` (`via` there is only `lemma|form-of|form-of-text`). `formOf` is never present with `via:'form-of-text'`.
+- `via:'form-of-text'`: the lemma has form-of rows whose targets have **no** real glosses (target has no entry, or Wiktextract stored a phrase as the target — e.g. the real `cześć` INTJ sense, 8,866 such rows in the 2026-10-03 DB). The senses are those rows' own gloss text (e.g. "Form of greeting …; hi; hello; bye" or "genitive plural of X"); the UI should label them as such. Works on the existing format_version 1 DB at lookup time.
 - Gloss text is ≤500 code points (importer cap). No paths, SQL, hashes or import timestamps are returned (`inputSha256`, `importedAt`, counts stay server-side).
 
 ### Resolution rule (deterministic)
 
-1. Look up the primary `{lemma, upos}` with `glossStore.lookup` (direct glosses first, ordered matching-UPOS first; otherwise one form-of hop).
+1. Look up the primary `{lemma, upos}` with `glossStore.lookup`: (a) direct glosses, matching-UPOS first → `lemma`; (b) else one form-of hop to a target with real glosses → `form-of`; (c) else the lemma's unresolved form-of rows' own text → `form-of-text`. Mixed UPOS: if `upos` is given and no real gloss row and no resolvable form-of row has that UPOS but an unresolved form-of row does, (c) is returned for it (matching-UPOS rows first). All bounded by `maxSenses`.
 2. Keep the primary when it is found and the query has no `upos`, or some returned sense has that `upos` → `via` = store's `lemma`/`form-of`.
 3. Otherwise walk `alternatives` in request order; take the **first** alternative that is found and has a sense matching its own `upos` → `via:'alternative'`. When the primary was not found at all, an alternative without `upos` that is found also qualifies.
 4. Otherwise return the primary unchanged (found with mismatched POS, or `found:false`).
@@ -65,7 +66,7 @@ type GlossResponse =
 
 Pinned edge: primary found with mismatched POS + an alternative **without** `upos` → the primary is kept (rule 3 only lets upos-less alternatives win when the primary was not found); the alternative appears in `otherReadings`.
 
-Examples (synthetic fixture): `mieć/VERB` (no entry) + alt `mama/NOUN` → `mama`, alternative. `stać/VERB` (only a NOUN gloss) + alt `stanąć/VERB` → `stanąć`, alternative; with no matching alternative it stays `stać` via lemma with the NOUN sense. `domu` → `dom` via form-of (`formOf:'domu'`). `cześć/NOUN` + alt `cześć/INTJ` → NOUN result with an INTJ other reading.
+Examples (synthetic fixture): `mieć/VERB` (no entry) + alt `mama/NOUN` → `mama`, alternative. `stać/VERB` (only a NOUN gloss) + alt `stanąć/VERB` → `stanąć`, alternative; with no matching alternative it stays `stać` via lemma with the NOUN sense. `domu` → `dom` via form-of (`formOf:'domu'`). `cześć/NOUN` + alt `cześć/INTJ` → NOUN result with an INTJ other reading. `witajka/NOUN` + alt `witajka/INTJ` (INTJ only as a form-of whose target is a phrase) → NOUN result with an INTJ `form-of-text` other reading; `synthfoa` (form-of an absent `synthfoo`) → `form-of-text`.
 
 ## Lifecycle and state
 
@@ -100,7 +101,7 @@ Examples (synthetic fixture): `mieć/VERB` (no entry) + alt `mama/NOUN` → `mam
 - out-of-bounds input (incl. bad `maxSenses`) → `error/invalid-request`, no egress
 - Failure mapping is line-for-line identical to `morphologyClient.ts` (not-paired / service-unreachable / 404 / rejected / invalid-response). Only intentional difference: the top-level object guard also rejects arrays explicitly (morphology rejects them one line later via the `status` check — same outcome).
 
-**Guidance for lt-foe.3.4:** show several senses; label `via:'alternative'` and `via:'form-of'` (show `formOf`); always show `source.attribution` with a link to `source.url` when glosses are displayed; treat any non-available result as "no meaning available" without failing the word panel.
+**Guidance for lt-foe.3.4:** show several senses; label `via:'alternative'`, `via:'form-of'` (show `formOf`) and `via:'form-of-text'` (inflection/form note text, no link target); always show `source.attribution` with a link to `source.url` when glosses are displayed; treat any non-available result as "no meaning available" without failing the word panel.
 
 ## Privacy
 

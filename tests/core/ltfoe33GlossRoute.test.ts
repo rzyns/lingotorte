@@ -119,6 +119,23 @@ describe('lt-foe.3.3 local gloss route', () => {
     expect(kot.otherReadings[1].senses).toHaveLength(2);
   });
 
+  it('surfaces unresolved form-of text: as a result and as another reading (cześć NOUN vs INTJ case)', async () => {
+    const { service } = await start({ gloss: { dbPath: glossDb() } });
+    const body = await (await post(service.origin, { language: 'pl', queries: [
+      { lemma: 'witajka', upos: 'NOUN', alternatives: [{ lemma: 'witajka', upos: 'INTJ' }] },
+      { lemma: 'synthfoa' },
+      { lemma: 'witajka', upos: 'INTJ' },
+    ] })).json() as Json;
+    const [noun, foa, intj] = body.results;
+    expect(noun).toMatchObject({ found: true, via: 'lemma', lemma: 'witajka', upos: 'NOUN' });
+    expect(noun.otherReadings).toEqual([{ lemma: 'witajka', upos: 'INTJ', via: 'form-of-text',
+      senses: [{ gloss: 'Form of synthetic greeting; hi (synthetic)', pos: 'intj', upos: 'INTJ', tags: ['form-of'] }] }]);
+    expect(foa).toEqual({ queryIndex: 1, found: true, via: 'form-of-text', lemma: 'synthfoa', upos: 'NOUN',
+      senses: [{ gloss: 'genitive plural of synthfoo (synthetic)', pos: 'noun', upos: 'NOUN', tags: ['form-of', 'genitive', 'plural'] }], otherReadings: [] });
+    expect(intj).toMatchObject({ found: true, via: 'form-of-text', lemma: 'witajka', upos: 'INTJ' });
+    expect(intj).not.toHaveProperty('formOf');
+  });
+
   it('resolves an alternative through a form-of hop: lemma = target, formOf = queried form', async () => {
     const { service } = await start({ gloss: { dbPath: glossDb() } });
     const body = await (await post(service.origin, { language: 'pl', queries: [{ lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'domu', upos: 'NOUN' }] }] })).json() as Json;

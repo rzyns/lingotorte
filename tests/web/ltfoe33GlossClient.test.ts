@@ -76,6 +76,18 @@ describe('lt-foe.3.3 gloss client', () => {
     expect(await requestLocalGloss(t, 'pl', [{ lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'domu', upos: 'NOUN' }] }], vi.fn(async () => json(altViaFormOf)))).toEqual(altViaFormOf);
   });
 
+  it('accepts via form-of-text (result and other reading) and rejects formOf with it', () => {
+    const sense = { gloss: 'Form of synthetic greeting; hi (synthetic)', pos: 'intj', upos: 'INTJ', tags: ['form-of'] };
+    const ok = { status: 'available', source, results: [{ queryIndex: 0, found: true, via: 'form-of-text', lemma: 'witajka', upos: 'INTJ', senses: [sense],
+      otherReadings: [{ lemma: 'witajka', upos: 'INTJ', via: 'form-of-text', senses: [sense] }] }] };
+    expect(parseGlossResponse(ok, 1)).toEqual(ok);
+    const invalid = { status: 'error', code: 'invalid-response' };
+    const a: any = structuredClone(ok); a.results[0].formOf = 'x';
+    expect(parseGlossResponse(a, 1)).toEqual(invalid);
+    const b: any = structuredClone(ok); b.results[0].otherReadings[0].formOf = 'x';
+    expect(parseGlossResponse(b, 1)).toEqual(invalid);
+  });
+
   it('passes maxSenses through and validates it locally', async () => {
     const t = pairTransport({}, 'http://127.0.0.1:5174', cap);
     const fetcher = vi.fn<typeof fetch>(async () => json(good));

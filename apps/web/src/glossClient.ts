@@ -11,11 +11,11 @@ const MAX_GLOSS_CHARS = 500;
 export type ClientGlossQuery = Readonly<{ lemma: string; upos?: string; alternatives?: readonly Readonly<{ lemma: string; upos?: string }>[] }>;
 export type ClientGlossSense = Readonly<{ gloss: string; pos: string; upos: string | null; tags: readonly string[] }>;
 export type ClientGlossResult = Readonly<{
-  queryIndex: number; found: boolean; via: 'lemma' | 'form-of' | 'alternative' | null;
+  queryIndex: number; found: boolean; via: 'lemma' | 'form-of' | 'form-of-text' | 'alternative' | null;
   lemma: string; upos: string | null; formOf?: string; senses: readonly ClientGlossSense[];
   otherReadings: readonly ClientGlossOtherReading[];
 }>;
-export type ClientGlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of'; formOf?: string; senses: readonly ClientGlossSense[] }>;
+export type ClientGlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of' | 'form-of-text'; formOf?: string; senses: readonly ClientGlossSense[] }>;
 export type ClientGlossSource = Readonly<{ id: string; name: string; licence: string; url: string; attribution: string; dumpDate: string }>;
 export type ClientGlossResponse =
   | Readonly<{ status: 'available'; source: ClientGlossSource; results: readonly ClientGlossResult[] }>
@@ -24,7 +24,7 @@ export type ClientGlossResponse =
 
 const UNAVAILABLE = new Set(['not-installed', 'disabled', 'unsupported-language', 'invalid-dictionary']);
 const ERRORS = new Set(['lookup-failed', 'internal']);
-const VIAS = new Set(['lemma', 'form-of', 'alternative']);
+const VIAS = new Set(['lemma', 'form-of', 'form-of-text', 'alternative']);
 const UPOS = /^[A-Z]{1,5}$/;
 const str = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && [...v].length <= max;
 const uposOrNull = (v: unknown): v is string | null => v === null || (typeof v === 'string' && UPOS.test(v));
@@ -50,11 +50,12 @@ function parseSenses(v: unknown, maxSenses: number): ClientGlossSense[] | null {
   const senses = v.map(parseSense);
   return senses.includes(null) ? null : senses as ClientGlossSense[];
 }
-// formOf (the queried form behind a form-of hop): required with via 'form-of', optional with 'alternative', otherwise absent.
+// formOf (the queried form behind a form-of hop): required with via 'form-of', optional with 'alternative', otherwise absent
+// (in particular never with 'form-of-text', whose senses are the form-of rows' own text).
 const formOfOk = (via: unknown, formOf: unknown) => formOf === undefined ? via !== 'form-of' : (via === 'form-of' || via === 'alternative') && str(formOf, LEMMA_MAX);
 
 function parseOther(v: unknown, maxSenses: number): ClientGlossOtherReading | null {
-  if (!rec(v) || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos) || (v.via !== 'lemma' && v.via !== 'form-of') || !formOfOk(v.via, v.formOf)) return null;
+  if (!rec(v) || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos) || (v.via !== 'lemma' && v.via !== 'form-of' && v.via !== 'form-of-text') || !formOfOk(v.via, v.formOf)) return null;
   const senses = parseSenses(v.senses, maxSenses);
   if (!senses || senses.length === 0) return null;
   return { lemma: v.lemma, upos: v.upos, via: v.via, ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses };

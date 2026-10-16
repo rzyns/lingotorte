@@ -31,8 +31,12 @@ export type GlossSense = Readonly<{ lemma: string; pos: string; upos: string | n
 export type GlossLookupResult = Readonly<{
   lemma: string;
   found: boolean;
-  /** 'lemma': real glosses for the requested lemma; 'form-of': one hop through an inflected-form pointer. */
-  via: 'lemma' | 'form-of' | null;
+  /**
+   * 'lemma': real glosses for the requested lemma; 'form-of': one hop through an inflected-form pointer;
+   * 'form-of-text': the lemma's own form-of rows whose targets have no real glosses (target missing, or a
+   * phrase as Wiktextract stores some interjections). Their gloss text is the meaning; no formOf is set.
+   */
+  via: 'lemma' | 'form-of' | 'form-of-text' | null;
   formOf?: string;
   senses: readonly GlossSense[];
 }>;
@@ -73,25 +77,41 @@ export function openGlossStore(path: string): GlossStore {
   const glossStmt = db.prepare(`SELECT lemma, pos, upos, gloss, tags_json FROM gloss_entry
     WHERE lemma_key = ? AND kind = 'gloss'
     ORDER BY CASE WHEN upos IS NOT NULL AND upos = ? THEN 0 ELSE 1 END, entry_idx, sense_idx LIMIT ?`);
-  const formStmt = db.prepare(`SELECT form_of FROM gloss_entry
+  const formStmt = db.prepare(`SELECT lemma, pos, upos, gloss, tags_json, form_of FROM gloss_entry
     WHERE lemma_key = ? AND kind = 'form-of' AND form_of IS NOT NULL
     ORDER BY CASE WHEN upos IS NOT NULL AND upos = ? THEN 0 ELSE 1 END, entry_idx, sense_idx`);
-  const senses = (key: string, upos: string, limit: number) => (glossStmt.all(key, upos, limit) as SenseRow[]).map((row): GlossSense => ({
-    lemma: row.lemma, pos: row.pos, upos: row.upos, gloss: row.gloss, tags: parseTags(row.tags_json),
-  }));
+  const hasGlossStmt = db.prepare(`SELECT 1 AS x FROM gloss_entry WHERE lemma_key = ? AND kind = 'gloss' LIMIT 1`);
+  const toSense = (row: SenseRow): GlossSense => ({ lemma: row.lemma, pos: row.pos, upos: row.upos, gloss: row.gloss, tags: parseTags(row.tags_json) });
+  const senses = (key: string, upos: string, limit: number) => (glossStmt.all(key, upos, limit) as SenseRow[]).map(toSense);
+  const resolvable = (target: string) => hasGlossStmt.get(glossLemmaKey(target)) !== undefined;
   return {
+    /**
+     * Per lemma (DB format_version 1, no re-import needed):
+     * (a) real 'gloss' rows for lemma_key (matching UPOS first, then entry/sense order) -> via 'lemma';
+     * (b) else the first form-of target (matching-UPOS rows first) that has real glosses -> via 'form-of', formOf = target;
+     * (c) else the lemma's unresolved form-of rows (targets without real glosses) as senses -> via 'form-of-text'.
+     * Mixed UPOS: when `upos` is given and neither a real gloss row nor a resolvable form-of row has that UPOS,
+     * but an unresolved form-of row does, (c) is returned instead of (a)/(b) (e.g. cześć INTJ vs its NOUN glosses).
+     * maxSenses bounds every branch.
+     */
     lookup(lemmas, options = {}) {
       const max = Math.max(1, Math.floor(options.maxSenses ?? 3));
-      return lemmas.map(({ lemma, upos }) => {
+      return lemmas.map(({ lemma, upos }): GlossLookupResult => {
         const key = glossLemmaKey(lemma);
         const wanted = upos ?? '';
         const direct = senses(key, wanted, max);
+        const forms = formStmt.all(key, wanted) as (SenseRow & { form_of: string })[];
+        const unresolved = forms.filter((r) => !resolvable(r.form_of));
+        const text = (): GlossLookupResult => ({ lemma, found: true, via: 'form-of-text', senses: unresolved.slice(0, max).map(toSense) });
+        if (upos !== undefined && !direct.some((s) => s.upos === upos) && unresolved.some((r) => r.upos === upos)
+          && !forms.some((r) => r.upos === upos && resolvable(r.form_of))) return text();
         if (direct.length > 0) return { lemma, found: true, via: 'lemma', senses: direct };
-        const targets = [...new Set((formStmt.all(key, wanted) as { form_of: string }[]).map((r) => r.form_of))];
+        const targets = [...new Set(forms.map((r) => r.form_of))];
         for (const target of targets) {
           const hop = senses(glossLemmaKey(target), wanted, max);
           if (hop.length > 0) return { lemma, found: true, via: 'form-of', formOf: target, senses: hop };
         }
+        if (unresolved.length > 0) return text();
         return { lemma, found: false, via: null, senses: [] };
       });
     },

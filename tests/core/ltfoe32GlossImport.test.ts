@@ -194,3 +194,27 @@ describe('lt-foe.3.2 gloss path config', () => {
     expect(() => glossDbPathFromEnv({ LINGOTORTE_GLOSS_DB_PATH: 'relative.sqlite' }, 'linux', '/home/x')).toThrow();
   });
 });
+
+describe('lt-foe.3.3 gloss store: unresolved form-of rows', () => {
+  const routeFixture = join(repo, 'tests/fixtures/gloss/synthetic-gloss-route.jsonl');
+  function store() { return openGlossStore(importFixture([], routeFixture).output); }
+
+  it("(c) returns the form-of row's own gloss text when its target has no real glosses", () => {
+    const glosses = store();
+    const [foa, domu] = glosses.lookup([{ lemma: 'synthfoa' }, { lemma: 'domu' }]);
+    expect(foa).toEqual({ lemma: 'synthfoa', found: true, via: 'form-of-text', senses: [
+      { lemma: 'synthfoa', pos: 'noun', upos: 'NOUN', gloss: 'genitive plural of synthfoo (synthetic)', tags: ['form-of', 'genitive', 'plural'] }] });
+    expect(domu).toMatchObject({ found: true, via: 'form-of', formOf: 'dom' }); // resolvable hop unchanged
+    glosses.close();
+  });
+
+  it('mixed: a upos with only unresolved form-of rows gets their text; otherwise real glosses win', () => {
+    const glosses = store();
+    const [intj, noun, none, verb] = glosses.lookup([{ lemma: 'witajka', upos: 'INTJ' }, { lemma: 'witajka', upos: 'NOUN' }, { lemma: 'witajka' }, { lemma: 'witajka', upos: 'VERB' }]);
+    expect(intj).toEqual({ lemma: 'witajka', found: true, via: 'form-of-text', senses: [
+      { lemma: 'witajka', pos: 'intj', upos: 'INTJ', gloss: 'Form of synthetic greeting; hi (synthetic)', tags: ['form-of'] }] });
+    expect(intj).not.toHaveProperty('formOf');
+    for (const r of [noun, none, verb]) expect(r).toMatchObject({ found: true, via: 'lemma', senses: [{ gloss: 'welcome mat (synthetic noun)' }] });
+    glosses.close();
+  });
+});

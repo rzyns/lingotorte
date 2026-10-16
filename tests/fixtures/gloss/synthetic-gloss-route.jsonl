@@ -7,3 +7,6 @@
 {"word": "kot", "lang": "Polish", "lang_code": "pl", "pos": "verb", "senses": [{"glosses": ["to purr loudly (synthetic)"]}]}
 {"word": "cześć", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["esteem (synthetic noun)"]}, {"glosses": ["regard (synthetic noun)"]}]}
 {"word": "cześć", "lang": "Polish", "lang_code": "pl", "pos": "intj", "senses": [{"glosses": ["hiya (synthetic greeting)"]}, {"glosses": ["byebye (synthetic farewell)"]}]}
+{"word": "witajka", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["welcome mat (synthetic noun)"]}]}
+{"word": "witajka", "lang": "Polish", "lang_code": "pl", "pos": "intj", "senses": [{"glosses": ["Form of synthetic greeting; hi (synthetic)"], "form_of": [{"word": "synthetic greeting used with a friend"}], "tags": ["form-of"]}]}
+{"word": "synthfoa", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["genitive plural of synthfoo (synthetic)"], "form_of": [{"word": "synthfoo"}], "tags": ["form-of", "genitive", "plural"]}]}
