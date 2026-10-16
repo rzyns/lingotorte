@@ -2,6 +2,26 @@
 
 Local/private language-learning video app for owned media and subtitles.
 
+## For humans: start here
+
+Lingotorte plays your own Polish videos with their subtitles, lets you save words and phrases from the line you heard, and reviews them with spaced repetition. Everything stays on your machine: no cloud account, no uploads, and online providers are off unless you turn them on.
+
+Status: daily-driver candidate, not released software (see Beads epic `lt-foe`).
+
+Run it with Docker (Windows PowerShell, from the checkout; [docs/dev/docker-runbook.md](docs/dev/docker-runbook.md) has the Linux shell version and LAN setup):
+
+```powershell
+$env:LINGOTORTE_MEDIA_DIR = (Resolve-Path './fixtures/media').Path   # or the folder with your own videos (mounted read-only)
+$env:LINGOTORTE_BIND_HOST = '127.0.0.1'; $env:LINGOTORTE_WEB_PORT = '5173'; $env:LINGOTORTE_PUBLIC_ORIGINS = 'http://127.0.0.1:5173'
+docker compose -p lingotorte-private up -d --build api web
+```
+
+Open http://127.0.0.1:5173. To keep your saved words across reloads, pair the browser with the local service in Settings ([runbook: Build and run](docs/dev/docker-runbook.md#build-and-run)); `docker compose -p lingotorte-private down` stops it and keeps your data.
+
+Where things live: `apps/web` (browser app), `apps/local-service` (local SQLite service), `packages/` (shared domain, subtitles, review, storage), `docs/dev` (runbooks), `docs/review` (safety and privacy reviews), `.beads` (work tracking; see [BEADS.md](BEADS.md)).
+
+The sections below are the project index for agents and contributors.
+
 ## Work planning and status
 
 Current work lives in the native **Beads** graph: daily-driver epic `lt-foe`, deferred follow-ons `lt-5lb`. Read [BEADS.md](BEADS.md) for terminology, commands, authorization, worktrees and recovery. `PLAN.md` and `PLAN-STATUS.md` now point there; old contents remain archived. The [takeover review](docs/review/plan-review-2026-10-10.md) supplies evidence for the repair issues. Query the store for current readiness; historical Linux acceptance does not establish Windows readiness.
