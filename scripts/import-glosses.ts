@@ -62,16 +62,16 @@ type Entry = { word?: unknown; lang_code?: unknown; pos?: unknown; senses?: unkn
 async function main() {
   const started = Date.now();
   const args = parseArgs(process.argv.slice(2));
-  if (!validDate(args.dumpDate)) fail('--dump-date must be a real YYYY-MM-DD date');
   if (!existsSync(args.input) || !statSync(args.input).isFile()) fail('input file not found');
   if (!existsSync(dirname(args.output))) fail('output directory does not exist');
   if (existsSync(args.output) && !args.replace) fail('output already exists; pass --replace to overwrite it');
 
   const temp = join(dirname(args.output), `.${basename(args.output)}.${process.pid}.tmp`);
   rmSync(temp, { force: true });
-  const db = new DatabaseSync(temp);
-  const cleanup = () => { try { if (db.isOpen) db.close(); } catch { /* ignore */ } for (const s of ['', '-journal', '-wal', '-shm']) rmSync(temp + s, { force: true }); };
+  let db: DatabaseSync | undefined;
+  const cleanup = () => { try { if (db?.isOpen) db.close(); } catch { /* ignore */ } for (const s of ['', '-journal', '-wal', '-shm']) rmSync(temp + s, { force: true }); };
   try {
+    db = new DatabaseSync(temp);
     db.exec(`PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
       CREATE TABLE gloss_meta(key TEXT PRIMARY KEY, value TEXT);
       CREATE TABLE gloss_source(id TEXT PRIMARY KEY, name TEXT NOT NULL, licence TEXT NOT NULL, url TEXT NOT NULL,
@@ -86,10 +86,12 @@ async function main() {
     const file = createReadStream(args.input);
     file.on('data', (chunk) => hash.update(chunk));
     const text = args.input.endsWith('.gz') ? file.pipe(createGunzip()) : file.pipe(new PassThrough());
+    // Surface read and gunzip errors (e.g. a truncated .gz) through the line iterator.
     file.on('error', (error) => text.destroy(error));
+    text.on('error', () => { /* rethrown by the readline async iterator */ });
     const lines = createInterface({ input: text, crlfDelay: Infinity });
     const needles = [`"lang_code": "${args.language}"`, `"lang_code":"${args.language}"`];
-    const c = { lines: 0, polishLines: 0, malformedLines: 0, entries: 0, senses: 0, glossSenses: 0, formOfSenses: 0, skippedSenses: 0 };
+    const c = { lines: 0, polishLines: 0, malformedLines: 0, entries: 0, senses: 0, glossSenses: 0, formOfSenses: 0, skippedSenses: 0, truncatedGlosses: 0 };
     let pending = 0;
     db.exec('BEGIN');
     for await (const line of lines) {
@@ -107,7 +109,9 @@ async function main() {
         const glosses = Array.isArray(raw?.glosses) ? raw.glosses.filter((g): g is string => typeof g === 'string' && g.trim() !== '') : [];
         const tags = Array.isArray(raw?.tags) ? raw.tags.filter((t): t is string => typeof t === 'string') : [];
         if (glosses.length === 0 || tags.includes('no-gloss')) { c.skippedSenses += 1; continue; }
-        const gloss = glosses[glosses.length - 1]!.trim().slice(0, MAX_GLOSS);
+        const full = glosses[glosses.length - 1]!.trim();
+        if (full.length > MAX_GLOSS) c.truncatedGlosses += 1;
+        const gloss = full.slice(0, MAX_GLOSS);
         const target = Array.isArray(raw.form_of) ? (raw.form_of as { word?: unknown }[]).find((f) => typeof f?.word === 'string' && f.word.trim() !== '')?.word as string | undefined : undefined;
         insert.run(lemma, glossLemmaKey(lemma), entry.pos, upos, c.entries, senseIdx, target ? 'form-of' : 'gloss', gloss,
           target ? target.normalize('NFC') : null, tags.length ? JSON.stringify(tags) : null);

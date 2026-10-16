@@ -84,6 +84,12 @@ LINGOTORTE_DICT_DUMP_DIR=<absolute dump dir> docker compose -p <p> --profile too
   --output /dictionary/glosses-pl.sqlite --dump-date 2026-10-03
 ```
 
+Before importing, record the dump date: take the `Last-Modified` date shown for the raw dump on
+<https://kaikki.org/dictionary/rawdata.html> and pass it as `--dump-date`. After the import, compare the
+receipt's `inputSha256` with `sha256sum <dump dir>/raw-wiktextract-data.jsonl.gz` of the downloaded file and
+keep both values with the receipt; the dump itself is deleted after a successful import, so this is the only
+record of exactly which bytes were imported.
+
 Use the same `-p <p>` as the running stack so the `<p>_dictionary` volume is shared. The command prints a
 JSON receipt (counts, input sha256, duration; no gloss text) and refuses to overwrite an existing database
 unless `--replace` is added; restart `api` afterwards. Without `LINGOTORTE_DICT_DUMP_DIR` the service binds

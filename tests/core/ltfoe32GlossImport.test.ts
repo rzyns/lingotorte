@@ -43,7 +43,7 @@ describe('lt-foe.3.2 import-glosses script', () => {
     const receipt = JSON.parse(stdout) as Record<string, unknown>;
     expect(receipt).toMatchObject({
       ok: true, language: 'pl', dumpDate: '2026-10-03', inputSha256: sha(fixture),
-      polishLines: 16, malformedLines: 1, entries: 13, senses: 14, glossSenses: 12, formOfSenses: 2, skippedSenses: 2, integrity: 'ok',
+      polishLines: 18, malformedLines: 1, entries: 14, senses: 15, glossSenses: 13, formOfSenses: 2, skippedSenses: 2, truncatedGlosses: 1, integrity: 'ok',
     });
     expect(typeof receipt.durationMs).toBe('number');
     // Receipt carries no gloss text.
@@ -53,7 +53,7 @@ describe('lt-foe.3.2 import-glosses script', () => {
     expect(rows(output, 'SELECT count(*) AS n FROM gloss_source')[0]!.n).toBe(1);
     expect(source).toMatchObject({
       id: 'kaikki-enwiktionary-pl-2026-10-03', licence: 'CC BY-SA 4.0 and GFDL', attribution: GLOSS_ATTRIBUTION,
-      dump_date: '2026-10-03', input_sha256: sha(fixture), entry_count: 13, sense_count: 14,
+      dump_date: '2026-10-03', input_sha256: sha(fixture), entry_count: 14, sense_count: 15,
     });
     expect(GLOSS_ATTRIBUTION).toBe('Word meanings from English Wiktionary (en.wiktionary.org), © Wiktionary contributors, via Wiktextract/kaikki.org, CC BY-SA 4.0 and GFDL. Filtered to Polish and converted to SQLite.');
     expect(rows(output, "SELECT value FROM gloss_meta WHERE key = 'format_version'")[0]!.value).toBe('1');
@@ -68,6 +68,10 @@ describe('lt-foe.3.2 import-glosses script', () => {
     expect(all.find((r) => r.lemma === 'i')!.upos).toBe('CCONJ');
     expect(all.find((r) => r.lemma === 'dziwny')!.upos).toBeNull();
     expect(all.some((r) => r.lemma === 'nic' || r.lemma === 'pusty')).toBe(false);
+    // A non-Polish entry whose nested translations mention lang_code "pl" is not imported.
+    expect(all.some((r) => r.lemma === 'house' || /shelter|synthetic english/.test(String(r.gloss)))).toBe(false);
+    const long = all.find((r) => r.lemma === 'długi')!;
+    expect(String(long.gloss)).toHaveLength(500);
     expect(readdirSync(join(output, '..'))).toEqual(['glosses-pl.sqlite']);
   });
 
@@ -76,7 +80,7 @@ describe('lt-foe.3.2 import-glosses script', () => {
     writeFileSync(gz, gzipSync(readFileSync(fixture)));
     const { code, stdout } = importFixture([], gz);
     expect(code).toBe(0);
-    expect(JSON.parse(stdout)).toMatchObject({ senses: 14, inputSha256: sha(gz) });
+    expect(JSON.parse(stdout)).toMatchObject({ senses: 15, inputSha256: sha(gz) });
   });
 
   it('refuses to overwrite unless --replace and leaves no temp file', () => {
@@ -91,6 +95,22 @@ describe('lt-foe.3.2 import-glosses script', () => {
     expect(replaced.code).toBe(0);
     expect(rows(first.output, 'SELECT dump_date FROM gloss_source')[0]!.dump_date).toBe('2026-10-04');
     expect(readdirSync(join(first.output, '..'))).toEqual(['glosses-pl.sqlite']);
+  });
+
+  it('fails path-free with exit 2 on a truncated .gz and leaves no temp files', () => {
+    const dir = tempDir();
+    const gz = join(dir, 'raw.jsonl.gz');
+    const full = gzipSync(readFileSync(fixture));
+    writeFileSync(gz, full.subarray(0, Math.floor(full.length / 2)));
+    const outDir = tempDir();
+    const output = join(outDir, 'glosses-pl.sqlite');
+    const result = run('--input', gz, '--output', output, '--dump-date', '2026-10-03');
+    expect(result.code).toBe(2);
+    expect(result.stderr).toMatch(/^import-glosses: /);
+    expect(result.stderr).not.toContain(dir);
+    expect(result.stderr).not.toContain(outDir);
+    expect(result.stdout).toBe('');
+    expect(readdirSync(outDir)).toEqual([]);
   });
 
   it('fails clearly on bad args, a missing file and zero Polish entries', () => {
@@ -132,7 +152,7 @@ describe('lt-foe.3.2 gloss store', () => {
     expect(domu).toMatchObject({ found: true, via: 'form-of', formOf: 'dom' });
     expect(domu!.senses[0]!.gloss).toBe('house (synthetic)');
     expect(unknown).toEqual({ lemma: 'nieznany', found: false, via: null, senses: [] });
-    expect(glosses.source()).toMatchObject({ id: 'kaikki-enwiktionary-pl-2026-10-03', attribution: GLOSS_ATTRIBUTION, entryCount: 13, senseCount: 14 });
+    expect(glosses.source()).toMatchObject({ id: 'kaikki-enwiktionary-pl-2026-10-03', attribution: GLOSS_ATTRIBUTION, entryCount: 14, senseCount: 15 });
     glosses.close();
   });
 
