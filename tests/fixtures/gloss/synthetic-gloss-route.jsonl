@@ -5,3 +5,5 @@
 {"word": "stanąć", "lang": "Polish", "lang_code": "pl", "pos": "verb", "senses": [{"glosses": ["to stand up (synthetic)"]}]}
 {"word": "kot", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["feline (synthetic)"]}]}
 {"word": "kot", "lang": "Polish", "lang_code": "pl", "pos": "verb", "senses": [{"glosses": ["to purr loudly (synthetic)"]}]}
+{"word": "cześć", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["esteem (synthetic noun)"]}, {"glosses": ["regard (synthetic noun)"]}]}
+{"word": "cześć", "lang": "Polish", "lang_code": "pl", "pos": "intj", "senses": [{"glosses": ["hiya (synthetic greeting)"]}, {"glosses": ["byebye (synthetic farewell)"]}]}

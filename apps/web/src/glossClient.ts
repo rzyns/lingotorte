@@ -13,7 +13,9 @@ export type ClientGlossSense = Readonly<{ gloss: string; pos: string; upos: stri
 export type ClientGlossResult = Readonly<{
   queryIndex: number; found: boolean; via: 'lemma' | 'form-of' | 'alternative' | null;
   lemma: string; upos: string | null; formOf?: string; senses: readonly ClientGlossSense[];
+  otherReadings: readonly ClientGlossOtherReading[];
 }>;
+export type ClientGlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of'; formOf?: string; senses: readonly ClientGlossSense[] }>;
 export type ClientGlossSource = Readonly<{ id: string; name: string; licence: string; url: string; attribution: string; dumpDate: string }>;
 export type ClientGlossResponse =
   | Readonly<{ status: 'available'; source: ClientGlossSource; results: readonly ClientGlossResult[] }>
@@ -42,26 +44,44 @@ function parseSense(v: unknown): ClientGlossSense | null {
   return { gloss: v.gloss, pos: v.pos, upos: v.upos, tags: v.tags as string[] };
 }
 
-function parseResult(v: unknown, index: number): ClientGlossResult | null {
-  if (!rec(v) || v.queryIndex !== index || typeof v.found !== 'boolean' || !str(v.lemma, GLOSS_CLIENT_MAX_LEMMA_CHARS * 2) || !uposOrNull(v.upos)) return null;
-  if (!Array.isArray(v.senses) || v.senses.length > MAX_SENSES) return null;
-  if (v.found ? !VIAS.has(v.via as string) || v.senses.length === 0 : v.via !== null || v.senses.length !== 0) return null;
-  if (v.formOf !== undefined && (!str(v.formOf, 256) || v.via !== 'form-of')) return null;
-  const senses = v.senses.map(parseSense);
-  if (senses.includes(null)) return null;
+const LEMMA_MAX = GLOSS_CLIENT_MAX_LEMMA_CHARS * 2;
+function parseSenses(v: unknown, maxSenses: number): ClientGlossSense[] | null {
+  if (!Array.isArray(v) || v.length > maxSenses) return null;
+  const senses = v.map(parseSense);
+  return senses.includes(null) ? null : senses as ClientGlossSense[];
+}
+// formOf (the queried form behind a form-of hop): required with via 'form-of', optional with 'alternative', otherwise absent.
+const formOfOk = (via: unknown, formOf: unknown) => formOf === undefined ? via !== 'form-of' : (via === 'form-of' || via === 'alternative') && str(formOf, LEMMA_MAX);
+
+function parseOther(v: unknown, maxSenses: number): ClientGlossOtherReading | null {
+  if (!rec(v) || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos) || (v.via !== 'lemma' && v.via !== 'form-of') || !formOfOk(v.via, v.formOf)) return null;
+  const senses = parseSenses(v.senses, maxSenses);
+  if (!senses || senses.length === 0) return null;
+  return { lemma: v.lemma, upos: v.upos, via: v.via, ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses };
+}
+
+function parseResult(v: unknown, index: number, maxSenses: number): ClientGlossResult | null {
+  if (!rec(v) || v.queryIndex !== index || typeof v.found !== 'boolean' || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos)) return null;
+  const senses = parseSenses(v.senses, maxSenses);
+  if (!senses) return null;
+  if (v.found ? !VIAS.has(v.via as string) || senses.length === 0 : v.via !== null || senses.length !== 0) return null;
+  if (!formOfOk(v.via, v.formOf)) return null;
+  if (!Array.isArray(v.otherReadings) || v.otherReadings.length > GLOSS_CLIENT_MAX_ALTERNATIVES) return null;
+  const otherReadings = v.otherReadings.map(o => parseOther(o, maxSenses));
+  if (otherReadings.includes(null)) return null;
   return { queryIndex: index, found: v.found, via: v.via as ClientGlossResult['via'], lemma: v.lemma, upos: v.upos,
-    ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses: senses as ClientGlossSense[] };
+    ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses, otherReadings: otherReadings as ClientGlossOtherReading[] };
 }
 
 /** Pure parser: anything outside the reviewed contract becomes {status:'error', code:'invalid-response'}. */
-export function parseGlossResponse(value: unknown, queryCount: number): ClientGlossResponse {
+export function parseGlossResponse(value: unknown, queryCount: number, maxSenses = MAX_SENSES): ClientGlossResponse {
   const invalid = { status: 'error', code: 'invalid-response' } as const;
   if (!rec(value)) return invalid;
   if (value.status === 'unavailable') return UNAVAILABLE.has(value.reason as string) ? { status: 'unavailable', reason: value.reason as 'disabled' } : invalid;
   if (value.status === 'error') return ERRORS.has(value.code as string) ? { status: 'error', code: value.code as 'internal' } : invalid;
   if (value.status !== 'available' || !Array.isArray(value.results) || value.results.length !== queryCount) return invalid;
   const source = parseSource(value.source);
-  const results = value.results.map(parseResult);
+  const results = value.results.map((r, i) => parseResult(r, i, maxSenses));
   if (!source || results.includes(null)) return invalid;
   return { status: 'available', source, results: results as ClientGlossResult[] };
 }
@@ -69,12 +89,13 @@ export function parseGlossResponse(value: unknown, queryCount: number): ClientGl
 const lemmaOk = (l: unknown) => typeof l === 'string' && l.length > 0 && l === l.trim() && !/[\u0000-\u001f\u007f-\u009f]|\s{2,}|[^\S ]/u.test(l) && [...l].length <= GLOSS_CLIENT_MAX_LEMMA_CHARS;
 const uposOk = (u: unknown) => u === undefined || (typeof u === 'string' && UPOS.test(u));
 
-export async function requestLocalGloss(transport: PairedTransport | null | undefined, language: string, queries: readonly ClientGlossQuery[], fetchImpl?: typeof fetch): Promise<ClientGlossResponse> {
+/** maxSenses: optional integer 1-5 (server default 3); also bounds the parsed response. */
+export async function requestLocalGloss(transport: PairedTransport | null | undefined, language: string, queries: readonly ClientGlossQuery[], fetchImpl?: typeof fetch, maxSenses?: number): Promise<ClientGlossResponse> {
   if (!transport) return { status: 'unavailable', reason: 'not-paired' };
-  const valid = /^[a-z]{2,3}$/.test(language) && queries.length > 0 && queries.length <= GLOSS_CLIENT_MAX_QUERIES && queries.every(q => lemmaOk(q.lemma) && uposOk(q.upos)
+  const valid = (maxSenses === undefined || (Number.isInteger(maxSenses) && maxSenses >= 1 && maxSenses <= MAX_SENSES)) && /^[a-z]{2,3}$/.test(language) && queries.length > 0 && queries.length <= GLOSS_CLIENT_MAX_QUERIES && queries.every(q => lemmaOk(q.lemma) && uposOk(q.upos)
     && (q.alternatives === undefined || (q.alternatives.length <= GLOSS_CLIENT_MAX_ALTERNATIVES && q.alternatives.every(a => lemmaOk(a.lemma) && uposOk(a.upos)))));
   if (!valid) return { status: 'error', code: 'invalid-request' };
-  const body = { language, queries: queries.map(q => ({ lemma: q.lemma, ...(q.upos !== undefined ? { upos: q.upos } : {}),
+  const body = { language, ...(maxSenses !== undefined ? { maxSenses } : {}), queries: queries.map(q => ({ lemma: q.lemma, ...(q.upos !== undefined ? { upos: q.upos } : {}),
     ...(q.alternatives !== undefined ? { alternatives: q.alternatives.map(a => ({ lemma: a.lemma, ...(a.upos !== undefined ? { upos: a.upos } : {}) })) } : {}) })) };
   let response: Response;
   try {
@@ -87,5 +108,5 @@ export async function requestLocalGloss(transport: PairedTransport | null | unde
   if (!response.ok) return { status: 'error', code: 'rejected' };
   let parsed: unknown;
   try { parsed = await response.json(); } catch { return { status: 'error', code: 'invalid-response' }; }
-  return parseGlossResponse(parsed, queries.length);
+  return parseGlossResponse(parsed, queries.length, maxSenses ?? MAX_SENSES);
 }

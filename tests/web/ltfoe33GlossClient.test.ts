@@ -6,8 +6,12 @@ const cap = 'A'.repeat(42) + 'E';
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 const source = { id: 'kaikki-enwiktionary-pl-2026-10-03', name: 'Wiktionary', licence: 'CC BY-SA 4.0 and GFDL', url: 'https://kaikki.org/', attribution: 'Word meanings from English Wiktionary', dumpDate: '2026-10-03' };
 const good = { status: 'available', source, results: [
-  { queryIndex: 0, found: true, via: 'form-of', lemma: 'dom', upos: null, formOf: 'dom', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: ['inanimate'] }] },
-  { queryIndex: 1, found: false, via: null, lemma: 'xq', upos: 'X', senses: [] }] };
+  { queryIndex: 0, found: true, via: 'form-of', lemma: 'dom', upos: null, formOf: 'domu', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: ['inanimate'] }],
+    otherReadings: [{ lemma: 'cześć', upos: 'INTJ', via: 'lemma', senses: [{ gloss: 'hi', pos: 'intj', upos: 'INTJ', tags: [] }] }] },
+  { queryIndex: 1, found: false, via: null, lemma: 'xq', upos: 'X', senses: [], otherReadings: [] }] };
+const altViaFormOf = { status: 'available', source, results: [
+  { queryIndex: 0, found: true, via: 'alternative', lemma: 'dom', upos: 'NOUN', formOf: 'domu', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: [] }],
+    otherReadings: [{ lemma: 'dom', upos: 'VERB', via: 'form-of', formOf: 'domu', senses: [{ gloss: 'x', pos: 'verb', upos: 'VERB', tags: [] }] }] }] };
 
 describe('lt-foe.3.3 gloss client', () => {
   it('posts a bounded body through the paired transport and parses available results', async () => {
@@ -52,6 +56,34 @@ describe('lt-foe.3.3 gloss client', () => {
     expect(bad(v => { delete v.source.attribution; })).toEqual(invalid);
     expect(bad(v => { v.source.url = 'javascript:alert(1)'; })).toEqual(invalid);
     expect(bad(v => { v.results[0].found = 'yes'; })).toEqual(invalid);
+    expect(bad(v => { delete v.results[0].otherReadings; })).toEqual(invalid);
+    expect(bad(v => { v.results[0].otherReadings = Array(4).fill(v.results[0].otherReadings[0]); })).toEqual(invalid);
+    expect(bad(v => { v.results[0].otherReadings[0].via = 'alternative'; })).toEqual(invalid);
+    expect(bad(v => { v.results[0].otherReadings[0].senses = []; })).toEqual(invalid);
+    expect(bad(v => { v.results[0].otherReadings[0].formOf = 'x'; })).toEqual(invalid); // formOf only with via 'form-of'
+    expect(bad(v => { delete v.results[0].formOf; })).toEqual(invalid); // form-of requires formOf
+    expect(bad(v => { v.results[0].via = 'lemma'; })).toEqual(invalid); // lemma forbids formOf
+    expect(bad(v => { v.results[1].formOf = 'x'; })).toEqual(invalid);
+    // maxSenses bound: more senses than requested is outside the contract.
+    const two: any = structuredClone(good); two.results[0].senses = Array(2).fill(two.results[0].senses[0]);
+    expect(parseGlossResponse(two, 2, 1)).toEqual(invalid);
+    expect(parseGlossResponse(two, 2, 2)).toEqual(two);
+  });
+
+  it('accepts an alternative (and another reading) resolved through a form-of hop', async () => {
+    expect(parseGlossResponse(altViaFormOf, 1)).toEqual(altViaFormOf);
+    const t = pairTransport({}, 'http://127.0.0.1:5174', cap);
+    expect(await requestLocalGloss(t, 'pl', [{ lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'domu', upos: 'NOUN' }] }], vi.fn(async () => json(altViaFormOf)))).toEqual(altViaFormOf);
+  });
+
+  it('passes maxSenses through and validates it locally', async () => {
+    const t = pairTransport({}, 'http://127.0.0.1:5174', cap);
+    const fetcher = vi.fn<typeof fetch>(async () => json(good));
+    await requestLocalGloss(t, 'pl', [{ lemma: 'domu' }, { lemma: 'xq' }], fetcher, 5);
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ language: 'pl', maxSenses: 5, queries: [{ lemma: 'domu' }, { lemma: 'xq' }] });
+    const none = vi.fn<typeof fetch>();
+    for (const m of [0, 6, 1.5, Number.NaN]) expect(await requestLocalGloss(t, 'pl', [{ lemma: 'a' }], none, m)).toEqual({ status: 'error', code: 'invalid-request' });
+    expect(none).not.toHaveBeenCalled();
   });
 
   it('refuses out-of-bound requests before any egress', async () => {

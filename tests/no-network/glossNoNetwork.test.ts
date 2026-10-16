@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { makeGlossService, validateGlossRequest } from '../../apps/local-service/src/gloss.ts';
@@ -21,11 +21,23 @@ describe('lt-foe.3.3 gloss lookup without network', () => {
     expect(built.status).toBe(0);
     const request = validateGlossRequest({ language: 'pl', queries: [{ lemma: 'dom' }, { lemma: 'domu' }, { lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'mama', upos: 'NOUN' }] }] });
     const live = makeGlossService({ dbPath });
-    const missing = makeGlossService({ dbPath: join(root, 'absent.sqlite') });
-    const { value, networkAttempts } = await withNoNetwork(async () => [await live.lookup(request), await missing.lookup(request)]);
-    expect(value[0]!.status).toBe('available');
-    expect(value[1]).toEqual({ status: 'unavailable', reason: 'not-installed' });
+    const latePath = join(root, 'late.sqlite');
+    let now = 1_000_000;
+    const late = makeGlossService({ dbPath: latePath, clock: () => now });
+    const { value, networkAttempts } = await withNoNetwork(async () => {
+      const first = await live.lookup(request);
+      const before = await late.lookup(request);
+      copyFileSync(dbPath, latePath);
+      now += 30_001;
+      const after = await late.lookup(request);
+      return { first, before, after };
+    });
     expect(networkAttempts).toEqual([]);
-    live.close();
+    expect(value.before).toEqual({ status: 'unavailable', reason: 'not-installed' });
+    for (const res of [value.first, value.after]) {
+      if (res.status !== 'available') throw new Error(`expected available, got ${res.status}`);
+      expect(res.results.map(r => [r.via, r.lemma, r.formOf])).toEqual([['lemma', 'dom', undefined], ['form-of', 'dom', 'domu'], ['alternative', 'mama', undefined]]);
+    }
+    live.close(); late.close();
   });
 });

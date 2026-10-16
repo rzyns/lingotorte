@@ -14,7 +14,7 @@ export const GLOSS_RECHECK_MS = 30_000;
 export type GlossCapabilityState = 'available' | 'not-installed' | 'disabled' | 'invalid-dictionary';
 export type GlossUnavailableReason = 'not-installed' | 'disabled' | 'unsupported-language' | 'invalid-dictionary';
 export type GlossErrorCode = 'lookup-failed' | 'internal';
-export type GlossValidationCode = 'invalid-envelope' | 'invalid-language' | 'invalid-queries' | 'too-many-queries' | 'lemma-too-long';
+export type GlossValidationCode = 'invalid-envelope' | 'invalid-max-senses' | 'invalid-language' | 'invalid-queries' | 'too-many-queries' | 'lemma-too-long';
 export type GlossRouteSense = Readonly<{ gloss: string; pos: string; upos: string | null; tags: readonly string[] }>;
 export type GlossRouteResult = Readonly<{
   queryIndex: number;
@@ -22,9 +22,13 @@ export type GlossRouteResult = Readonly<{
   via: 'lemma' | 'form-of' | 'alternative' | null;
   lemma: string;
   upos: string | null;
+  /** The queried form when the glosses came through a form-of hop (lemma is then the hop target). */
   formOf?: string;
   senses: readonly GlossRouteSense[];
+  /** Other found readings among the query's alternatives (request order, deduped by (lemma, upos)). */
+  otherReadings: readonly GlossOtherReading[];
 }>;
+export type GlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of'; formOf?: string; senses: readonly GlossRouteSense[] }>;
 export type GlossRouteSource = Readonly<{ id: string; name: string; licence: string; url: string; attribution: string; dumpDate: string }>;
 export type GlossResponse =
   | Readonly<{ status: 'available'; source: GlossRouteSource; results: readonly GlossRouteResult[] }>
@@ -78,7 +82,7 @@ function uposOf(record: Record<string, unknown>): string | undefined {
 export function validateGlossRequest(body: unknown): ValidatedGlossRequest {
   if (!isRecord(body) || !exactKeys(body, ['language', 'queries'], ['maxSenses'])) throw new GlossValidationError('invalid-envelope');
   if (body.maxSenses !== undefined && (!Number.isInteger(body.maxSenses) || (body.maxSenses as number) < 1 || (body.maxSenses as number) > GLOSS_MAX_SENSES)) {
-    throw new GlossValidationError('invalid-envelope');
+    throw new GlossValidationError('invalid-max-senses');
   }
   if (typeof body.language !== 'string' || !/^[a-z]{2,3}$/.test(body.language)) throw new GlossValidationError('invalid-language');
   const queries = body.queries;
@@ -109,33 +113,53 @@ const uposMatches = (result: GlossLookupResult, upos: string | undefined) => upo
  * Resolution rule (deterministic):
  * 1. Look up the primary {lemma, upos} (glossStore: direct glosses first, else one form-of hop).
  * 2. Keep the primary if it was found and either the query has no upos or some returned sense has that upos.
- * 3. Otherwise walk the alternatives in request order and take the first one that is found AND
- *    (has a sense matching its own upos, or has no upos). If the primary was found with a
- *    mismatched POS, an alternative is taken only when its senses match its own given upos.
+ * 3. Otherwise walk the alternatives in request order and take the first one that is found AND has a
+ *    sense matching its own upos; when the primary was not found at all, a found alternative without
+ *    upos also qualifies.
  * 4. Otherwise return the primary as-is (found with mismatched POS, or found:false).
+ * otherReadings: every found alternative whose (lemma, upos) differs from the chosen result's, in request
+ * order, deduped, at most GLOSS_MAX_ALTERNATIVES.
  */
+const senseOut = (s: GlossLookupResult['senses'][number]): GlossRouteSense => ({ gloss: s.gloss, pos: s.pos, upos: s.upos, tags: [...s.tags] });
+const hop = (r: GlossLookupResult) => (r.found && r.via === 'form-of' && r.formOf ? r.formOf : undefined);
 function resolve(store: GlossStore, q: Query, maxSenses: number, queryIndex: number): GlossRouteResult {
-  const [primary] = store.lookup([{ lemma: q.lemma, ...(q.upos ? { upos: q.upos } : {}) }], { maxSenses });
-  const shape = (r: GlossLookupResult, via: GlossRouteResult['via'], upos: string | undefined): GlossRouteResult => ({
-    queryIndex,
-    found: r.found,
-    via: r.found ? via : null,
-    lemma: r.found && r.via === 'form-of' && r.formOf ? r.formOf : r.lemma,
-    upos: (r.found ? r.senses[0]?.upos : upos) ?? null,
-    ...(r.found && r.via === 'form-of' && r.formOf ? { formOf: r.formOf } : {}),
-    senses: r.senses.slice(0, maxSenses).map(s => ({ gloss: s.gloss, pos: s.pos, upos: s.upos, tags: [...s.tags] })),
-  });
-  if (primary!.found && (q.upos === undefined || uposMatches(primary!, q.upos))) return shape(primary!, primary!.via, q.upos);
-  for (const alt of q.alternatives) {
-    const [r] = store.lookup([{ lemma: alt.lemma, ...(alt.upos ? { upos: alt.upos } : {}) }], { maxSenses });
-    if (!r!.found) continue;
-    const strong = uposMatches(r!, alt.upos);
-    if (strong || (!primary!.found && alt.upos === undefined)) {
-      const out = shape(r!, 'alternative', alt.upos);
-      return out;
-    }
+  const find = (lemma: string, upos: string | undefined) => store.lookup([{ lemma, ...(upos ? { upos } : {}) }], { maxSenses })[0]!;
+  const primary = find(q.lemma, q.upos);
+  const alts = q.alternatives.map(alt => ({ alt, r: find(alt.lemma, alt.upos) }));
+  const shape = (r: GlossLookupResult, queried: string, via: GlossRouteResult['via'], upos: string | undefined) => {
+    const target = hop(r);
+    return {
+      queryIndex,
+      found: r.found,
+      via: r.found ? via : null,
+      lemma: target ?? queried,
+      upos: (r.found ? r.senses[0]?.upos : upos) ?? null,
+      ...(target ? { formOf: queried } : {}),
+      senses: r.senses.slice(0, maxSenses).map(senseOut),
+    };
+  };
+  let chosen: Omit<GlossRouteResult, 'otherReadings'> | undefined;
+  if (primary.found && (q.upos === undefined || uposMatches(primary, q.upos))) chosen = shape(primary, q.lemma, primary.via, q.upos);
+  for (const { alt, r } of alts) {
+    if (chosen) break;
+    if (r.found && (uposMatches(r, alt.upos) || (!primary.found && alt.upos === undefined))) chosen = shape(r, alt.lemma, 'alternative', alt.upos);
   }
-  return shape(primary!, primary!.via, q.upos);
+  chosen ??= shape(primary, q.lemma, primary.via, q.upos);
+  const seen = new Set<string>([JSON.stringify([chosen.lemma, chosen.upos])]);
+  const otherReadings: GlossOtherReading[] = [];
+  for (const { alt, r } of alts) {
+    if (!r.found || otherReadings.length >= GLOSS_MAX_ALTERNATIVES) continue;
+    const target = hop(r);
+    const lemma = target ?? alt.lemma;
+    // A reading is about its own POS: keep only matching senses when the alternative names a UPOS that has any.
+    const own = alt.upos !== undefined && uposMatches(r, alt.upos) ? r.senses.filter(s => s.upos === alt.upos) : r.senses;
+    const upos = own[0]?.upos ?? null;
+    const key = JSON.stringify([lemma, upos]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    otherReadings.push({ lemma, upos, via: target ? 'form-of' : 'lemma', ...(target ? { formOf: alt.lemma } : {}), senses: own.slice(0, maxSenses).map(senseOut) });
+  }
+  return { ...chosen, otherReadings };
 }
 
 export function makeGlossService(options: GlossRuntimeOptions = {}) {
@@ -151,23 +175,37 @@ export function makeGlossService(options: GlossRuntimeOptions = {}) {
     if (lastAttempt !== null && now - lastAttempt < GLOSS_RECHECK_MS) return null;
     lastAttempt = now;
     if (!options.dbPath) { state = 'not-installed'; return null; }
+    let opened: GlossStore | null = null;
     try {
-      const opened = open(options.dbPath);
+      opened = open(options.dbPath);
       opened.source();
       store = opened;
       state = 'available';
     } catch (error) {
+      try { opened?.close(); } catch { /* ignore */ }
       state = error instanceof GlossStoreError && error.code === 'missing' ? 'not-installed' : 'invalid-dictionary';
     }
     return store;
   };
+  /** A store whose source() fails after open is closed and dropped; the 30 s re-check then applies. */
+  const sourceOf = (): GlossRouteSource | null => {
+    if (!store) return null;
+    try {
+      const s = store.source();
+      return { id: s.id, name: s.name, licence: s.licence, url: s.url, attribution: s.attribution, dumpDate: s.dumpDate };
+    } catch {
+      try { store.close(); } catch { /* ignore */ }
+      store = null;
+      state = 'invalid-dictionary';
+      lastAttempt = clock();
+      return null;
+    }
+  };
   return {
     capability(): GlossCapability {
       if (state === 'available' && store) {
-        try {
-          const s = store.source();
-          return { languages: ['pl'], state, source: { id: s.id, dumpDate: s.dumpDate, attribution: s.attribution } };
-        } catch { return { languages: ['pl'], state: 'invalid-dictionary' }; }
+        const s = sourceOf();
+        if (s) return { languages: ['pl'], state: 'available', source: { id: s.id, dumpDate: s.dumpDate, attribution: s.attribution } };
       }
       return { languages: ['pl'], state };
     },
@@ -176,12 +214,8 @@ export function makeGlossService(options: GlossRuntimeOptions = {}) {
       if (disabled) return { status: 'unavailable', reason: 'disabled' };
       if (input.language !== 'pl') return { status: 'unavailable', reason: 'unsupported-language' };
       const current = ensure();
-      if (!current) return { status: 'unavailable', reason: state === 'invalid-dictionary' ? 'invalid-dictionary' : 'not-installed' };
-      let source: GlossRouteSource;
-      try {
-        const s = current.source();
-        source = { id: s.id, name: s.name, licence: s.licence, url: s.url, attribution: s.attribution, dumpDate: s.dumpDate };
-      } catch { return { status: 'error', code: 'internal' }; }
+      const source = current ? sourceOf() : null;
+      if (!current || !source) return { status: 'unavailable', reason: state === 'invalid-dictionary' ? 'invalid-dictionary' : 'not-installed' };
       try {
         return { status: 'available', source, results: input.queries.map((q, i) => resolve(current, q, input.maxSenses, i)) };
       } catch {
