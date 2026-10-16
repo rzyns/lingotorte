@@ -549,7 +549,7 @@ function renderAnkiExportGroup(model: AppModel): HTMLElement {
   group.appendChild(heading);
 
   const snapshot = model.store.snapshot();
-  const plan = buildAnkiExportPlan(Object.values(snapshot.savedItems), Object.values(snapshot.savedOccurrences));
+  const plan = buildAnkiExportPlan(Object.values(snapshot.savedItems), Object.values(snapshot.savedOccurrences), cueId => model.store.getCue(cueId)?.text);
   const counts = document.createElement('p');
   counts.className = 'meta anki-export-counts';
   counts.dataset.ankiExportCounts = '';

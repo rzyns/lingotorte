@@ -19,7 +19,7 @@ The browser computes the note rows (so the client's current state is what is exp
 Per non-archived saved item (archived items are excluded and counted in the UI):
 
 - **Word** — `displayText`.
-- **Context** — the item's *earliest* saved occurrence (by `createdAt`, then `id`): `contextBefore + <b>selectionText</b> + contextAfter`. Earliest = the sentence the learner first met it in, and it does not change when later occurrences are saved.
+- **Context** — the item's *earliest* saved occurrence (by `createdAt`, then `id`): the current cue text with the occurrence's `sourceContext.charSpan` wrapped in `<b>` (the app's saves reference the cue and never store `contextBefore`/`contextAfter`). If the cue is no longer in the store or the span does not fit the cue text, it falls back to `contextBefore + <b>selectionText</b> + contextAfter` (just the bold selection when those are absent). Earliest = the sentence the learner first met it in, and it does not change when later occurrences are saved.
 - **Meaning** — if present.
 - **Notes** — if present.
 - **Attribution** — `DICTIONARY_ATTRIBUTION` only when `meaningSource.kind === 'dictionary-suggested'`.

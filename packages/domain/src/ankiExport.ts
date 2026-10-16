@@ -47,13 +47,23 @@ export function ankiGuidFor(savedItemId: string): string {
 const byCreated = <T extends { createdAt: string; id: string }>(a: T, b: T) =>
   a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
+/** Resolves a cue id to its current subtitle text (the app's saved occurrences reference cues, not copied text). */
+export type AnkiCueTextLookup = (cueId: string) => string | undefined;
+
 /**
  * Context = the item's EARLIEST saved occurrence (createdAt, then id): the sentence the learner first met it in.
- * contextBefore + <b>selectionText</b> + contextAfter, every part escaped before the <b> is added.
+ * Primary: the cue text with sourceContext.charSpan wrapped in <b> (the app never stores contextBefore/After).
+ * Fallback when the cue is unavailable or the span does not fit: contextBefore + <b>selectionText</b> + contextAfter.
+ * Every part is escaped before the <b> is added.
  */
-function contextHtmlFor(occurrences: readonly SavedOccurrence[]): string {
+function contextHtmlFor(occurrences: readonly SavedOccurrence[], cueText?: AnkiCueTextLookup): string {
   const first = [...occurrences].sort(byCreated)[0];
   if (!first) return '';
+  const text = cueText?.(first.cueId);
+  const span = first.sourceContext?.charSpan;
+  if (text !== undefined && span && Number.isInteger(span.start) && Number.isInteger(span.end) && span.start >= 0 && span.start < span.end && span.end <= text.length) {
+    return `${ankiEscapeHtml(text.slice(0, span.start))}<b>${ankiEscapeHtml(text.slice(span.start, span.end))}</b>${ankiEscapeHtml(text.slice(span.end))}`;
+  }
   const before = ankiEscapeHtml(first.contextBefore ?? '');
   const after = ankiEscapeHtml(first.contextAfter ?? '');
   const selection = ankiEscapeHtml(first.selectionText);
@@ -61,7 +71,7 @@ function contextHtmlFor(occurrences: readonly SavedOccurrence[]): string {
   return `${before}<b>${selection}</b>${after}`;
 }
 
-export function buildAnkiExportPlan(savedItems: readonly SavedItem[], savedOccurrences: readonly SavedOccurrence[]): AnkiExportPlan {
+export function buildAnkiExportPlan(savedItems: readonly SavedItem[], savedOccurrences: readonly SavedOccurrence[], cueText?: AnkiCueTextLookup): AnkiExportPlan {
   const byItem = new Map<string, SavedOccurrence[]>();
   for (const occurrence of savedOccurrences) {
     const list = byItem.get(occurrence.savedItemId) ?? [];
@@ -75,7 +85,7 @@ export function buildAnkiExportPlan(savedItems: readonly SavedItem[], savedOccur
       guid: ankiGuidFor(item.id),
       word: ankiEscapeHtml(item.displayText),
       meaningHtml: ankiEscapeHtml(meaning),
-      contextHtml: contextHtmlFor(byItem.get(item.id) ?? []),
+      contextHtml: contextHtmlFor(byItem.get(item.id) ?? [], cueText),
       notesHtml: ankiEscapeHtml(item.notes?.trim() ? item.notes : ''),
       attributionHtml: meaning && item.meaningSource?.kind === 'dictionary-suggested' ? ankiEscapeHtml(DICTIONARY_ATTRIBUTION) : '',
       tags: ['lingotorte', item.kind],

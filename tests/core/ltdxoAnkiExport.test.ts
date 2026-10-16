@@ -62,6 +62,23 @@ describe('lt-dxo Anki mapper', () => {
     for (const leak of ['secret-name', 'fixtures/media', '2026-10', '10000000-', '20000000-', 'sha256']) expect(json).not.toContain(leak);
     expect(notes.map(n => n.tags)).toEqual([['lingotorte', 'word'], ['lingotorte', 'word'], ['lingotorte', 'phrase'], ['lingotorte', 'word']]);
   });
+  it('builds the context from the cue text and charSpan when the occurrence has no contextBefore/After (app save shape)', () => {
+    // Live-check regression: the app's saves reference the cue via sourceContext.charSpan and never store contextBefore/After.
+    const item = input.savedItems.find(i => !i.archivedAt)!;
+    const occ = input.savedOccurrences.find(o => o.savedItemId === item.id)!;
+    const { contextBefore: _b, contextAfter: _a, ...bare } = occ;
+    const cueText = 'Cześć, to jest <lokalny> & test.';
+    const at = cueText.indexOf('<lokalny>');
+    const appShape = { ...bare, sourceContext: { ...occ.sourceContext, charSpan: { start: at, end: at + '<lokalny>'.length } } } as SavedOccurrence;
+    const lookup = (id: string) => (id === occ.cueId ? cueText : undefined);
+    const note = buildAnkiExportPlan([item], [appShape], lookup).notes[0]!;
+    expect(note.contextHtml).toBe('Cześć, to jest <b>&lt;lokalny&gt;</b> &amp; test.');
+    // Out-of-range span or missing cue falls back to the selection only.
+    const bad = { ...appShape, sourceContext: { ...appShape.sourceContext, charSpan: { start: 0, end: 999 } } } as SavedOccurrence;
+    expect(buildAnkiExportPlan([item], [bad], lookup).notes[0]!.contextHtml).toBe(`<b>${occ.selectionText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</b>`);
+    expect(buildAnkiExportPlan([item], [appShape]).notes[0]!.contextHtml).toMatch(/^<b>/);
+  });
+
   it('derives stable, non-UUID guids', () => {
     expect(ankiGuidFor('abc')).toBe(ankiGuidFor('abc'));
     expect(ankiGuidFor('abc')).not.toBe(ankiGuidFor('abd'));
