@@ -16,7 +16,7 @@ $env:LINGOTORTE_BIND_HOST = '127.0.0.1'; $env:LINGOTORTE_WEB_PORT = '5173'; $env
 docker compose -p lingotorte-private up -d --build api web
 ```
 
-Open http://127.0.0.1:5173. To keep your saved words across reloads, pair the browser with the local service in Settings ([runbook: Build and run](docs/dev/docker-runbook.md#build-and-run)); `docker compose -p lingotorte-private down` stops it and keeps your data.
+Open http://127.0.0.1:5173. To store saved words in the local service's database (not just this browser's cache), pair the browser in Settings ([runbook: Build and run](docs/dev/docker-runbook.md#build-and-run)); pair again after the service restarts. `docker compose -p lingotorte-private down` stops it and keeps your data.
 
 Where things live: `apps/web` (browser app), `apps/local-service` (local SQLite service), `packages/` (shared domain, subtitles, review, storage), `docs/dev` (runbooks), `docs/review` (safety and privacy reviews), `.beads` (work tracking; see [BEADS.md](BEADS.md)).
 
