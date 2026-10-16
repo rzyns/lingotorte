@@ -718,6 +718,15 @@ export function activeLoopRangeForSelection(
   };
 }
 
+/**
+ * lt-ddy.6: native cues to show read-only when the current media has a native track but no target track.
+ * Never part of model.cues (the target transcript), so they cannot be captured, approved or analysed.
+ */
+export function nativeOnlyCues(model: AppModel): Cue[] {
+  if (model.targetTrackId || !model.nativeTrackId) return [];
+  return model.store.listCuesForTrack(model.nativeTrackId);
+}
+
 export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | undefined, nativeCues: readonly Cue[]): string | undefined {
   if (!nativeTrack) return undefined;
   // Find the best native cue overlapping the target cue. A tolerance is useful
@@ -1339,11 +1348,13 @@ export function plainSubtitleFailureReason(err: unknown): string {
   return 'it is not a valid subtitle file';
 }
 
-export function subtitleImportWarning(failures: readonly SubtitleImportFailure[]): string | null {
+export function subtitleImportWarning(failures: readonly SubtitleImportFailure[], nativeOnly = false): string | null {
   if (failures.length === 0) return null;
   const parts = failures.map((f) => `"${f.fileName}" (${f.role} subtitles) could not be read: ${f.reason}.`);
   const pronoun = failures.length === 1 ? 'it' : 'them';
-  return `${parts.join(' ')} The video was imported without ${pronoun}. To add ${pronoun} later, fix the file and import the same video again with ${pronoun}.`;
+  // lt-ddy.6: with only a native track left, the Player lists it read-only until a target track is added.
+  const meanwhile = nativeOnly ? ' Meanwhile the Player shows your native-language subtitles, read-only.' : '';
+  return `${parts.join(' ')} The video was imported without ${pronoun}. To add ${pronoun} later, fix the file and import the same video again with ${pronoun}.${meanwhile}`;
 }
 
 async function relinkExistingBrowserMedia(
@@ -1404,7 +1415,7 @@ async function relinkExistingBrowserMedia(
   model.player.currentTimeMs = 0;
   model.player.activeCueId = model.cues[0]?.id ?? null;
   model.importError = null;
-  model.importWarning = subtitleImportWarning(failures);
+  model.importWarning = subtitleImportWarning(failures, nativeOnlyCues(model).length > 0);
   persistIfLocalServiceAutosaveEnabled(model);
 }
 
@@ -1519,7 +1530,7 @@ export async function importBrowserLocalFiles(
     model.player.currentTimeMs = 0;
     model.player.activeCueId = model.cues[0]?.id ?? null;
     model.importError = null;
-    model.importWarning = subtitleImportWarning(failures);
+    model.importWarning = subtitleImportWarning(failures, nativeOnlyCues(model).length > 0);
     persistIfLocalServiceAutosaveEnabled(model);
     return assetWithDuration.id;
   } catch (err) {

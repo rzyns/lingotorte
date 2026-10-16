@@ -742,6 +742,29 @@ textarea:focus-visible,
   color: var(--text-muted);
 }
 
+.native-only-note {
+  margin: 0 0 var(--space-1);
+}
+
+.native-only-row {
+  display: grid;
+  gap: 0.25rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 0.6rem;
+  border: 1px solid transparent;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.native-only-row.active {
+  border-color: var(--accent-strong);
+}
+
+.native-only-row .cue-native {
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
 .cue-context {
   font-size: var(--fs-sm);
   color: var(--text-muted);

@@ -7,6 +7,7 @@ import {
   importFixtureMediaAndSubtitles,
   importBrowserLocalFileHandles,
   relinkCurrentMediaFromFile,
+  nativeOnlyCues,
   nativeTextForCue,
   setView,
   toggleLoopRange,
@@ -257,6 +258,7 @@ function createVideoStage(model: AppModel): HTMLElement {
       scrollCueIntoView(cue.id);
     }
     updateOverlay(stage, model, cue);
+    if (!cue) syncNativeOnlyLine(model, timeMs);
     syncTranscriptCurrentWord(model.player.activeCueId, timeMs);
     syncPlayerTransport(video);
     const loopJump = applyLoopTolerance(timeMs, cue, model.player.loopCue, model.player.loopRange);
@@ -747,11 +749,28 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
   if (hasTrailingText) target.appendChild(document.createTextNode(' …'));
 }
 
+/** lt-ddy.6: follow playback in the read-only native list without a full rerender. */
+function syncNativeOnlyLine(model: AppModel, timeMs: number): void {
+  if (model.cues.length > 0) return;
+  const activeId = nativeOnlyCues(model).find((c) => c.startMs <= timeMs && c.endMs > timeMs)?.id ?? null;
+  document.querySelectorAll<HTMLElement>('.native-only-row').forEach((row) => {
+    row.classList.toggle('active', row.dataset.nativeCueId === activeId);
+  });
+}
+
 function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): void {
   const overlay = (stage as any).__overlay as HTMLElement | undefined;
   if (!overlay) return;
   if (!cue) {
     overlay.textContent = '';
+    // lt-ddy.6: native-only media shows its native line as plain text (never word buttons).
+    const nativeCue = model.cues.length === 0 ? nativeOnlyCues(model).find((c) => c.startMs <= model.player.currentTimeMs && c.endMs > model.player.currentTimeMs) : undefined;
+    if (nativeCue) {
+      const native = document.createElement('div');
+      native.className = 'subtitle-native';
+      native.textContent = clippedPlainSubtitleText(nativeCue.text);
+      overlay.appendChild(native);
+    }
     return;
   }
   overlay.innerHTML = '';

@@ -4,6 +4,7 @@ import type { Cue } from '@lingotorte/domain';
 import { formatTimeMs } from '../../uiTypes';
 import {
   clearSelection,
+  nativeOnlyCues,
   nativeTextForCue,
   saveSelectionWithReceipt,
   seekToCue,
@@ -40,6 +41,11 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     setTranscriptQuery(model, (e.target as HTMLInputElement).value);
     rerenderApp(model);
   });
+
+  if (model.cues.length === 0 && nativeOnlyCues(model).length > 0) {
+    renderNativeOnlyLines(model, panel);
+    return panel;
+  }
 
   if (model.cues.length === 0) {
     const empty = document.createElement('p');
@@ -241,6 +247,56 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
   }
   installCueWordDelegation(model, panel);
   return panel;
+}
+
+export const NATIVE_ONLY_NOTE = 'Showing your native-language subtitles only. Add target-language subtitles to study words: import the same video again with them.';
+
+/** lt-ddy.6: read-only native lines (no word targets, capture, analysis or approval); a click only seeks. */
+function renderNativeOnlyLines(model: AppModel, panel: HTMLElement): void {
+  const note = document.createElement('p');
+  note.className = 'status-banner native-only-note';
+  note.setAttribute('role', 'status');
+  note.textContent = NATIVE_ONLY_NOTE;
+  panel.appendChild(note);
+  const query = model.transcriptQuery.toLowerCase();
+  const cues = nativeOnlyCues(model).filter((c) => !query || c.text.toLowerCase().includes(query));
+  const activeId = activeCueAtTimeId(cues, model.player.currentTimeMs);
+  for (const cue of cues) {
+    const row = document.createElement('div');
+    row.className = `native-only-row${cue.id === activeId ? ' active' : ''}`;
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('data-native-cue-id', cue.id);
+    row.setAttribute('aria-label', `Native line at ${formatTimeMs(cue.startMs)}: ${cue.text}`);
+    const time = document.createElement('div');
+    time.className = 'cue-time';
+    time.textContent = `${formatTimeMs(cue.startMs)} – ${formatTimeMs(cue.endMs)}`;
+    const text = document.createElement('div');
+    text.className = 'cue-native';
+    text.textContent = cue.text;
+    row.append(time, text);
+    const seek = () => {
+      model.player.currentTimeMs = cue.startMs;
+      const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
+      if (video) {
+        video.currentTime = cue.startMs / 1000;
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => undefined);
+      }
+      rerenderApp(model);
+    };
+    row.addEventListener('click', seek);
+    row.addEventListener('keydown', (e) => {
+      if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      seek();
+    });
+    panel.appendChild(row);
+  }
+}
+
+function activeCueAtTimeId(cues: readonly Cue[], timeMs: number): string | null {
+  return cues.find((c) => c.startMs <= timeMs && c.endMs > timeMs)?.id ?? null;
 }
 
 // lt-z8s: set when a drag-select mouseup captures, so the click that follows it on a word button is ignored.
