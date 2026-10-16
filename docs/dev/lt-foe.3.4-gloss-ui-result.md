@@ -58,4 +58,19 @@ exports, but old builds cannot restore exports made after a dictionary suggestio
 
 ## Live check
 
-TBD by coordinator.
+Environment: Docker stack `lt-foe34` (image `sha256:6c96e4d5…`) at commit `450f83c`, viewed in desktop Chrome. The real derived dictionary (sha256 `bc6b1028…97eb`, import 2026-10-03) was copied into the stack's `dictionary` volume.
+
+Agent-observed with real clicks while unpaired:
+- Library → Load synthetic fixture → Analyse words → `lokalny`:
+  - `data-meanings-state="not-paired"`
+  - visible text "Meanings need the local service (pair in Settings)."
+  - panel heading "Word analysis"
+  - exactly one live region in the panel
+  - Meanings heading is an `h5`
+- Capture on `lokalny`: Meaning is empty, the hint is hidden, and there is no `aria-describedby` (nothing is pre-filled without a service).
+- Settings: Credits shows "No dictionary installed." (`data-credit="no-dictionary"`).
+- At 390×844 the meanings section is 356 px wide and the document is 390 px wide, so nothing scrolls sideways.
+
+Service side, inside the same api container with the real dictionary: `cześć` (NOUN, alternative INTJ) returned `available`, source `kaikki-enwiktionary-pl-2026-10-03`, top sense "reverence…", other reading "Form of greeting or farewell…".
+
+Not agent-checkable: the paired path (meanings rendered from the real dictionary, the Meaning pre-fill and its hint, the Credits attribution). Pairing needs the private TTY helper (`scripts/pair-local.ts`), so Janusz checks these by hand; the result is recorded on `lt-foe.3.4`.
