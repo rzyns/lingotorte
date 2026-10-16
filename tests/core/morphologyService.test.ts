@@ -100,7 +100,7 @@ describe('lt-elf local Morfeusz morphology service', () => {
     const { service } = await start();
     await post(service.origin, { language: 'pl', tokens: ['dom'] });
     const status = await (await pairedFetch(`${service.origin}/api/status`)).json() as Json;
-    expect(status.language).toEqual({ morphology: { languages: ['pl'], engine: 'morfeusz2-sgjp', state: 'available' } });
+    expect(status.language.morphology).toEqual({ languages: ['pl'], engine: 'morfeusz2-sgjp', state: 'available' });
     const disabled = await start({ morphology: { mode: 'disabled' } });
     const off = await (await pairedFetch(`${disabled.service.origin}/api/status`)).json() as Json;
     expect(off.language.morphology.state).toBe('unavailable');

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const MAX_BODY_BYTES = 5 * 1024 * 1024;
 /** lt-elf: per-route body caps tighter than the gate-wide MAX_BODY_BYTES. */
-export const ROUTE_BODY_LIMITS: Readonly<Record<string, number>> = Object.freeze({ '/api/language/morphology': 16 * 1024 });
+export const ROUTE_BODY_LIMITS: Readonly<Record<string, number>> = Object.freeze({ '/api/language/morphology': 16 * 1024, '/api/language/gloss': 16 * 1024 });
 export class AdmissionError extends Error {
   readonly status: number;
   constructor(status: number, message = 'Request rejected.') { super(message); this.status = status; }
@@ -69,7 +69,7 @@ export function routeMethods(path: string): readonly string[] | undefined {
   if (path === '/api/state') return ['GET', 'PUT'];
   if (path === '/api/restore/preview' || path === '/api/restore/commit') return ['POST'];
   if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
-  if (path === '/api/language/morphology') return ['POST'];
+  if (path === '/api/language/morphology' || path === '/api/language/gloss') return ['POST'];
   if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
   if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];
   if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];

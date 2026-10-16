@@ -7,7 +7,8 @@ import { mkdir, mkdtemp, lstat, readFile, readdir, rm, writeFile } from 'node:fs
 import { homedir } from 'node:os';
 import { nativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
 import { hostNativePath, pathInside, resolvedNativePath, assertReadableNativeFile, nativeExecutable } from '../../../packages/domain/src/nativePathsNode.ts';
-import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch } from './nativeConfig.ts';
+import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch, glossDbPathFromEnv } from './nativeConfig.ts';
+import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROUTE, type GlossRuntimeOptions, type GlossService } from './gloss.ts';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SqliteLocalPersistence, SnapshotRevisionConflictError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
@@ -89,6 +90,8 @@ export type LocalServiceRuntime = Readonly<{
   elevenLabsBaseUrl?: string;
   elevenLabsHttpClient?: ElevenLabsHttpClient;
   morphology?: MorphologyRuntimeOptions;
+  /** lt-foe.3.3: gloss lookup. startFromCli fills dbPath/mode from the environment. */
+  gloss?: GlossRuntimeOptions;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -157,7 +160,7 @@ function publicJob(job: LocalJob): unknown {
   };
 }
 
-function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName, morphology: MorphologyService): unknown {
+function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName, morphology: MorphologyService, gloss: GlossService): unknown {
   return {
     ok: true,
     service: SERVICE_NAME,
@@ -180,7 +183,7 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
       },
     },
     persistence: persistence.status(),
-    language: { morphology: morphology.capability() },
+    language: { morphology: morphology.capability(), gloss: gloss.capability() },
   };
 }
 
@@ -1003,6 +1006,8 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
 
   const morphology = makeMorphologyService(runtime.morphology);
   morphology.warm();
+  const gloss = makeGlossService(runtime.gloss);
+  gloss.warm();
   dispatch = async (request, response, path, admittedBody) => {
     try {
 
@@ -1012,7 +1017,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/status') {
-        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME, morphology));
+        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME, morphology, gloss));
         return;
       }
 
@@ -1025,6 +1030,18 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           return;
         }
         sendJson(response, 200, await morphology.analyze(input));
+        return;
+      }
+
+      if (request.method === 'POST' && path === GLOSS_ROUTE) {
+        let input;
+        try { input = validateGlossRequest(admittedBody); }
+        catch (error) {
+          if (error instanceof GlossValidationError) sendJson(response, 400, { ok: false, error: error.code });
+          else sendJson(response, 200, { status: 'error', code: 'internal' });
+          return;
+        }
+        sendJson(response, 200, await gloss.lookup(input));
         return;
       }
 
@@ -1198,7 +1215,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       await drainSnippetJobs();
       snippets.clear();
       try { await cleanupScratchDirectory(snippetScratchDir); }
-      finally { persistence.close(); }
+      finally { gloss.close(); persistence.close(); }
     },
   };
   } catch (error) {
@@ -1236,7 +1253,12 @@ export async function startFromCli(): Promise<void> {
   if (mode === 'socket' && !config.publicOrigins?.length) throw new TypeError('Docker requires explicit public origins.');
   const delivery = mode === 'socket' ? await socketDelivery() : await nativeTerminalDelivery();
   let service: RunningLingotorteLocalService;
-  try { service = await startLingotorteLocalService(config, { defaultModelName, ...delivery }); }
+  const gloss: GlossRuntimeOptions = {
+    // An invalid configured path degrades to not-installed rather than blocking startup.
+    ...(() => { try { return { dbPath: glossDbPathFromEnv(process.env, nativePathPolicy(process.platform).platform, homedir()) }; } catch { return {}; } })(),
+    mode: process.env.LINGOTORTE_GLOSS === 'disabled' ? 'disabled' : 'enabled',
+  };
+  try { service = await startLingotorteLocalService(config, { defaultModelName, gloss, ...delivery }); }
   catch (error) { await delivery.close(); throw error; }
   console.log(JSON.stringify({
     ok: true,
