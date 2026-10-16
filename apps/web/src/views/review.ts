@@ -137,7 +137,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
       }
       const sourceNote = document.createElement('p');
       sourceNote.className = 'meta';
-      appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath);
+      appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath.startsWith('blob:') ? '' : occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
     } else {
