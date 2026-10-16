@@ -68,7 +68,7 @@ describe('lt-r4k.3 cue row nested button keyboard activation', () => {
   afterEach(() => { dom.window.close(); });
 
   for (const key of ['Enter', ' ']) {
-    it(`${JSON.stringify(key)} on Save sentence… opens the capture form, saves via Save occurrence, and does not seek`, async () => {
+    it(`${JSON.stringify(key)} on Save sentence… opens the capture form, saves via Save, and does not seek`, async () => {
       const { model, cue } = installModel();
       rerenderApp(model);
       const btn = document.querySelector(`[data-cue-id="${cue.id}"] .cue-actions button`) as HTMLButtonElement;
@@ -81,7 +81,7 @@ describe('lt-r4k.3 cue row nested button keyboard activation', () => {
       // lt-cms: the button opens the capture state instead of persisting immediately.
       expect(model.selection?.kind).toBe('sentence');
       expect(Object.values(model.store.snapshot().savedItems).length).toBe(0);
-      const save = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement;
+      const save = document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement;
       const saveEv = pressKey(dom, save, key);
       expect(saveEv.defaultPrevented).toBe(false);
       await vi.waitFor(() => {

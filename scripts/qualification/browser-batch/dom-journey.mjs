@@ -9,7 +9,7 @@ export const J = Object.freeze({
   draftDone: 'Draft transcript imported',
   publicRead: 'input[name="youtube-public-read-auth"]',
   saveSentence: 'Save sentence…', // lt-cms: opens the Selection capture form
-  saveOccurrence: 'Save occurrence', // views/player/transcript.ts renderSelectionPanel
+  saveOccurrence: '[data-action="save-occurrence"]', // selector (button text is 'Save'); views/player/transcript.ts renderSelectionPanel
   showAnswer: 'Show answer / context',
   reviewToggle: 'In review ✓', // views/saved.ts renderSavedView, one per saved item (lt-uzo: cards auto-created on save)
   submitAttempt: 'Submit attempt',
@@ -147,7 +147,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
         return { cues: cueRows().length, cue0Matches: !!r0 && (r0.querySelector('.cue-target')?.textContent ?? '') === arg.text, saveEnabled: !!s && !s.disabled, draftBanner: !!document.querySelector('.transcript-panel .transcript-approval-gate') };
       }
       case 'select-word': {
-        // Real selection + mouseup on the cue row (lt-cms: mouseup opens the Selection capture form; Save occurrence persists).
+        // Real selection + mouseup on the cue row (lt-cms: mouseup opens the Selection capture form; Save persists).
         const r0 = cueRows()[0]; const t = r0?.querySelector('.cue-target'); if (!t) throw diagnostic('DomSelector', 'cueRow', 'missing');
         const walker = document.createTreeWalker(t, NodeFilter.SHOW_TEXT); let node, at = -1;
         while ((node = walker.nextNode())) { at = node.data.indexOf(arg.word); if (at >= 0) break; }
@@ -155,8 +155,8 @@ export async function installJourneyDriver(batch, requireUi = true) {
         const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + arg.word.length);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
         r0.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        // lt-cms: the gesture opens the capture form; confirm with Save occurrence. The server oracle after Save is the evidence.
-        const form = await wait(() => byText(J.saveOccurrence), 3000).catch(() => null);
+        // lt-cms: the gesture opens the capture form; confirm with Save. The server oracle after Save is the evidence.
+        const form = await wait(() => document.querySelector(J.saveOccurrence), 3000).catch(() => null);
         sel.removeAllRanges();
         if (form && !form.disabled) form.click();
         await new Promise((r) => setTimeout(r, 300));
@@ -164,10 +164,10 @@ export async function installJourneyDriver(batch, requireUi = true) {
       }
       case 'save-occurrence': {
         // lt-cms: confirm the open capture form (after pressing Save sentence…).
-        const b = await wait(() => byText(J.saveOccurrence), 3000).catch(() => null);
+        const b = await wait(() => document.querySelector(J.saveOccurrence), 3000).catch(() => null);
         if (!b) throw diagnostic('DomSelector', 'saveOccurrence', 'missing');
-        b.click(); await wait(() => !byText(J.saveOccurrence), 3000).catch(() => null);
-        return { saved: !byText(J.saveOccurrence) };
+        b.click(); await wait(() => !document.querySelector(J.saveOccurrence), 3000).catch(() => null);
+        return { saved: !document.querySelector(J.saveOccurrence) };
       }
       case 'review-state': {
         await wait(() => document.querySelector('.review-card'), 3000);

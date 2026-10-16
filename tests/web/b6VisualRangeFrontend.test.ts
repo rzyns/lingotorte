@@ -631,7 +631,7 @@ describe('B6 visual source range player UI', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:lifecycle-5');
   });
 
-  it('preserves Save occurrence source context after visual range, loop, and snippet operations', async () => {
+  it('preserves Save source context after visual range, loop, and snippet operations', async () => {
     const responses = [
       new Response(JSON.stringify({ job: { id: 'job-save-context' } }), { status: 201 }),
       new Response(JSON.stringify({ job: { status: 'completed', result: { snippetId: '00000000-0000-4000-8000-000000000001', url: '/api/snippets/00000000-0000-4000-8000-000000000001', mimeType: 'audio/wav' } } }), { status: 200 }),
@@ -674,7 +674,7 @@ describe('B6 visual source range player UI', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-testid="source-range-panel"] audio')).toBeTruthy());
     expect(model.selection).toMatchObject({ cueId: cue.id, charStart: 0, charEnd: 6 });
 
-    buttonByText('Save occurrence').click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(Object.values(model.store.snapshot().savedOccurrences)).toHaveLength(1));
     const occurrence = Object.values(model.store.snapshot().savedOccurrences)[0]!;
     expect(occurrence).toMatchObject({

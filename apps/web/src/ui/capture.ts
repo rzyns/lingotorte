@@ -8,7 +8,7 @@ export const CAPTURE_REQUIRES_APPROVAL_MESSAGE = 'Approve the transcript before 
 /**
  * lt-cms: the single entry point for every collect gesture (drag-select, Save sentence…, timed word,
  * subtitle-overlay word). Opens the Selection form with a fresh meaning/notes draft and focuses Meaning;
- * nothing is persisted until Save occurrence / Enter in Meaning.
+ * nothing is persisted until Save / Enter in Meaning.
  */
 export function openCapture(model: AppModel, selection: NonNullable<Selection>, draft?: { meaning: string; notes: string }): boolean {
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;

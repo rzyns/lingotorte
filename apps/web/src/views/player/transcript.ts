@@ -201,7 +201,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
               t.surface.toLowerCase() === lower ||
               (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
           );
-          // lt-cms: build a capture selection; nothing is persisted until Save occurrence.
+          // lt-cms: build a capture selection; nothing is persisted until Save.
           const anchoredToken = rangeStart === null
             ? token
             : tokens.find((t) => t.charStart === rangeStart && t.surface.toLowerCase() === lower);
@@ -396,7 +396,8 @@ function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
     const detail = document.createElement('div');
     detail.className = 'selection-source-detail';
     // lt-unl: track version stays in the disclosure, off the primary line.
-    appendSourceDisclosure(detail, 'source details', targetTrack ? `${model.currentMedia.originalPath} • track v${targetTrack.trackVersion} • ${targetTrack.transcriptStatus}` : model.currentMedia.originalPath);
+    // lt-dlf.13 (P8): video title instead of the raw path/blob: URL.
+    appendSourceDisclosure(detail, 'source details', targetTrack ? `${mediaLabel(model)} • track v${targetTrack.trackVersion} • ${targetTrack.transcriptStatus}` : mediaLabel(model));
     summary.appendChild(detail);
   }
   return summary;
@@ -494,7 +495,9 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   actions.className = 'form-actions';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn-primary';
-  saveBtn.textContent = 'Save occurrence'; // exact text: tests and browser scripts click it
+  saveBtn.textContent = 'Save';
+  // lt-dlf.13: stable hook for tests and browser scripts (several buttons read 'Save').
+  saveBtn.dataset.action = 'save-occurrence';
   const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
   const canSave = targetTrack?.transcriptStatus === 'approved';
   saveBtn.disabled = !canSave;

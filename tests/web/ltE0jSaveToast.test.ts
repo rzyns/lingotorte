@@ -56,14 +56,14 @@ const button = (label: string) => Array.from(document.querySelectorAll('button')
 const region = () => document.querySelector('.toast-region') as HTMLElement | null;
 const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
-/** Save through the capture form exactly like the learner: Save occurrence button or Enter in Meaning. */
+/** Save through the capture form exactly like the learner: Save button or Enter in Meaning. */
 async function saveViaForm(model: Model, cue: { id: string; text: string }, word: string, opts: { meaning?: string; notes?: string; enter?: boolean } = {}) {
   const selection = select(model, cue, word);
   if (opts.meaning) setPendingMeaning(model, opts.meaning);
   if (opts.notes) setPendingNotes(model, opts.notes);
   rerenderApp(model);
   if (opts.enter) document.getElementById('selection-meaning')!.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  else button('Save occurrence')!.click();
+  else (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!.click();
   await flush();
   return selection;
 }
@@ -118,7 +118,7 @@ describe('lt-e0j save toast', () => {
     expect((document.getElementById('selection-meaning') as HTMLInputElement).value).toBe('house');
     expect(region()!.textContent).toBe('Removed \u201cdom\u201d');
     expect(region()!.querySelector('button')).toBeNull();
-    button('Save occurrence')!.click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!.click();
     await flush();
     const active = Object.values(model.store.snapshot().savedItems);
     expect(active).toHaveLength(1);

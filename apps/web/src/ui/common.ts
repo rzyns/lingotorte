@@ -127,7 +127,7 @@ export function renderUnresolvedSource(mediaPath: string): HTMLElement {
   note.className = 'status-banner warning source-unresolved';
   note.setAttribute('role', 'status');
   note.dataset.testid = 'source-unresolved';
-  appendSourceDisclosure(note, `Source line/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath);
+  appendSourceDisclosure(note, `Source line/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath.startsWith('blob:') ? '' : mediaPath);
   return note;
 }
 
@@ -236,8 +236,9 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
   const visibleParts: string[] = [];
   if (model.currentMedia) {
     const loadedCueEndMs = model.cues.reduce((maxEnd, cue) => Math.max(maxEnd, cue.endMs), model.currentMedia.durationMs);
-    parts.push(`media: ${model.currentMedia.originalPath}`);
-    parts.push(`media ${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
+    // lt-dlf.13 (P8): video title and time range, never the raw path/blob: URL.
+    parts.push(mediaLabel(model));
+    parts.push(`${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
     visibleParts.push(mediaLabel(model));
     visibleParts.push(`${formatCompactTimeMs(0)}–${formatCompactTimeMs(loadedCueEndMs)}`);
   } else {
@@ -245,8 +246,8 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
     visibleParts.push('no media loaded');
   }
   if (activeCue) {
-    parts.push(`cue ${activeCue.cueIndex}`);
-    parts.push(`cue ${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
+    parts.push(`line ${linePosition(model, activeCue)}`);
+    parts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
     visibleParts.push(`line ${linePosition(model, activeCue)}`);
     visibleParts.push(`${formatCompactTimeMs(activeCue.startMs)}–${formatCompactTimeMs(activeCue.endMs)}`);
   } else {

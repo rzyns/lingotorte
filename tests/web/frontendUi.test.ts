@@ -100,7 +100,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     expect(statusTokens).toContain('Transcript ready');
 
     const sourceContext = cockpit?.querySelector('.source-context-row');
-    expect(sourceContext?.textContent).toContain('fixtures/media/synthetic-polish-dialogue.webm');
+    expect(sourceContext?.textContent).toContain('Imported local media'); // lt-dlf.13: title, not raw path
     expect(sourceContext?.textContent).toContain('line 1');
     expect(sourceContext?.textContent).toContain('0:00–0:02');
   });

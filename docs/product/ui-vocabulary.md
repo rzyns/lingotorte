@@ -8,7 +8,7 @@ Introduced by `lt-unl`. Applies to learner-facing labels in `apps/web/src`.
 |---|---|
 | lexeme | word |
 | occurrence (as context) | saved from <video> at <time>; counts read "saved N times" |
-| Save occurrence (button) | unchanged text (scripts click it); aria-label "Save word with the video and time it came from" |
+| Save occurrence (button) | "Save" (lt-dlf.13); scripts use `data-action="save-occurrence"` |
 | cue N | line N |
 | track vN | omitted from the primary line (kept in details) |
 | approved / draft chip | Transcript ready / Transcript draft — approve before saving words (short form in rows and chips: Transcript draft) |

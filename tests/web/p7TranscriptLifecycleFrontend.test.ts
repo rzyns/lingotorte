@@ -141,9 +141,9 @@ describe('P7 transcript lifecycle frontend', () => {
     const approvedSave = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save sentence…') as HTMLButtonElement | null;
     expect(approvedSave?.disabled).toBe(false);
     approvedSave?.click();
-    // lt-cms: Save sentence… opens the capture form; nothing is persisted until Save occurrence.
+    // lt-cms: Save sentence… opens the capture form; nothing is persisted until Save.
     expect(Object.values(model.store.snapshot().savedItems).length).toBe(0);
-    (Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null)?.click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)?.click();
     await waitFor(() => Object.values(model.store.snapshot().savedItems).length === 1);
     expect(Object.values(model.store.snapshot().savedItems)[0]?.displayText).toBe('Corrected provider caption.');
   });
@@ -286,7 +286,7 @@ describe('P7 transcript lifecycle frontend', () => {
     (Array.from(document.querySelectorAll('.timed-word')).find((button) => button.textContent === 'lokalny') as HTMLButtonElement).click();
     expect(model.selection).toMatchObject({ text: 'lokalny', charStart: 7, charEnd: 14 });
 
-    const saveOccurrenceButton = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Save occurrence') as HTMLButtonElement | null;
+    const saveOccurrenceButton = document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null;
     expect(saveOccurrenceButton).toBeTruthy();
     saveOccurrenceButton!.click();
     await waitFor(() => Object.values(model.store.snapshot().savedOccurrences).length === 1);

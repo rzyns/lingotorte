@@ -103,7 +103,7 @@ describe('lt-dlf.10 mobile capture sheet', () => {
       expect(focusOpts).toContainEqual({ id: 'selection-meaning', opts: { preventScroll: true } });
       // Tab order reaches Cancel and Save inside the (non-modal) sheet.
       const buttons = Array.from(panel.querySelectorAll('button')).map((b) => b.textContent);
-      expect(buttons).toEqual(expect.arrayContaining(['Cancel', 'Save occurrence']));
+      expect(buttons).toEqual(expect.arrayContaining(['Cancel', 'Save']));
     });
   }
 

@@ -557,7 +557,7 @@ export function renderCueSourceContext(model: AppModel, cue: Cue): HTMLElement {
   context.className = 'cue-context';
   const mediaPath = model.currentMedia?.originalPath ?? 'no media';
   const compact = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${mediaLabel(model, mediaPath)}`;
-  const full = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${mediaPath}`;
+  const full = `${formatTimeMs(cue.startMs)}–${formatTimeMs(cue.endMs)} • ${mediaPath.startsWith('blob:') ? mediaLabel(model, mediaPath) : mediaPath}`;
   appendSourceDisclosure(context, compact, full);
   return context;
 }

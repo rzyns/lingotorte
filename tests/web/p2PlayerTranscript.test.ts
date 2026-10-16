@@ -184,7 +184,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     expect(target?.querySelectorAll('.subtitle-word').length).toBeLessThanOrEqual(12);
   });
 
-  it('clicking an overlay word opens the capture form; Save occurrence saves it as a lexeme in My Vocab', async () => {
+  it('clicking an overlay word opens the capture form; Save saves it as a lexeme in My Vocab', async () => {
     const words = ['kliknij', 'teraz', 'dinozaur', 'żeby', 'dodać', 'słowo'];
     const { model } = installTimedSingleCueModel(words, words.indexOf('dinozaur'));
 
@@ -197,7 +197,7 @@ describe('P2 player dual-subtitle and transcript projection', () => {
     wordButton?.click();
     expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(0);
     expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'dinozaur' });
-    (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement).click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(1));
 
     const savedItems = Object.values(model.store.snapshot().savedItems);
