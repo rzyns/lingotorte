@@ -1,0 +1,20 @@
+{"word": "dom", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["house (synthetic)"], "tags": ["inanimate"]}, {"glosses": ["home (synthetic)"]}]}
+{"word": "dom", "lang": "Czech", "lang_code": "cs", "pos": "noun", "senses": [{"glosses": ["cathedral (synthetic czech)"]}]}
+{"title": "Dom", "redirect": "dom"}
+{"word": "domu", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["genitive singular of dom (synthetic)"], "form_of": [{"word": "dom"}], "tags": ["form-of", "genitive"]}]}
+{"word": "kot", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["feline (synthetic)"]}]}
+{"word": "kot", "lang": "Polish", "lang_code": "pl", "pos": "verb", "senses": [{"glosses": ["to purr loudly (synthetic)"]}]}
+{"word": "Żółw", "lang": "Polish", "lang_code": "pl", "pos": "name", "senses": [{"glosses": ["a tortoise-shaped constellation (synthetic)"]}]}
+{"word": "żółw", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["slow animal (synthetic)"]}]}
+{"word": "iść", "lang": "Polish", "lang_code": "pl", "pos": "verb", "senses": [{"glosses": ["to move (synthetic)", "to walk on foot (synthetic)"]}]}
+{"word": "pusty", "lang": "Polish", "lang_code": "pl", "pos": "adj"}
+{"word": "nic", "lang": "Polish", "lang_code": "pl", "pos": "pron", "senses": [{"tags": ["no-gloss"]}, {"glosses": []}]}
+{"word": "bardzo", "lang": "Polish", "lang_code": "pl", "pos": "adv", "senses": [{"glosses": ["very much (synthetic)"]}]}
+{"word": "zepsuty", "lang_code": "pl", "senses": [
+{"word": "w", "lang": "Polish", "lang_code": "pl", "pos": "prep", "senses": [{"glosses": ["inside of (synthetic)"]}]}
+{"word": "dziwny", "lang": "Polish", "lang_code": "pl", "pos": "weird-pos", "senses": [{"glosses": ["strange (synthetic)"]}]}
+{"word": "house", "lang": "English", "lang_code": "en", "pos": "noun", "senses": [{"glosses": ["building (synthetic english)"]}]}
+{"word": "kotem", "lang": "Polish", "lang_code": "pl", "pos": "noun", "senses": [{"glosses": ["instrumental singular of kot (synthetic)"], "form_of": [{"word": "kot"}]}]}
+{"word": "i", "lang": "Polish", "lang_code": "pl", "pos": "conj", "senses": [{"glosses": ["and (synthetic)"]}]}
+{"word":"ach","lang":"Polish","lang_code":"pl","pos":"intj","senses":[{"glosses":["oh (synthetic)"]}]}
+{"word": "Haus", "lang": "German", "lang_code": "de", "pos": "noun", "senses": [{"glosses": ["building (synthetic german)"]}]}

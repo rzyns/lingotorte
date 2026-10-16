@@ -21,6 +21,16 @@ export function mutablePathsFromEnv(env: NodeJS.ProcessEnv, platform: NativePlat
   };
 }
 
+/**
+ * lt-foe.3.2: derived gloss database (scripts/import-glosses.ts). Read-only input, so it is
+ * not part of MutablePaths; defaults beside the data directory when not configured.
+ */
+export function glossDbPathFromEnv(env: NodeJS.ProcessEnv, platform: NativePlatform, home: string): string {
+  if (env.LINGOTORTE_GLOSS_DB_PATH !== undefined) return validateNativePath(env.LINGOTORTE_GLOSS_DB_PATH, platform, 'output-file');
+  const paths = platform === 'win32' ? win32 : posix;
+  return paths.join(mutablePathsFromEnv(env, platform, home).dataDir!, 'glosses-pl.sqlite');
+}
+
 /** Worktree gitdir metadata locates the associated primary checkout without invoking Git. */
 export function repositoryRoots(checkout = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')): string[] {
   const roots = [checkout];

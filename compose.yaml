@@ -18,12 +18,15 @@ services:
       LINGOTORTE_UI_ORIGINS: ${LINGOTORTE_PUBLIC_ORIGINS:?Set exact browser-visible HTTP origins}
       LINGOTORTE_HEALTH_AUTHORITY: 127.0.0.1:5174
       LINGOTORTE_ALLOW_ONLINE_PROVIDERS: "false"
+      LINGOTORTE_GLOSS_DB_PATH: /dictionary/glosses-pl.sqlite
     tmpfs:
       - /run/lingotorte-pairing:rw,noexec,nosuid,nodev,size=64k,mode=0700,uid=1000,gid=1000
     volumes:
       - state:/state
       - scratch:/scratch
       - models:/models
+      # lt-foe.3.2: derived gloss SQLite (scripts/import-glosses.ts); read-only for the app.
+      - dictionary:/dictionary:ro
       - type: bind
         source: ${LINGOTORTE_MEDIA_DIR:?Set LINGOTORTE_MEDIA_DIR to an explicit absolute owned-media directory}
         target: /media
@@ -63,6 +66,22 @@ services:
     init: true
     command: ["node", "node_modules/vitest/vitest.mjs", "run"]
     # No host source, media, state or credentials are mounted into verification.
+  dictionary-import:
+    # lt-foe.3.2: one-time operator import of the Wiktextract dump into the dictionary
+    # volume (docs/dev/docker-runbook.md). The dump directory is bound read-only; no network.
+    <<: *image
+    profiles: [tools]
+    init: true
+    network_mode: none
+    entrypoint: ["node", "scripts/import-glosses.ts"]
+    volumes:
+      - dictionary:/dictionary
+      - type: bind
+        source: ${LINGOTORTE_DICT_DUMP_DIR:-./tests/fixtures/gloss}
+        target: /import
+        read_only: true
+        bind:
+          create_host_path: false
   e2e:
     # lt-42o: Playwright smoke runner; use `npm run e2e` (scripts/run-e2e.mjs), which enrolls
     # http://web:4173 for its own disposable project only. Internal network only: no egress.
@@ -86,6 +105,7 @@ volumes:
   state:
   scratch:
   models:
+  dictionary:
 networks:
   private:
     internal: true

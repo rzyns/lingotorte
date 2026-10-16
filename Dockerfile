@@ -14,8 +14,9 @@ COPY tests/ tests/
 COPY tsconfig.json vite.config.ts vitest.config.ts ./
 # nativeConfig's checkout exclusion expects a .git directory. This empty
 # image-only sentinel protects /app without importing any host Git metadata.
-RUN mkdir -p /app/.git /state /scratch /models /home/node/.cache && chown -R node:node /app /state /scratch /models /home/node/.cache
+RUN mkdir -p /app/.git /state /scratch /models /dictionary /home/node/.cache && chown -R node:node /app /state /scratch /models /dictionary /home/node/.cache
 ENV LINGOTORTE_DATA_DIR=/state LINGOTORTE_SCRATCH_DIR=/scratch LINGOTORTE_MODEL_CACHE_DIR=/models \
+    LINGOTORTE_GLOSS_DB_PATH=/dictionary/glosses-pl.sqlite \
     LINGOTORTE_PYTHON_PATH=python3 LINGOTORTE_ALLOW_ONLINE_PROVIDERS=false
 USER node
 CMD ["node", "apps/local-service/src/server.ts"]

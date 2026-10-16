@@ -70,6 +70,27 @@ The default stack runs no online providers. `compose.yaml` hard-codes `LINGOTORT
 
 Provider keys such as `ELEVENLABS_API_KEY` must never live inside the checkout. Keep them in a file outside it, e.g. `%LOCALAPPDATA%\lingotorte\provider.env` or `~/.config/lingotorte/provider.env`, readable only by you. `npm run scan:privacy` fails if any `.env` or `.env.*` file at the repository root has a non-empty `*_KEY`, `*_APIKEY`, `*_TOKEN`, `*_SECRET` or `*_PASSWORD` value. It names the variable and never the value. `.env.example` lists the variables with empty placeholders. This repository provides no provider-enabled Compose variant. Running a provider in Docker needs the consent required by DECISIONS.md §6 and its own reviewed change: a key via `--env-file <outside-path>` or a Docker secret, plus an egress-capable network for the API.
 
+## Dictionary import (one-time)
+
+`lt-foe.3.2`, DECISIONS §16a. The API reads the derived Polish gloss database read-only from the
+`dictionary` volume at `LINGOTORTE_GLOSS_DB_PATH` (default `/dictionary/glosses-pl.sqlite`). Build it once
+from the operator-downloaded kaikki.org raw dump with the tools-profile `dictionary-import` service, which
+mounts the dictionary volume writable, binds the dump directory read-only at `/import`, and has no network:
+
+```sh
+export LINGOTORTE_MEDIA_DIR=... LINGOTORTE_PUBLIC_ORIGINS=...   # same values as for `up`
+LINGOTORTE_DICT_DUMP_DIR=<absolute dump dir> docker compose -p <p> --profile tools run --rm --no-deps \
+  dictionary-import --input /import/raw-wiktextract-data.jsonl.gz \
+  --output /dictionary/glosses-pl.sqlite --dump-date 2026-10-03
+```
+
+Use the same `-p <p>` as the running stack so the `<p>_dictionary` volume is shared. The command prints a
+JSON receipt (counts, input sha256, duration; no gloss text) and refuses to overwrite an existing database
+unless `--replace` is added; restart `api` afterwards. Without `LINGOTORTE_DICT_DUMP_DIR` the service binds
+the synthetic fixture directory `tests/fixtures/gloss` (try `--input /import/synthetic-wiktextract.jsonl`).
+Delete the dump after a successful import. The derived SQLite never goes into Git, and the attribution
+recorded in its `gloss_source` row must be shown wherever meanings from it appear.
+
 ## State, stop and reset
 
 State, scratch and model cache use separate Linux-native named volumes at `/state`, `/scratch`, `/models`. They do not overlap media or source. Nothing imports an old learner database. Keep a project name stable to reopen the same volumes; change it to create an isolated synthetic instance.
