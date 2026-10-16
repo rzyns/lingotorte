@@ -116,7 +116,18 @@ function isRecord(value: unknown): value is SnapshotCacheRecord {
     && typeof v.localService === 'object' && v.localService !== null;
 }
 
+/**
+ * lt-ddy.1: set once the learner clears the cache from Settings. Every later
+ * write (debounced timer, pagehide/visibility flush) becomes a no-op for the
+ * rest of this page load, so the reload that follows cannot write it back.
+ */
+let writesSuspended = false;
+export function snapshotCacheWritesSuspended(): boolean { return writesSuspended; }
+/** Test helper. */
+export function resetSnapshotCacheSuspensionForTests(): void { writesSuspended = false; }
+
 export async function writeSnapshotCache(model: AppModel, backend?: SnapshotCacheBackend | null): Promise<void> {
+  if (writesSuspended) return;
   const target = backendOrDefault(backend);
   if (!target) return;
   try { await target.put(SNAPSHOT_CACHE_KEY, buildSnapshotCacheRecord(model)); } catch (error) { warnOnce(error); }
@@ -153,11 +164,14 @@ export async function readSnapshotCache(backend?: SnapshotCacheBackend | null, t
   return result.status === 'hit' ? result.record : null;
 }
 
-/** Remove the cached record (for the deferred Settings "Clear this browser's cached state" button). */
-export async function clearSnapshotCache(backend?: SnapshotCacheBackend | null): Promise<void> {
+/** lt-ddy.1: stop all cache writes for the rest of this page load (used before a clear + reload). */
+export function suspendSnapshotCacheWrites(): void { writesSuspended = true; }
+
+/** Remove the cached record. Resolves false when removal could not be confirmed (no backend or backend error). */
+export async function clearSnapshotCache(backend?: SnapshotCacheBackend | null): Promise<boolean> {
   const target = backendOrDefault(backend);
-  if (!target) return;
-  try { await target.delete(SNAPSHOT_CACHE_KEY); } catch (error) { warnOnce(error); }
+  if (!target) return false;
+  try { await target.delete(SNAPSHOT_CACHE_KEY); return true; } catch (error) { warnOnce(error); return false; }
 }
 
 /** Project a cached record into a freshly created model (before first render). */

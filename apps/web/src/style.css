@@ -1960,3 +1960,24 @@ h2 {
   background: transparent;
   color: var(--text-muted);
 }
+
+/* lt-ddy.1 clear cache */
+.clear-cache-panel {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+.clear-cache-panel .btn-danger-secondary {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.clear-cache-panel .btn-danger {
+  background: var(--danger);
+  color: #1a1a1a;
+  border: 1px solid var(--danger);
+}
+.clear-cache-panel .clear-cache-warning {
+  color: var(--danger);
+  font-weight: 600;
+}
