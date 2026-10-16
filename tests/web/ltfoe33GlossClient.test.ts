@@ -7,11 +7,11 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const source = { id: 'kaikki-enwiktionary-pl-2026-10-03', name: 'Wiktionary', licence: 'CC BY-SA 4.0 and GFDL', url: 'https://kaikki.org/', attribution: 'Word meanings from English Wiktionary', dumpDate: '2026-10-03' };
 const good = { status: 'available', source, results: [
   { queryIndex: 0, found: true, via: 'form-of', lemma: 'dom', upos: null, formOf: 'domu', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: ['inanimate'] }],
-    otherReadings: [{ lemma: 'cześć', upos: 'INTJ', via: 'lemma', senses: [{ gloss: 'hi', pos: 'intj', upos: 'INTJ', tags: [] }] }] },
+    otherReadings: [{ lemma: 'cześć', upos: 'INTJ', hop: 'lemma', senses: [{ gloss: 'hi', pos: 'intj', upos: 'INTJ', tags: [] }] }] },
   { queryIndex: 1, found: false, via: null, lemma: 'xq', upos: 'X', senses: [], otherReadings: [] }] };
 const altViaFormOf = { status: 'available', source, results: [
-  { queryIndex: 0, found: true, via: 'alternative', lemma: 'dom', upos: 'NOUN', formOf: 'domu', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: [] }],
-    otherReadings: [{ lemma: 'dom', upos: 'VERB', via: 'form-of', formOf: 'domu', senses: [{ gloss: 'x', pos: 'verb', upos: 'VERB', tags: [] }] }] }] };
+  { queryIndex: 0, found: true, via: 'alternative', hop: 'form-of', lemma: 'dom', upos: 'NOUN', formOf: 'domu', senses: [{ gloss: 'house', pos: 'noun', upos: 'NOUN', tags: [] }],
+    otherReadings: [{ lemma: 'dom', upos: 'VERB', hop: 'form-of', formOf: 'domu', senses: [{ gloss: 'x', pos: 'verb', upos: 'VERB', tags: [] }] }] }] };
 
 describe('lt-foe.3.3 gloss client', () => {
   it('posts a bounded body through the paired transport and parses available results', async () => {
@@ -58,7 +58,7 @@ describe('lt-foe.3.3 gloss client', () => {
     expect(bad(v => { v.results[0].found = 'yes'; })).toEqual(invalid);
     expect(bad(v => { delete v.results[0].otherReadings; })).toEqual(invalid);
     expect(bad(v => { v.results[0].otherReadings = Array(4).fill(v.results[0].otherReadings[0]); })).toEqual(invalid);
-    expect(bad(v => { v.results[0].otherReadings[0].via = 'alternative'; })).toEqual(invalid);
+    expect(bad(v => { v.results[0].otherReadings[0].hop = 'alternative'; })).toEqual(invalid);
     expect(bad(v => { v.results[0].otherReadings[0].senses = []; })).toEqual(invalid);
     expect(bad(v => { v.results[0].otherReadings[0].formOf = 'x'; })).toEqual(invalid); // formOf only with via 'form-of'
     expect(bad(v => { delete v.results[0].formOf; })).toEqual(invalid); // form-of requires formOf
@@ -79,13 +79,45 @@ describe('lt-foe.3.3 gloss client', () => {
   it('accepts via form-of-text (result and other reading) and rejects formOf with it', () => {
     const sense = { gloss: 'Form of synthetic greeting; hi (synthetic)', pos: 'intj', upos: 'INTJ', tags: ['form-of'] };
     const ok = { status: 'available', source, results: [{ queryIndex: 0, found: true, via: 'form-of-text', lemma: 'witajka', upos: 'INTJ', senses: [sense],
-      otherReadings: [{ lemma: 'witajka', upos: 'INTJ', via: 'form-of-text', senses: [sense] }] }] };
+      otherReadings: [{ lemma: 'witajka', upos: 'NOUN', hop: 'form-of-text', senses: [sense] }] }] };
     expect(parseGlossResponse(ok, 1)).toEqual(ok);
     const invalid = { status: 'error', code: 'invalid-response' };
     const a: any = structuredClone(ok); a.results[0].formOf = 'x';
     expect(parseGlossResponse(a, 1)).toEqual(invalid);
     const b: any = structuredClone(ok); b.results[0].otherReadings[0].formOf = 'x';
     expect(parseGlossResponse(b, 1)).toEqual(invalid);
+  });
+
+  it('requires hop exactly with via alternative and ties formOf to hop form-of', () => {
+    const invalid = { status: 'error', code: 'invalid-response' };
+    const alt = (patch: (v: any) => void) => { const v: any = structuredClone(altViaFormOf); patch(v); return parseGlossResponse(v, 1); };
+    expect(alt(v => { delete v.results[0].hop; })).toEqual(invalid); // alternative requires hop
+    expect(alt(v => { v.results[0].hop = 'alternative'; })).toEqual(invalid);
+    expect(alt(v => { v.results[0].hop = 'lemma'; })).toEqual(invalid); // formOf only with hop form-of
+    expect(alt(v => { v.results[0].hop = 'form-of-text'; })).toEqual(invalid);
+    expect(alt(v => { delete v.results[0].formOf; })).toEqual(invalid); // hop form-of requires formOf
+    const text: any = structuredClone(altViaFormOf); text.results[0].hop = 'form-of-text'; delete text.results[0].formOf;
+    expect(parseGlossResponse(text, 1)).toEqual(text);
+    expect(alt(v => { delete v.results[0].otherReadings[0].hop; })).toEqual(invalid);
+    expect(alt(v => { v.results[0].otherReadings[0].via = 'form-of'; })).toEqual(invalid); // otherReadings carry hop, not via
+    const g = (patch: (v: any) => void) => { const v: any = structuredClone(good); patch(v); return parseGlossResponse(v, 2); };
+    expect(g(v => { v.results[0].hop = 'form-of'; })).toEqual(invalid); // hop disallowed unless via alternative
+    expect(g(v => { v.results[1].hop = 'lemma'; })).toEqual(invalid);
+  });
+
+  it('rejects duplicate other readings and readings equal to the chosen result', () => {
+    const invalid = { status: 'error', code: 'invalid-response' };
+    const dup: any = structuredClone(good); dup.results[0].otherReadings.push(structuredClone(dup.results[0].otherReadings[0]));
+    expect(parseGlossResponse(dup, 2)).toEqual(invalid);
+    const dupHop: any = structuredClone(good);
+    dupHop.results[0].otherReadings.push({ ...structuredClone(dupHop.results[0].otherReadings[0]), hop: 'form-of-text' });
+    expect(parseGlossResponse(dupHop, 2)).toEqual(invalid);
+    const same: any = structuredClone(altViaFormOf); same.results[0].otherReadings[0].upos = 'NOUN';
+    expect(parseGlossResponse(same, 1)).toEqual(invalid);
+    const nullUpos: any = structuredClone(good); nullUpos.results[0].otherReadings[0] = { lemma: 'dom', upos: null, hop: 'lemma', senses: [{ gloss: 'h', pos: 'noun', upos: null, tags: [] }] };
+    expect(parseGlossResponse(nullUpos, 2)).toEqual(invalid); // equals chosen (dom, null)
+    const distinct: any = structuredClone(good); distinct.results[0].otherReadings.push({ lemma: 'cześć', upos: 'NOUN', hop: 'lemma', senses: [{ gloss: 'esteem', pos: 'noun', upos: 'NOUN', tags: [] }] });
+    expect(parseGlossResponse(distinct, 2)).toEqual(distinct);
   });
 
   it('passes maxSenses through and validates it locally', async () => {

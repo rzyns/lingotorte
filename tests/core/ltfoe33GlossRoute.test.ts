@@ -112,10 +112,10 @@ describe('lt-foe.3.3 local gloss route', () => {
     expect(czesc).toMatchObject({ found: true, via: 'lemma', lemma: 'cześć', upos: 'NOUN' });
     expect(czesc.senses.map((s: Json) => s.gloss)).toEqual(['esteem (synthetic noun)', 'regard (synthetic noun)']);
     // Same (lemma, upos) as the chosen result is dropped; duplicates collapse; senses are filtered to the reading's UPOS.
-    expect(czesc.otherReadings).toEqual([{ lemma: 'cześć', upos: 'INTJ', via: 'lemma', senses: [
+    expect(czesc.otherReadings).toEqual([{ lemma: 'cześć', upos: 'INTJ', hop: 'lemma', senses: [
       { gloss: 'hiya (synthetic greeting)', pos: 'intj', upos: 'INTJ', tags: [] }, { gloss: 'byebye (synthetic farewell)', pos: 'intj', upos: 'INTJ', tags: [] }] }]);
     // Request order kept; not-found alternatives skipped; a form-of alternative carries formOf = the queried form.
-    expect(kot.otherReadings.map((r: Json) => [r.lemma, r.upos, r.via, r.formOf])).toEqual([['kot', 'VERB', 'lemma', undefined], ['dom', 'NOUN', 'form-of', 'domu']]);
+    expect(kot.otherReadings.map((r: Json) => [r.lemma, r.upos, r.hop, r.formOf])).toEqual([['kot', 'VERB', 'lemma', undefined], ['dom', 'NOUN', 'form-of', 'domu']]);
     expect(kot.otherReadings[1].senses).toHaveLength(2);
   });
 
@@ -128,25 +128,38 @@ describe('lt-foe.3.3 local gloss route', () => {
     ] })).json() as Json;
     const [noun, foa, intj] = body.results;
     expect(noun).toMatchObject({ found: true, via: 'lemma', lemma: 'witajka', upos: 'NOUN' });
-    expect(noun.otherReadings).toEqual([{ lemma: 'witajka', upos: 'INTJ', via: 'form-of-text',
+    expect(noun.otherReadings).toEqual([{ lemma: 'witajka', upos: 'INTJ', hop: 'form-of-text',
       senses: [{ gloss: 'Form of synthetic greeting; hi (synthetic)', pos: 'intj', upos: 'INTJ', tags: ['form-of'] }] }]);
     expect(foa).toEqual({ queryIndex: 1, found: true, via: 'form-of-text', lemma: 'synthfoa', upos: 'NOUN',
       senses: [{ gloss: 'genitive plural of synthfoo (synthetic)', pos: 'noun', upos: 'NOUN', tags: ['form-of', 'genitive', 'plural'] }], otherReadings: [] });
     expect(intj).toMatchObject({ found: true, via: 'form-of-text', lemma: 'witajka', upos: 'INTJ' });
     expect(intj).not.toHaveProperty('formOf');
+    expect(noun).not.toHaveProperty('hop');
+  });
+
+  it('labels the chosen alternative with its own store hop (lemma, form-of, form-of-text)', async () => {
+    const { service } = await start({ gloss: { dbPath: glossDb() } });
+    const body = await (await post(service.origin, { language: 'pl', queries: [
+      { lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'mama', upos: 'NOUN' }] },
+      { lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'witajka', upos: 'INTJ' }] },
+    ] })).json() as Json;
+    expect(body.results[0]).toMatchObject({ via: 'alternative', hop: 'lemma', lemma: 'mama' });
+    expect(body.results[0]).not.toHaveProperty('formOf');
+    expect(body.results[1]).toMatchObject({ via: 'alternative', hop: 'form-of-text', lemma: 'witajka', upos: 'INTJ' });
+    expect(body.results[1]).not.toHaveProperty('formOf');
   });
 
   it('resolves an alternative through a form-of hop: lemma = target, formOf = queried form', async () => {
     const { service } = await start({ gloss: { dbPath: glossDb() } });
     const body = await (await post(service.origin, { language: 'pl', queries: [{ lemma: 'mieć', upos: 'VERB', alternatives: [{ lemma: 'domu', upos: 'NOUN' }] }] })).json() as Json;
-    expect(body.results[0]).toMatchObject({ found: true, via: 'alternative', lemma: 'dom', formOf: 'domu', upos: 'NOUN', otherReadings: [] });
+    expect(body.results[0]).toMatchObject({ found: true, via: 'alternative', hop: 'form-of', lemma: 'dom', formOf: 'domu', upos: 'NOUN', otherReadings: [] });
   });
 
   it('keeps a primary found with mismatched POS over an alternative without upos (alternative becomes another reading)', async () => {
     const { service } = await start({ gloss: { dbPath: glossDb() } });
     const body = await (await post(service.origin, { language: 'pl', queries: [{ lemma: 'stać', upos: 'VERB', alternatives: [{ lemma: 'mama' }] }] })).json() as Json;
     expect(body.results[0]).toMatchObject({ found: true, via: 'lemma', lemma: 'stać', upos: 'NOUN' });
-    expect(body.results[0].otherReadings.map((r: Json) => [r.lemma, r.upos, r.via])).toEqual([['mama', 'NOUN', 'lemma']]);
+    expect(body.results[0].otherReadings.map((r: Json) => [r.lemma, r.upos, r.hop])).toEqual([['mama', 'NOUN', 'lemma']]);
   });
 
   it('opens a read-only database file', async (ctx) => {
@@ -156,6 +169,7 @@ describe('lt-foe.3.3 local gloss route', () => {
     try { writeFileSync(dbPath, '', { flag: 'a' }); } catch { writable = false; }
     if (writable) { chmodSync(dbPath, 0o644); ctx.skip(); return; }
     const gloss = makeGlossService({ dbPath });
+    cleanups.push(async () => gloss.close());
     const res = await gloss.lookup(validateGlossRequest({ language: 'pl', queries: [{ lemma: 'domu' }] }));
     expect(res.status).toBe('available');
     gloss.close();
@@ -250,6 +264,7 @@ describe('lt-foe.3.3 local gloss route', () => {
     let now = 1_000_000;
     const openStore = vi.fn(openGlossStore);
     const gloss = makeGlossService({ dbPath, openStore, clock: () => now });
+    cleanups.push(async () => gloss.close());
     const req = validateGlossRequest({ language: 'pl', queries: [{ lemma: 'dom' }] });
     expect(await gloss.lookup(req)).toEqual({ status: 'unavailable', reason: 'not-installed' });
     copyFileSync(glossDb(), dbPath);
@@ -266,7 +281,9 @@ describe('lt-foe.3.3 local gloss route', () => {
   });
 
   it('maps lookup throws to lookup-failed with no input or path echo', async () => {
-    const store = { lookup: () => { throw new Error('boom /secret/glosses-pl.sqlite ZZinputZZ'); }, source: () => openGlossStore(glossDb()).source(), close: () => {} };
+    const real = openGlossStore(glossDb());
+    cleanups.push(async () => real.close());
+    const store = { lookup: () => { throw new Error('boom /secret/glosses-pl.sqlite ZZinputZZ'); }, source: () => real.source(), close: () => {} };
     const { service } = await start({ gloss: { dbPath: '/unused', openStore: () => store } });
     const res = await post(service.origin, { language: 'pl', queries: [{ lemma: 'ZZinputZZ' }] });
     const text = await res.text();
@@ -284,6 +301,7 @@ describe('lt-foe.3.3 local gloss route', () => {
     let now = 5_000_000;
     let fail = false;
     const real = openGlossStore(glossDb());
+    cleanups.push(async () => real.close());
     const close = vi.fn();
     const store = { lookup: real.lookup, source: () => { if (fail) throw new Error('/secret'); return real.source(); }, close };
     const openStore = vi.fn(() => store);
@@ -306,7 +324,7 @@ describe('lt-foe.3.3 local gloss route', () => {
     expect(gloss.capability()).toEqual({ languages: ['pl'], state: 'invalid-dictionary' });
     expect(await gloss.lookup(req)).toEqual({ status: 'unavailable', reason: 'invalid-dictionary' });
     expect(close).toHaveBeenCalledTimes(2);
-    real.close();
+    gloss.close();
   });
 
   it('exposes language.gloss in /api/status next to morphology, without paths', async () => {
@@ -322,6 +340,7 @@ describe('lt-foe.3.3 local gloss route', () => {
 
   it('makes no network calls while opening and looking up', async () => {
     const gloss = makeGlossService({ dbPath: glossDb() });
+    cleanups.push(async () => gloss.close());
     const { value, networkAttempts } = await withNoNetwork(() => gloss.lookup(validateGlossRequest({ language: 'pl', queries: [{ lemma: 'domu' }] })));
     expect(value.status).toBe('available');
     expect(networkAttempts).toEqual([]);

@@ -79,11 +79,11 @@ export function openGlossStore(path: string): GlossStore {
     ORDER BY CASE WHEN upos IS NOT NULL AND upos = ? THEN 0 ELSE 1 END, entry_idx, sense_idx LIMIT ?`);
   const formStmt = db.prepare(`SELECT lemma, pos, upos, gloss, tags_json, form_of FROM gloss_entry
     WHERE lemma_key = ? AND kind = 'form-of' AND form_of IS NOT NULL
-    ORDER BY CASE WHEN upos IS NOT NULL AND upos = ? THEN 0 ELSE 1 END, entry_idx, sense_idx`);
+    ORDER BY CASE WHEN upos IS NOT NULL AND upos = ? THEN 0 ELSE 1 END, entry_idx, sense_idx LIMIT 32`);
   const hasGlossStmt = db.prepare(`SELECT 1 AS x FROM gloss_entry WHERE lemma_key = ? AND kind = 'gloss' LIMIT 1`);
   const toSense = (row: SenseRow): GlossSense => ({ lemma: row.lemma, pos: row.pos, upos: row.upos, gloss: row.gloss, tags: parseTags(row.tags_json) });
   const senses = (key: string, upos: string, limit: number) => (glossStmt.all(key, upos, limit) as SenseRow[]).map(toSense);
-  const resolvable = (target: string) => hasGlossStmt.get(glossLemmaKey(target)) !== undefined;
+  const resolvableUncached = (target: string) => hasGlossStmt.get(glossLemmaKey(target)) !== undefined;
   return {
     /**
      * Per lemma (DB format_version 1, no re-import needed):
@@ -92,14 +92,23 @@ export function openGlossStore(path: string): GlossStore {
      * (c) else the lemma's unresolved form-of rows (targets without real glosses) as senses -> via 'form-of-text'.
      * Mixed UPOS: when `upos` is given and neither a real gloss row nor a resolvable form-of row has that UPOS,
      * but an unresolved form-of row does, (c) is returned instead of (a)/(b) (e.g. cześć INTJ vs its NOUN glosses).
-     * maxSenses bounds every branch.
+     * maxSenses bounds every branch; at most 32 form-of rows are considered per lemma, and only when (a) is
+     * empty or lacks the requested UPOS.
      */
     lookup(lemmas, options = {}) {
       const max = Math.max(1, Math.floor(options.maxSenses ?? 3));
+      const memo = new Map<string, boolean>(); // resolvable(target), per lookup call
+      const resolvable = (target: string) => {
+        let v = memo.get(target);
+        if (v === undefined) { v = resolvableUncached(target); memo.set(target, v); }
+        return v;
+      };
       return lemmas.map(({ lemma, upos }): GlossLookupResult => {
         const key = glossLemmaKey(lemma);
         const wanted = upos ?? '';
         const direct = senses(key, wanted, max);
+        // Form-of rows matter only when direct glosses are empty or lack the requested UPOS (bounded: LIMIT 32).
+        if (direct.length > 0 && (upos === undefined || direct.some((s) => s.upos === upos))) return { lemma, found: true, via: 'lemma', senses: direct };
         const forms = formStmt.all(key, wanted) as (SenseRow & { form_of: string })[];
         const unresolved = forms.filter((r) => !resolvable(r.form_of));
         const text = (): GlossLookupResult => ({ lemma, found: true, via: 'form-of-text', senses: unresolved.slice(0, max).map(toSense) });

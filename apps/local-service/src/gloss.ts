@@ -20,6 +20,8 @@ export type GlossRouteResult = Readonly<{
   queryIndex: number;
   found: boolean;
   via: 'lemma' | 'form-of' | 'form-of-text' | 'alternative' | null;
+  /** Present iff via is 'alternative': how the chosen alternative's own lookup resolved. */
+  hop?: GlossHop;
   lemma: string;
   upos: string | null;
   /** The queried form when the glosses came through a form-of hop (lemma is then the hop target). */
@@ -28,7 +30,10 @@ export type GlossRouteResult = Readonly<{
   /** Other found readings among the query's alternatives (request order, deduped by (lemma, upos)). */
   otherReadings: readonly GlossOtherReading[];
 }>;
-export type GlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of' | 'form-of-text'; formOf?: string; senses: readonly GlossRouteSense[] }>;
+/** How a store lookup resolved: real glosses, one form-of hop (formOf set), or unresolved form-of rows' own text. */
+export type GlossHop = 'lemma' | 'form-of' | 'form-of-text';
+/** Other readings are always alternatives, so they carry only `hop` (no `via`). */
+export type GlossOtherReading = Readonly<{ lemma: string; upos: string | null; hop: GlossHop; formOf?: string; senses: readonly GlossRouteSense[] }>;
 export type GlossRouteSource = Readonly<{ id: string; name: string; licence: string; url: string; attribution: string; dumpDate: string }>;
 export type GlossResponse =
   | Readonly<{ status: 'available'; source: GlossRouteSource; results: readonly GlossRouteResult[] }>
@@ -118,6 +123,7 @@ const uposMatches = (result: GlossLookupResult, upos: string | undefined) => upo
  *    upos also qualifies.
  * 4. Otherwise return the primary as-is (found with mismatched POS, or found:false).
  * 'form-of-text' (store branch c: unresolved form-of rows' own gloss text) passes through as the via, never with formOf.
+ * hop: with via 'alternative' (and on every other reading) the alternative's own store via; formOf iff hop 'form-of'.
  * otherReadings: every found alternative whose (lemma, upos) differs from the chosen result's, in request
  * order, deduped, at most GLOSS_MAX_ALTERNATIVES.
  */
@@ -133,6 +139,7 @@ function resolve(store: GlossStore, q: Query, maxSenses: number, queryIndex: num
       queryIndex,
       found: r.found,
       via: r.found ? via : null,
+      ...(r.found && via === 'alternative' ? { hop: r.via as GlossHop } : {}),
       lemma: target ?? queried,
       upos: (r.found ? r.senses[0]?.upos : upos) ?? null,
       ...(target ? { formOf: queried } : {}),
@@ -158,7 +165,7 @@ function resolve(store: GlossStore, q: Query, maxSenses: number, queryIndex: num
     const key = JSON.stringify([lemma, upos]);
     if (seen.has(key)) continue;
     seen.add(key);
-    otherReadings.push({ lemma, upos, via: target ? 'form-of' : r.via === 'form-of-text' ? 'form-of-text' : 'lemma', ...(target ? { formOf: alt.lemma } : {}), senses: own.slice(0, maxSenses).map(senseOut) });
+    otherReadings.push({ lemma, upos, hop: r.via as GlossHop, ...(target ? { formOf: alt.lemma } : {}), senses: own.slice(0, maxSenses).map(senseOut) });
   }
   return { ...chosen, otherReadings };
 }

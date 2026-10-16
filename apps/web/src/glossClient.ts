@@ -12,10 +12,13 @@ export type ClientGlossQuery = Readonly<{ lemma: string; upos?: string; alternat
 export type ClientGlossSense = Readonly<{ gloss: string; pos: string; upos: string | null; tags: readonly string[] }>;
 export type ClientGlossResult = Readonly<{
   queryIndex: number; found: boolean; via: 'lemma' | 'form-of' | 'form-of-text' | 'alternative' | null;
+  /** Required with via 'alternative', absent otherwise. */
+  hop?: ClientGlossHop;
   lemma: string; upos: string | null; formOf?: string; senses: readonly ClientGlossSense[];
   otherReadings: readonly ClientGlossOtherReading[];
 }>;
-export type ClientGlossOtherReading = Readonly<{ lemma: string; upos: string | null; via: 'lemma' | 'form-of' | 'form-of-text'; formOf?: string; senses: readonly ClientGlossSense[] }>;
+export type ClientGlossHop = 'lemma' | 'form-of' | 'form-of-text';
+export type ClientGlossOtherReading = Readonly<{ lemma: string; upos: string | null; hop: ClientGlossHop; formOf?: string; senses: readonly ClientGlossSense[] }>;
 export type ClientGlossSource = Readonly<{ id: string; name: string; licence: string; url: string; attribution: string; dumpDate: string }>;
 export type ClientGlossResponse =
   | Readonly<{ status: 'available'; source: ClientGlossSource; results: readonly ClientGlossResult[] }>
@@ -50,15 +53,17 @@ function parseSenses(v: unknown, maxSenses: number): ClientGlossSense[] | null {
   const senses = v.map(parseSense);
   return senses.includes(null) ? null : senses as ClientGlossSense[];
 }
-// formOf (the queried form behind a form-of hop): required with via 'form-of', optional with 'alternative', otherwise absent
+const HOPS = new Set(['lemma', 'form-of', 'form-of-text']);
+// formOf (the queried form behind a form-of hop) is required iff the effective hop is 'form-of', otherwise absent
 // (in particular never with 'form-of-text', whose senses are the form-of rows' own text).
-const formOfOk = (via: unknown, formOf: unknown) => formOf === undefined ? via !== 'form-of' : (via === 'form-of' || via === 'alternative') && str(formOf, LEMMA_MAX);
+const formOfOk = (hop: unknown, formOf: unknown) => formOf === undefined ? hop !== 'form-of' : hop === 'form-of' && str(formOf, LEMMA_MAX);
+const readingKey = (lemma: string, upos: string | null) => JSON.stringify([lemma, upos]);
 
 function parseOther(v: unknown, maxSenses: number): ClientGlossOtherReading | null {
-  if (!rec(v) || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos) || (v.via !== 'lemma' && v.via !== 'form-of' && v.via !== 'form-of-text') || !formOfOk(v.via, v.formOf)) return null;
+  if (!rec(v) || v.via !== undefined || !str(v.lemma, LEMMA_MAX) || !uposOrNull(v.upos) || !HOPS.has(v.hop as string) || !formOfOk(v.hop, v.formOf)) return null;
   const senses = parseSenses(v.senses, maxSenses);
   if (!senses || senses.length === 0) return null;
-  return { lemma: v.lemma, upos: v.upos, via: v.via, ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses };
+  return { lemma: v.lemma, upos: v.upos, hop: v.hop as ClientGlossHop, ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses };
 }
 
 function parseResult(v: unknown, index: number, maxSenses: number): ClientGlossResult | null {
@@ -66,11 +71,19 @@ function parseResult(v: unknown, index: number, maxSenses: number): ClientGlossR
   const senses = parseSenses(v.senses, maxSenses);
   if (!senses) return null;
   if (v.found ? !VIAS.has(v.via as string) || senses.length === 0 : v.via !== null || senses.length !== 0) return null;
-  if (!formOfOk(v.via, v.formOf)) return null;
+  if (v.via === 'alternative' ? !HOPS.has(v.hop as string) : v.hop !== undefined) return null;
+  if (!formOfOk(v.via === 'alternative' ? v.hop : v.via, v.formOf)) return null;
   if (!Array.isArray(v.otherReadings) || v.otherReadings.length > GLOSS_CLIENT_MAX_ALTERNATIVES) return null;
   const otherReadings = v.otherReadings.map(o => parseOther(o, maxSenses));
   if (otherReadings.includes(null)) return null;
-  return { queryIndex: index, found: v.found, via: v.via as ClientGlossResult['via'], lemma: v.lemma, upos: v.upos,
+  // Other readings are distinct by (lemma, upos) and never repeat the chosen result.
+  const seen = new Set([readingKey(v.lemma, v.upos)]);
+  for (const o of otherReadings as ClientGlossOtherReading[]) {
+    const k = readingKey(o.lemma, o.upos);
+    if (seen.has(k)) return null;
+    seen.add(k);
+  }
+  return { queryIndex: index, found: v.found, via: v.via as ClientGlossResult['via'], ...(v.hop !== undefined ? { hop: v.hop as ClientGlossHop } : {}), lemma: v.lemma, upos: v.upos,
     ...(v.formOf !== undefined ? { formOf: v.formOf as string } : {}), senses, otherReadings: otherReadings as ClientGlossOtherReading[] };
 }
 
