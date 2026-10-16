@@ -1946,3 +1946,17 @@ h2 {
 .shortcut-help-close {
   margin-top: var(--space-3);
 }
+
+/* lt-dlf.12 add media */
+/* .add-media-card prefix beats the generic `.card label` muted colour. */
+.add-media-card .file-picker-button-primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #0b1020;
+  font-weight: 600;
+}
+
+.add-media-card .file-picker-button-secondary {
+  background: transparent;
+  color: var(--text-muted);
+}

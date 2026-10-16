@@ -36,7 +36,7 @@ You'll need these files from `fixtures\`:
 Use a fresh Chrome profile or a Guest window, at `http://127.0.0.1:5173`. Don't open Settings at any point in this step.
 
 1. Library → **Choose video (recommended — stays linked after reload)** → pick the `.webm`.
-   - **Possible gap:** in the code, this button imports only the video and ignores the two subtitle fields. If the Player shows no transcript afterwards, note it as a finding. Then use **Import copy for this session only** with the video and both `.srt` files, so the rest of the step can still run.
+   - **Possible gap:** in the code, this button imports only the video and ignores the two subtitle fields. If the Player shows no transcript afterwards, note it as a finding. Then use **Pick a video for this session only** (under *Import copy for this session only*) with the video and both `.srt` files, then **Import local media**, so the rest of the step can still run.
 2. Player → click a word → type a meaning → **Save occurrence**. Then **Save sentence…** on a line → type a meaning → **Save occurrence**.
 3. Review should show 2 cards.
 4. Press **F5**.

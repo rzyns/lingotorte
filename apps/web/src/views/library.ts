@@ -786,7 +786,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   subtitleHeading.textContent = 'Subtitles (optional)';
   const subtitleHint = document.createElement('p');
   subtitleHint.className = 'file-hint';
-  subtitleHint.textContent = 'Pick one or two .srt files; they are used by both import buttons below.';
+  subtitleHint.textContent = 'Pick one or two .srt files; they apply to whichever video option you use below.';
   // lt-dlf.8 Task A: one multi-select picker; roles are assigned by filename and shown with a Swap button.
   const multiInput = document.createElement('input');
   multiInput.id = 'local-subtitle-files';
@@ -899,7 +899,11 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const mediaHint = document.createElement('p');
   mediaHint.className = 'file-hint';
   mediaHint.textContent = 'Required. Use a video from this computer.';
-  mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Choose video'), mediaHint);
+  // lt-dlf.12: when the persistent picker exists it is the primary video path; the session copy is secondary.
+  const hasPersistentPicker = typeof (globalThis as BrowserFilePickerGlobal).showOpenFilePicker === 'function';
+  // lt-dlf.12 review: the spoken name must contain the visible button words (WCAG 2.5.3).
+  mediaInput.setAttribute('aria-label', 'Pick a video for this session only');
+  mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Pick a video for this session only', hasPersistentPicker ? 'secondary' : 'primary'), mediaHint);
   localFileGrid.appendChild(mediaField);
 
   localImportGroup.appendChild(localFileGrid);
@@ -942,7 +946,6 @@ export function renderLibraryView(model: AppModel): HTMLElement {
     const persistentImportBtn = document.createElement('button');
     persistentImportBtn.className = 'btn-primary';
     persistentImportBtn.textContent = 'Choose video (recommended — stays linked after reload)';
-    persistentImportBtn.setAttribute('aria-label', 'Choose video through a browser persistent file handle (recommended — stays linked after reload)');
     persistentImportBtn.addEventListener('click', () => {
       void showOpenFilePicker({
         multiple: false,
