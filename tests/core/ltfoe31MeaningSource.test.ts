@@ -74,6 +74,23 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
   });
 });
 
+describe('lt-foe.3.1 SQLite meaningSource fail-closed', () => {
+  it.each([
+    ['invalid JSON', '{not json'],
+    ['unknown kind', '{"kind":"llm"}'],
+    ['extra key', '{"kind":"learner","x":1}'],
+  ])('listSavedItems throws on a corrupt meaning_source_json row: %s', (_label, raw) => {
+    const item = learnerItem();
+    const file = dbPath();
+    const db = SqliteLocalPersistence.open(file);
+    try { db.saveStore(storeWith(item)); } finally { db.close(); }
+    const sql = new DatabaseSync(file);
+    try { sql.prepare('UPDATE saved_item SET meaning_source_json = ? WHERE id = ?').run(raw, item.id); } finally { sql.close(); }
+    const reopened = SqliteLocalPersistence.open(file);
+    try { expect(() => reopened.listSavedItems()).toThrow(); } finally { reopened.close(); }
+  });
+});
+
 describe('lt-foe.3.1 export manifest meaningSource', () => {
   it('round-trips with and without meaningSource', () => {
     const items = [learnerItem(), suggestedItem(), legacyItem()];

@@ -3588,6 +3588,8 @@ export function setSavedItemMeaning(model: AppModel, savedItemId: string, meanin
   const item = model.store.getSavedItem(savedItemId);
   const trimmed = meaning.trim();
   if (!item || (!trimmed && !options.allowClear)) return null;
+  // An unchanged re-save keeps the existing provenance (e.g. an accepted dictionary suggestion).
+  if (trimmed && trimmed === item.meaning) return item;
   const { meaning: _meaning, meaningSource: _source, ...rest } = item;
   const updated: SavedItem = trimmed
     ? { ...rest, meaning: trimmed, meaningSource: { kind: 'learner' }, updatedAt: model.clock().toISOString() }

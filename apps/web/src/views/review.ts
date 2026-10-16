@@ -48,6 +48,9 @@ export function handleReviewShortcut(model: AppModel, event: KeyboardEvent): boo
   }
   const index = ['1', '2', '3', '4'].indexOf(event.key);
   if (index < 0 || !model.review.revealed) return false;
+  // lt-foe.3.1: digits typed into a field (meaning edit, Add meaning) are text, not grades.
+  const typingTarget = event.target instanceof Element ? event.target : null;
+  if (typingTarget?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return false;
   event.preventDefault();
   rateReviewCard(model, cardId, REVIEW_RATINGS[index]!);
   return true;

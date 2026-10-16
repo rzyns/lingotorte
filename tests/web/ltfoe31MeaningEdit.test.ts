@@ -10,6 +10,7 @@ import {
 } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack, type SavedItem } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
+import { handleReviewShortcut } from '../../apps/web/src/views/review';
 
 // lt-foe.3.1: edit an existing meaning in Saved and Review reveal; meaningSource provenance at model level.
 
@@ -215,5 +216,80 @@ describe('lt-foe.3.1 Edit meaning UI', () => {
     key(document.querySelector('.edit-meaning-input')!, 'Escape');
     expect(item(model, saved.id).meaning).toBe('building');
     expect(document.activeElement?.textContent).toBe('Edit meaning');
+  });
+
+  it('Review reveal: digits typed into Edit meaning never rate the card (real keydown path and handler)', async () => {
+    const { model, cues } = installModel();
+    const saved = await saveWord(model, cues[0]!, 'dom', 'house');
+    model.view = 'review';
+    rerenderApp(model);
+    button('Show answer / context')!.click();
+    const cardId = model.review.currentCardId!;
+    expect(cardId).toBeTruthy();
+    const before = JSON.stringify(model.store.snapshot().reviewEvents ?? []);
+    button('Edit meaning')!.click();
+    const input = document.querySelector('.review-reveal .edit-meaning-input') as HTMLInputElement;
+    for (const digit of ['1', '2', '3', '4']) {
+      key(input, digit);
+      const event = new dom.window.KeyboardEvent('keydown', { key: digit, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      // Direct call: the review handler itself must refuse a typing target (defense in depth).
+      expect(handleReviewShortcut(model, Object.defineProperty(new dom.window.KeyboardEvent('keydown', { key: digit, cancelable: true }), 'target', { value: input }) as unknown as KeyboardEvent)).toBe(false);
+    }
+    expect(model.review.currentCardId).toBe(cardId);
+    expect(model.review.revealed).toBe(true);
+    expect(model.store.listReviewEventsForCard(cardId)).toEqual([]);
+    expect(JSON.stringify(model.store.snapshot().reviewEvents ?? [])).toBe(before);
+    expect(document.querySelector('.review-reveal .edit-meaning-input')).toBe(input);
+    expect(item(model, saved.id).meaning).toBe('house');
+    // Control: the same digit on the body still rates (shortcut is otherwise live).
+    key(input, 'Escape');
+    key(document.body, '3');
+    expect(model.store.listReviewEventsForCard(cardId)).toHaveLength(1);
+  });
+
+  it('Review reveal: digits typed into Add meaning (if rendered) never rate the card', async () => {
+    const { model, cues } = installModel();
+    await saveWord(model, cues[0]!, 'dom');
+    model.view = 'review';
+    rerenderApp(model);
+    button('Show answer / context')!.click();
+    const cardId = model.review.currentCardId!;
+    const input = document.querySelector('.review-reveal input') as HTMLInputElement | null;
+    if (!input) return; // Add meaning not offered on Review reveal.
+    input.focus();
+    for (const digit of ['1', '2', '3', '4']) {
+      key(input, digit);
+      expect(handleReviewShortcut(model, Object.defineProperty(new dom.window.KeyboardEvent('keydown', { key: digit, cancelable: true }), 'target', { value: input }) as unknown as KeyboardEvent)).toBe(false);
+    }
+    expect(model.review.currentCardId).toBe(cardId);
+    expect(model.store.listReviewEventsForCard(cardId)).toEqual([]);
+  });
+
+  it('unchanged re-save of a dictionary-suggested meaning keeps its source', async () => {
+    const { model, cues } = installModel();
+    select(model, cues[0]!, 'dom');
+    model.pendingMeaningSuggestion = { text: 'house', source: suggestion };
+    model.pendingMeaning = 'house';
+    const saved = (await saveSelection(model))!;
+    setSavedItemMeaning(model, saved.id, '  house ');
+    expect(item(model, saved.id)).toMatchObject({ meaning: 'house', meaningSource: suggestion });
+    // Same through the Saved edit UI.
+    model.view = 'saved';
+    rerenderApp(model);
+    button('Edit meaning')!.click();
+    key(document.querySelector('.edit-meaning-input')!, 'Enter');
+    expect(item(model, saved.id)).toMatchObject({ meaning: 'house', meaningSource: suggestion });
+  });
+
+  it('dedupe save with a different pendingMeaningSuggestion keeps the original learner meaning and source', async () => {
+    const { model, cues } = installModel();
+    const first = await saveWord(model, cues[0]!, 'dom', 'home');
+    select(model, cues[1]!, 'dom');
+    model.pendingMeaningSuggestion = { text: 'house', source: suggestion };
+    model.pendingMeaning = 'house';
+    const again = (await saveSelection(model))!;
+    expect(again.id).toBe(first.id);
+    expect(item(model, first.id)).toMatchObject({ meaning: 'home', meaningSource: { kind: 'learner' } });
   });
 });
