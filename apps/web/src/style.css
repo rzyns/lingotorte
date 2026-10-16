@@ -941,9 +941,16 @@ textarea:focus-visible,
     scroll-margin-bottom: var(--space-2);
   }
 
+  /* lt-foe.5: pad the whole player column, not just the transcript, so the centred video stays in the
+     left half instead of sliding under the right-half sheet. With symmetric page padding, 50% of the
+     containing block ends exactly at the sheet's left edge (50% of the viewport); --space-2 adds a gap. */
+  .player-layout.capture-open {
+    padding-right: calc(50% + var(--space-2));
+  }
+
   .player-layout.capture-open .transcript-copilot {
     padding-bottom: 0;
-    padding-right: 50%;
+    padding-right: 0;
   }
 }
 
