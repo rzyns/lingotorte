@@ -135,3 +135,61 @@ describe('lt-dlf.10 mobile capture sheet', () => {
     expect(block![1]).toMatch(/safe-area-inset-bottom/);
   });
 });
+
+describe('lt-dlf.10 part 2: video stays in view on phones', () => {
+  let dom: JSDOM;
+  beforeEach(() => { dom = setupDom(); });
+  afterEach(() => { vi.restoreAllMocks(); dom.window.close(); });
+
+  function recordScrolls() {
+    const scrolls: string[] = [];
+    (dom.window.Element.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = function (this: Element) {
+      scrolls.push(this.getAttribute('data-cue-id') ?? this.id);
+    };
+    return scrolls;
+  }
+
+  it('at 390px an off-screen cue row (subtitle click) is not scrolled into view, so the window does not move', () => {
+    stubWidth(dom, 390);
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    const scrolls = recordScrolls();
+    model.selection = { kind: 'lexeme', text: 'polskiego', cueId: cue.id, tokenStart: 2, tokenEnd: 3, charStart: 10, charEnd: 19 };
+    const proto = dom.window.HTMLElement.prototype as unknown as { getBoundingClientRect: () => DOMRect };
+    proto.getBoundingClientRect = () => ({ top: 1300, bottom: 1340, left: 0, right: 390, width: 390, height: 40, x: 0, y: 1300, toJSON() {} }) as DOMRect;
+    rerenderApp(model);
+    expect(scrolls).not.toContain(cue.id);
+    expect(meaning()).not.toBeNull();
+  });
+
+  it('at 390px an on-screen clicked row (transcript click) is still nudged above the sheet', () => {
+    stubWidth(dom, 390);
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    const scrolls = recordScrolls();
+    const proto = dom.window.HTMLElement.prototype as unknown as { getBoundingClientRect: () => DOMRect };
+    proto.getBoundingClientRect = () => ({ top: 400, bottom: 440, left: 0, right: 390, width: 390, height: 40, x: 0, y: 400, toJSON() {} }) as DOMRect;
+    click(dom, word(cue.id, 'polskiego'));
+    expect(scrolls).toContain(cue.id);
+  });
+
+  it('at 1280px the cue row is scrolled into view as before, wherever it is', () => {
+    stubWidth(dom, 1280);
+    const { model, cue } = installModel();
+    rerenderApp(model);
+    const scrolls = recordScrolls();
+    model.selection = { kind: 'lexeme', text: 'polskiego', cueId: cue.id, tokenStart: 2, tokenEnd: 3, charStart: 10, charEnd: 19 };
+    rerenderApp(model);
+    expect(scrolls).toContain(cue.id);
+  });
+
+  it('style.css pins a reduced-height video stage below 900px (sticky containing block via display: contents)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('apps/web/src/style.css', 'utf8');
+    const block = /@media \(max-width: 899px\) \{\s*\.artifact-workbench \{\s*display: contents;\s*\}\s*\.video-stage \{([^}]*)\}/.exec(css);
+    expect(block).toBeTruthy();
+    expect(block![1]).toMatch(/position: sticky/);
+    expect(block![1]).toMatch(/top: 0/);
+    expect(block![1]).toMatch(/max-height: 30vh/);
+  });
+});
