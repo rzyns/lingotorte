@@ -25,7 +25,14 @@ describe('lt-dlf.14 CSS', () => {
     const block = css.slice(i, i + 1500);
     expect(block).toContain('35dvh');
     expect(block).toMatch(/capture-sheet \{[\s\S]*?width: 50%/);
-    expect(block).toContain('padding-right: 50%');
+    expect(block).toContain('padding-right: calc(50% + var(--space-2))');
+  });
+
+  it('lt-foe.5: pads the whole player column (not just the transcript) so the side sheet never covers the video', () => {
+    const i = css.indexOf('@media (max-width: 899px) and (max-height: 500px)');
+    const block = css.slice(i, css.indexOf('\n}\n', i));
+    expect(block).toMatch(/\.player-layout\.capture-open \{\s*padding-right: calc\(50% \+ var\(--space-2\)\);/);
+    expect(block).toMatch(/\.player-layout\.capture-open \.transcript-copilot \{[^}]*padding-right: 0;/);
   });
 
   it('lets the subtitle overlay grow in short landscape so the first line is not clipped (hit-test-dead)', () => {
