@@ -17,7 +17,6 @@ export const J = Object.freeze({
   analyse: 'Analyse words',
   sourceService: 'Local morphology (Morfeusz)', // morphologyPanel.ts SOURCE_LABELS.service
   ambiguousQuality: 'Several readings, check',
-  meaningsUnavailable: 'Word meanings and translations are not available: no dictionary or translation provider is configured. This shows grammar only.',
   noDue: 'No cards due right now. All cards, including mastered cards, return when scheduled.',
 });
 // Fixed focus keys: activeElement -> one of these (never text).
@@ -186,7 +185,7 @@ export async function installJourneyDriver(batch, requireUi = true) {
         let alternatives = 0;
         if (flagged[0]) { flagged[0].click(); await new Promise((r) => setTimeout(r, 30)); const p2 = document.querySelector('#morphology-panel'); alternatives = p2 ? p2.querySelectorAll('#morphology-detail .morphology-alternatives li').length : 0; }
         const p3 = document.querySelector('#morphology-panel'); const t3 = p3?.textContent ?? '';
-        return { panel: !!panel, statusRole: status?.getAttribute('role') === 'status', statusLive: status?.getAttribute('aria-live') === 'polite', sourceService: t.includes(J.sourceService) || t3.includes(J.sourceService), ambiguousFlag: flagged.length > 0, ambiguousQuality: t3.includes(J.ambiguousQuality), alternatives, meaningsUnavailable: t.includes(J.meaningsUnavailable), tokens: panel?.querySelectorAll('button.morphology-token').length ?? 0 };
+        return { panel: !!panel, statusRole: status?.getAttribute('role') === 'status', statusLive: status?.getAttribute('aria-live') === 'polite', sourceService: t.includes(J.sourceService) || t3.includes(J.sourceService), ambiguousFlag: flagged.length > 0, ambiguousQuality: t3.includes(J.ambiguousQuality), alternatives, meaningsState: document.querySelector('#morphology-meanings')?.getAttribute('data-meanings-state') ?? null, tokens: panel?.querySelectorAll('button.morphology-token').length ?? 0 };
       }
       case 'overflow': {
         const p = document.querySelector('#morphology-panel'); const de = document.documentElement;

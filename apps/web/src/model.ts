@@ -427,6 +427,21 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
   return result;
 }
 
+/** lt-foe.3.4: strict parse of /api/status language.gloss; anything off-contract is treated as unknown (null). */
+export function readGlossCapability(value: unknown): NonNullable<AppModel['localService']['glossCapability']> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const states = ['available', 'not-installed', 'disabled', 'invalid-dictionary'] as const;
+  const state = states.find(s => s === v.state);
+  if (!state) return null;
+  if (state !== 'available') return v.source === undefined ? { state, source: null } : null;
+  const src = v.source as Record<string, unknown> | undefined;
+  if (!src || typeof src !== 'object' || Array.isArray(src)) return null;
+  const ok = (x: unknown, max: number) => typeof x === 'string' && x.length > 0 && x.length <= max && !/[\u0000-\u001f\u007f]/.test(x);
+  if (!ok(src.id, 200) || !ok(src.attribution, 1000) || typeof src.dumpDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(src.dumpDate)) return null;
+  return { state, source: { id: src.id as string, dumpDate: src.dumpDate, attribution: src.attribution as string } };
+}
+
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   // Reconnect must not revoke the commit owner or hydrate its unacknowledged result.
   // Unknown outcomes may reconnect only after the pending operation has settled.
@@ -443,6 +458,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
   model.localService.pathPolicy = null;
   model.localService.revision = null;
   model.localService.lastSavedAt = null;
+  model.localService.glossCapability = null;
   owner.choice = null;
   model.localService.status = 'connecting';
   model.localService.lastMessage = 'Connecting and comparing durable state; browser work is kept.';
@@ -451,6 +467,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const status = await fetchLocalServiceJson(transport, '/api/status');
     if (!current()) return supersededSync();
     pairingHook(model, (hooks) => hooks.statusOk?.(url));
+    model.localService.glossCapability = readGlossCapability((status.language as Record<string, unknown> | undefined)?.gloss);
     const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
     const state = await fetchLocalServiceJson(transport, '/api/state');
     if (!current()) return supersededSync();

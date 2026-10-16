@@ -330,7 +330,9 @@ export type PrivacyWarningKind =
   | 'learner-state-contains-media-paths'
   | 'learner-state-contains-content-hashes'
   | 'restore-overwrites-local-data'
-  | 'export-file-is-unencrypted';
+  | 'export-file-is-unencrypted'
+  /** lt-foe.3.4: at least one saved meaning was taken from the Wiktionary-derived dictionary (attribution notice). */
+  | 'contains-dictionary-text';
 
 export type PrivacyWarning = Readonly<{
   kind: PrivacyWarningKind;

@@ -527,10 +527,23 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   meaningInput.type = 'text';
   meaningInput.value = model.pendingMeaning;
   meaningInput.placeholder = 'e.g. hello';
+  // lt-foe.3.4: hint while the Meaning still equals the dictionary suggestion exactly.
+  const suggestionHint = document.createElement('p');
+  suggestionHint.id = 'selection-meaning-hint';
+  suggestionHint.className = 'selection-meaning-hint';
+  suggestionHint.textContent = 'Suggested from Wiktionary — edit freely.';
+  const syncHint = () => {
+    const suggested = !!model.pendingMeaningSuggestion && model.pendingMeaning === model.pendingMeaningSuggestion.text;
+    suggestionHint.hidden = !suggested;
+    if (suggested) meaningInput.setAttribute('aria-describedby', 'selection-meaning-hint');
+    else meaningInput.removeAttribute('aria-describedby');
+  };
   meaningInput.addEventListener('input', (e) => {
     setPendingMeaning(model, (e.target as HTMLInputElement).value);
+    syncHint();
   });
-  meaningGroup.append(meaningLabel, meaningInput);
+  syncHint();
+  meaningGroup.append(meaningLabel, meaningInput, suggestionHint);
   form.appendChild(meaningGroup);
 
   const notesGroup = document.createElement('div');

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { Cue } from '@lingotorte/domain';
 import { createAppModel, importFixtureMediaAndSubtitles, pairLocalService } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
-import { analyseCueMorphology, morphologyPanelState, MEANINGS_UNAVAILABLE } from '../../apps/web/src/morphologyPanel';
+import { analyseCueMorphology, morphologyPanelState } from '../../apps/web/src/morphologyPanel';
 import { startLingotorteLocalService, type LocalServiceRuntime } from '../../apps/local-service/src/server';
 import { withNoNetwork } from '../no-network/networkTrap';
 import { SYNTHETIC_CAPABILITY } from './pairingFixture';
@@ -59,7 +59,10 @@ describe('lt-e8z morphology UI', () => {
     expect(view.source).toBe('service');
     expect(view.fallbackReason).toBeNull();
     // Only the loopback morphology route, words only (punctuation never requested).
-    expect(spy).toHaveBeenCalledTimes(1);
+    // lt-foe.3.4: the selected word's gloss lookup also goes to the paired service; morphology is one request.
+    const morphCalls = spy.mock.calls.filter(c => String(c[0]).endsWith('/api/language/morphology'));
+    expect(morphCalls).toHaveLength(1);
+    expect(spy.mock.calls.every(c => [`${service.origin}/api/language/morphology`, `${service.origin}/api/language/gloss`].includes(String(c[0])))).toBe(true);
     expect(String(spy.mock.calls[0]![0])).toBe(`${service.origin}/api/language/morphology`);
     expect(JSON.parse(String(spy.mock.calls[0]![1]!.body))).toEqual({ language: 'pl', tokens: ['Mamy', 'kotem', 'Książki', 'się', 'nie', 'zażółć', 'xqzvbrt'] });
     expect(tok(model, 'kotem')).toMatchObject({ lemma: 'kot', upos: 'NOUN', source: 'service' });
@@ -78,7 +81,9 @@ describe('lt-e8z morphology UI', () => {
     rerenderApp(model);
     const text = panel().textContent!;
     expect(text).toContain('Source: Local morphology (Morfeusz)');
-    expect(text).toContain(MEANINGS_UNAVAILABLE);
+    // lt-foe.3.4: meanings state is explicit per word (this service has no gloss DB installed).
+    await flush();
+    expect(document.querySelector('#morphology-meanings')!.getAttribute('data-meanings-state')).toMatch(/^(not-installed|loading)$/);
     expect(text).not.toMatch(/\d+\s*%|0\.\d\d/);
     // Ambiguous: warning + alternatives, keyboard-focusable.
     const mamyBtn = panel().querySelector<HTMLButtonElement>('button[data-token-index="0"]')!;
@@ -112,7 +117,7 @@ describe('lt-e8z morphology UI', () => {
     model.targetTrackId = 'another-track';
     expect(morphologyPanelState(model).current).toBeNull();
     await analyseCueMorphology(model, c);
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls.filter(call => String(call[0]).endsWith('/api/language/morphology'))).toHaveLength(1);
   });
 
   it('ignores a stale response after the learner moves to another cue', async () => {
@@ -144,7 +149,8 @@ describe('lt-e8z morphology UI', () => {
     const text = panel().textContent!;
     expect(text).toContain('Source: Browser estimate');
     expect(text).toContain('Local morphology unavailable (local service not paired), showing browser estimate.');
-    expect(text).toContain(MEANINGS_UNAVAILABLE);
+    expect(document.querySelector('#morphology-meanings')!.getAttribute('data-meanings-state')).toBe('not-paired');
+    expect(text).toContain('Meanings need the local service (pair in Settings).');
     expect(document.getElementById('morphology-status')!.getAttribute('aria-live')).toBe('polite');
   });
 
@@ -188,7 +194,7 @@ describe('lt-e8z morphology UI', () => {
     await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm',
       'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
     rerenderApp(model);
-    expect(panel().textContent).toContain(MEANINGS_UNAVAILABLE);
+    expect(panel().querySelector('h3')!.textContent).toBe('Word analysis');
     expect(document.getElementById('morphology-status')!.textContent).toContain('Analyse words');
     const analyse = document.querySelector<HTMLButtonElement>('button.analyse-words')!;
     expect(analyse.getAttribute('aria-label')).toMatch(/^Analyse word grammar for line at/);

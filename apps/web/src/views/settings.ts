@@ -111,6 +111,40 @@ function renderClearCachePanel(model: AppModel): HTMLElement {
   return panel;
 }
 
+export const CC_BY_SA_4_URL = 'https://creativecommons.org/licenses/by-sa/4.0/';
+
+/** lt-foe.3.4: Credits. Dictionary attribution only when the paired service reported an available gloss source. */
+function renderCredits(model: AppModel): HTMLElement {
+  const credits = document.createElement('section');
+  credits.className = 'credits';
+  credits.id = 'settings-credits';
+  credits.setAttribute('aria-labelledby', 'settings-credits-heading');
+  const heading = document.createElement('h3');
+  heading.id = 'settings-credits-heading';
+  heading.textContent = 'Credits';
+  credits.appendChild(heading);
+  const gloss = model.localService.glossCapability;
+  const p = document.createElement('p');
+  if (gloss?.state === 'available' && gloss.source) {
+    p.className = 'credits-dictionary';
+    p.dataset.credit = 'dictionary';
+    const text = document.createElement('span');
+    text.className = 'credits-attribution';
+    text.textContent = gloss.source.attribution;
+    const link = document.createElement('a');
+    link.href = CC_BY_SA_4_URL;
+    link.rel = 'noopener noreferrer';
+    link.target = '_blank';
+    link.textContent = 'CC BY-SA 4.0 licence';
+    p.append(text, ' ', link);
+  } else {
+    p.dataset.credit = 'no-dictionary';
+    p.textContent = 'No dictionary installed.';
+  }
+  credits.appendChild(p);
+  return credits;
+}
+
 export function renderSettingsView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
   section.className = 'card';
@@ -134,6 +168,8 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     list.appendChild(li);
   }
   section.appendChild(list);
+
+  section.appendChild(renderCredits(model));
 
   const servicePanel = document.createElement('div');
   servicePanel.className = 'local-service-panel';

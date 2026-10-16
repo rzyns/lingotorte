@@ -2,6 +2,7 @@ import type { AppModel, Selection } from '../uiTypes';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { undoSave, type SaveReceipt } from '../model';
 import { showToast } from './toast.ts';
+import { suggestMeaningForSelection } from '../morphologyPanel.ts';
 
 export const CAPTURE_REQUIRES_APPROVAL_MESSAGE = 'Approve the transcript before saving from it.';
 
@@ -31,6 +32,8 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>, 
   window.getSelection()?.removeAllRanges();
   requestFocusAfterRender(model, 'selection-meaning');
   rerenderApp(model);
+  // lt-foe.3.4: dictionary suggestion for a single word, without blocking; never over an Undo draft.
+  if (!draft?.meaning) void suggestMeaningForSelection(model, selection, () => rerenderApp(model)).catch(() => {});
   return true;
 }
 

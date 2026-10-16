@@ -3,6 +3,7 @@ import {
   captureLearnerExportWire,
   computeExportIntegrity,
   defaultPrivacyWarnings,
+  dictionaryTextWarnings,
   makeExportFilePath,
   makeLearnerExportManifest,
   requireRestoreConfirmation,
@@ -46,7 +47,7 @@ export class ExportService {
     const integrity = computeExportIntegrity(content);
     const manifestInput: Parameters<typeof makeLearnerExportManifest>[0] = {
       applicationVersion: this.applicationVersion,
-      privacyWarnings: defaultPrivacyWarnings(true),
+      privacyWarnings: [...defaultPrivacyWarnings(true), ...dictionaryTextWarnings(content.savedItems)],
       content,
       integrity,
     };

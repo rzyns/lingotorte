@@ -172,6 +172,8 @@ export type AppModel = {
     syncState?: 'idle' | 'saving' | 'unsaved' | 'choice' | 'conflict' | 'error' | 'saved';
     revision?: string | null;
     restoreCapability?: string | null;
+    /** lt-foe.3.4: language.gloss from the last /api/status on connect (strictly parsed). */
+    glossCapability?: { state: 'available' | 'not-installed' | 'disabled' | 'invalid-dictionary'; source: { id: string; dumpDate: string; attribution: string } | null } | null;
   };
 };
 

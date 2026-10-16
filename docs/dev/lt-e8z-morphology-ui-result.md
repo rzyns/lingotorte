@@ -41,8 +41,8 @@ Base revision: `main` 8d82a99 (merge of lt-elf). Branch `work/lt-e8z-morphology-
 
 These hold in every state:
 
-- The text "Word meanings and translations are not available: no dictionary or translation provider is configured. This shows grammar only." is always shown.
-- The heading is "Word analysis (grammar only)".
+- The text "Word meanings and translations are not available: no dictionary or translation provider is configured. This shows grammar only." is always shown. *(Superseded by lt-foe.3.4: a per-word "Meanings" section with `data-meanings-state`.)*
+- The heading is "Word analysis (grammar only)". *(lt-foe.3.4: now "Word analysis".)*
 - No percentage or `confidence.value` is ever shown. Quality is derived only from `unknown`, then `ambiguous`, then `confidence.kind`.
 - Lemmas are shown as returned (lowercase, since the service collapses proper-name case). No PROPN label appears.
 

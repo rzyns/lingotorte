@@ -1,6 +1,7 @@
-// lt-e8z: learner-facing word analysis (grammar only). Local Morfeusz service first, browser heuristic fallback.
-// No dictionary, translation, LLM or non-loopback network call is made here. The only egress is the paired
-// transport's POST /api/language/morphology (via requestLocalMorphology), and only when paired.
+// lt-e8z: learner-facing word analysis. Local Morfeusz service first, browser heuristic fallback.
+// lt-foe.3.4: meanings from the local service's Wiktionary-derived gloss DB, only for service-analysed words.
+// No translation, LLM or non-loopback network call is made here. The only egress is the paired transport's
+// POST /api/language/morphology and /api/language/gloss, and only when paired.
 import type { Cue } from '@lingotorte/domain';
 import { makeLocalPolishMorphologyAdapter, makeWhitespaceTokenizer } from '@lingotorte/language';
 import type { AppModel } from './uiTypes';
@@ -12,6 +13,11 @@ import {
   type ClientMorphologyResult,
 } from './morphologyClient.ts';
 import type { PairedTransport } from './pairedTransport.ts';
+import { requestLocalGloss, type ClientGlossResponse, type ClientGlossResult, type ClientGlossSense, type ClientGlossSource } from './glossClient.ts';
+
+/** lt-foe.3.4: stable data hook values for the Meanings section (data-meanings-state). */
+export type MeaningsState = 'loading' | 'available' | 'no-entry' | 'not-installed' | 'disabled' | 'invalid' | 'unsupported' | 'not-paired' | 'unavailable';
+export type GlossView = Readonly<{ state: MeaningsState; source?: ClientGlossSource; result?: ClientGlossResult }>;
 
 export type MorphologyQuality = 'certain' | 'probable' | 'possible' | 'ambiguous' | 'unknown' | 'estimate' | 'no-estimate' | 'punctuation';
 export type MorphologySource = 'service' | 'browser' | 'none';
@@ -43,6 +49,7 @@ type PanelState = {
   selectedTokenIndex: number | null;
   pendingCueId: string | null;
   failure: string | null;
+  glossCache: Map<string, GlossView>;
 };
 
 const states = new WeakMap<AppModel, PanelState>();
@@ -56,12 +63,13 @@ function stateFor(model: AppModel): PanelState {
   const key = contextKey(model);
   let state = states.get(model);
   if (!state) {
-    state = { generation: 0, contextKey: key, cache: new Map(), current: null, selectedTokenIndex: null, pendingCueId: null, failure: null };
+    state = { generation: 0, contextKey: key, cache: new Map(), current: null, selectedTokenIndex: null, pendingCueId: null, failure: null, glossCache: new Map() };
     states.set(model, state);
   } else if (state.contextKey !== key) {
     state.generation += 1;
     state.contextKey = key;
     state.cache.clear();
+    state.glossCache.clear();
     state.current = null;
     state.selectedTokenIndex = null;
     state.pendingCueId = null;
@@ -105,6 +113,7 @@ export async function analyseCueMorphology(model: AppModel, cue: Cue, tokenIndex
     state.pendingCueId = null;
     state.failure = null;
     rerender();
+    void loadSelectedGloss(model, rerender);
     return;
   }
   state.pendingCueId = cue.id;
@@ -156,14 +165,151 @@ export async function analyseCueMorphology(model: AppModel, cue: Cue, tokenIndex
     state.failure = 'Word analysis could not run for this cue. Try again, or pick another cue.';
   }
   rerender();
+  void loadSelectedGloss(model, rerender);
+}
+
+// ---- lt-foe.3.4 meanings ----
+
+function glossKey(cueId: string, token: MorphologyTokenView, origin: string): string {
+  return JSON.stringify([cueId, token.tokenIndex, token.surface, token.lemma, token.upos, origin]);
+}
+
+function glossViewFrom(response: ClientGlossResponse): GlossView {
+  if (response.status === 'available') {
+    const result = response.results[0]!;
+    return result.found ? { state: 'available', source: response.source, result } : { state: 'no-entry', source: response.source, result };
+  }
+  if (response.status === 'unavailable') {
+    switch (response.reason) {
+      case 'not-installed': return { state: 'not-installed' };
+      case 'disabled': return { state: 'disabled' };
+      case 'invalid-dictionary': return { state: 'invalid' };
+      case 'unsupported-language': return { state: 'unsupported' };
+      case 'not-paired': return { state: 'not-paired' };
+      default: return { state: 'unavailable' };
+    }
+  }
+  return { state: 'unavailable' };
+}
+
+const glossLemmaOk = (l: string) => l.length > 0 && l === l.trim() && [...l].length <= 64 && !/[\u0000-\u001f\u007f-\u009f]|\s{2,}|[^\S ]/u.test(l);
+
+/** Morfeusz lemma/UPOS plus ≤3 alternatives, as the gloss query. Null when the token cannot be queried. */
+function glossQueryFor(token: MorphologyTokenView) {
+  if (!glossLemmaOk(token.lemma)) return null;
+  const upos = /^[A-Z]{1,5}$/.test(token.upos) ? token.upos : undefined;
+  const alternatives = token.alternatives.filter(a => glossLemmaOk(a.lemma)).slice(0, 3)
+    .map(a => ({ lemma: a.lemma, ...(/^[A-Z]{1,5}$/.test(a.upos) ? { upos: a.upos } : {}) }));
+  return { lemma: token.lemma, ...(upos ? { upos } : {}), ...(alternatives.length ? { alternatives } : {}) };
+}
+
+/** Cached gloss for a service-analysed token, or a fresh request. Returns null if the context changed meanwhile. */
+async function glossForToken(model: AppModel, cueId: string, token: MorphologyTokenView, rerender: () => void): Promise<GlossView | null> {
+  const state = stateFor(model);
+  const transport = pairedTransport(model);
+  if (!transport) return { state: 'not-paired' };
+  const key = glossKey(cueId, token, transport.origin);
+  const cached = state.glossCache.get(key);
+  if (cached?.state === 'loading') return null;
+  // Transient failures stay visible but are retried on the next selection/analysis.
+  if (cached && cached.state !== 'unavailable' && cached.state !== 'not-paired') return cached;
+  const query = glossQueryFor(token);
+  if (!query) { const v: GlossView = { state: 'no-entry' }; state.glossCache.set(key, v); return v; }
+  const context = state.contextKey;
+  const marker: GlossView = { state: 'loading' };
+  state.glossCache.set(key, marker);
+  rerender();
+  const response = await requestLocalGloss(transport, 'pl', [query]);
+  // Stale guard: a media/track change (new generation, cleared cache) or a newer request for the key drops this answer.
+  if (states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker) return null;
+  const view = glossViewFrom(response);
+  state.glossCache.set(key, view);
+  // Only the selected word's panel is rerendered; an answer for a word the learner left stays in the cache only.
+  const current = state.current;
+  if (current?.cueId === cueId && state.selectedTokenIndex === token.tokenIndex && !state.pendingCueId) rerender();
+  return view;
+}
+
+async function loadSelectedGloss(model: AppModel, rerender: () => void): Promise<void> {
+  const state = stateFor(model);
+  const view = state.current;
+  const token = view?.tokens.find(t => t.tokenIndex === state.selectedTokenIndex && t.isWord);
+  if (!view || !token || token.source !== 'service') return;
+  await glossForToken(model, view.cueId, token, rerender);
+}
+
+/** Meanings state for the selected token, as rendered. Browser-estimate tokens never trigger a gloss call. */
+export function selectedMeanings(model: AppModel): GlossView | null {
+  const state = stateFor(model);
+  const view = state.current;
+  const token = view?.tokens.find(t => t.tokenIndex === state.selectedTokenIndex && t.isWord);
+  if (!view || !token) return null;
+  if (token.source !== 'service') {
+    return { state: view.fallbackReason === 'not-paired' || !pairedTransport(model) ? 'not-paired' : 'unavailable' };
+  }
+  const transport = pairedTransport(model);
+  if (!transport) return { state: 'not-paired' };
+  return state.glossCache.get(glossKey(view.cueId, token, transport.origin)) ?? { state: 'loading' };
+}
+
+/** UI-only ordering: single-letter 'character' senses go last (e.g. "w" the letter after the preposition). */
+export function orderSenses(senses: readonly ClientGlossSense[]): ClientGlossSense[] {
+  return [...senses.filter(s => s.pos !== 'character'), ...senses.filter(s => s.pos === 'character')];
+}
+
+/** First-sense meaning suggestion: parentheticals removed, whitespace collapsed, cut at ';' when long, ≤120 chars. */
+export function suggestionText(gloss: string): string {
+  let text = gloss;
+  for (let prev = ''; prev !== text;) { prev = text; text = text.replace(/\([^()]*\)/g, ' '); }
+  text = text.replace(/\s+/g, ' ').replace(/\s+([,;.:!?])/g, '$1').trim();
+  if ([...text].length > 60 && text.includes(';')) text = text.slice(0, text.indexOf(';')).trim();
+  if ([...text].length > 120) text = [...text].slice(0, 119).join('').trimEnd() + '…';
+  return text;
+}
+
+type CaptureSelection = Readonly<{ kind: string; text: string; cueId: string; tokenStart: number; tokenEnd: number }>;
+
+/**
+ * lt-foe.3.4: pre-fill the capture Meaning with a dictionary suggestion for a single-word selection. Uses the panel
+ * cache or asks the paired service (never blocks opening). Applied only while the same selection is open and the
+ * learner has not typed.
+ */
+export async function suggestMeaningForSelection(model: AppModel, selection: CaptureSelection, rerender: () => void): Promise<void> {
+  if (selection.kind !== 'lexeme' || selection.tokenEnd - selection.tokenStart !== 1) return;
+  const transport = pairedTransport(model);
+  if (!transport) return;
+  const state = stateFor(model);
+  const context = state.contextKey;
+  let token: MorphologyTokenView | undefined;
+  const view = state.current?.cueId === selection.cueId ? state.current : [...state.cache.values()].find(v => v.cueId === selection.cueId);
+  if (view) token = view.tokens.find(t => t.tokenIndex === selection.tokenStart && t.isWord && t.surface === selection.text);
+  if (!token) {
+    if (!isRequestable(selection.text)) return;
+    const result = await requestLocalMorphology(transport, 'pl', [selection.text]);
+    if (result.status !== 'available') return;
+    const a = result.analyses[0]!;
+    if (a.unknown) return;
+    token = { tokenIndex: selection.tokenStart, surface: selection.text, isWord: true, source: 'service', lemma: a.lemma, upos: a.upos, morph: a.morph, quality: 'certain', alternatives: a.alternatives };
+  }
+  if (token.source !== 'service') return;
+  const gloss = await glossForToken(model, selection.cueId, token, () => {});
+  const stillOpen = () => model.selection === selection && model.pendingMeaning === '' && context === contextKey(model);
+  if (!gloss || gloss.state !== 'available' || !gloss.source || !gloss.result || !stillOpen()) return;
+  const first = orderSenses(gloss.result.senses)[0];
+  const text = first ? suggestionText(first.gloss) : '';
+  if (!text) return;
+  model.pendingMeaning = text;
+  model.pendingMeaningSuggestion = { text, source: { kind: 'dictionary-suggested', glossSourceId: gloss.source.id, dumpDate: gloss.source.dumpDate } };
+  rerender();
 }
 
 function firstWordIndex(view: MorphologyCueView): number | null {
   return view.tokens.find(t => t.isWord)?.tokenIndex ?? null;
 }
 
-export function selectMorphologyToken(model: AppModel, tokenIndex: number): void {
+export function selectMorphologyToken(model: AppModel, tokenIndex: number, rerender: () => void = () => {}): void {
   stateFor(model).selectedTokenIndex = tokenIndex;
+  void loadSelectedGloss(model, rerender);
 }
 
 const UPOS_LABELS: Record<string, string> = {
@@ -200,7 +346,17 @@ export const QUALITY_LABELS: Record<MorphologyQuality, string> = {
   punctuation: 'Punctuation, not analysed',
 };
 export const SOURCE_LABELS = { service: 'Local morphology (Morfeusz)', browser: 'Browser estimate' } as const;
-export const MEANINGS_UNAVAILABLE = 'Word meanings and translations are not available: no dictionary or translation provider is configured. This shows grammar only.';
+export const MEANINGS_SOURCE_LABEL = 'Wiktionary (CC BY-SA)';
+export const MEANINGS_STATE_TEXT: Record<Exclude<MeaningsState, 'available'>, string> = {
+  loading: 'Looking up meanings…',
+  'no-entry': 'No dictionary entry for “{surface}”.',
+  'not-installed': 'No dictionary is installed in the local service.',
+  disabled: 'Dictionary lookups are turned off in the local service.',
+  invalid: 'The installed dictionary could not be read.',
+  unsupported: 'The local dictionary does not support this language.',
+  'not-paired': 'Meanings need the local service (pair in Settings).',
+  unavailable: 'Meanings are unavailable right now.',
+};
 const FALLBACK_STATUS: Record<MorphologyFallbackReason, string> = {
   'not-paired': 'Local morphology unavailable (local service not paired), showing browser estimate.',
   'service-unreachable': 'Local morphology unavailable (local service not reachable), showing browser estimate.',
@@ -229,7 +385,7 @@ export function renderMorphologyPanel(model: AppModel, rerender: () => void): HT
   const section = el('section', 'morphology-panel');
   section.id = 'morphology-panel';
   section.setAttribute('aria-labelledby', 'morphology-heading');
-  const heading = el('h3', undefined, 'Word analysis (grammar only)');
+  const heading = el('h3', undefined, 'Word analysis');
   heading.id = 'morphology-heading';
   section.appendChild(heading);
   const status = el('p', 'morphology-status');
@@ -237,8 +393,6 @@ export function renderMorphologyPanel(model: AppModel, rerender: () => void): HT
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   section.appendChild(status);
-  const meanings = el('p', 'morphology-meanings-unavailable', MEANINGS_UNAVAILABLE);
-  section.appendChild(meanings);
 
   const view = state.current;
   if (state.pendingCueId) status.textContent = 'Analysing words…';
@@ -272,7 +426,7 @@ export function renderMorphologyPanel(model: AppModel, rerender: () => void): HT
       if (flag) button.append(el('span', 'morphology-token-flag', token.quality === 'ambiguous' ? ' (?)' : ' (unknown)'));
       button.addEventListener('click', event => {
         event.stopPropagation();
-        selectMorphologyToken(model, token.tokenIndex);
+        selectMorphologyToken(model, token.tokenIndex, rerender);
         rerender();
         (document.getElementById('morphology-detail') as HTMLElement | null)?.focus();
       });
@@ -326,7 +480,63 @@ export function renderMorphologyPanel(model: AppModel, rerender: () => void): HT
     if (selected.source === 'browser') {
       detail.appendChild(el('p', 'morphology-estimate-note', 'Browser estimate from a small built-in list; it may be wrong. Pair the local service for dictionary-based analysis.'));
     }
+    detail.appendChild(renderMeanings(selected, selectedMeanings(model) ?? { state: 'loading' }));
   }
   section.appendChild(detail);
   return section;
+}
+
+function hopNote(hop: string | null | undefined, lemma: string, formOf: string | undefined): string {
+  if (hop === 'form-of') return ` (${formOf ?? '?'} → ${lemma})`;
+  if (hop === 'form-of-text') return ' (grammar note)';
+  return '';
+}
+
+function senseList(senses: readonly ClientGlossSense[], className: string, labelledBy: string): HTMLUListElement {
+  const list = el('ul', className);
+  list.setAttribute('aria-labelledby', labelledBy);
+  for (const sense of orderSenses(senses).slice(0, 3)) list.appendChild(el('li', undefined, sense.gloss));
+  return list;
+}
+
+/** lt-foe.3.4: the Meanings section; data-meanings-state is the stable hook for harnesses. */
+function renderMeanings(token: MorphologyTokenView, gloss: GlossView): HTMLElement {
+  const box = el('section', 'morphology-meanings');
+  box.id = 'morphology-meanings';
+  box.dataset.meaningsState = gloss.state;
+  box.setAttribute('aria-labelledby', 'morphology-meanings-heading');
+  const heading = el('h5', 'morphology-meanings-heading', 'Meanings');
+  heading.id = 'morphology-meanings-heading';
+  box.appendChild(heading);
+  if (gloss.state !== 'available' || !gloss.result) {
+    const text = MEANINGS_STATE_TEXT[gloss.state === 'available' ? 'unavailable' : gloss.state].replace('{surface}', token.surface);
+    const p = el('p', 'morphology-meanings-status', text);
+    p.setAttribute('role', 'status');
+    box.appendChild(p);
+    return box;
+  }
+  const result = gloss.result;
+  const source = el('p', 'morphology-meanings-source');
+  source.append(el('strong', undefined, 'Source: '), document.createTextNode(MEANINGS_SOURCE_LABEL));
+  box.appendChild(source);
+  const hop = result.via === 'alternative' ? result.hop : result.via;
+  let lead = '';
+  if (result.via === 'alternative') lead = `read as ${result.lemma} (${readablePos(result.upos ?? 'X')})`;
+  else if (result.via === 'form-of') lead = `from ${result.lemma} (${result.formOf ?? token.surface} → ${result.lemma})`;
+  if (result.via === 'alternative' && hop === 'form-of') lead += ` (${result.formOf ?? token.surface} → ${result.lemma})`;
+  if (hop === 'form-of-text') lead += `${lead ? ' ' : ''}(grammar note)`;
+  if (lead) box.appendChild(el('p', 'morphology-meanings-via', lead));
+  box.appendChild(senseList(result.senses, 'morphology-meanings-list', 'morphology-meanings-heading'));
+  if (result.otherReadings.length) {
+    const otherHeading = el('p', 'morphology-other-readings-heading', 'Other readings');
+    otherHeading.id = 'morphology-other-readings-heading';
+    const others = el('ul', 'morphology-other-readings');
+    others.setAttribute('aria-labelledby', 'morphology-other-readings-heading');
+    for (const other of result.otherReadings) {
+      const senses = orderSenses(other.senses).slice(0, 3).map(s => s.gloss).join('; ');
+      others.appendChild(el('li', undefined, `${other.lemma} (${readablePos(other.upos ?? 'X')})${hopNote(other.hop, other.lemma, other.formOf)}: ${senses}`));
+    }
+    box.append(otherHeading, others);
+  }
+  return box;
 }

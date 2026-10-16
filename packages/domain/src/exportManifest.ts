@@ -259,6 +259,17 @@ export function computeExportIntegrity(content: LearnerExportContent): ExportInt
   return { algorithm: 'sha256-per-record', rootHash: rootHashFromRecords(records), recordCount: records.length };
 }
 
+/** lt-foe.3.4: DECISIONS §16a attribution, kept equal to packages/language GLOSS_ATTRIBUTION (tested). */
+export const DICTIONARY_ATTRIBUTION = 'Word meanings from English Wiktionary (en.wiktionary.org), © Wiktionary contributors, via Wiktextract/kaikki.org, CC BY-SA 4.0 and GFDL. Filtered to Polish and converted to SQLite.';
+export const DICTIONARY_TEXT_NOTICE = `Some saved meanings are dictionary suggestions. ${DICTIONARY_ATTRIBUTION} Licence: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).`;
+
+/** lt-foe.3.4: attribution notice when any saved item keeps a dictionary-suggested meaning. */
+export function dictionaryTextWarnings(savedItems: readonly { meaningSource?: MeaningSource }[]): PrivacyWarning[] {
+  return savedItems.some(item => item.meaningSource?.kind === 'dictionary-suggested')
+    ? [{ kind: 'contains-dictionary-text', severity: 'info', message: DICTIONARY_TEXT_NOTICE }]
+    : [];
+}
+
 export function defaultPrivacyWarnings(exporting: boolean): PrivacyWarning[] {
   const warnings: PrivacyWarning[] = [
     {
@@ -577,6 +588,7 @@ function validatePrivacyWarning(value: unknown): PrivacyWarning {
     'learner-state-contains-content-hashes',
     'restore-overwrites-local-data',
     'export-file-is-unencrypted',
+    'contains-dictionary-text',
   ];
   const record = asRecord(value, 'privacyWarning');
   return {
@@ -736,6 +748,7 @@ export function requireRestoreConfirmation(value: unknown): RestoreConfirmation 
         'learner-state-contains-content-hashes',
         'restore-overwrites-local-data',
         'export-file-is-unencrypted',
+        'contains-dictionary-text',
       ] as PrivacyWarningKind[]),
     ),
   };

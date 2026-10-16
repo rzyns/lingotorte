@@ -950,7 +950,7 @@ class BatchDriver:
         m = self.invoke('morphology-state')
         ev = self.invoke('morph-events')
         self.ok(P, 'service-post-from-ui-origin', ev['posts'] - base['posts'] >= 1 and ev['ok200'] - base['ok200'] >= 1, counts={'posts': ev['posts'] - base['posts']})
-        self.ok(P, 'morfeusz-label-status-region', m['panel'] and m['sourceService'] and m['statusRole'] and m['statusLive'] and m['meaningsUnavailable'] and m['tokens'] >= 3)
+        self.ok(P, 'morfeusz-label-status-region', m['panel'] and m['sourceService'] and m['statusRole'] and m['statusLive'] and m['meaningsState'] in ('available', 'no-entry', 'not-installed', 'disabled', 'invalid', 'unsupported', 'not-paired', 'unavailable') and m['tokens'] >= 3)
         self.ok(P, 'ambiguous-warning-alternatives', m['ambiguousFlag'] and m['ambiguousQuality'] and m['alternatives'] >= 1, counts={'alternatives': m['alternatives']})
         try:
             self.call('Emulation.setDeviceMetricsOverride', width=375, height=812, deviceScaleFactor=1, mobile=False)

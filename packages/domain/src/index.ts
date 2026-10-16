@@ -5,4 +5,4 @@ export * from './sourceContext.ts';
 export * from './exportManifest.ts';
 export * from './providerPolicy.ts';
 export { makeAdapterRunRef, makeLanguageAnalysis, makePracticeAttempt, makeLearnerExportManifest, makePrivacyWarning, makeExportIntegrity, makeRestoreConfirmation } from './factories.ts';
-export { validateLearnerExportManifest, buildRestorePreview, computeExportIntegrity, defaultPrivacyWarnings, requireRestoreConfirmation, verifyExportIntegrity, makeExportFilePath } from './exportManifest.ts';
+export { validateLearnerExportManifest, buildRestorePreview, computeExportIntegrity, defaultPrivacyWarnings, dictionaryTextWarnings, DICTIONARY_ATTRIBUTION, DICTIONARY_TEXT_NOTICE, requireRestoreConfirmation, verifyExportIntegrity, makeExportFilePath } from './exportManifest.ts';
