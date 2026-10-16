@@ -67,7 +67,7 @@ function key(dom: JSDOM, el: HTMLElement, k: string, shiftKey = false) {
 }
 
 
-describe('lt-dlf.5 capture form stays beside the clicked line', () => {
+describe('lt-dlf.5 / lt-foe.4 capture form keeps the video and the clicked line in view', () => {
   let dom: JSDOM;
   beforeEach(() => { dom = setupDom(); });
   afterEach(() => { vi.restoreAllMocks(); dom.window.close(); });
@@ -81,7 +81,7 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     expect(document.querySelector('.transcript-copilot')!.classList.contains('capture-open')).toBe(false);
   });
 
-  it('moves the open capture form to the top of the transcript aside, focusing Meaning without a page jump', async () => {
+  it('lt-foe.4: keeps the open capture form in the main column under the controls, focusing Meaning without a page jump', async () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     const focusOpts: unknown[] = [];
@@ -96,20 +96,22 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     };
     click(dom, word(cue.id, 'polskiego'));
     const aside = document.querySelector('.transcript-copilot')!;
-    expect(aside.classList.contains('capture-open')).toBe(true);
-    expect(document.querySelector('.artifact-workbench .selection-panel')).toBeNull();
-    const panel = aside.querySelector('.selection-panel')!;
+    // lt-foe.4: the aside keeps its normal layout; the common grid ancestor carries capture-open.
+    expect(aside.classList.contains('capture-open')).toBe(false);
+    expect(aside.querySelector('.selection-panel')).toBeNull();
+    expect(document.querySelector('.player-layout')!.classList.contains('capture-open')).toBe(true);
+    const workbench = document.querySelector('.artifact-workbench')!;
+    const panel = workbench.querySelector(':scope > .selection-panel.capture-sheet')!;
     expect(panel).toBeTruthy();
-    // Directly under the heading, before the transcript panel.
-    expect(aside.children[1]).toBe(panel);
-    expect(panel.compareDocumentPosition(aside.querySelector('.transcript-panel')!) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Directly after the player controls.
+    expect(panel.previousElementSibling?.classList.contains('player-controls')).toBe(true);
     expect(document.activeElement?.id).toBe('selection-meaning');
     expect(focusOpts).toContainEqual({ id: 'selection-meaning', opts: { preventScroll: true } });
-    // Cue scroll targets the clicked row inside the aside; the field is revealed with 'nearest' only.
+    // Desktop: the clicked row is kept visible in the aside with a minimal ('nearest') scroll; Meaning likewise.
     const cueScroll = scrolls.find((s) => s.cue === cue.id)!;
     expect(cueScroll).toBeTruthy();
     expect(aside.contains(document.querySelector(`[data-cue-id="${cue.id}"]`))).toBe(true);
-    expect(cueScroll.opts.block).toBe('end');
+    expect(cueScroll.opts.block).toBe('nearest');
     expect(scrolls.filter((s) => s.id === 'selection-meaning').map((s) => s.opts)).toEqual([{ block: 'nearest' }]);
     expect(scrolls.every((s) => s.cue !== null || s.opts.block === 'nearest')).toBe(true);
     // Typing then Enter saves and the panel returns to the left column.
@@ -120,7 +122,7 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     expect(model.selection).toBeNull();
     expect(document.querySelector('.toast-region')?.textContent ?? '').toContain('Saved');
     expect(document.querySelector('.artifact-workbench .selection-panel')).toBeTruthy();
-    expect(document.querySelector('.transcript-copilot')!.classList.contains('capture-open')).toBe(false);
+    expect(document.querySelector('.player-layout')!.classList.contains('capture-open')).toBe(false);
   });
 
   // Finding 4 / audit N10: closing the form must not drop focus to <body>.
@@ -151,52 +153,53 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     });
   }
 
-  // Finding 3: every capture entry point puts the form in the aside and focuses Meaning.
-  const inAside = () => {
-    expect(document.querySelector('.transcript-copilot.capture-open > .selection-panel')).toBeTruthy();
-    expect(document.querySelector('.artifact-workbench .selection-panel')).toBeNull();
+  // Finding 3 / lt-foe.4: every capture entry point puts the form in the main column and focuses Meaning.
+  const inMainColumn = () => {
+    expect(document.querySelector('.player-layout.capture-open > .artifact-workbench > .selection-panel.capture-sheet')).toBeTruthy();
+    expect(document.querySelector('.transcript-copilot .selection-panel')).toBeNull();
+    expect(document.querySelector('.transcript-copilot.capture-open')).toBeNull();
     expect(document.activeElement?.id).toBe('selection-meaning');
   };
-  it('Shift+click extend keeps the form in the aside', () => {
+  it('Shift+click extend keeps the form in the main column', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     click(dom, word(cue.id, 'Uczymy'));
     click(dom, word(cue.id, 'polskiego'), { shiftKey: true });
     expect(model.selection).toMatchObject({ kind: 'phrase', tokenStart: 0, tokenEnd: 3 });
-    inAside();
+    inMainColumn();
   });
-  it('drag-select opens the form in the aside', () => {
+  it('drag-select opens the form in the main column', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     vi.spyOn(dom.window, 'getSelection').mockImplementation(() => ({ toString: () => 'się polskiego', removeAllRanges: () => undefined }) as unknown as Selection);
     row(cue.id).dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
     expect(model.selection).toMatchObject({ text: 'się polskiego' });
-    inAside();
+    inMainColumn();
   });
-  it('Enter on a focused word (lt-z8s) opens the form in the aside', () => {
+  it('Enter on a focused word (lt-z8s) opens the form in the main column', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     row(cue.id).focus();
     key(dom, row(cue.id), 'ArrowLeft');
     key(dom, document.activeElement as HTMLElement, 'Enter');
     expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem' });
-    inAside();
+    inMainColumn();
   });
-  it('Save sentence… opens the form in the aside', () => {
+  it('Save sentence… opens the form in the main column', () => {
     const { model } = installModel();
     rerenderApp(model);
     (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save sentence…') as HTMLButtonElement).click();
     expect(model.selection).toMatchObject({ kind: 'sentence' });
-    inAside();
+    inMainColumn();
   });
-  it('an overlay subtitle word opens the form in the aside', () => {
+  it('an overlay subtitle word opens the form in the main column', () => {
     const { model } = installModel('approved', undefined, true);
     rerenderApp(model);
     (Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find((b) => b.textContent === 'razem') as HTMLElement).click();
     expect(model.selection).toMatchObject({ text: 'razem' });
-    inAside();
+    inMainColumn();
   });
-  it('lt-e0j Undo reopens the form in the aside', async () => {
+  it('lt-e0j Undo reopens the form in the main column', async () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     click(dom, word(cue.id, 'razem'));
@@ -205,15 +208,17 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     expect(model.selection).toBeNull();
     document.querySelector<HTMLButtonElement>('.toast-region button')!.click();
     expect(model.selection).toMatchObject({ text: 'razem' });
-    inAside();
+    inMainColumn();
   });
 
-  it('pins the open form only on desktop and keeps tokenised CSS', async () => {
+  it('lt-foe.4: no desktop pinning of the form or aside; the mobile sheet hangs off .player-layout.capture-open', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('apps/web/src/style.css', 'utf8');
-    expect(css).toMatch(/@media \(min-width: 900px\) \{\s*\.transcript-copilot\.capture-open > \.selection-panel \{[^}]*position: sticky;/);
-    // Finding 2: the pinned form is height-capped so the clicked row can sit below it.
-    expect(css).toMatch(/\.transcript-copilot\.capture-open > \.selection-panel \{[^}]*max-height: 55vh;[^}]*overflow-y: auto;/);
-    expect(css).toMatch(/\.transcript-copilot\.capture-open \.cue-row \{[^}]*scroll-margin-top: 55vh;/);
+    expect(css).not.toMatch(/\.transcript-copilot\.capture-open/);
+    expect(css).not.toMatch(/max-height: 55vh/);
+    expect(css).not.toMatch(/scroll-margin-top: 55vh/);
+    const desktop = [...css.matchAll(/@media \(min-width: 900px\) \{([\s\S]*?)\n\}/g)].map((m) => m[1]).join('\n');
+    expect(desktop).not.toMatch(/capture-open|capture-sheet/);
+    expect(css).toMatch(/@media \(max-width: 899px\) \{\s*\.player-layout\.capture-open \.selection-panel\.capture-sheet \{[^}]*position: fixed;/);
   });
 });

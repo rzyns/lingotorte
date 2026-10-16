@@ -409,12 +409,13 @@ export function rerenderApp(model: AppModel): void {
     }
     el?.focus();
   }
-  // lt-dlf.5: while capturing, keep the clicked line visible below the sticky form in the aside.
+  // lt-foe.4: on desktop the form sits in the main column, so the clicked line only needs a minimal
+  // ('nearest') scroll inside the aside's own scroll region; the sheet layouts keep 'end' above the sheet.
   // lt-dlf.10: below the two-column breakpoint the transcript is in the page flow, so scrolling a row would
   // scroll the window (and the video) away. Only nudge a row that is already on screen (a transcript click)
   // into the band between the sticky video and the sheet; an off-screen row (subtitle click) is left alone.
   const cueToReveal = model.selection ? model.selection.cueId : model.player.activeCueId;
-  if (!isStackedPlayerLayout() || isShortLandscapeLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? 'end' : 'center');
+  if (!isStackedPlayerLayout() || isShortLandscapeLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? (isStackedPlayerLayout() ? 'end' : 'nearest') : 'center');
   // Last, so the focused field is never left obscured (WCAG 2.4.11) and the page moves only as needed.
   if (successor && typeof successor.scrollIntoView === 'function') successor.scrollIntoView({ block: 'nearest' });
   scheduleLearningWake(model);

@@ -93,7 +93,7 @@ describe('lt-dlf.10 mobile capture sheet', () => {
         return origFocus.call(this, opts);
       });
       click(dom, word(cue.id, 'polskiego'));
-      const panel = document.querySelector('.transcript-copilot.capture-open > .selection-panel') as HTMLElement;
+      const panel = document.querySelector('.player-layout.capture-open .artifact-workbench > .selection-panel') as HTMLElement;
       expect(panel.classList.contains('capture-sheet')).toBe(true);
       expect(panel.getAttribute('role')).toBe('region');
       const heading = document.getElementById(panel.getAttribute('aria-labelledby')!)!;
@@ -128,7 +128,7 @@ describe('lt-dlf.10 mobile capture sheet', () => {
   it('style.css renders the capture sheet fixed at the bottom only below 900px', async () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync('apps/web/src/style.css', 'utf8');
-    const block = /@media \(max-width: 899px\) \{\s*\.transcript-copilot\.capture-open > \.selection-panel\.capture-sheet \{([^}]*)\}/.exec(css);
+    const block = /@media \(max-width: 899px\) \{\s*\.player-layout\.capture-open \.selection-panel\.capture-sheet \{([^}]*)\}/.exec(css);
     expect(block).toBeTruthy();
     expect(block![1]).toMatch(/position: fixed/);
     expect(block![1]).toMatch(/bottom: 0/);

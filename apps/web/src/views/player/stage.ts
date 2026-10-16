@@ -41,27 +41,26 @@ export function renderPlayerView(model: AppModel): HTMLElement {
   header.append(headingGroup, renderStudyStatusRail(model));
   section.appendChild(header);
 
+  // lt-foe.4: the capture form always renders in the main column under the controls (full width on
+  // desktop). capture-open sits on the common grid ancestor so <900px CSS can present it as the fixed sheet.
+  const captureOpen = Boolean(model.selection);
   const grid = document.createElement('div');
-  grid.className = 'player-layout study-cockpit-grid';
+  grid.className = `player-layout study-cockpit-grid${captureOpen ? ' capture-open' : ''}`;
 
   const left = document.createElement('div');
   left.className = 'artifact-workbench';
   left.appendChild(renderSourceContextRow(model));
   left.appendChild(renderVideoStage(model));
   left.appendChild(renderPlayerControls(model));
-  // lt-dlf.5: while a capture is open the form renders at the top of the transcript aside (sticky,
-  // next to the clicked line) so the video and the line stay on screen; otherwise it stays here.
-  const captureOpen = Boolean(model.selection);
-  if (!captureOpen) left.appendChild(renderSelectionPanel(model));
+  left.appendChild(renderSelectionPanel(model));
   left.appendChild(renderSourceToolsDisclosure(model));
   grid.appendChild(left);
 
   const right = document.createElement('aside');
-  right.className = `card transcript-copilot${captureOpen ? ' capture-open' : ''}`;
+  right.className = 'card transcript-copilot';
   const transcriptHeading = document.createElement('h2');
   transcriptHeading.textContent = 'Transcript';
   right.appendChild(transcriptHeading);
-  if (captureOpen) right.appendChild(renderSelectionPanel(model));
   right.appendChild(renderTranscriptPanel(model));
   grid.appendChild(right);
 

@@ -840,38 +840,14 @@ textarea:focus-visible,
   gap: var(--space-2);
 }
 
-/* lt-dlf.5: an open capture form renders at the top of the transcript aside. On desktop it pins inside
-   the aside's own scroll region (the search unpins meanwhile); on mobile it flows normally. */
-.transcript-copilot.capture-open > .selection-panel {
-  margin-bottom: var(--space-2);
-}
-
-@media (min-width: 900px) {
-  .transcript-copilot.capture-open > .selection-panel {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: var(--surface);
-    /* WCAG 2.4.11: cap the pinned form so a short viewport still leaves room for the clicked row. */
-    max-height: 55vh;
-    overflow-y: auto;
-  }
-
-  /* The clicked row is scrolled with block 'end'; never let it settle under the pinned form. */
-  .transcript-copilot.capture-open .cue-row {
-    scroll-margin-top: 55vh;
-  }
-
-  .transcript-copilot.capture-open .transcript-search {
-    position: static;
-  }
-}
+/* lt-foe.4: the open capture form renders in the main column under the player controls at full width,
+   in normal flow on desktop (no sticky pin, no height cap); the aside keeps its normal layout. */
 
 /* lt-dlf.10: below the two-column breakpoint the aside stacks under the video, so an in-flow form would
    pull the page (and the video) away. Render the open form as a fixed bottom sheet instead: the page does
    not scroll to Meaning, and the clicked row's 'end' scroll lands it just above the sheet. */
 @media (max-width: 899px) {
-  .transcript-copilot.capture-open > .selection-panel.capture-sheet {
+  .player-layout.capture-open .selection-panel.capture-sheet {
     position: fixed;
     left: 0;
     right: 0;
@@ -889,12 +865,12 @@ textarea:focus-visible,
   }
 
   /* Keep the clicked row above the sheet, and let the last rows scroll clear of it. */
-  .transcript-copilot.capture-open .cue-row {
+  .player-layout.capture-open .transcript-copilot .cue-row {
     scroll-margin-bottom: calc(45vh + var(--space-2));
     scroll-margin-bottom: calc(45dvh + var(--space-2));
   }
 
-  .transcript-copilot.capture-open {
+  .player-layout.capture-open .transcript-copilot {
     padding-bottom: 45vh;
     padding-bottom: 45dvh;
   }
@@ -952,7 +928,7 @@ textarea:focus-visible,
     scroll-margin-top: calc(35dvh + var(--space-2));
   }
 
-  .transcript-copilot.capture-open > .selection-panel.capture-sheet {
+  .player-layout.capture-open .selection-panel.capture-sheet {
     left: auto;
     top: 0;
     width: 50%;
@@ -961,11 +937,11 @@ textarea:focus-visible,
     padding: var(--space-2);
   }
 
-  .transcript-copilot.capture-open .cue-row {
+  .player-layout.capture-open .transcript-copilot .cue-row {
     scroll-margin-bottom: var(--space-2);
   }
 
-  .transcript-copilot.capture-open {
+  .player-layout.capture-open .transcript-copilot {
     padding-bottom: 0;
     padding-right: 50%;
   }
