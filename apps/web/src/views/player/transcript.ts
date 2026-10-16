@@ -410,6 +410,14 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const kind = model.selection?.kind;
   h2.textContent = kind === 'sentence' ? 'Save a sentence' : kind === 'phrase' ? 'Save a phrase' : kind === 'lexeme' ? 'Save a word' : 'Save a word or phrase';
   panel.appendChild(h2);
+  // lt-dlf.10: an open capture form is a labelled region; below 900px CSS renders it as a fixed bottom
+  // sheet so the page (and the video) does not scroll to it. Not modal: no focus trap, Tab reaches Save/Cancel.
+  if (model.selection) {
+    h2.id = 'capture-sheet-heading';
+    panel.classList.add('capture-sheet');
+    panel.setAttribute('role', 'region');
+    panel.setAttribute('aria-labelledby', h2.id);
+  }
   const morphology = renderMorphologyPanel(model, () => rerenderApp(model));
 
   if (model.player.lastTokenPreview) {

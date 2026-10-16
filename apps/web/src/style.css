@@ -541,6 +541,10 @@ textarea:focus-visible,
 .video-stage:fullscreen {
   border-radius: 0;
   aspect-ratio: auto;
+  /* lt-dlf.10/11: undo the inline-size caps and the mobile sticky pin while fullscreen. */
+  position: static;
+  max-height: none;
+  max-width: none;
 }
 
 /* lt-xlr: the control row is outside the fullscreen stage, so hint the keyboard shortcuts inside it. */
@@ -828,6 +832,58 @@ textarea:focus-visible,
 
   .transcript-copilot.capture-open .transcript-search {
     position: static;
+  }
+}
+
+/* lt-dlf.10: below the two-column breakpoint the aside stacks under the video, so an in-flow form would
+   pull the page (and the video) away. Render the open form as a fixed bottom sheet instead: the page does
+   not scroll to Meaning, and the clicked row's 'end' scroll lands it just above the sheet. */
+@media (max-width: 899px) {
+  .transcript-copilot.capture-open > .selection-panel.capture-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    margin: 0;
+    max-height: 45vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--radius, 12px) var(--radius, 12px) 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25);
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Keep the clicked row above the sheet, and let the last rows scroll clear of it. */
+  .transcript-copilot.capture-open .cue-row {
+    scroll-margin-bottom: calc(45vh + var(--space-2));
+  }
+
+  .transcript-copilot.capture-open {
+    padding-bottom: 45vh;
+  }
+}
+
+/* lt-dlf.10 (part 2): on phones keep the video in view while the learner reads/clicks the transcript.
+   The workbench dissolves into the player grid so the stage's sticky containing block spans the aside;
+   the stage pins to the top at a reduced height and the clicked row settles between it and the sheet.
+   The <video> element itself is never moved or re-created (lt-dlf.2); :fullscreen UA rules override. */
+@media (max-width: 899px) {
+  .artifact-workbench {
+    display: contents;
+  }
+
+  .video-stage {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    max-height: 30vh;
+    max-width: calc(30vh * 16 / 9);
+  }
+
+  .transcript-copilot .cue-row {
+    scroll-margin-top: calc(30vh + var(--space-2));
   }
 }
 
