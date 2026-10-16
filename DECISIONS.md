@@ -289,3 +289,28 @@ Implementation semantics:
 #### 14a. Remembered pairing (`lt-z41`, option C)
 
 Decided by Janusz on 2026-10-13. After an explicit opt-in ("Remember this pairing on this device until the service restarts"), the browser may keep the service capability in a dedicated IndexedDB record and auto-connect at boot. The accepted cost is that any same-origin script in that browser profile can read it, and the secret persists on disk in the profile until it is deleted. Both are acceptable under §14. Service restart still rotates the capability. A 401, Forget pairing or an origin change deletes the record. The capability never enters snapshots, exports, localStorage, sessionStorage or logs. The authenticity contract was amended in the same commit (line 120 and A28). Implementation: `lt-cfh`.
+
+---
+
+### 15. Supported browser: Chrome only (for now)
+
+Decided by Janusz on 2026-10-16.
+
+Decision: Lingotorte targets current desktop Chrome (Chromium). Firefox and Safari are not supported for now; Janusz uses Chrome and the app is primarily for his own use.
+
+Implementation semantics:
+
+- Qualification, live checks and acceptance run in Chrome. A Firefox-only defect is not a daily-driver blocker.
+- Existing fallbacks for browsers without `showOpenFilePicker` (session-copy import, the `lt-ddy.4` relink file input) stay in place but are not qualified in Firefox.
+- Firefox support, including a real-Firefox qualification of those fallbacks, is a separate deferred epic (`lt-5lb` child) that needs its own approval to start.
+
+### 16. Meaning lookup and Anki export move into the daily-driver program
+
+Decided by Janusz on 2026-10-16 (`lt-2px`).
+
+Decision: pull `lt-dlh` (licensed local word meanings) and `lt-dxo` (Anki file export) out of the deferred lane into a new daily-driver epic "Meaning and export" under `lt-foe`.
+
+Implementation semantics:
+
+- §10 still applies: `.apkg`/file export first, no AnkiConnect mutation without fresh approval.
+- `lt-dlh` starts with an evaluation. The specific dictionary source (for example kaikki.org Wiktionary extracts, CC BY-SA), its attribution and the one-time download step are each confirmed with Janusz before anything is downloaded or imported; this decision does not pre-approve a source.
