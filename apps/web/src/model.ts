@@ -597,6 +597,7 @@ export function persistIfLocalServiceAutosaveEnabled(model: AppModel): void {
   }
 }
 
+/** Shared active-cue lookup (target cues and lt-ddy.7 native-only lines). */
 export function activeCueAtTime(cues: readonly Cue[], timeMs: number): Cue | null {
   return cues.find((c) => c.startMs <= timeMs && c.endMs > timeMs) ?? null;
 }
@@ -742,11 +743,13 @@ export function activeLoopRangeForSelection(
 }
 
 /**
- * lt-ddy.6: native cues to show read-only when the current media has a native track but no target track.
- * Never part of model.cues (the target transcript), so they cannot be captured, approved or analysed.
+ * lt-ddy.6: native cues to show read-only when the current media has a native track but no target cues
+ * (no target track, or lt-ddy.7 a target track with 0 cues). A target with cues (any status, incl. draft or
+ * correcting) always wins. Never part of model.cues (the target transcript), so they cannot be captured,
+ * approved or analysed.
  */
 export function nativeOnlyCues(model: AppModel): Cue[] {
-  if (model.targetTrackId || !model.nativeTrackId) return [];
+  if (model.cues.length > 0 || !model.nativeTrackId) return [];
   return model.store.listCuesForTrack(model.nativeTrackId);
 }
 
