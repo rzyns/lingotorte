@@ -608,7 +608,7 @@ function renderAnkiExportGroup(model: AppModel): HTMLElement {
     if (txtBtn.disabled) return;
     downloadTextFile('lingotorte-anki.txt', buildAnkiTextExport(plan.notes), 'text/plain;charset=utf-8');
     state.error = null;
-    state.done = `Anki text file downloaded: ${plan.noteCount} notes (import into Anki with File > Import).`;
+    state.done = `Anki text file downloaded: ${plan.noteCount} notes (import into Anki with File > Import). It targets the built-in English notetype "Basic (optional reversed card)"; in a non-English Anki, pick the matching notetype when importing, or use the .apkg.`;
     rerenderApp(model);
   });
   group.appendChild(txtBtn);

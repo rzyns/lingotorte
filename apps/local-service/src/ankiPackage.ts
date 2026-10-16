@@ -34,7 +34,7 @@ export function validateAnkiExportRequest(body: unknown): ValidatedAnkiExportReq
   let deckName = ANKI_DEFAULT_DECK;
   if (body.deckName !== undefined) {
     if (typeof body.deckName !== 'string' || !body.deckName.trim() || body.deckName !== body.deckName.trim() || [...body.deckName].length > ANKI_MAX_DECK_CHARS
-      || /[\u0000-\u001f\u007f"]/.test(body.deckName)) throw new AnkiValidationError('invalid-deck-name');
+      || /[\u0000-\u001f\u007f"]/.test(body.deckName) || body.deckName.includes('::')) throw new AnkiValidationError('invalid-deck-name');
     deckName = body.deckName;
   }
   if (!Array.isArray(body.notes) || body.notes.length === 0) throw new AnkiValidationError('invalid-notes');
@@ -165,6 +165,7 @@ export async function buildApkg(request: ValidatedAnkiExportRequest, options: Bu
       const insertNote = db.prepare('INSERT INTO notes VALUES (?, ?, ?, ?, -1, ?, ?, ?, ?, 0, \'\')');
       const insertCard = db.prepare('INSERT INTO cards VALUES (?, ?, ?, ?, ?, -1, 0, 0, ?, 0, 0, 0, 0, 0, 0, 0, 0, \'\')');
       db.exec('BEGIN');
+      try {
       let cardId = nowMs;
       request.notes.forEach((note, index) => {
         const noteId = nowMs + index;
@@ -174,6 +175,7 @@ export async function buildApkg(request: ValidatedAnkiExportRequest, options: Bu
         if (note.meaningHtml) insertCard.run(cardId++, noteId, ANKI_DECK_ID, 1, mod, index + 1);
       });
       db.exec('COMMIT');
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
     } finally { db.close(); }
     const collection = await readFile(dbPath);
     return storedZip([{ name: 'collection.anki2', data: collection }, { name: 'media', data: Buffer.from('{}', 'utf8') }]);

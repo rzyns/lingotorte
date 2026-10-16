@@ -118,6 +118,9 @@ describe('lt-dxo .apkg package', () => {
       expect(model.flds.map((f: any) => f.name)).toEqual(['Word', 'Meaning', 'Context', 'Notes', 'Attribution']);
       expect(model.tmpls.map((t: any) => t.name)).toEqual(['Recognition', 'Production']);
       expect(decks[String(ANKI_DECK_ID)].name).toBe('Lingotorte');
+      expect(decks['1'].name).toBe('Default');
+      expect(model.req).toEqual([[0, 'any', [0]], [1, 'all', [1]]]);
+      expect(db.prepare('SELECT DISTINCT type, queue FROM cards').all().map((r: any) => [r.type, r.queue])).toEqual([[0, 0]]);
       const rows = db.prepare('SELECT * FROM notes ORDER BY id').all() as any[];
       expect(rows).toHaveLength(4);
       rows.forEach((row, i) => {

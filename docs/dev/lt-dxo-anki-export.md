@@ -61,3 +61,10 @@ Uses Anki's **built-in** `Basic (optional reversed card)` notetype, so it works 
 Qualified by `tests/core/ltdxoAnkiExport.test.ts` (mapper, `.txt` golden `tests/fixtures/anki/synthetic-anki-expected.txt`, `.apkg` readback with `node:sqlite` + CRC checks, determinism, route validation/admission) and `tests/web/ltdxoAnkiExportUi.test.ts`.
 
 **UNQUALIFIED:** importing either file into a real Anki desktop. That is a human check for Janusz in a throwaway Anki profile (import `.apkg`, import `.txt`, re-import to confirm notes update rather than duplicate, confirm no production card for meaning-less notes). The csum/sfld normalisation approximates Anki's `stripHTMLMedia`; Anki recomputes them on "Check Database" if they ever differ.
+
+## Review follow-ups
+
+- `.txt` targets the built-in notetype by its English name "Basic (optional reversed card)" (field "Add Reverse"). Anki localizes built-in notetype names, so in a non-English Anki the import dialog may need the notetype picked by hand; the `.apkg` has no such dependency. The UI completion message says so.
+- `deckName` rejects `::` (Anki would create subdecks); the client sends none, so the deck is always `Lingotorte`.
+- The package is built in a private `mkdtemp` dir under the service scratch dir. A concurrent `/api/artifacts/cleanup` could remove it mid-build; that fails the export with a 500 and leaks nothing. Accepted; retry the export.
+- The note-insert transaction rolls back on error before the temp dir is removed.
