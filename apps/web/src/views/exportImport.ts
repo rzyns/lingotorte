@@ -1,5 +1,6 @@
 import type { AppModel } from '../uiTypes';
-import { verifyExportIntegrity } from '@lingotorte/domain';
+import { verifyExportIntegrity, buildAnkiExportPlan, buildAnkiTextExport, DICTIONARY_TEXT_NOTICE } from '@lingotorte/domain';
+import { requestAnkiPackage, ankiPackageMessage } from '../ankiExportClient.ts';
 import {
   exportLearnerState,
   previewRestoreManifest,
@@ -13,6 +14,7 @@ import {
   setExportImportConfirmOverwrite,
   setExportImportConfirmReplace,
   setExportImportError,
+  captureLocalServiceTransport,
 } from '../model';
 import { rerenderApp } from '../appShell.ts';
 import { type BrowserFileSavePickerGlobal, appendDefinitionRow, readPreviewManifest, shortHash } from '../ui/common.ts';
@@ -134,6 +136,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
   }
 
   section.appendChild(exportGroup);
+  section.appendChild(renderAnkiExportGroup(model));
   const importGroup = document.createElement('div');
   importGroup.className = 'export-import-group';
   const importHeading = document.createElement('h3');
@@ -504,8 +507,11 @@ function renderRestoreOperationPreview(preview: NonNullable<AppModel['exportImpo
   return container;
 }
 
-function downloadTextFile(fileName: string, text: string): void {
-  const blob = new Blob([text], { type: 'application/json' });
+function downloadTextFile(fileName: string, text: string, type = 'application/json'): void {
+  downloadBlob(fileName, new Blob([text], { type }));
+}
+
+function downloadBlob(fileName: string, blob: Blob): void {
   const objectUrl = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement('a');
@@ -519,4 +525,99 @@ function downloadTextFile(fileName: string, text: string): void {
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+// lt-dxo: Anki file export. Per-model transient UI state (not serialized into the app model).
+type AnkiUiState = { acknowledged: boolean; busy: boolean; error: string | null; done: string | null };
+const ankiUi = new WeakMap<AppModel, AnkiUiState>();
+function ankiState(model: AppModel): AnkiUiState {
+  let state = ankiUi.get(model);
+  if (!state) { state = { acknowledged: false, busy: false, error: null, done: null }; ankiUi.set(model, state); }
+  return state;
+}
+function pairedTransportOrNull(model: AppModel) {
+  try { return captureLocalServiceTransport(model); } catch { return null; }
+}
+
+function renderAnkiExportGroup(model: AppModel): HTMLElement {
+  const state = ankiState(model);
+  const group = document.createElement('div');
+  group.className = 'export-import-group anki-export-group';
+  group.dataset.ankiExportGroup = '';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Export to Anki';
+  group.appendChild(heading);
+
+  const snapshot = model.store.snapshot();
+  const plan = buildAnkiExportPlan(Object.values(snapshot.savedItems), Object.values(snapshot.savedOccurrences));
+  const counts = document.createElement('p');
+  counts.className = 'meta anki-export-counts';
+  counts.dataset.ankiExportCounts = '';
+  counts.textContent = `${plan.noteCount} notes • ${plan.cardCount} cards (recognition for every note; production only for notes with a meaning) • ${plan.excludedArchived} archived items excluded`;
+  group.appendChild(counts);
+
+  const warnings = document.createElement('ul');
+  warnings.className = 'anki-export-warnings';
+  const lines = [
+    'The file is unencrypted. It contains your saved words and phrases, the context sentences taken from your subtitles, your meanings and your notes.',
+    'If you import it into Anki and sync, Anki uploads these to AnkiWeb (Ankitects). Lingotorte itself never syncs or contacts Anki.',
+    'No media, audio, file names, timestamps or review history are included.',
+    'Lingotorte remains the source of truth: Anki reviews do not flow back. Re-importing updates the same notes by their stable ID.',
+  ];
+  if (plan.hasDictionaryMeaning) lines.push(DICTIONARY_TEXT_NOTICE);
+  for (const line of lines) { const li = document.createElement('li'); li.textContent = line; warnings.appendChild(li); }
+  group.appendChild(warnings);
+
+  const ackLabel = document.createElement('label');
+  const ack = document.createElement('input');
+  ack.type = 'checkbox';
+  ack.checked = state.acknowledged;
+  ack.dataset.ankiExportAck = '';
+  ack.addEventListener('change', () => { state.acknowledged = ack.checked; state.error = null; state.done = null; rerenderApp(model); });
+  ackLabel.appendChild(ack);
+  ackLabel.appendChild(document.createTextNode(' I understand what the Anki file contains and that syncing it in Anki uploads it.'));
+  group.appendChild(ackLabel);
+
+  const transport = pairedTransportOrNull(model);
+  const empty = plan.noteCount === 0;
+  const apkgBtn = document.createElement('button');
+  apkgBtn.className = 'btn-primary';
+  apkgBtn.textContent = 'Download Anki package (.apkg)';
+  apkgBtn.dataset.ankiExport = 'apkg';
+  apkgBtn.disabled = !state.acknowledged || empty || !transport || state.busy;
+  apkgBtn.addEventListener('click', () => {
+    if (apkgBtn.disabled) return;
+    state.busy = true; state.error = null; state.done = null; rerenderApp(model);
+    void requestAnkiPackage(transport, plan.notes).then((result) => {
+      state.busy = false;
+      if (result.status === 'ok') {
+        downloadBlob('lingotorte.apkg', new Blob([result.bytes], { type: 'application/octet-stream' }));
+        state.done = `Anki package downloaded: ${plan.noteCount} notes, ${plan.cardCount} cards.`;
+      } else state.error = ankiPackageMessage(result);
+      rerenderApp(model);
+    }, () => { state.busy = false; state.error = 'Anki package export failed. Nothing was downloaded.'; rerenderApp(model); });
+  });
+  group.appendChild(apkgBtn);
+
+  const txtBtn = document.createElement('button');
+  txtBtn.className = 'btn-secondary';
+  txtBtn.textContent = 'Download Anki text file (.txt)';
+  txtBtn.dataset.ankiExport = 'txt';
+  txtBtn.disabled = !state.acknowledged || empty;
+  txtBtn.addEventListener('click', () => {
+    if (txtBtn.disabled) return;
+    downloadTextFile('lingotorte-anki.txt', buildAnkiTextExport(plan.notes), 'text/plain;charset=utf-8');
+    state.error = null;
+    state.done = `Anki text file downloaded: ${plan.noteCount} notes (import into Anki with File > Import).`;
+    rerenderApp(model);
+  });
+  group.appendChild(txtBtn);
+
+  const reason = empty ? 'Nothing to export: save words or phrases first (archived items are excluded).'
+    : !transport ? 'The .apkg package is built by the paired local service, which is not paired or available. Use the Anki text file (.txt) instead.'
+    : !state.acknowledged ? 'Tick the acknowledgement to enable the downloads.' : '';
+  if (reason) { const p = document.createElement('p'); p.className = 'meta'; p.dataset.ankiExportReason = ''; p.textContent = reason; group.appendChild(p); }
+  if (state.error) { const e = document.createElement('div'); e.className = 'status-banner error'; e.setAttribute('role', 'alert'); e.dataset.ankiExportError = ''; e.textContent = state.error; group.appendChild(e); }
+  if (state.done) { const d = document.createElement('div'); d.className = 'status-banner success'; d.setAttribute('role', 'status'); d.dataset.ankiExportDone = ''; d.textContent = state.done; group.appendChild(d); }
+  return group;
 }

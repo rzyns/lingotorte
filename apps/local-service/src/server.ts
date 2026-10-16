@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { nativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
 import { hostNativePath, pathInside, resolvedNativePath, assertReadableNativeFile, nativeExecutable } from '../../../packages/domain/src/nativePathsNode.ts';
 import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch, glossDbPathFromEnv } from './nativeConfig.ts';
+import { ANKI_EXPORT_ROUTE, AnkiValidationError, buildApkg, validateAnkiExportRequest } from './ankiPackage.ts';
 import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROUTE, type GlossRuntimeOptions, type GlossService } from './gloss.ts';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -1042,6 +1043,23 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           return;
         }
         sendJson(response, 200, await gloss.lookup(input));
+        return;
+      }
+
+      if (request.method === 'POST' && path === ANKI_EXPORT_ROUTE) {
+        let input;
+        try { input = validateAnkiExportRequest(admittedBody); }
+        catch (error) {
+          if (error instanceof AnkiValidationError) sendJson(response, 400, { ok: false, error: error.code });
+          else sendError(response, 500, 'Anki export failed.');
+          return;
+        }
+        let body: Buffer;
+        try { body = await buildApkg(input, { scratchDir: config.scratchDir }); }
+        catch { sendError(response, 500, 'Anki export failed.'); return; }
+        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': body.byteLength, 'cache-control': 'no-store',
+          'content-disposition': 'attachment; filename="lingotorte.apkg"', 'x-content-type-options': 'nosniff' });
+        response.end(body);
         return;
       }
 
