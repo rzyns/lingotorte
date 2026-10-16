@@ -1,6 +1,6 @@
 # lt-dlh: local word meanings and the manual-meaning workflow (evaluation)
 
-Status: evaluation for Janusz's source/licence/download decision (DECISIONS.md §16). Nothing has been downloaded or imported. No code changed.
+Status: evaluation complete. Janusz decided on 2026-10-16 (DECISIONS.md §16a): kaikki/Wiktextract English Wiktionary as primary, plWordNet as a later secondary, the attribution in §3 as written, and a one-time download of the 2.8 GB `.gz` raw dump. Nothing has been downloaded or imported yet. No code changed.
 
 Evidence labels: **[code]** read in this repository at `9b4567d`; **[O]** observed on the source's own page or metadata on 2026-10-16; **[I]** inference or unverified prior knowledge; **[R]** recommendation.
 
