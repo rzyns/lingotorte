@@ -1,4 +1,5 @@
 import type { AppModel } from '../uiTypes';
+import { DICTIONARY_ATTRIBUTION } from '@lingotorte/domain';
 import {
   connectLocalService,
   pairLocalService,
@@ -130,7 +131,8 @@ function renderCredits(model: AppModel): HTMLElement {
     p.dataset.credit = 'dictionary';
     const text = document.createElement('span');
     text.className = 'credits-attribution';
-    text.textContent = gloss.source.attribution;
+    // Render the §16a domain constant only; service-supplied text is never displayed.
+    text.textContent = DICTIONARY_ATTRIBUTION;
     const link = document.createElement('a');
     link.href = CC_BY_SA_4_URL;
     link.rel = 'noopener noreferrer';

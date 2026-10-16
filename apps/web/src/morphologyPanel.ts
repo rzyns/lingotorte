@@ -203,6 +203,8 @@ function glossQueryFor(token: MorphologyTokenView) {
   return { lemma: token.lemma, ...(upos ? { upos } : {}), ...(alternatives.length ? { alternatives } : {}) };
 }
 
+const inFlight = new WeakMap<GlossView, Promise<GlossView | null>>();
+
 /** Cached gloss for a service-analysed token, or a fresh request. Returns null if the context changed meanwhile. */
 async function glossForToken(model: AppModel, cueId: string, token: MorphologyTokenView, rerender: () => void): Promise<GlossView | null> {
   const state = stateFor(model);
@@ -210,7 +212,8 @@ async function glossForToken(model: AppModel, cueId: string, token: MorphologyTo
   if (!transport) return { state: 'not-paired' };
   const key = glossKey(cueId, token, transport.origin);
   const cached = state.glossCache.get(key);
-  if (cached?.state === 'loading') return null;
+  // Share the in-flight request so a capture opened mid-lookup can still pre-fill (callers re-check staleness).
+  if (cached?.state === 'loading') return inFlight.get(cached) ?? null;
   // Transient failures stay visible but are retried on the next selection/analysis.
   if (cached && cached.state !== 'unavailable' && cached.state !== 'not-paired') return cached;
   const query = glossQueryFor(token);
@@ -219,7 +222,10 @@ async function glossForToken(model: AppModel, cueId: string, token: MorphologyTo
   const marker: GlossView = { state: 'loading' };
   state.glossCache.set(key, marker);
   rerender();
-  const response = await requestLocalGloss(transport, 'pl', [query]);
+  const request = requestLocalGloss(transport, 'pl', [query]);
+  const shared = request.then(response => (states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker) ? null : glossViewFrom(response));
+  inFlight.set(marker, shared);
+  const response = await request;
   // Stale guard: a media/track change (new generation, cleared cache) or a newer request for the key drops this answer.
   if (states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker) return null;
   const view = glossViewFrom(response);
@@ -511,7 +517,6 @@ function renderMeanings(token: MorphologyTokenView, gloss: GlossView): HTMLEleme
   if (gloss.state !== 'available' || !gloss.result) {
     const text = MEANINGS_STATE_TEXT[gloss.state === 'available' ? 'unavailable' : gloss.state].replace('{surface}', token.surface);
     const p = el('p', 'morphology-meanings-status', text);
-    p.setAttribute('role', 'status');
     box.appendChild(p);
     return box;
   }

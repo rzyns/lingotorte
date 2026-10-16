@@ -217,6 +217,7 @@ export function pairLocalService(model: AppModel, capability: string, baseUrl = 
     model.localService.syncState = 'error';
     model.localService.revision = null;
     model.localService.pathPolicy = null;
+    model.localService.glossCapability = null;
     model.localService.lastMessage = PAIR_AGAIN;
     notifySync(model);
     pairingHook(model, (hooks) => hooks.unauthorized?.());
@@ -567,6 +568,7 @@ export function setLocalServiceBaseUrl(model: AppModel, baseUrl: string): void {
   model.localService.baseUrl = baseUrl;
   model.localService.pathPolicy = null;
   model.localService.restoreCapability = null;
+  model.localService.glossCapability = null;
   model.localService.revision = null;
   model.localService.lastSavedAt = null;
   model.localService.status = 'disconnected';

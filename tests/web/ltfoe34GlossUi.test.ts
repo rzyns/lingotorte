@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeCue, makeMediaAsset, makeSubtitleTrack, validateLearnerExportManifest, type Cue } from '@lingotorte/domain';
 import { DICTIONARY_ATTRIBUTION } from '../../packages/domain/src/exportManifest';
 import { GLOSS_ATTRIBUTION } from '../../packages/language/src/glossStore';
-import { createAppModel, exportLearnerState, pairLocalService, readGlossCapability, saveSelectionWithReceipt, setPendingMeaning } from '../../apps/web/src/model';
+import { connectLocalService, createAppModel, exportLearnerState, pairLocalService, readGlossCapability, saveSelectionWithReceipt, setLocalServiceBaseUrl, setPendingMeaning } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { analyseCueMorphology, morphologyPanelState, orderSenses, suggestionText } from '../../apps/web/src/morphologyPanel';
 import { openCapture } from '../../apps/web/src/ui/capture';
@@ -242,6 +242,24 @@ describe('lt-foe.3.4 meanings in the word-analysis panel', () => {
     expect(meaningsState()).toBe('available');
     expect(document.activeElement?.id).toBe(analyseBtn.id);
   });
+
+  it('review: Meanings heading is one level below the detail heading (h4 → h5)', async () => {
+    const { model, cues } = installModel(['domu']);
+    await analyse(model, cues[0]!);
+    const detailHeading = document.querySelector('#morphology-detail h4')!;
+    expect(detailHeading).not.toBeNull();
+    expect(meanings().querySelector('#morphology-meanings-heading')!.tagName).toBe('H5');
+  });
+
+  it('review: only one live region in the panel; per-state text is not a second role=status', async () => {
+    glossMode = 'not-installed';
+    const { model, cues } = installModel(['domu']);
+    await analyse(model, cues[0]!);
+    expect(meaningsState()).toBe('not-installed');
+    const panel = document.querySelector('#morphology-detail')!.closest('section')!;
+    expect(panel.querySelectorAll('[role="status"], [aria-live]').length).toBe(1);
+    expect(meanings().querySelector('.morphology-meanings-status')!.hasAttribute('role')).toBe(false);
+  });
 });
 
 describe('lt-foe.3.4 Meaning pre-fill', () => {
@@ -321,6 +339,36 @@ describe('lt-foe.3.4 Meaning pre-fill', () => {
     expect(model.pendingMeaning).toBe('');
   });
 
+  it('review: capture opened while the panel lookup is in flight still pre-fills (awaits the shared request)', async () => {
+    const { model, cues } = installModel(['pies']);
+    let release!: () => void;
+    glossGate = new Promise(r => { release = r; });
+    const pending = analyseCueMorphology(model, cues[0]!, null, () => rerenderApp(model));
+    await flush();
+    expect(meaningsState()).toBe('loading');
+    expect(openCapture(model, lexeme(cues[0]!, 'pies'))).toBe(true);
+    await flush();
+    expect(model.pendingMeaning).toBe('');
+    release();
+    await pending; await flush();
+    expect(glossBodies.length).toBe(1);
+    expect(model.pendingMeaning).toBe('dog');
+    expect(model.pendingMeaningSuggestion?.source.kind).toBe('dictionary-suggested');
+  });
+
+  it('review: in-flight shared lookup still respects learner typing', async () => {
+    const { model, cues } = installModel(['pies']);
+    let release!: () => void;
+    glossGate = new Promise(r => { release = r; });
+    const pending = analyseCueMorphology(model, cues[0]!, null, () => rerenderApp(model));
+    await flush();
+    openCapture(model, lexeme(cues[0]!, 'pies'));
+    setPendingMeaning(model, 'mine');
+    release(); await pending; await flush();
+    expect(model.pendingMeaning).toBe('mine');
+    expect(model.pendingMeaningSuggestion).toBeNull();
+  });
+
   it('not paired: opening a word capture makes no network call', async () => {
     const { model, cues } = installModel(['pies'], false);
     openCapture(model, lexeme(cues[0]!, 'pies'));
@@ -346,6 +394,35 @@ describe('lt-foe.3.4 Settings credits', () => {
     // DECISIONS.md is not copied into the contributor image; check it where the checkout has it.
     if (existsSync('DECISIONS.md')) expect(readFileSync('DECISIONS.md', 'utf8')).toContain(DECISIONS_16A);
     expect(DICTIONARY_ATTRIBUTION).toBe(DECISIONS_16A);
+  });
+
+  it('review: renders the §16a constant, never arbitrary service attribution text', () => {
+    const model = createAppModel();
+    model.localService.glossCapability = readGlossCapability({ state: 'available', source: { id: 'x', dumpDate: '2026-10-03', attribution: 'Evil <b>text</b> from service' } });
+    const credits = renderSettingsView(model).querySelector('#settings-credits')!;
+    expect(credits.querySelector('.credits-attribution')!.textContent).toBe(DECISIONS_16A);
+    expect(credits.textContent).not.toContain('Evil');
+  });
+
+  it('review: unpairing / changing the service clears the gloss capability so Credits drops the attribution', async () => {
+    const { model } = installModel(['pies']);
+    model.localService.glossCapability = readGlossCapability({ state: 'available', source: { id: SOURCE.id, dumpDate: '2026-10-03', attribution: GLOSS_ATTRIBUTION } });
+    setLocalServiceBaseUrl(model, 'http://127.0.0.1:49997');
+    expect(model.localService.glossCapability).toBeNull();
+    expect(renderSettingsView(model).querySelector('#settings-credits')!.textContent).toContain('No dictionary installed.');
+    model.localService.glossCapability = readGlossCapability({ state: 'available', source: { id: SOURCE.id, dumpDate: '2026-10-03', attribution: GLOSS_ATTRIBUTION } });
+    pairLocalService(model, SYNTHETIC_CAPABILITY, ORIGIN);
+    expect(model.localService.glossCapability).toBeNull();
+  });
+
+  it('review: a 401 (pairing lost) clears the gloss capability', async () => {
+    const { model, cues } = installModel(['domu']);
+    model.localService.glossCapability = readGlossCapability({ state: 'available', source: { id: SOURCE.id, dumpDate: '2026-10-03', attribution: GLOSS_ATTRIBUTION } });
+    glossMode = 'unpairs';
+    await analyse(model, cues[0]!);
+    expect(meaningsState()).toBe('not-paired');
+    expect(model.localService.glossCapability).toBeNull();
+    void connectLocalService;
   });
 
   it('no dictionary when the capability is absent, not available, or off-contract', () => {
@@ -392,6 +469,15 @@ describe('lt-foe.3.4 export attribution notice', () => {
     // Unknown kinds remain rejected.
     older.privacyWarnings.push({ kind: 'made-up', severity: 'info', message: 'x' });
     expect(() => validateLearnerExportManifest(older)).toThrow();
+  });
+  it('review: browser export path (exportLearnerState) adds the notice for a stored dictionary-suggested item', async () => {
+    const { model, cues } = installModel(['pies']);
+    openCapture(model, lexeme(cues[0]!, 'pies'));
+    await flush();
+    await saveSelectionWithReceipt(model);
+    const { manifest } = exportLearnerState(model);
+    expect(manifest.privacyWarnings.filter(w => w.kind === 'contains-dictionary-text')).toHaveLength(1);
+    expect(model.exportImport.lastExport!.warningCount).toBe(manifest.privacyWarnings.length);
   });
 });
 

@@ -82,8 +82,8 @@ describe('lt-e8z morphology UI', () => {
     const text = panel().textContent!;
     expect(text).toContain('Source: Local morphology (Morfeusz)');
     // lt-foe.3.4: meanings state is explicit per word (this service has no gloss DB installed).
-    await flush();
-    expect(document.querySelector('#morphology-meanings')!.getAttribute('data-meanings-state')).toMatch(/^(not-installed|loading)$/);
+    for (let i = 0; i < 50 && document.querySelector('#morphology-meanings')?.getAttribute('data-meanings-state') !== 'not-installed'; i++) { await flush(); rerenderApp(model); }
+    expect(document.querySelector('#morphology-meanings')!.getAttribute('data-meanings-state')).toBe('not-installed');
     expect(text).not.toMatch(/\d+\s*%|0\.\d\d/);
     // Ambiguous: warning + alternatives, keyboard-focusable.
     const mamyBtn = panel().querySelector<HTMLButtonElement>('button[data-token-index="0"]')!;
