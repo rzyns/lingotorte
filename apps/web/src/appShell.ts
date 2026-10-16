@@ -414,7 +414,7 @@ export function rerenderApp(model: AppModel): void {
   // scroll the window (and the video) away. Only nudge a row that is already on screen (a transcript click)
   // into the band between the sticky video and the sheet; an off-screen row (subtitle click) is left alone.
   const cueToReveal = model.selection ? model.selection.cueId : model.player.activeCueId;
-  if (!isStackedPlayerLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? 'end' : 'center');
+  if (!isStackedPlayerLayout() || isShortLandscapeLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? 'end' : 'center');
   // Last, so the focused field is never left obscured (WCAG 2.4.11) and the page moves only as needed.
   if (successor && typeof successor.scrollIntoView === 'function') successor.scrollIntoView({ block: 'nearest' });
   scheduleLearningWake(model);
@@ -425,19 +425,44 @@ export function isStackedPlayerLayout(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 899px)').matches;
 }
 
-function cueRowOnScreen(cueId: string | null): boolean {
-  if (!cueId) return false;
+/** lt-dlf.14: short landscape (style.css) pins the sheet beside the rows and the video stays sticky, so any
+ *  clicked row, including an off-screen one from a subtitle click, can be scrolled into the free column. */
+export function isShortLandscapeLayout(): boolean {
+  return isStackedPlayerLayout() && window.innerHeight <= 500; // same as the CSS (max-height: 500px)
+}
+
+function cueRowElement(cueId: string): Element | null {
   const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(cueId) : cueId.replace(/"/g, '\\"');
-  const row = document.querySelector(`[data-cue-id="${escaped}"]`);
+  return document.querySelector(`[data-cue-id="${escaped}"]`);
+}
+
+/** lt-dlf.14: a row is on screen only if part of it shows in the band left between the sticky
+ *  video (top) and the capture sheet (bottom); a row hidden under either counts as off-screen. */
+export function cueRowOnScreen(cueId: string | null): boolean {
+  if (!cueId) return false;
+  const row = cueRowElement(cueId);
   if (!row) return false;
   const rect = row.getBoundingClientRect();
-  return rect.bottom > 0 && rect.top < window.innerHeight;
+  let top = 0;
+  let bottom = window.innerHeight;
+  // Only an overlay that also spans the row horizontally covers it (the landscape sheet sits beside rows).
+  const overlapsX = (r: DOMRect) => r.left < rect.right && r.right > rect.left;
+  const stage = document.querySelector('.video-stage');
+  if (stage && !stage.contains(row) && window.getComputedStyle(stage).position === 'sticky') {
+    const r = stage.getBoundingClientRect();
+    if (overlapsX(r) && r.top < 1 && r.bottom > top) top = r.bottom; // pinned at the top
+  }
+  const sheet = document.querySelector('.selection-panel.capture-sheet');
+  if (sheet && !sheet.contains(row) && window.getComputedStyle(sheet).position === 'fixed') {
+    const r = sheet.getBoundingClientRect();
+    if (overlapsX(r) && r.height > 0 && r.top < bottom) bottom = r.top;
+  }
+  return rect.bottom > top && rect.top < bottom;
 }
 
 export function scrollCueIntoView(cueId: string | null, block: ScrollLogicalPosition = 'center'): void {
   if (!cueId) return;
-  const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(cueId) : cueId.replace(/"/g, '\\"');
-  const row = document.querySelector(`[data-cue-id="${escaped}"]`);
+  const row = cueRowElement(cueId);
   if (row && typeof row.scrollIntoView === 'function') {
     row.scrollIntoView({ behavior: 'auto', block });
   }
