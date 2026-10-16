@@ -61,7 +61,8 @@ function contextHtmlFor(occurrences: readonly SavedOccurrence[], cueText?: AnkiC
   if (!first) return '';
   const text = cueText?.(first.cueId);
   const span = first.sourceContext?.charSpan;
-  if (text !== undefined && span && Number.isInteger(span.start) && Number.isInteger(span.end) && span.start >= 0 && span.start < span.end && span.end <= text.length) {
+  if (text !== undefined && span && Number.isInteger(span.start) && Number.isInteger(span.end) && span.start >= 0 && span.start < span.end && span.end <= text.length
+    && text.slice(span.start, span.end).replace(/\s+/g, ' ').trim().toLowerCase() === first.selectionText.replace(/\s+/g, ' ').trim().toLowerCase()) {
     return `${ankiEscapeHtml(text.slice(0, span.start))}<b>${ankiEscapeHtml(text.slice(span.start, span.end))}</b>${ankiEscapeHtml(text.slice(span.end))}`;
   }
   const before = ankiEscapeHtml(first.contextBefore ?? '');

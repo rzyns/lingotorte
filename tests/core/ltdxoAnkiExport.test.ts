@@ -69,14 +69,18 @@ describe('lt-dxo Anki mapper', () => {
     const { contextBefore: _b, contextAfter: _a, ...bare } = occ;
     const cueText = 'Cześć, to jest <lokalny> & test.';
     const at = cueText.indexOf('<lokalny>');
-    const appShape = { ...bare, sourceContext: { ...occ.sourceContext, charSpan: { start: at, end: at + '<lokalny>'.length } } } as SavedOccurrence;
+    const appShape = { ...bare, selectionText: '<lokalny>', sourceContext: { ...occ.sourceContext, charSpan: { start: at, end: at + '<lokalny>'.length } } } as SavedOccurrence;
     const lookup = (id: string) => (id === occ.cueId ? cueText : undefined);
     const note = buildAnkiExportPlan([item], [appShape], lookup).notes[0]!;
     expect(note.contextHtml).toBe('Cześć, to jest <b>&lt;lokalny&gt;</b> &amp; test.');
     // Out-of-range span or missing cue falls back to the selection only.
     const bad = { ...appShape, sourceContext: { ...appShape.sourceContext, charSpan: { start: 0, end: 999 } } } as SavedOccurrence;
-    expect(buildAnkiExportPlan([item], [bad], lookup).notes[0]!.contextHtml).toBe(`<b>${occ.selectionText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</b>`);
+    expect(buildAnkiExportPlan([item], [bad], lookup).notes[0]!.contextHtml).toBe('<b>&lt;lokalny&gt;</b>');
     expect(buildAnkiExportPlan([item], [appShape]).notes[0]!.contextHtml).toMatch(/^<b>/);
+    // Stale span (cue edited after the save, span still fits): fall back instead of bolding the wrong text.
+    const sel = { ...appShape, selectionText: '<lokalny>' } as SavedOccurrence;
+    expect(buildAnkiExportPlan([item], [sel], lookup).notes[0]!.contextHtml).toBe('Cześć, to jest <b>&lt;lokalny&gt;</b> &amp; test.');
+    expect(buildAnkiExportPlan([item], [sel], () => 'Cześć, to jest XXXXXXXXX & test.').notes[0]!.contextHtml).toBe('<b>&lt;lokalny&gt;</b>');
   });
 
   it('derives stable, non-UUID guids', () => {

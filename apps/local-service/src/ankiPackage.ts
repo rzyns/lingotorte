@@ -175,7 +175,7 @@ export async function buildApkg(request: ValidatedAnkiExportRequest, options: Bu
         if (note.meaningHtml) insertCard.run(cardId++, noteId, ANKI_DECK_ID, 1, mod, index + 1);
       });
       db.exec('COMMIT');
-      } catch (error) { db.exec('ROLLBACK'); throw error; }
+      } catch (error) { try { db.exec('ROLLBACK'); } catch { /* keep the original error */ } throw error; }
     } finally { db.close(); }
     const collection = await readFile(dbPath);
     return storedZip([{ name: 'collection.anki2', data: collection }, { name: 'media', data: Buffer.from('{}', 'utf8') }]);
