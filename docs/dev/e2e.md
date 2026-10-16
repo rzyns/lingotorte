@@ -5,7 +5,7 @@ Chromium-only smoke tests for the core learner tasks live in `apps/web/e2e/`:
 | Spec | Covers |
 | --- | --- |
 | `import.spec.ts` | A1 Library → Load synthetic fixture; A2 upload fixture media + target/native `.srt` through the file inputs → Player has video duration > 0 and ≥ 1 cue row |
-| `collect.spec.ts` | B1 click a word → "Save a word" form → Meaning → Save occurrence → listed in Saved; B2 real mouse drag-select across two words opens the "Save a phrase" form and saves nothing |
+| `collect.spec.ts` | B1 click a word → "Save a word" form → Meaning → Save → listed in Saved; B2 real mouse drag-select across two words opens the "Save a phrase" form and saves nothing |
 | `review.spec.ts` | C save a word (saving auto-enrols it: Saved shows "In review ✓") → Review shows one new card, "next due now" → Show answer → Rate good → no card due, empty state, New count 0. No in-page clock hook is exposed, so this asserts the visible state change |
 | `reload.spec.ts` | D after the snapshot cache (IndexedDB) holds the save, `page.reload()` → saved item and transcript present without opening Settings |
 

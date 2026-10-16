@@ -126,7 +126,7 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
   // Finding 4 / audit N10: closing the form must not drop focus to <body>.
   const closePaths: [string, (d: JSDOM) => void][] = [
     ['Enter in Meaning', (d) => { key(d, meaning()!, 'Enter'); }],
-    ['Save occurrence', () => { (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement).click(); }],
+    ['Save', () => { (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement).click(); }],
     ['Cancel', () => { (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Cancel') as HTMLButtonElement).click(); }],
     ['Escape', (d) => { key(d, meaning()!, 'Escape'); }],
   ];
@@ -200,7 +200,7 @@ describe('lt-dlf.5 capture form stays beside the clicked line', () => {
     const { model, cue } = installModel();
     rerenderApp(model);
     click(dom, word(cue.id, 'razem'));
-    (Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Save occurrence') as HTMLButtonElement).click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement).click();
     for (let i = 0; i < 10; i++) await Promise.resolve();
     expect(model.selection).toBeNull();
     document.querySelector<HTMLButtonElement>('.toast-region button')!.click();

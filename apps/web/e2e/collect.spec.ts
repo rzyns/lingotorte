@@ -23,8 +23,8 @@ test('B2: drag-select across words opens the form and does not save immediately'
   const panel = page.locator('.selection-panel');
   await expect(panel.getByRole('heading', { name: 'Save a phrase' })).toBeVisible();
   await expect(panel).toContainText('Selected: “to jest”');
-  await expect(panel.getByRole('button', { name: 'Save occurrence' })).toBeVisible();
-  // Nothing persisted until Save occurrence (lt-cms).
+  await expect(panel.locator('[data-action="save-occurrence"]')).toBeVisible();
+  // Nothing persisted until Save (lt-cms).
   await nav(page, 'Saved');
   await expect(page.locator('.saved-item')).toHaveCount(0);
 });

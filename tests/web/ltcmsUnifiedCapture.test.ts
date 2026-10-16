@@ -4,7 +4,7 @@ import { createAppModel, saveSentenceFromCue } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
-// lt-cms: every collect gesture opens one capture state; nothing persists until Save occurrence / Enter.
+// lt-cms: every collect gesture opens one capture state; nothing persists until Save / Enter.
 
 const sha = 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const;
 
@@ -133,7 +133,7 @@ describe('lt-cms unified capture state', () => {
     expect(btn('Save sentence…')!.disabled).toBe(true);
     model.selection = { kind: 'sentence', text: cue.text, cueId: cue.id, tokenStart: 0, tokenEnd: 4, charStart: 0, charEnd: cue.text.length };
     rerenderApp(model);
-    const save = btn('Save occurrence')!;
+    const save = (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!;
     expect(save.disabled).toBe(true);
     expect(save.title).toBe('Approve this transcript before saving learner study items.');
     key(dom, meaning()!, 'Enter');
@@ -170,7 +170,7 @@ describe('lt-cms unified capture state', () => {
     expect(model.selection).toBeNull();
   });
 
-  it('overlay-word click opens the form; nothing is saved until Save occurrence', async () => {
+  it('overlay-word click opens the form; nothing is saved until Save', async () => {
     const { model, cue } = installModel('approved', undefined, true);
     rerenderApp(model);
     const word = Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find((b) => b.textContent === 'razem') as HTMLButtonElement;
@@ -179,7 +179,7 @@ describe('lt-cms unified capture state', () => {
     expect(model.selection).toMatchObject({ kind: 'lexeme', text: 'razem', cueId: cue.id });
     expect(document.activeElement?.id).toBe('selection-meaning');
     expect(savedItems(model)).toHaveLength(0);
-    btn('Save occurrence')!.click();
+    (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!.click();
     await vi.waitFor(() => expect(savedItems(model)).toHaveLength(1));
     expect(savedItems(model)[0]).toMatchObject({ kind: 'lexeme', displayText: 'razem' });
   });
@@ -209,7 +209,7 @@ describe('lt-cms unified capture state', () => {
     rerenderApp(model);
     for (let i = 1; i <= 2; i += 1) {
       btn('Save sentence…')!.click();
-      btn('Save occurrence')!.click();
+      (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!.click();
       await vi.waitFor(() => expect(model.selection).toBeNull());
     }
     // Reference: the direct saveSentenceFromCue path, twice, on a fresh model.

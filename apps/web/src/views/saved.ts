@@ -131,14 +131,17 @@ export function renderSavedView(model: AppModel): HTMLElement {
 
       const contextLine = document.createElement('div');
       contextLine.className = 'occurrence-context';
-      const tokenSpanText = occurrence.sourceContext.tokenSpan.startToken === occurrence.sourceContext.tokenSpan.endToken - 1
-        ? `token ${occurrence.sourceContext.tokenSpan.startToken}`
-        : `tokens ${occurrence.sourceContext.tokenSpan.startToken}–${occurrence.sourceContext.tokenSpan.endToken - 1}`;
-      // lt-unl: token/char spans are provenance; they stay inside the disclosure, off the primary line.
+      // lt-dlf.13 (P5): details hold learner-meaningful provenance only (video, time range, line N);
+      // never blob: URLs, content hashes or token/char offsets.
+      const videoName = mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath);
+      const lineIndex = model.store.listCuesForTrack(occurrence.sourceContext.subtitleTrackId)
+        .findIndex((cue) => cue.id === occurrence.sourceContext.cueId);
+      const detailParts = [videoName, `${formatTimeMs(occurrence.startMs)}–${formatTimeMs(occurrence.endMs)}`];
+      if (lineIndex >= 0) detailParts.push(`line ${lineIndex + 1}`);
       appendSourceDisclosure(
         contextLine,
-        `saved from ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)} at ${formatTimeMs(occurrence.startMs)}`,
-        `${occurrence.sourceContext.mediaPath} • ${tokenSpanText} • chars ${occurrence.sourceContext.charSpan.start}–${occurrence.sourceContext.charSpan.end}`,
+        `saved from ${videoName} at ${formatTimeMs(occurrence.startMs)}`,
+        detailParts.join(' • '),
       );
       occurrenceGroup.appendChild(contextLine);
     }

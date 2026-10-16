@@ -182,7 +182,7 @@ describe('lt-unl learner-facing copy', () => {
     expect(document.querySelector('.source-context-primary .source-compact-summary')?.textContent).toContain('line 1');
   });
 
-  it('provenance (track version, token/char spans) still sits inside a details element', async () => {
+  it('provenance (track version, line/time range) still sits inside a details element', async () => {
     const model = await loadedModel();
     model.view = 'player';
     rerenderApp(model);
@@ -194,8 +194,9 @@ describe('lt-unl learner-facing copy', () => {
     rerenderApp(model);
     const ctx = document.querySelector('.occurrence-context')!;
     const details = ctx.querySelector('details')!;
-    expect(details.textContent).toContain('chars 0–28');
-    expect(details.textContent).toMatch(/tokens? \d/);
+    // lt-dlf.13: details carry time range and line N, never token/char offsets.
+    expect(details.textContent).toMatch(/line \d+/);
+    expect(details.textContent).not.toMatch(/chars|token/);
     expect(visibleText(ctx)).not.toMatch(/chars|token/);
   });
 

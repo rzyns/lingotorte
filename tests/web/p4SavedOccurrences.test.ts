@@ -66,8 +66,8 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     expect(app?.textContent).toContain('My Sentences');
     expect(app?.textContent).toContain('Cześć, to jest lokalny test.');
     expect(app?.textContent).toContain('sentence');
-    expect(app?.textContent).toContain('tokens 0–4');
-    expect(app?.textContent).toContain(mediaPath);
+    expect(app?.textContent).toContain('line 1');
+    expect(app?.textContent).not.toMatch(/tokens? \d/);
   });
 
   it('saves a selected phrase and shows it under My Vocab', async () => {
@@ -152,8 +152,8 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     const app = document.getElementById('app')!;
     expect(app.textContent).toContain('0:00.00');
     expect(app.textContent).toContain('Cześć, to jest lokalny test.');
-    expect(app.textContent).toContain(mediaPath);
-    expect(app.textContent).toContain('chars 0–28');
+    expect(app.textContent).toContain('Imported local media');
+    expect(app.textContent).not.toContain('chars');
   });
 
   it('creates a review card from a saved item and navigates to review view', async () => {

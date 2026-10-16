@@ -716,7 +716,7 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       if (!canSaveFromTargetTrack) return;
-      // lt-cms: route through the shared capture form; nothing persists until Save occurrence.
+      // lt-cms: route through the shared capture form; nothing persists until Save.
       openCapture(model, {
         kind: 'lexeme',
         text: button.textContent ?? word.text,

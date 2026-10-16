@@ -60,7 +60,7 @@ export async function saveFirstWord(page: Page, meaning: string): Promise<string
   const panel = page.locator('.selection-panel');
   await expect(panel.getByRole('heading', { name: 'Save a word' })).toBeVisible();
   await panel.getByLabel('Meaning (optional)').fill(meaning);
-  await panel.getByRole('button', { name: 'Save occurrence' }).click();
+  await panel.locator('[data-action="save-occurrence"]').click();
   await expect(panel.getByRole('heading', { name: 'Save a word or phrase' })).toBeVisible();
   return text;
 }
