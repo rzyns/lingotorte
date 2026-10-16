@@ -10,7 +10,7 @@ Evidence labels: **[code]** read in this repository at `9b4567d`; **[O]** observ
 - Inline "Add meaning" appears in Saved and in the Review reveal only when an item has neither a meaning nor a native cue line (`apps/web/src/views/saved.ts:91-97,178`; `views/review.ts:111-118`). It writes through `setSavedItemMeaning` and persists (`model.ts:3574`). [code]
 - `SavedItem.meaning` is a bare optional string (`packages/domain/src/coreTypes.ts:242`, SQLite `saved_item.meaning TEXT`). There is no record of where a meaning came from. [code]
 - The morphology panel hard-codes "Word meanings and translations are not available…" (`apps/web/src/morphologyPanel.ts:203`). [code]
-- Source context is already kept per occurrence (`SavedOccurrenceSourceContext`: media, track, cue, time/token/char span). A meaning attaches to the item, so it never replaces or loses this context. [code]
+- Source context is already kept per occurrence (`SavedOccurrenceSourceContext`, `packages/domain/src/coreTypes.ts:206,261`: media, track, cue, time/token/char span). A meaning attaches to the item, so it never replaces or loses this context. [code]
 - The design doc already sets the lookup order and the output shape, with the source and licence recorded on every entry (`docs/architecture/language-adapter-design.md:169-240`). The order is: learner override → local dictionary → local model → opt-in online. [code]
 
 **Gaps:**
@@ -43,9 +43,9 @@ Table (sketch): `gloss_entry(lemma, pos, sense_idx, gloss, tags_json)` plus `glo
 
 **Service route.** `POST /api/language/gloss`, behind the same `admit()` gate as morphology: bounded body, a list of lemmas plus a UPOS hint. The response is a discriminated union:
 - `available`: entries, each carrying `source` and `licence`
-- `unavailable`: one of `not-installed | disabled | unsupported-language`
+- `unavailable`: one of `not-installed` (no derived database on the volume), `disabled` (operator setting, e.g. `LINGOTORTE_GLOSS=disabled`, mirroring the morphology `mode`), or `unsupported-language`
 - `no-entry`
-- `error`
+- `error`: a fixed code only (`lookup-failed | internal`); input lemmas are never echoed or logged
 
 When the dictionary is not installed, the route reports `not-installed` and the UI says so. The UI never pretends a meaning exists.
 
@@ -54,28 +54,31 @@ When the dictionary is not installed, the route reports `not-installed` and the 
 - The Meaning field in capture is *pre-filled as a suggestion*. The learner accepts or edits it, and nothing is saved until they press Save (same rule as today).
 - The UI keeps "dictionary gloss", "native cue line" and "your meaning" visually distinct (design doc :228).
 
-**Provenance.** Add optional `meaningSource: 'learner' | 'dictionary-suggested'` (plus the source id) to `SavedItem`. Accepting a suggestion unchanged records `dictionary-suggested`, and any edit records `learner`. Later lookups never overwrite a saved meaning (design doc :13). This needs a schema/export-manifest field and a forward migration. That belongs to a separate implementation child.
+**Provenance.** Add optional `meaningSource: 'learner' | 'dictionary-suggested'` plus the `gloss_source` id and dump date to `SavedItem`, so every suggestion traces back to one pinned import. Accepting a suggestion unchanged records `dictionary-suggested`, and any edit records `learner`. Later lookups never overwrite a saved meaning (design doc :13). This needs a schema/export-manifest field and a forward migration. That belongs to a separate implementation child.
 
 **Edit meaning.** Make the saved meaning editable in Saved and in the Review reveal, which fixes gap 1. It is independent of the dictionary and can ship first.
 
 **Attribution.** A Credits/About line in Settings, shown only once a dictionary is installed:
 > Word meanings from English Wiktionary (en.wiktionary.org), © Wiktionary contributors, via Wiktextract/kaikki.org, CC BY-SA 4.0 and GFDL. Filtered to Polish and converted to SQLite.
 
+**Licence reasoning.** CC BY-SA attribution and share-alike apply when the material is shared or distributed. A derived database used privately on Janusz's machine creates no obligation beyond keeping the credit visible. That changes once a `dictionary-suggested` meaning leaves the machine through the Anki file export (`lt-dxo`) or the JSON metadata export: such exports must carry the attribution line and the CC BY-SA 4.0 terms, which is why `meaningSource` and the source id must reach the export manifest. The same applies to the plWordNet notice when that source arrives.
+
 **Fixtures.** Hand-written synthetic entries only, about 10–20 lemmas, so the repository contains no CC BY-SA-derived text.
 
 **Online adapters.** Out of scope. Any online dictionary, translation or LLM meaning needs separate consent under DECISIONS §6. This design adds no network path.
 
-## 4. Proposed follow-up children (after Janusz's decision)
+## 4. Follow-up children
 
-1. Make an existing meaning editable in Saved and Review, and record `meaningSource` with a migration. This has no dictionary dependency.
-2. Import script and `gloss_*` schema on a dedicated volume, with an import receipt and synthetic-fixture tests.
-3. `/api/language/gloss` route with admission, bounds, typed states, a no-network proof and a not-installed state.
-4. UI: glosses in the morphology panel, Meaning pre-fill, the Credits line, and a live Chrome check.
+1. Make an existing meaning editable in Saved and Review; record `meaningSource` + source id/dump date with a migration; carry them through the export manifest. No dictionary dependency.
+2. Import script and `gloss_*` schema on a dedicated volume, with an import receipt and synthetic-fixture tests; then the one-time operator download and import (§16a).
+3. `/api/language/gloss` route with admission, bounds, typed states (incl. `not-installed`, `disabled`), a no-network proof.
+4. UI: glosses in the morphology panel, Meaning pre-fill, the Credits line, attribution on exports that contain dictionary text, and a live Chrome check.
+5. plWordNet secondary source: deferred under `lt-5lb` until Wiktionary coverage gaps are measured.
 
-## 5. Open questions for Janusz
+## 5. Questions (resolved, see DECISIONS.md §16a)
 
-- Approve English Wiktionary via kaikki/Wiktextract (CC BY-SA 4.0/GFDL) as the source?
-- Approve the attribution text above?
-- Approve the one-time download. Options: (a) the 789 MB per-language file while it still exists; (b) the 2.8 GB .gz full raw dump, which is the supported path going forward. Either is done by Janusz, or by the agent on explicit instruction, into a scratch path outside the repo, and the file can be deleted after import.
+- Source: English Wiktionary via kaikki/Wiktextract, approved; plWordNet approved as a later secondary.
+- Attribution text in §3: approved as written.
+- Download: option (b), the 2.8 GB `.gz` full raw dump, as a one-time operator step into a scratch path outside the repository, deleted after import. An agent performs it only on Janusz's explicit instruction at that time.
 
 Unverified items to check at import time: the exact kaikki licence footer, the Morfeusz-lemma match rate on the synthetic fixture, and the actual size of the derived database.

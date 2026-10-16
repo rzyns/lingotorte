@@ -321,5 +321,5 @@ Decided by Janusz on 2026-10-16 after the evaluation in `docs/dev/lt-dlh-meaning
 
 - Source: English Wiktionary via kaikki.org/Wiktextract (CC BY-SA 4.0 and GFDL). plWordNet is approved as a later secondary source; its licence notice must ship with every copy.
 - Attribution, approved as written, shown in Settings/Credits once a dictionary is installed: "Word meanings from English Wiktionary (en.wiktionary.org), © Wiktionary contributors, via Wiktextract/kaikki.org, CC BY-SA 4.0 and GFDL. Filtered to Polish and converted to SQLite."
-- Download: one-time operator download of the full English-edition raw dump (about 2.8 GB `.gz`) to a scratch path outside the repository, deleted after import. The app, tests and CI never download it. The derived SQLite lives on a Docker volume, not in Git. Committed fixtures are hand-written synthetic entries only.
+- Download: one-time operator download (an agent performs it only on Janusz's explicit instruction at that time) of the full English-edition raw dump (about 2.8 GB `.gz`) to a scratch path outside the repository, deleted after import. The app, tests and CI never download it. The derived SQLite lives on a Docker volume, not in Git. Committed fixtures are hand-written synthetic entries only.
 - Online dictionary, translation or LLM meanings remain outside this decision (§6).
