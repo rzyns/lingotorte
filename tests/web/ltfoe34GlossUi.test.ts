@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeCue, makeMediaAsset, makeSubtitleTrack, validateLearnerExportManifest, type Cue } from '@lingotorte/domain';
 import { DICTIONARY_ATTRIBUTION } from '../../packages/domain/src/exportManifest';
 import { GLOSS_ATTRIBUTION } from '../../packages/language/src/glossStore';
-import { connectLocalService, createAppModel, exportLearnerState, pairLocalService, readGlossCapability, saveSelectionWithReceipt, setLocalServiceBaseUrl, setPendingMeaning } from '../../apps/web/src/model';
+import { createAppModel, exportLearnerState, pairLocalService, readGlossCapability, saveSelectionWithReceipt, setLocalServiceBaseUrl, setPendingMeaning } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { analyseCueMorphology, morphologyPanelState, orderSenses, suggestionText } from '../../apps/web/src/morphologyPanel';
 import { openCapture } from '../../apps/web/src/ui/capture';
@@ -422,7 +422,6 @@ describe('lt-foe.3.4 Settings credits', () => {
     await analyse(model, cues[0]!);
     expect(meaningsState()).toBe('not-paired');
     expect(model.localService.glossCapability).toBeNull();
-    void connectLocalService;
   });
 
   it('no dictionary when the capability is absent, not available, or off-contract', () => {

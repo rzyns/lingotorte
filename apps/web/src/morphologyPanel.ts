@@ -222,14 +222,18 @@ async function glossForToken(model: AppModel, cueId: string, token: MorphologyTo
   const marker: GlossView = { state: 'loading' };
   state.glossCache.set(key, marker);
   rerender();
-  const request = requestLocalGloss(transport, 'pl', [query]);
-  const shared = request.then(response => (states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker) ? null : glossViewFrom(response));
-  inFlight.set(marker, shared);
-  const response = await request;
   // Stale guard: a media/track change (new generation, cleared cache) or a newer request for the key drops this answer.
-  if (states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker) return null;
-  const view = glossViewFrom(response);
-  state.glossCache.set(key, view);
+  const isStale = () => states.get(model) !== state || context !== contextKey(model) || state.glossCache.get(key) !== marker;
+  const shared: Promise<GlossView | null> = (async () => {
+    let view: GlossView;
+    try { view = glossViewFrom(await requestLocalGloss(transport, 'pl', [query])); } catch { view = { state: 'unavailable' }; }
+    if (isStale()) return null;
+    state.glossCache.set(key, view);
+    return view;
+  })().catch(() => null);
+  inFlight.set(marker, shared);
+  const view = await shared;
+  if (!view) return null;
   // Only the selected word's panel is rerendered; an answer for a word the learner left stays in the cache only.
   const current = state.current;
   if (current?.cueId === cueId && state.selectedTokenIndex === token.tokenIndex && !state.pendingCueId) rerender();

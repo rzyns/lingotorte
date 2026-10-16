@@ -38,7 +38,7 @@ It then fills only if the selection is unchanged, the learner has typed nothing,
 - When the paired service reports `language.gloss.state = available` with a valid source, it shows the domain constant
   `DICTIONARY_ATTRIBUTION` (DECISIONS §16a), plus a link to the CC BY-SA 4.0 licence (`data-credit="dictionary"`). Text supplied by the service is never rendered.
 - Otherwise it shows "No dictionary installed." (`data-credit="no-dictionary"`).
-- The capability is cleared when the service URL changes, on re-pairing, and on 401 (pairing lost).
+- The capability is cleared when the service URL changes (including Disconnect), on re-pairing, and on 401 (pairing lost). Forget pairing only deletes the remembered record; the live session stays paired, so Credits keeps showing until the next disconnect or restart.
 
 ## Export attribution notice — one-way format bump
 
