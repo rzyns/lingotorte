@@ -164,7 +164,7 @@ describe('lt-unl learner-facing copy', () => {
     expect(summary).toContain('line 1');
     expect(summary).not.toContain('line 0');
     const chips = Array.from(document.querySelectorAll('.source-context-chips .source-meta-chip')).map((c) => c.textContent);
-    expect(chips).toContain('line 1');
+    // lt-dlf.11: no duplicate line chip; the summary carries "line N".
     expect(chips).not.toContain('line 0');
   });
 
