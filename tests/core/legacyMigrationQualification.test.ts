@@ -140,7 +140,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-typed-input')?.eventLink).toEqual({ reviewEventId: 'r-a' });
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-multiple-choice')?.eventLink).toEqual({});
         expect(db.status().learnerAuditRecovery).toMatchObject({ snapshotOnlyReviews: 2, tableOnlyReviews: 0, snapshotOnlyAttempts: 5, tableOnlyAttempts: 0, orphanReviews: 0, orphanAttempts: 0, unresolvedAttemptLinks: 0 });
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         if (i === 0) revision = s.revision; else expect(s.revision).toBe(revision);
       } finally { db.close(); }
       const state = tableState(file);
@@ -149,7 +149,8 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     // Historical ledger rows and pre-existing projection rows are preserved byte-for-byte.
     expect(afterFirst!.rows.schema_migration!.slice(0, 4)).toEqual(pre.rows.schema_migration);
     expect(afterFirst!.rows.media_asset).toEqual(pre.rows.media_asset);
-    expect(afterFirst!.rows.saved_item).toEqual(pre.rows.saved_item);
+    // v10 only adds the nullable meaning_source_json column; every legacy value is unchanged.
+    expect(afterFirst!.rows.saved_item).toEqual(pre.rows.saved_item!.map(row => ({ ...row, meaning_source_json: null })));
     expect(afterFirst!.rows.import_job_event).toHaveLength(2);
   });
 
@@ -173,7 +174,8 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     expect(opened[1]).toEqual(opened[0]); expect(opened[2]).toEqual(opened[0]);
     // Legacy table rows are never rewritten, only appended to.
     for (const table of ['review_event', 'practice_attempt', 'import_job_event', 'media_asset', 'saved_item', 'provider_policy']) {
-      for (const row of pre.rows[table]!) expect(opened[0]!.rows[table]!).toContainEqual(row);
+      // v10 adds a nullable saved_item.meaning_source_json column; legacy rows keep every value and gain NULL.
+      for (const row of pre.rows[table]!) expect(opened[0]!.rows[table]!).toContainEqual(table === 'saved_item' ? { ...row, meaning_source_json: null } : row);
     }
     expect(opened[0]!.rows.schema_migration!.slice(0, 7)).toEqual(pre.rows.schema_migration);
   });
@@ -254,8 +256,8 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   });
 
   it.each([
-    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (10, 'future_migration', ?, 'f', 'applied')").run(AT)],
-    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=10').run()],
+    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (11, 'future_migration', ?, 'f', 'applied')").run(AT)],
+    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=11').run()],
   ])('upgraded populated DB with %s is refused at open without mutation (no in-place downgrade)', (_, mutate) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     SqliteLocalPersistence.open(file).close();
@@ -267,7 +269,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   it('future snapshot schema row is refused on load and on save without mutation', () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     SqliteLocalPersistence.open(file).close();
-    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=10').run(); raw.close(); const pre = tableState(file);
+    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=11').run(); raw.close(); const pre = tableState(file);
     const db = SqliteLocalPersistence.open(file);
     try {
       expect(refusal(() => db.loadSnapshot())).toMatch(/unsupported/i);
@@ -297,7 +299,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     for (let i = 0; i < 2; i++) {
       const db = SqliteLocalPersistence.open(file);
       try {
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         expect(sortById(db.loadSnapshot().reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(f.union.attempts));
         expect(sortById(db.loadSnapshot().importJobEvents)).toEqual(sortById(f.union.jobEvents));
@@ -315,7 +317,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(tableState(file)).toEqual(pre);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
     const db = SqliteLocalPersistence.open(file);
-    try { expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(9); } finally { db.close(); }
+    try { expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(10); } finally { db.close(); }
   });
 });
 
@@ -364,7 +366,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
     expect(tableState(file)).toEqual(upgraded);
     // No in-place downgrade: the upgraded file presented as a "newer" schema to this binary is refused (simulated by future marker above);
     // here, the upgraded file must not be readable as a v7 database: its ledger already records v8/v9.
-    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 });
 

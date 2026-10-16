@@ -1,6 +1,7 @@
 import {
   makeSavedItem,
   makeSavedOccurrence,
+  type MeaningSource,
   type SavedItem,
   type SavedItemKind,
   type SavedOccurrence,
@@ -13,6 +14,7 @@ export type SaveSelectionInput = Readonly<{
   language: string;
   displayText: string;
   meaning?: string;
+  meaningSource?: MeaningSource;
   notes?: string;
   mediaId: UUID;
   cueId: UUID;
@@ -127,7 +129,7 @@ export class SavedOccurrenceService {
       kind: input.kind,
       language: input.language,
       displayText: input.displayText,
-      ...(input.meaning !== undefined ? { meaning: input.meaning } : {}),
+      ...(input.meaning !== undefined ? { meaning: input.meaning, ...(input.meaningSource ? { meaningSource: input.meaningSource } : {}) } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
     });
     const occurrence = makeSavedOccurrence({

@@ -234,12 +234,19 @@ export type TranscriptTrackSourceContext = Readonly<{
   approvedAt?: ISODateTime;
 }>;
 
+/** lt-foe.3.1: who supplied a saved meaning. Absent = legacy/unknown, treated as learner-entered. */
+export type MeaningSource =
+  | Readonly<{ kind: 'learner' }>
+  | Readonly<{ kind: 'dictionary-suggested'; glossSourceId: string; dumpDate: string }>;
+
 export type SavedItem = Readonly<{
   id: UUID;
   kind: SavedItemKind;
   language: string;
   displayText: string;
   meaning?: string;
+  /** Present only when `meaning` is present. */
+  meaningSource?: MeaningSource;
   notes?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;

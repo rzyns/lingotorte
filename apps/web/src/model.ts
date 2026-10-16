@@ -11,6 +11,7 @@ import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
 import type {
   Cue,
   MediaAsset,
+  MeaningSource,
   SavedItem,
   SavedOccurrence,
   ReviewCard,
@@ -110,6 +111,8 @@ export function createAppModel(): AppModel {
     importError: null,
     importWarning: null,
     pendingMeaning: '',
+    pendingMeaningSuggestion: null,
+    editingMeaningItemId: null,
     pendingNotes: '',
     view: 'player',
     transcriptQuery: '',
@@ -667,6 +670,7 @@ export function openMediaAsset(model: AppModel, mediaId: string): boolean {
   model.player.loopRange = null;
   model.selection = null;
   model.pendingMeaning = '';
+  model.pendingMeaningSuggestion = null;
   model.pendingNotes = '';
   return true;
 }
@@ -3339,6 +3343,12 @@ function canUndoSave(model: AppModel, receipt: SaveReceipt): boolean {
   return true;
 }
 
+/** lt-foe.3.1: a pending meaning is dictionary-suggested only when it equals the suggestion exactly. */
+function meaningSourceForPending(model: AppModel): MeaningSource {
+  const suggestion = model.pendingMeaningSuggestion;
+  return suggestion && suggestion.text === model.pendingMeaning ? suggestion.source : { kind: 'learner' };
+}
+
 export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveReceipt | null> {
   if (!model.selection || !model.currentMedia || !model.targetTrackId) return null;
   const cue = model.cues.find((c) => c.id === model.selection?.cueId);
@@ -3381,7 +3391,7 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
     kind: model.selection.kind,
     language: 'pl',
     displayText: isSentence ? cue.text : model.selection.text,
-    ...(model.pendingMeaning ? { meaning: model.pendingMeaning } : {}),
+    ...(model.pendingMeaning ? { meaning: model.pendingMeaning, meaningSource: meaningSourceForPending(model) } : {}),
     ...(model.pendingNotes ? { notes: model.pendingNotes } : {}),
     mediaId: model.currentMedia.id,
     cueId: cue.id,
@@ -3570,12 +3580,18 @@ export function addSavedItemsToReview(model: AppModel, items: readonly SavedItem
   return added;
 }
 
-/** Inline 'Add meaning': writes savedItem.meaning and persists (also marks the snapshot cache dirty). */
-export function setSavedItemMeaning(model: AppModel, savedItemId: string, meaning: string): SavedItem | null {
+/**
+ * Inline 'Add meaning' / 'Edit meaning': writes savedItem.meaning with a learner source and persists (also marks
+ * the snapshot cache dirty). lt-foe.3.1: with `allowClear`, an empty value removes the meaning and its source.
+ */
+export function setSavedItemMeaning(model: AppModel, savedItemId: string, meaning: string, options: { allowClear?: boolean } = {}): SavedItem | null {
   const item = model.store.getSavedItem(savedItemId);
   const trimmed = meaning.trim();
-  if (!item || !trimmed) return null;
-  const updated: SavedItem = { ...item, meaning: trimmed, updatedAt: model.clock().toISOString() };
+  if (!item || (!trimmed && !options.allowClear)) return null;
+  const { meaning: _meaning, meaningSource: _source, ...rest } = item;
+  const updated: SavedItem = trimmed
+    ? { ...rest, meaning: trimmed, meaningSource: { kind: 'learner' }, updatedAt: model.clock().toISOString() }
+    : { ...rest, updatedAt: model.clock().toISOString() };
   model.store.putSavedItem(updated);
   persistIfLocalServiceAutosaveEnabled(model);
   return updated;
@@ -4117,7 +4133,7 @@ function clearStaleLearnerUi(model: AppModel): void {
   model.practice.pendingAnswer = ''; model.practice.lastAttemptResult = null;
   model.practice.sentenceBuilder.orderedTokens = []; model.practice.sentenceBuilder.poolTokens = [];
   model.practice.cardId = null; model.practice.revealed = false; model.practice.choices = null;
-  model.selection = null; model.pendingMeaning = ''; model.pendingNotes = '';
+  model.selection = null; model.pendingMeaning = ''; model.pendingMeaningSuggestion = null; model.pendingNotes = '';
 }
 function finishRestore(model: AppModel, manifest: import('@lingotorte/domain').LearnerExportManifest, receipt: ReturnType<RestoreService['restoreWithReceipt']>['receipt'] | (Omit<ReturnType<RestoreService['restoreWithReceipt']>['receipt'], 'durability' | 'durablySaved'> & { durability: string; durablySaved: boolean }), preview: import('@lingotorte/domain').RestorePreview): void {
   model.exportImport.lastRestore = {
@@ -4313,6 +4329,7 @@ export function setTranscriptQuery(model: AppModel, query: string): void {
 }
 
 export function setView(model: AppModel, view: import('./uiTypes').ViewName): void {
+  if (model.view !== view) model.editingMeaningItemId = null;
   model.view = view;
 }
 
@@ -4325,6 +4342,7 @@ export function setSelection(model: AppModel, selection: NonNullable<import('./u
 export function clearSelection(model: AppModel): void {
   model.selection = null;
   model.pendingMeaning = '';
+  model.pendingMeaningSuggestion = null;
   model.pendingNotes = '';
 }
 

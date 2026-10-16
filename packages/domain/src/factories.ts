@@ -96,7 +96,7 @@ export function makeTranscriptWordTiming(
 }
 
 export function makeSavedItem(
-  input: Pick<SavedItem, 'kind' | 'language' | 'displayText'> & Partial<Pick<SavedItem, 'meaning' | 'notes'>>,
+  input: Pick<SavedItem, 'kind' | 'language' | 'displayText'> & Partial<Pick<SavedItem, 'meaning' | 'meaningSource' | 'notes'>>,
 ): SavedItem {
   const now = isoNow();
   return {

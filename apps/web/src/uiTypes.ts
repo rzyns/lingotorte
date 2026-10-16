@@ -1,6 +1,7 @@
 import type {
   Cue,
   LearnerExportManifest,
+  MeaningSource,
   SavedItem,
   SavedOccurrence,
   SavedOccurrenceSourceContext,
@@ -88,6 +89,10 @@ export type AppModel = {
   /** lt-ddy.5: non-blocking import warning (e.g. a subtitle file that could not be read); shown on every view until dismissed. */
   importWarning: string | null;
   pendingMeaning: string;
+  /** lt-foe.3.1: a meaning pre-filled by a future dictionary UI; kept as provenance only if saved unchanged. */
+  pendingMeaningSuggestion: { text: string; source: Extract<MeaningSource, { kind: 'dictionary-suggested' }> } | null;
+  /** lt-foe.3.1: saved item whose meaning is being edited inline (Saved / Review reveal). */
+  editingMeaningItemId: string | null;
   pendingNotes: string;
   view: ViewName;
   savedViewTab?: 'vocab' | 'sentences';

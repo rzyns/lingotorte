@@ -2065,3 +2065,29 @@ h2 {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* lt-foe.3.1: inline Edit meaning (Saved and Review reveal) and dictionary-suggestion provenance label. */
+.meaning-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.meaning-line .edit-meaning-button {
+  padding: 0.125rem 0.5rem;
+  font-size: var(--fs-sm);
+}
+.meaning-source-label {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.edit-meaning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.edit-meaning-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}

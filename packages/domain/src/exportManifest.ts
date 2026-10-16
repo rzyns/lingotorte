@@ -14,6 +14,7 @@ import type {
   ExportIntegrity,
   LearnerExportContent,
   LearnerExportManifest,
+  MeaningSource,
   PracticeAttempt,
   PrivacyWarning,
   PrivacyWarningKind,
@@ -295,10 +296,29 @@ function requireKnownFields(record: Record<string, unknown>, fields: readonly st
   if (Object.keys(record).some(field => !fields.includes(field))) throw new TypeError(`${label} contains unsupported fields`);
 }
 
+/** lt-foe.3.1: strict MeaningSource validation (unknown kinds and extra keys are rejected). */
+export function validateMeaningSource(value: unknown): MeaningSource {
+  const record = asRecord(value, 'meaningSource');
+  if (record.kind === 'learner') {
+    requireKnownFields(record, ['kind'], 'meaningSource');
+    return { kind: 'learner' };
+  }
+  if (record.kind === 'dictionary-suggested') {
+    requireKnownFields(record, ['kind', 'glossSourceId', 'dumpDate'], 'meaningSource');
+    const glossSourceId = requireString(record, 'glossSourceId');
+    const dumpDate = requireString(record, 'dumpDate');
+    if (!glossSourceId.trim() || !dumpDate.trim()) throw new TypeError('meaningSource requires glossSourceId and dumpDate');
+    return { kind: 'dictionary-suggested', glossSourceId, dumpDate };
+  }
+  throw new TypeError('meaningSource has an unsupported kind');
+}
+
 function validateSavedItem(value: unknown): SavedItem {
   const record = asRecord(value, 'savedItem');
-  requireKnownFields(record, ["id", "kind", "language", "displayText", "meaning", "notes", "createdAt", "updatedAt", "archivedAt"], 'savedItem');
+  requireKnownFields(record, ["id", "kind", "language", "displayText", "meaning", "meaningSource", "notes", "createdAt", "updatedAt", "archivedAt"], 'savedItem');
   const meaning = requireOptionalString(record, 'meaning');
+  const meaningSource = record.meaningSource === undefined ? undefined : validateMeaningSource(record.meaningSource);
+  if (meaningSource !== undefined && meaning === undefined) throw new TypeError('savedItem meaningSource requires a meaning');
   const notes = requireOptionalString(record, 'notes');
   const archivedAt = requireOptionalString(record, 'archivedAt');
   const base: Omit<SavedItem, 'meaning' | 'notes' | 'archivedAt'> = {
@@ -311,6 +331,7 @@ function validateSavedItem(value: unknown): SavedItem {
   };
   const result: SavedItem = base as SavedItem;
   if (meaning !== undefined) (result as unknown as Record<string, string>).meaning = meaning;
+  if (meaningSource !== undefined) (result as unknown as Record<string, unknown>).meaningSource = meaningSource;
   if (notes !== undefined) (result as unknown as Record<string, string>).notes = notes;
   if (archivedAt !== undefined) (result as unknown as Record<string, string>).archivedAt = archivedAt;
   return result;

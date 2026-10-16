@@ -2,7 +2,7 @@ import type { AppModel } from '../uiTypes';
 import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
 import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, nativeTextForCue, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
-import { rerenderApp } from '../appShell.ts';
+import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, mediaDisplayName } from '../ui/common.ts';
 
 export function renderSavedView(model: AppModel): HTMLElement {
@@ -89,10 +89,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
     meta.textContent = `${item.kind === 'lexeme' ? 'word' : item.kind} • ${item.language} • saved ${occurrences.length} time${occurrences.length === 1 ? '' : 's'}`;
     card.appendChild(meta);
     if (item.meaning) {
-      const meaning = document.createElement('div');
-      meaning.className = 'meta meaning';
-      meaning.textContent = `Meaning: ${item.meaning}`;
-      card.appendChild(meaning);
+      card.appendChild(renderMeaningLine(model, item, 'div', 'meta meaning'));
     } else if (!savedItemNativeLine(model, occurrences[0]?.cueId)) {
       card.appendChild(renderAddMeaning(model, item.id));
     }
@@ -194,4 +191,77 @@ export function renderAddMeaning(model: AppModel, savedItemId: string): HTMLElem
     if (setSavedItemMeaning(model, savedItemId, input.value)) rerenderApp(model);
   });
   return form;
+}
+
+/**
+ * lt-foe.3.1: 'Meaning: x' with an 'Edit meaning' button that swaps to an inline form (shared with Review reveal).
+ * Enter saves, Escape cancels; focus moves to the input on open and back to the Edit button afterwards.
+ * An empty save clears the meaning and its source.
+ */
+export function renderMeaningLine(model: AppModel, item: SavedItem, tag: 'div' | 'p', className: string): HTMLElement {
+  const line = document.createElement('div');
+  line.className = 'meaning-line';
+  const editId = `edit-meaning-${item.id}`;
+  const inputId = `edit-meaning-input-${item.id}`;
+  const label = `Edit meaning for ${item.displayText}`;
+  const close = () => {
+    model.editingMeaningItemId = null;
+    requestFocusAfterRender(model, editId);
+    rerenderApp(model);
+  };
+  if (model.editingMeaningItemId === item.id) {
+    const form = document.createElement('form');
+    form.className = 'edit-meaning';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = inputId;
+    input.className = 'edit-meaning-input';
+    input.value = item.meaning ?? '';
+    input.setAttribute('aria-label', label);
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'btn-secondary';
+    save.textContent = 'Save meaning';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn-secondary';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', close);
+    const commit = () => {
+      setSavedItemMeaning(model, item.id, input.value, { allowClear: true });
+      close();
+    };
+    form.addEventListener('submit', (e) => { e.preventDefault(); commit(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    });
+    form.append(input, save, cancel);
+    line.appendChild(form);
+    return line;
+  }
+  // The meaning element keeps its existing class and exact 'Meaning: x' text; the button is a sibling.
+  const text = document.createElement(tag);
+  text.className = className;
+  text.textContent = `Meaning: ${item.meaning}`;
+  line.appendChild(text);
+  if (item.meaningSource?.kind === 'dictionary-suggested') {
+    const source = document.createElement('span');
+    source.className = 'meaning-source-label';
+    source.textContent = '(dictionary suggestion)';
+    line.appendChild(source);
+  }
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.id = editId;
+  edit.className = 'btn-secondary edit-meaning-button';
+  edit.textContent = 'Edit meaning';
+  edit.setAttribute('aria-label', label);
+  edit.addEventListener('click', () => {
+    model.editingMeaningItemId = item.id;
+    requestFocusAfterRender(model, inputId);
+    rerenderApp(model);
+  });
+  line.appendChild(edit);
+  return line;
 }

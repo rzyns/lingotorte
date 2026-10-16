@@ -10,7 +10,7 @@ import {
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
-import { renderAddMeaning } from './saved.ts';
+import { renderAddMeaning, renderMeaningLine } from './saved.ts';
 
 const REVIEW_RATINGS = ['again', 'hard', 'good', 'easy'] as const;
 type ReviewRatingName = (typeof REVIEW_RATINGS)[number];
@@ -109,10 +109,7 @@ export function renderReviewView(model: AppModel): HTMLElement {
     reveal.appendChild(targetLine);
 
     if (savedItem.meaning) {
-      const meaning = document.createElement('p');
-      meaning.className = 'review-meaning';
-      meaning.textContent = `Meaning: ${savedItem.meaning}`;
-      reveal.appendChild(meaning);
+      reveal.appendChild(renderMeaningLine(model, savedItem, 'p', 'review-meaning'));
     } else if (!nativeText) {
       // lt-uzo: no meaning and no native line, so front and back would match; offer an inline answer.
       reveal.appendChild(renderAddMeaning(model, savedItem.id));

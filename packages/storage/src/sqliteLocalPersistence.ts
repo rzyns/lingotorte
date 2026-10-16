@@ -36,9 +36,9 @@ import type {
 import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
 import { sameHistoryPayload, unionHistory, normalizeLearnerAudit, type LearnerAudit } from './learnerAudit.ts';
 import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
-import { requireRestoreConfirmation, type RestoreConfirmation } from '@lingotorte/domain';
+import { requireRestoreConfirmation, validateMeaningSource, type RestoreConfirmation } from '@lingotorte/domain';
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
@@ -352,6 +352,13 @@ const EXPAND_PRACTICE_MODES_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+// lt-foe.3.1: nullable provenance column; existing rows keep their meaning with NULL (legacy/unknown) source.
+const SAVED_ITEM_MEANING_SOURCE_SQL = `
+  ALTER TABLE saved_item ADD COLUMN meaning_source_json TEXT;
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 10)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
 const ACTIVE_AUDIT_SQL = `
   CREATE TABLE active_review_event (id TEXT PRIMARY KEY REFERENCES review_event(id));
   CREATE TABLE active_practice_attempt (id TEXT PRIMARY KEY REFERENCES practice_attempt(id));
@@ -460,6 +467,7 @@ type SavedItemRow = Readonly<{
   language: string;
   display_text: string;
   meaning: string | null;
+  meaning_source_json: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -699,6 +707,7 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
     checksum: migrationChecksum(EXPAND_PRACTICE_MODES_SQL),
   },
   { version: 9, name: 'active_learner_audit_membership', sql: ACTIVE_AUDIT_SQL, checksum: migrationChecksum(ACTIVE_AUDIT_SQL) },
+  { version: 10, name: 'saved_item_meaning_source', sql: SAVED_ITEM_MEANING_SOURCE_SQL, checksum: migrationChecksum(SAVED_ITEM_MEANING_SOURCE_SQL) },
 ];
 
 export class SqliteLocalPersistence {
@@ -758,6 +767,8 @@ export class SqliteLocalPersistence {
     try {
       this.db.exec(migration.sql);
       if (migration.version === 9) this.initializeActiveAudit();
+      // The snapshot row content is unchanged by v10 (no item has a source yet); only its version tag moves.
+      if (migration.version === 10) this.db.prepare('UPDATE lingotorte_snapshots SET schema_version = ? WHERE schema_version = 9').run(10);
       this.db
         .prepare('INSERT INTO schema_migration (version, name, applied_at, checksum, result) VALUES (?, ?, ?, ?, ?)')
         .run(migration.version, migration.name, new Date().toISOString(), migration.checksum, 'applied');
@@ -932,7 +943,7 @@ export class SqliteLocalPersistence {
   listSavedItems(): readonly SavedItem[] {
     const rows = this.db
       .prepare(`
-        SELECT id, kind, language, display_text, meaning, notes,
+        SELECT id, kind, language, display_text, meaning, meaning_source_json, notes,
                created_at, updated_at, archived_at
         FROM saved_item
         ORDER BY created_at ASC, id ASC
@@ -950,6 +961,7 @@ export class SqliteLocalPersistence {
       return {
         ...item,
         ...(row.meaning === null ? {} : { meaning: row.meaning }),
+        ...(row.meaning === null || row.meaning_source_json === null ? {} : { meaningSource: validateMeaningSource(JSON.parse(row.meaning_source_json)) }),
         ...(row.notes === null ? {} : { notes: row.notes }),
         ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
       };
@@ -1322,9 +1334,9 @@ export class SqliteLocalPersistence {
 
     const insertSavedItem = this.db.prepare(`
       INSERT INTO saved_item (
-        id, kind, language, display_text, meaning, notes,
+        id, kind, language, display_text, meaning, meaning_source_json, notes,
         created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const item of Object.values(snapshot.savedItems)) {
       insertSavedItem.run(
@@ -1333,6 +1345,7 @@ export class SqliteLocalPersistence {
         item.language,
         item.displayText,
         item.meaning ?? null,
+        item.meaning !== undefined && item.meaningSource !== undefined ? JSON.stringify(validateMeaningSource(item.meaningSource)) : null,
         item.notes ?? null,
         item.createdAt,
         item.updatedAt,

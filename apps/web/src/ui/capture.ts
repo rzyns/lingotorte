@@ -26,6 +26,7 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>, 
   model.selection = selection;
   // lt-e0j: Undo re-opens the form with the values the learner had typed.
   model.pendingMeaning = draft?.meaning ?? '';
+  model.pendingMeaningSuggestion = null;
   model.pendingNotes = draft?.notes ?? '';
   window.getSelection()?.removeAllRanges();
   requestFocusAfterRender(model, 'selection-meaning');
