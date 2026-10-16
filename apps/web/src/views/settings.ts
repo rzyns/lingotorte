@@ -26,7 +26,7 @@ export const CLEAR_CACHE_CONFIRM_TEXT = 'Clear the cached copy in this browser a
 export const CLEAR_CACHE_UNSAVED_WARNING = 'You have changes that are not yet saved to the local service. Clearing will lose them permanently. Use “Save state now” first to keep them.';
 export const CLEAR_CACHE_CONFIRM_LABEL = 'Yes, clear it';
 export const CLEAR_CACHE_DONE_MESSAGE = "Cleared this browser's cached state. Reloading…";
-export const CLEAR_CACHE_FAILED_MESSAGE = "Could not clear this browser's cached state (browser storage unavailable). Nothing was changed in the local service.";
+export const CLEAR_CACHE_FAILED_MESSAGE = "Could not clear this browser's cached state (browser storage unavailable). Nothing was changed in the local service. Browser caching is paused until you reload the page.";
 
 /** Injection points for tests; production uses IndexedDB and a real page reload. */
 export const clearCacheDeps: { backend: SnapshotCacheBackend | null | undefined; reload: () => void } = {
