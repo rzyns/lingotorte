@@ -265,6 +265,14 @@ function createVideoStage(model: AppModel): HTMLElement {
       video.currentTime = loopJump / 1000;
     }
   });
+  // lt-ddy.7: a seek while paused fires no timeupdate in some browsers; refresh the native-only line.
+  video.addEventListener('seeked', () => {
+    if (!isCurrentVideo() || model.cues.length > 0) return;
+    const timeMs = Math.round(video.currentTime * 1000);
+    model.player.currentTimeMs = timeMs;
+    updateOverlay(stage, model, null);
+    syncNativeOnlyLine(model, timeMs);
+  });
   video.addEventListener('error', () => {
     if (!isCurrentVideo()) return;
     const code = video.error?.code ?? 0;
@@ -751,7 +759,7 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
 /** lt-ddy.6: follow playback in the read-only native list without a full rerender. */
 function syncNativeOnlyLine(model: AppModel, timeMs: number): void {
   if (model.cues.length > 0) return;
-  const activeId = nativeOnlyCues(model).find((c) => c.startMs <= timeMs && c.endMs > timeMs)?.id ?? null;
+  const activeId = activeCueAtTime(nativeOnlyCues(model), timeMs)?.id ?? null;
   document.querySelectorAll<HTMLElement>('.native-only-row').forEach((row) => {
     row.classList.toggle('active', row.dataset.nativeCueId === activeId);
   });
@@ -763,7 +771,7 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   if (!cue) {
     overlay.textContent = '';
     // lt-ddy.6: native-only media shows its native line as plain text (never word buttons).
-    const nativeCue = model.cues.length === 0 ? nativeOnlyCues(model).find((c) => c.startMs <= model.player.currentTimeMs && c.endMs > model.player.currentTimeMs) : undefined;
+    const nativeCue = activeCueAtTime(nativeOnlyCues(model), model.player.currentTimeMs);
     if (nativeCue) {
       const native = document.createElement('div');
       native.className = 'subtitle-native';

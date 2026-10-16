@@ -3,6 +3,7 @@ import { analyseCueMorphology, renderMorphologyPanel } from '../../morphologyPan
 import type { Cue } from '@lingotorte/domain';
 import { formatTimeMs } from '../../uiTypes';
 import {
+  activeCueAtTime,
   clearSelection,
   nativeOnlyCues,
   nativeTextForCue,
@@ -260,7 +261,7 @@ function renderNativeOnlyLines(model: AppModel, panel: HTMLElement): void {
   panel.appendChild(note);
   const query = model.transcriptQuery.toLowerCase();
   const cues = nativeOnlyCues(model).filter((c) => !query || c.text.toLowerCase().includes(query));
-  const activeId = activeCueAtTimeId(cues, model.player.currentTimeMs);
+  const activeId = activeCueAtTime(cues, model.player.currentTimeMs)?.id ?? null;
   for (const cue of cues) {
     const row = document.createElement('div');
     row.className = `native-only-row${cue.id === activeId ? ' active' : ''}`;
@@ -293,10 +294,6 @@ function renderNativeOnlyLines(model: AppModel, panel: HTMLElement): void {
     });
     panel.appendChild(row);
   }
-}
-
-function activeCueAtTimeId(cues: readonly Cue[], timeMs: number): string | null {
-  return cues.find((c) => c.startMs <= timeMs && c.endMs > timeMs)?.id ?? null;
 }
 
 // lt-z8s: set when a drag-select mouseup captures, so the click that follows it on a word button is ignored.
