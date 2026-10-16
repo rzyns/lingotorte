@@ -32,12 +32,11 @@ export function renderPlayerView(model: AppModel): HTMLElement {
 
   const header = document.createElement('div');
   header.className = 'study-cockpit-header card';
+  // lt-dlf.11 (P3): one compact row — heading + study status; the intro copy moved out to keep the video above the fold.
   const headingGroup = document.createElement('div');
   const h2 = document.createElement('h2');
   h2.textContent = 'Player';
-  const intro = document.createElement('p');
-  intro.textContent = 'Watch a local video with its transcript beside it. Every word you save remembers the video and time it came from.';
-  headingGroup.append(h2, intro);
+  headingGroup.append(h2);
   header.append(headingGroup, renderStudyStatusRail(model));
   section.appendChild(header);
 
