@@ -116,7 +116,7 @@ const uposMatches = (result: GlossLookupResult, upos: string | undefined) => upo
 
 /**
  * Resolution rule (deterministic):
- * 1. Look up the primary {lemma, upos} (glossStore: direct glosses first, else one form-of hop).
+ * 1. Look up the primary {lemma, upos} (glossStore: direct glosses first, else one form-of hop, else the unresolved form-of rows' own text).
  * 2. Keep the primary if it was found and either the query has no upos or some returned sense has that upos.
  * 3. Otherwise walk the alternatives in request order and take the first one that is found AND has a
  *    sense matching its own upos; when the primary was not found at all, a found alternative without

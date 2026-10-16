@@ -60,7 +60,7 @@ describe('lt-foe.3.3 gloss client', () => {
     expect(bad(v => { v.results[0].otherReadings = Array(4).fill(v.results[0].otherReadings[0]); })).toEqual(invalid);
     expect(bad(v => { v.results[0].otherReadings[0].hop = 'alternative'; })).toEqual(invalid);
     expect(bad(v => { v.results[0].otherReadings[0].senses = []; })).toEqual(invalid);
-    expect(bad(v => { v.results[0].otherReadings[0].formOf = 'x'; })).toEqual(invalid); // formOf only with via 'form-of'
+    expect(bad(v => { v.results[0].otherReadings[0].formOf = 'x'; })).toEqual(invalid); // formOf only when the effective hop is 'form-of'
     expect(bad(v => { delete v.results[0].formOf; })).toEqual(invalid); // form-of requires formOf
     expect(bad(v => { v.results[0].via = 'lemma'; })).toEqual(invalid); // lemma forbids formOf
     expect(bad(v => { v.results[1].formOf = 'x'; })).toEqual(invalid);
