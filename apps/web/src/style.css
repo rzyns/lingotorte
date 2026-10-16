@@ -918,6 +918,12 @@ textarea:focus-visible,
     max-width: calc(35dvh * 16 / 9);
   }
 
+  /* lt-dlf.14: at 35dvh the stage is ~136px, so the 38% cap clipped the first subtitle line and the
+     clipped (hit-test-invisible) words could not be clicked. Let the overlay grow to its content. */
+  .video-stage .subtitle-overlay {
+    max-height: none;
+  }
+
   .transcript-copilot .cue-row {
     scroll-margin-top: calc(35vh + var(--space-2));
     scroll-margin-top: calc(35dvh + var(--space-2));

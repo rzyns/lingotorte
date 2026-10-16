@@ -28,6 +28,12 @@ describe('lt-dlf.14 CSS', () => {
     expect(block).toContain('padding-right: 50%');
   });
 
+  it('lets the subtitle overlay grow in short landscape so the first line is not clipped (hit-test-dead)', () => {
+    const i = css.indexOf('@media (max-width: 899px) and (max-height: 500px)');
+    const block = css.slice(i, css.indexOf('\n}\n', i));
+    expect(block).toMatch(/\.subtitle-overlay \{\s*max-height: none;/);
+  });
+
   it('resets the stage under the prefixed WebKit fullscreen pseudo-class', () => {
     const r = rule('.video-stage:-webkit-full-screen {');
     expect(r).toContain('position: static');
@@ -44,7 +50,7 @@ describe('lt-dlf.14 cueRowOnScreen', () => {
   let dom: JSDOM;
   afterEach(() => dom?.window.close());
 
-  function setup(sheetLeft = 0) {
+  function setup(sheetLeft = 0, videoLeft = 0, videoRight = 390) {
     dom = new JSDOM(`<!doctype html><body>
       <div class="video-stage" style="position: sticky"></div>
       <div data-cue-id="c1" class="cue-row"></div>
@@ -56,7 +62,7 @@ describe('lt-dlf.14 cueRowOnScreen', () => {
       (dom.window.document.querySelector(sel) as HTMLElement).getBoundingClientRect = () =>
         ({ top, bottom, left, right, height: bottom - top, width: right - left, x: left, y: top, toJSON() {} }) as DOMRect;
     };
-    box('.video-stage', 0, 250);
+    box('.video-stage', 0, 250, videoLeft, videoRight);
     box('.selection-panel', 464, 844, sheetLeft, 390);
     return (top: number, bottom: number) => box('[data-cue-id="c1"]', top, bottom);
   }
@@ -83,5 +89,15 @@ describe('lt-dlf.14 cueRowOnScreen', () => {
     const row = setup(400);
     row(600, 640);
     expect(cueRowOnScreen('c1')).toBe(true);
+  });
+
+  it('detects short landscape (<=899px wide, <=500px tall) so a covered row is still revealed', async () => {
+    const shell = await import('../../apps/web/src/appShell');
+    const row = setup(400, 150, 300);
+    row(-26, 119);
+    dom.window.matchMedia = ((q: string) => ({ matches: /max-width/.test(q), media: q })) as unknown as typeof dom.window.matchMedia;
+    expect(shell.isShortLandscapeLayout()).toBe(false); // innerHeight 844: portrait
+    Object.defineProperty(dom.window, 'innerHeight', { value: 390, configurable: true });
+    expect(shell.isShortLandscapeLayout()).toBe(true);
   });
 });

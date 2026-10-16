@@ -414,7 +414,7 @@ export function rerenderApp(model: AppModel): void {
   // scroll the window (and the video) away. Only nudge a row that is already on screen (a transcript click)
   // into the band between the sticky video and the sheet; an off-screen row (subtitle click) is left alone.
   const cueToReveal = model.selection ? model.selection.cueId : model.player.activeCueId;
-  if (!isStackedPlayerLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? 'end' : 'center');
+  if (!isStackedPlayerLayout() || isShortLandscapeLayout() || cueRowOnScreen(cueToReveal)) scrollCueIntoView(cueToReveal, model.selection ? 'end' : 'center');
   // Last, so the focused field is never left obscured (WCAG 2.4.11) and the page moves only as needed.
   if (successor && typeof successor.scrollIntoView === 'function') successor.scrollIntoView({ block: 'nearest' });
   scheduleLearningWake(model);
@@ -423,6 +423,12 @@ export function rerenderApp(model: AppModel): void {
 /** lt-dlf.10: same breakpoint as the stacked (bottom-sheet) layout in style.css. */
 export function isStackedPlayerLayout(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 899px)').matches;
+}
+
+/** lt-dlf.14: short landscape (style.css) pins the sheet beside the rows and the video stays sticky, so any
+ *  clicked row, including an off-screen one from a subtitle click, can be scrolled into the free column. */
+export function isShortLandscapeLayout(): boolean {
+  return isStackedPlayerLayout() && window.innerHeight <= 500; // same as the CSS (max-height: 500px)
 }
 
 function cueRowElement(cueId: string): Element | null {
