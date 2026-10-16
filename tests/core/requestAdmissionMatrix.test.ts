@@ -38,6 +38,7 @@ describe('partial real admission matrix (not A01-A30 qualification)', () => {
       { method: 'DELETE', path: `/api/snippets/${id}` }, { method: 'POST', path: '/api/artifacts/cleanup', body: '{}' },
       { method: 'POST', path: '/api/language/morphology', body: '{"language":"pl","tokens":["dom"]}' },
       { method: 'POST', path: '/api/language/gloss', body: '{"language":"pl","queries":[{"lemma":"dom"}]}' },
+      { method: 'POST', path: '/api/export/anki', body: '{"notes":[{"guid":"lt00000000000000000000","word":"dom","meaningHtml":"","contextHtml":"","notesHtml":"","attributionHtml":"","tags":[]}]}' },
       ...['waiting', 'noop', 'local-transcription', 'elevenlabs-scribe', 'youtube-caption', 'embedded-subtitle-list',
         'embedded-subtitle-extract', 'source-audio-snippet'].map(kind => ({ method: 'POST', path: '/api/jobs',
           body: JSON.stringify({ kind, payload: { mediaPath: '/synthetic/not-read.webm' } }) })),

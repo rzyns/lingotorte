@@ -1,0 +1,188 @@
+{
+  "savedItems": [
+    {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "kind": "phrase",
+      "language": "pl",
+      "displayText": "dzień dobry",
+      "createdAt": "2026-10-02T10:00:00.000Z",
+      "updatedAt": "2026-10-02T10:00:00.000Z",
+      "meaning": "good morning",
+      "meaningSource": {
+        "kind": "learner"
+      }
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "kind": "word",
+      "language": "pl",
+      "displayText": "kot",
+      "createdAt": "2026-10-01T10:00:00.000Z",
+      "updatedAt": "2026-10-01T10:00:00.000Z",
+      "meaning": "cat",
+      "meaningSource": {
+        "kind": "dictionary-suggested",
+        "glossSourceId": "kaikki-enwiktionary-pl-2026-10-03",
+        "dumpDate": "2026-10-03"
+      },
+      "notes": "Line one\nLine\ttwo & <i>three</i>"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "kind": "word",
+      "language": "pl",
+      "displayText": "<script>alert(\"x\")</script>",
+      "createdAt": "2026-10-01T10:00:00.000Z",
+      "updatedAt": "2026-10-01T10:00:00.000Z"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000004",
+      "kind": "sentence",
+      "language": "pl",
+      "displayText": "To jest stare.",
+      "createdAt": "2026-10-03T10:00:00.000Z",
+      "updatedAt": "2026-10-03T10:00:00.000Z",
+      "meaning": "It is old.",
+      "archivedAt": "2026-10-04T10:00:00.000Z"
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000005",
+      "kind": "word",
+      "language": "pl",
+      "displayText": "pies",
+      "createdAt": "2026-10-05T10:00:00.000Z",
+      "updatedAt": "2026-10-05T10:00:00.000Z",
+      "notes": "only notes"
+    }
+  ],
+  "savedOccurrences": [
+    {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "savedItemId": "10000000-0000-4000-8000-000000000001",
+      "mediaId": "00000000-0000-4000-8000-000000000001",
+      "cueId": "00000000-0000-4000-8000-000000000003",
+      "startMs": 1000,
+      "endMs": 2000,
+      "selectionKind": "word",
+      "selectionText": "kot",
+      "contextBefore": "Later ",
+      "contextAfter": "s.",
+      "createdAt": "2026-10-09T00:00:00.000Z",
+      "sourceContext": {
+        "mediaId": "00000000-0000-4000-8000-000000000001",
+        "mediaPath": "fixtures/media/secret-name.webm",
+        "mediaFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "subtitleTrackId": "00000000-0000-4000-8000-000000000002",
+        "cueId": "00000000-0000-4000-8000-000000000003",
+        "timeRangeMs": {
+          "startMs": 1000,
+          "endMs": 2000
+        },
+        "tokenSpan": {
+          "start": 0,
+          "end": 1
+        },
+        "charSpan": {
+          "start": 0,
+          "end": 3
+        }
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "savedItemId": "10000000-0000-4000-8000-000000000001",
+      "mediaId": "00000000-0000-4000-8000-000000000001",
+      "cueId": "00000000-0000-4000-8000-000000000003",
+      "startMs": 1000,
+      "endMs": 2000,
+      "selectionKind": "word",
+      "selectionText": "kot",
+      "contextBefore": "Ten ",
+      "contextAfter": " & 'pies' śpi.",
+      "createdAt": "2026-10-01T10:00:00.000Z",
+      "sourceContext": {
+        "mediaId": "00000000-0000-4000-8000-000000000001",
+        "mediaPath": "fixtures/media/secret-name.webm",
+        "mediaFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "subtitleTrackId": "00000000-0000-4000-8000-000000000002",
+        "cueId": "00000000-0000-4000-8000-000000000003",
+        "timeRangeMs": {
+          "startMs": 1000,
+          "endMs": 2000
+        },
+        "tokenSpan": {
+          "start": 0,
+          "end": 1
+        },
+        "charSpan": {
+          "start": 0,
+          "end": 3
+        }
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000003",
+      "savedItemId": "10000000-0000-4000-8000-000000000003",
+      "mediaId": "00000000-0000-4000-8000-000000000001",
+      "cueId": "00000000-0000-4000-8000-000000000003",
+      "startMs": 1000,
+      "endMs": 2000,
+      "selectionKind": "word",
+      "selectionText": "Dzień dobry",
+      "contextBefore": "",
+      "contextAfter": ", panie!",
+      "createdAt": "2026-10-02T10:00:00.000Z",
+      "sourceContext": {
+        "mediaId": "00000000-0000-4000-8000-000000000001",
+        "mediaPath": "fixtures/media/secret-name.webm",
+        "mediaFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "subtitleTrackId": "00000000-0000-4000-8000-000000000002",
+        "cueId": "00000000-0000-4000-8000-000000000003",
+        "timeRangeMs": {
+          "startMs": 1000,
+          "endMs": 2000
+        },
+        "tokenSpan": {
+          "start": 0,
+          "end": 1
+        },
+        "charSpan": {
+          "start": 0,
+          "end": 3
+        }
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000004",
+      "savedItemId": "10000000-0000-4000-8000-000000000002",
+      "mediaId": "00000000-0000-4000-8000-000000000001",
+      "cueId": "00000000-0000-4000-8000-000000000003",
+      "startMs": 1000,
+      "endMs": 2000,
+      "selectionKind": "word",
+      "selectionText": "<script>",
+      "contextBefore": "a\tb ",
+      "contextAfter": "",
+      "createdAt": "2026-10-01T10:00:00.000Z",
+      "sourceContext": {
+        "mediaId": "00000000-0000-4000-8000-000000000001",
+        "mediaPath": "fixtures/media/secret-name.webm",
+        "mediaFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "subtitleTrackId": "00000000-0000-4000-8000-000000000002",
+        "cueId": "00000000-0000-4000-8000-000000000003",
+        "timeRangeMs": {
+          "startMs": 1000,
+          "endMs": 2000
+        },
+        "tokenSpan": {
+          "start": 0,
+          "end": 1
+        },
+        "charSpan": {
+          "start": 0,
+          "end": 3
+        }
+      }
+    }
+  ]
+}

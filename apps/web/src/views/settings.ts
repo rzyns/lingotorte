@@ -161,7 +161,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   const items = [
     'Dictionary / translation adapters: disabled',
     'Cloud sync / backups: disabled',
-    'AnkiConnect / external export: disabled',
+    'Anki: local file export (.apkg / .txt) under Export / Import; AnkiConnect and AnkiWeb sync: disabled',
     'Speech recognition / shadowing: disabled',
   ];
   for (const item of items) {

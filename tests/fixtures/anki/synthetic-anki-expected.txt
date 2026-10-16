@@ -1,0 +1,11 @@
+#separator:tab
+#html:true
+#notetype:Basic (optional reversed card)
+#deck:Lingotorte
+#guid column:1
+#tags column:5
+#columns:GUID	Front	Back	Add Reverse	Tags
+lt02ca7c06abeaf35e40c2	kot<br><small>Ten <b>kot</b> &amp; &#39;pies&#39; śpi.</small>	cat<br><br><small>Line one<br>Line two &amp; &lt;i&gt;three&lt;/i&gt;</small><br><br><small>Word meanings from English Wiktionary (en.wiktionary.org), © Wiktionary contributors, via Wiktextract/kaikki.org, CC BY-SA 4.0 and GFDL. Filtered to Polish and converted to SQLite.</small>	y	lingotorte word
+lt582cfe9c33bf304c00ca	&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;<br><small>a b <b>&lt;script&gt;</b></small>	—		lingotorte word
+lta3c560c336488d166fe3	dzień dobry<br><small><b>Dzień dobry</b>, panie!</small>	good morning	y	lingotorte phrase
+lt7eecd0ff3a401e74ef38	pies	<small>only notes</small>		lingotorte word
