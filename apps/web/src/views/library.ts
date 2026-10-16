@@ -786,7 +786,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   subtitleHeading.textContent = 'Subtitles (optional)';
   const subtitleHint = document.createElement('p');
   subtitleHint.className = 'file-hint';
-  subtitleHint.textContent = 'Pick one or two .srt files; they are used by both import buttons below.';
+  subtitleHint.textContent = 'Pick one or two .srt files; they apply to whichever video option you use below.';
   // lt-dlf.8 Task A: one multi-select picker; roles are assigned by filename and shown with a Swap button.
   const multiInput = document.createElement('input');
   multiInput.id = 'local-subtitle-files';
@@ -899,7 +899,9 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const mediaHint = document.createElement('p');
   mediaHint.className = 'file-hint';
   mediaHint.textContent = 'Required. Use a video from this computer.';
-  mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Choose video'), mediaHint);
+  // lt-dlf.12: when the persistent picker exists it is the primary video path; the session copy is secondary.
+  const hasPersistentPicker = typeof (globalThis as BrowserFilePickerGlobal).showOpenFilePicker === 'function';
+  mediaField.append(mediaLabel, renderFilePicker(mediaInput, 'Pick a video for this session only', hasPersistentPicker ? 'secondary' : 'primary'), mediaHint);
   localFileGrid.appendChild(mediaField);
 
   localImportGroup.appendChild(localFileGrid);

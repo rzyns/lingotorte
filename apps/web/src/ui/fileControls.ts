@@ -5,12 +5,15 @@
  * setInputFiles/CDP still work) and shows an app-styled button label plus the chosen file name.
  * The browser-language "Choose file"/"Wybierz plik" text never renders.
  */
-export function renderFilePicker(input: HTMLInputElement, buttonText: string): HTMLElement {
+export type FilePickerVariant = 'default' | 'primary' | 'secondary';
+
+export function renderFilePicker(input: HTMLInputElement, buttonText: string, variant: FilePickerVariant = 'default'): HTMLElement {
   input.classList.add('file-input-hidden');
   const wrap = document.createElement('div');
   wrap.className = 'file-picker';
   const button = document.createElement('label');
-  button.className = 'file-picker-button';
+  // lt-dlf.12: primary/secondary variants rank competing pickers (e.g. the two video paths).
+  button.className = variant === 'default' ? 'file-picker-button' : `file-picker-button file-picker-button-${variant}`;
   if (input.id) button.htmlFor = input.id;
   button.textContent = buttonText;
   button.setAttribute('aria-hidden', 'true');

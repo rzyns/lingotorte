@@ -20,6 +20,7 @@ Introduced by `lt-unl`. Applies to learner-facing labels in `apps/web/src`.
 | Local service (learner labels) | Local storage service |
 | browser handle / object URL (learner copy) | "files you choose in the browser", "reconnect" |
 | N cards in local deck • state • due ISO | N cards · next due <relative, local time> (state/ISO in details) |
-| Choose video (recommended — stays linked after reload) | unchanged (lt-1ur) |
+| Choose video (recommended — stays linked after reload) | unchanged (lt-1ur); primary video path, listed first (lt-dlf.12) |
+| Choose video (session-copy file input) | Pick a video for this session only (secondary when the persistent picker exists; lt-dlf.12) |
 
 Hero status rail: at most 3 chips — transcript readiness, N saved, N due today. Everything else lives in the collapsed "More study status" footer.
