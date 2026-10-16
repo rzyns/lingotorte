@@ -256,18 +256,18 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
   if (targetTrack) {
     parts.push(`track v${targetTrack.trackVersion}`);
     parts.push(targetTrack.transcriptStatus);
-    visibleParts.push(targetTrack.transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft');
+    // lt-dlf.11 (P3): transcript readiness is shown once, in the Player hero status rail.
   }
   const primary = document.createElement('div');
   primary.className = 'source-context-primary';
   appendSourceDisclosure(primary, visibleParts.join(' • '), parts.join(' • '));
   row.appendChild(primary);
 
-  if (model.currentMedia || activeCue || targetTrack) {
+  if (model.currentMedia) {
     const chips = document.createElement('div');
     chips.className = 'source-context-chips';
     if (model.currentMedia) chips.appendChild(renderSourceMetaChip(model.currentMedia.privacyLabel));
-    if (activeCue) { const lineChip = renderSourceMetaChip(`line ${linePosition(model, activeCue)}`); lineChip.classList.add('source-line-chip'); chips.appendChild(lineChip); }
+    // lt-dlf.11 (P3): "line N" already appears in the summary, so no duplicate line chip.
     row.appendChild(chips);
   }
   return row;

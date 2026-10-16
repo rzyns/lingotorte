@@ -83,6 +83,8 @@ textarea:focus-visible,
   /* header, sync banner, main, footer. Explicit rows keep <main> on the 1fr
      track whether or not the sync banner is rendered (lt-4he). */
   grid-template-rows: auto auto 1fr auto;
+  /* lt-dlf.11: minmax(0, 1fr) so the non-wrapping nav scrolls instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
   min-height: 100vh;
   max-width: 1200px;
   margin: 0 auto;
@@ -116,10 +118,15 @@ textarea:focus-visible,
   color: var(--text-muted);
 }
 
+/* lt-dlf.11 (P2): one horizontally scrollable row instead of wrapping to 3 rows on phones. */
 .lingotorte-nav {
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
+  padding: 3px;
+  scrollbar-width: thin;
 }
 
 .lingotorte-nav button {
@@ -130,6 +137,13 @@ textarea:focus-visible,
   padding: 0.4rem 0.9rem;
   font-size: var(--fs-sm);
   transition: background 150ms, border-color 150ms;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.lingotorte-nav button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .lingotorte-nav button:hover {
@@ -203,27 +217,30 @@ textarea:focus-visible,
 .study-cockpit-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: var(--space-2) var(--space-3);
   flex-wrap: wrap;
   background: linear-gradient(135deg, rgba(89, 216, 201, 0.1), rgba(141, 169, 255, 0.07)), var(--surface);
 }
 
 .study-cockpit-header h2 {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
 }
 
-.study-cockpit-header p {
-  max-width: 68ch;
-}
-
-/* lt-dlf.7 (N3): on phones keep the video above the fold; drop the tagline, intro and duplicate line chip (privacy chip stays). */
+/* lt-dlf.7 (N3) / lt-dlf.11 (P2): on phones keep the video above the fold; drop the tagline, stack brand over the one-row nav (privacy chip stays). */
 @media (max-width: 599px) {
-  .lingotorte-header { padding: var(--space-2) 0; }
-  .lingotorte-header p,
-  .study-cockpit-header > div > p,
-  .source-context-row .source-line-chip { display: none; }
-  .study-cockpit-header h2 { margin-bottom: 0; }
+  .lingotorte-header { padding: var(--space-2) 0; gap: var(--space-2); }
+  .lingotorte-header p { display: none; }
+  .lingotorte-header h1 { font-size: var(--fs-lg); }
+  .lingotorte-nav { flex: 1 1 auto; scrollbar-width: none; }
+  .lingotorte-nav button { padding: 0.3rem 0.75rem; }
+  .study-cockpit-header { padding: var(--space-1) var(--space-2); }
+  /* The current nav pill already names the view, so the Player heading stays for screen readers only. */
+  .study-cockpit-header h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .study-cockpit-header .status-token-rail { justify-content: flex-start; }
+  .study-cockpit-header .status-token { min-height: 24px; padding: 0.1rem 0.5rem; }
+  .source-context-row { padding: var(--space-1) var(--space-2); }
 }
 
 .status-token-rail {
@@ -273,7 +290,10 @@ textarea:focus-visible,
 }
 
 .source-context-row {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-1);
   padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
@@ -360,6 +380,11 @@ textarea:focus-visible,
   border-radius: var(--radius);
   overflow: hidden;
   aspect-ratio: 16 / 9;
+  /* lt-dlf.11 (P3): cap height (and width, to keep 16:9) so the whole video fits on a 1280x800 load. */
+  max-height: 58vh;
+  max-width: calc(58vh * 16 / 9);
+  width: 100%;
+  margin-inline: auto;
 }
 
 .video-stage-empty {

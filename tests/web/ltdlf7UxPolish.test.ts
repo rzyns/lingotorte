@@ -126,7 +126,8 @@ describe('lt-dlf.7 N3 mobile Player compaction', () => {
     const { readFileSync } = await import('node:fs');
     const css = readFileSync(new URL('../../apps/web/src/style.css', import.meta.url), 'utf8');
     const block = css.match(/@media \(max-width: 599px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
-    for (const sel of ['.lingotorte-header p', '.study-cockpit-header > div > p', '.source-context-row .source-line-chip']) expect(block).toContain(sel);
+    // lt-dlf.11: the Player intro and the duplicate line chip are no longer rendered, so only the tagline is hidden here.
+    expect(block).toContain('.lingotorte-header p');
     expect(block).not.toMatch(/source-context-chips|source-meta-chip|privacy/);
   });
 
@@ -135,7 +136,8 @@ describe('lt-dlf.7 N3 mobile Player compaction', () => {
     rerenderApp(model);
     const chips = Array.from(document.querySelectorAll('.source-context-chips > *'));
     expect(chips.some((c) => c.textContent === 'owned' && !c.classList.contains('source-line-chip'))).toBe(true);
-    expect(chips.some((c) => /^line \d+$/.test(c.textContent ?? '') && c.classList.contains('source-line-chip'))).toBe(true);
+    // lt-dlf.11: the duplicate line chip is gone ("line N" stays in the source summary).
+    expect(chips.some((c) => /^line \d+$/.test(c.textContent ?? ''))).toBe(false);
   });
 });
 
