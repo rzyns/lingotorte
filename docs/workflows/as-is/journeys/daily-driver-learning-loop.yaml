@@ -1,0 +1,370 @@
+schema: lingotorte.workflow-journey.v1
+id: daily-driver-learning-loop
+title: "Daily-driver learning loop (pair, import, draft/correct/approve, save, review, practise, persist)"
+goal: >-
+  Study my own video with my own subtitles, save words and a sentence from it, review and practise them,
+  and keep all of it in the local service.
+actor: learner
+evidence:
+  kind: observed-live
+  ref: "docs/dev/lt-3kk-daily-driver-journey-plan.md (live run 4, rows sha256 948cacf9…, all 13 phases passed)"
+  note: >-
+    Steps follow lt-3kk phases 01–07 and 09 through the UI. Per-step UX attributes the run did not record
+    (focus, banner wording, guards) are traced to source and labelled source-reading on that step. Run 4
+    predates lt-uzo (cards are now created on save), so s09/s10 card creation is source-reading. Phases 08 and
+    10–13 are security/robustness checks, not learner steps; export/restore (phase 11) is its own journey.
+preconditions:
+  - The Docker stack is running and the browser is on the app origin with an empty local-service store.
+  - The learner has the service's session capability (printed by scripts/pair-local.ts).
+  - A local media file plus target and native .srt files exist on this computer.
+variants:
+  - id: persistent-picker
+    divergesAt: s03-choose-files
+    summary: >-
+      In Chrome the primary action is "Choose video (recommended — stays linked after reload)" (File System
+      Access picker, handle persisted per media). The session-only file input walked here is the fallback
+      the harness can drive.
+    evidence: { kind: source-reading, ref: "apps/web/src/views/library.ts:942-994" }
+  - id: own-subtitles-skip-correction
+    divergesAt: s05-open-transcript-tools
+    summary: >-
+      Subtitle files imported with the media are trusted and already approved (lt-3kk F1), so a learner who
+      only uses their own .srt goes straight from s04 to s09. The draft/correct/approve steps apply only to
+      provider or ASR drafts.
+    evidence: { kind: source-reading, ref: "packages/domain/src/factories.ts:49" }
+  - id: multi-select-subtitles
+    divergesAt: s03-choose-files
+    summary: >-
+      One multi-file picker assigns target/native by filename and offers Swap; the separate per-role inputs
+      walked here sit inside the "Choose target and native separately" disclosure.
+    evidence: { kind: source-reading, ref: "apps/web/src/views/library.ts:791-879" }
+steps:
+  - id: s01-open-settings
+    view: settings
+    title: Open Settings to pair
+    userSees: >-
+      Player view with the empty-video placeholder ("Import local files" / "Load synthetic fixture"); the nav
+      bar Player · Library · Saved · Review · Practice · Export / Import · Settings.
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Settings" }
+    feedback: >-
+      Settings renders; the "Local service / SQLite durable state" panel shows the URL (prefilled with the page
+      origin), a masked "Session capability (private pairing)" field, Connect / Disconnect / Save state now,
+      and an autosave checkbox.
+    source: ["apps/web/src/appShell.ts:228", "apps/web/src/views/settings.ts:176"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-01 }
+  - id: s02-pair
+    view: settings
+    title: Pair with the local service
+    userSees: 'Status line "Local service not connected."; autosave checkbox unchecked.'
+    userDoes:
+      - { kind: type, target: settings.local-service-capability, note: "paste the capability (type=password; cleared on Connect)" }
+      - { kind: click, target: settings.connect-local-service }
+      - { kind: click, target: settings.local-service-autosave, note: turn autosave on }
+    decision: >-
+      If browser work differs from durable state a three-button group appears (Keep browser work / Load service
+      state (discard browser edits) / Cancel connection) and nothing is saved until one is chosen.
+    feedback: >-
+      Status goes "Connecting and comparing durable state; browser work is kept." then "Connected to local
+      service and loaded durable state." (role=status). The capability field is emptied.
+    api: ["GET /api/status", "GET /api/state"]
+    canFail:
+      - condition: Wrong origin or empty capability
+        appResponse: '"Select an exact HTTP origin and enter its private session capability." in the status line'
+        recovery: Re-enter and Connect again
+        source: "apps/web/src/views/settings.ts:253"
+      - condition: Service unreachable or 401
+        appResponse: Status in error tone with the error message; browser work kept
+        recovery: Fix URL/capability and Connect again
+        source: "apps/web/src/model.ts:514"
+    focusAfter: settings.connect-local-service
+    source: ["apps/web/src/views/settings.ts:245", "apps/web/src/model.ts:446", "apps/web/src/views/settings.ts:274"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-01 }
+  - id: s03-choose-files
+    view: library
+    title: Go to Library and choose media + subtitle files
+    userSees: >-
+      Library "Add media" card: "Subtitles (optional)" multi-picker first, a "Choose target and native
+      separately" disclosure, then the "Import copy for this session only" video picker and the primary
+      "Import local media" button.
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Library" }
+      - { kind: click, target: library.separatetoggle, note: open the per-role subtitle disclosure }
+      - { kind: file-input, target: library.local-media-file }
+      - { kind: file-input, target: library.local-target-subtitle-file }
+      - { kind: file-input, target: library.local-native-subtitle-file }
+    feedback: >-
+      Pickers show the chosen names; the assignment line reads "Target: … · Native: …". Nothing is imported
+      yet.
+    source: ["apps/web/src/views/library.ts:776", "apps/web/src/views/library.ts:875", "apps/web/src/views/library.ts:892"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-02 (CDP DOM.setFileInputFiles on the three inputs)" }
+  - id: s04-import
+    view: library
+    title: Import local media
+    userSees: '"Import local media" primary button below the pickers; "Load synthetic fixture" secondary.'
+    userDoes:
+      - { kind: click, target: library.import-local-media }
+    navigatesTo: player
+    feedback: >-
+      App switches to Player; the video stage shows the file (object URL); transcript rows render from the
+      target .srt with native lines beneath; the Library list gains a row with "Transcript ready" (own
+      subtitles are approved on import). With autosave on a PUT follows and the sync line reports saving/saved.
+    persists: ["media asset (fingerprint, title)", "two subtitle tracks (target approved, native)", cues]
+    api: ["PUT /api/state"]
+    canFail:
+      - condition: No media file chosen
+        appResponse: 'role=alert banner "Choose a local media file before importing. A target .srt subtitle file is optional; you can auto-transcribe afterward."'
+        recovery: Choose a file and click again
+        source: "apps/web/src/views/library.ts:920"
+      - condition: File name matches existing media with different content
+        appResponse: 'Inline role=alert box with "Import as new media" / "Cancel"'
+        recovery: Choose one of the two buttons
+        source: "apps/web/src/ui/mediaConflict.ts:22"
+      - condition: One subtitle file unreadable
+        appResponse: Import proceeds; a dismissible warning banner (role=status) stays visible across views until "Dismiss"
+        source: "apps/web/src/appShell.ts:72"
+    focusAfter: body
+    source: ["apps/web/src/views/library.ts:915", "apps/web/src/model.ts:1482"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-02 (server fingerprint and both track roles verified)" }
+  - id: s05-open-transcript-tools
+    view: library
+    title: Back to Library; open Transcript tools
+    userSees: >-
+      Player with the imported video. The correction tools live in Library inside a collapsed disclosure
+      "Transcript tools (auto-transcribe, captions, built-in subtitles)" (collapsed because the current track
+      is approved).
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Library" }
+      - { kind: click, target: library.disclosure, note: 'open "Transcript tools (auto-transcribe, captions, built-in subtitles)"' }
+    feedback: >-
+      The "Transcript lifecycle" panel expands: YouTube URL field, two authorization checkboxes, local-service
+      video path field, embedded-subtitle controls and provider buttons.
+    source: ["apps/web/src/views/library.ts:1017", "apps/web/src/views/library.ts:644", "apps/web/src/views/library.ts:38"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-03 }
+  - id: s06-import-draft
+    view: library
+    title: Authorize and import a caption draft
+    userSees: >-
+      Checkbox "I authorize a public caption metadata read."; button "Import gated demo caption draft" (fake
+      in-browser provider behind the same gate as the real YouTube path).
+    userDoes:
+      - { kind: click, target: library.authcheckbox }
+      - { kind: click, target: library.import-gated-demo-caption-draft }
+    feedback: >-
+      Lifecycle status "Draft transcript imported". A NEW caption-candidate media item becomes current, so the
+      draft is not attached to the imported video (lt-3kk G1). The correction editor appears: one textarea per
+      cue plus start/end ms inputs and Split/Merge per line.
+    persists: [caption-candidate media item, "draft subtitle track (status draft) with cues"]
+    api: ["PUT /api/state"]
+    canFail:
+      - condition: Authorization checkbox not ticked
+        appResponse: Import refused by the gate; error shown in the lifecycle panel
+        recovery: Tick the checkbox and retry
+        source: "apps/web/src/model.ts:2740"
+    source: ["apps/web/src/views/library.ts:124", "apps/web/src/model.ts:2734"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-03 (G1 recorded)" }
+  - id: s07-correct
+    view: library
+    title: Edit a cue and create the corrected version
+    userSees: >-
+      "Transcript correction" group with cue editors; "Create corrected transcript version" (disabled while an
+      apply is pending); "Approve transcript for study" disabled with a gate note while edits are dirty.
+    userDoes:
+      - { kind: type, target: library.textarea, note: replace cue text }
+      - { kind: click, target: library.create-corrected-transcript-version }
+    feedback: >-
+      Lifecycle status "Corrected transcript version created"; a new corrected track (manual-edit, unapproved)
+      becomes current and the editor re-keys onto it. Approve enables once no edits are dirty.
+    persists: ["corrected subtitle track version (unapproved) with cues"]
+    api: ["PUT /api/state"]
+    canFail:
+      - condition: Apply clicked while an apply is pending or the selected track changed
+        appResponse: Button stays disabled; the gate note (role=status, aria-live=polite) explains
+        source: "apps/web/src/views/library.ts:610"
+    focusAfter: body
+    source: ["apps/web/src/views/library.ts:520", "apps/web/src/model.ts:2892", "apps/web/src/views/library.ts:358"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-03; run-4 observation: focus after Apply lands on body (lt-5lb.1)" }
+  - id: s08-approve
+    view: library
+    title: Approve the corrected transcript
+    userSees: '"Approve transcript for study" primary button, now enabled; gate note hidden.'
+    userDoes:
+      - { kind: click, target: library.approve-transcript-for-study }
+    feedback: >-
+      Lifecycle status "Transcript approved for study"; focus moves to the status line; the Player's draft
+      banner disappears and Save controls become enabled.
+    persists: ["corrected track status approved (approvedAt); original draft stays draft"]
+    api: ["PUT /api/state"]
+    focusAfter: transcript-lifecycle-status (status line)
+    source: ["apps/web/src/views/library.ts:619", "apps/web/src/model.ts:3150"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-03 (focus ring present after Approve)" }
+  - id: s09-save-word
+    view: player
+    title: Save a word from a transcript line
+    userSees: >-
+      Player transcript rows (role=button) with per-word buttons; each row has "Save sentence…", "Show words",
+      "Analyse words". The capture panel reads "Select a word or phrase in a transcript line to save it with
+      the video and time it came from."
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Player" }
+      - { kind: select-text, target: player.button, note: "drag-select (mouseup) or click a word button in the cue" }
+      - { kind: type, target: player.selection-meaning, note: "optional; a dictionary suggestion may prefill when the service has a gloss DB" }
+      - { kind: key, target: player.selection-meaning, key: Enter, note: "or click Save (data-action=save-occurrence)" }
+    feedback: >-
+      Video pauses when the form opens; focus goes to Meaning. On save the form closes, focus returns to the
+      cue row, and a toast "Saved “word” · Undo" (role=status) shows for 5 s. A recognition review card is
+      created automatically.
+    persists: ["saved item (lexeme)", "saved occurrence with source context (media, track, cue, char span)", "review card + state (new, due now)"]
+    api: ["PUT /api/state"]
+    canFail:
+      - condition: Target track not approved
+        appResponse: 'Form does not open; "Approve the transcript before saving from it." in the capture panel; Save sentence disabled with a title hint'
+        recovery: Approve the transcript (s08)
+        source: "apps/web/src/ui/capture.ts:14"
+    focusAfter: cue row of the saved line
+    source: ["apps/web/src/views/player/transcript.ts:196", "apps/web/src/ui/capture.ts:14", "apps/web/src/views/player/transcript.ts:574", "apps/web/src/model.ts:3374", "apps/web/src/model.ts:3426", "apps/web/src/ui/capture.ts:45"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (two words, anchors 5–10 and 13–17 verified server-side); auto card creation is source-reading (lt-uzo, after run 4)" }
+  - id: s10-save-sentence
+    view: player
+    title: Save the whole line as a sentence
+    userSees: '"Save sentence…" button on the cue row (enabled now).'
+    userDoes:
+      - { kind: click, target: player.save-sentence, note: "Enter on the focused button also works (lt-r4k.3)" }
+      - { kind: click, target: player.save }
+    feedback: 'Capture heading "Save a sentence"; after Save a toast "Saved “…” · Undo", focus back on the row; card auto-created.'
+    persists: ["saved item (sentence)", "saved occurrence (whole cue span)", "review card + state"]
+    api: ["PUT /api/state"]
+    focusAfter: cue row of the saved line
+    source: ["apps/web/src/views/player/transcript.ts:108", "apps/web/src/views/player/transcript.ts:459"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (span 0–18)" }
+  - id: s11-check-saved
+    view: saved
+    title: Confirm in Saved
+    userSees: >-
+      Saved view with tabs "My Vocab" / "My Sentences"; each item shows kind · language · saved N times, an
+      occurrence link "▶ time — cue", a source disclosure and a toggle "In review ✓" (aria-pressed).
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Saved" }
+      - { kind: click, target: saved.btn, note: '"My Sentences" tab' }
+    feedback: >-
+      Both tabs list the items; toggles read "In review ✓" because cards were created on save. "Add all to
+      review (N)" appears only when an item lacks a card.
+    source: ["apps/web/src/views/saved.ts:8", "apps/web/src/views/saved.ts:147"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-04 saved-items-listed (vocab 2, sentences 1)" }
+  - id: s12-review
+    view: review
+    title: Review a due card by keyboard
+    userSees: >-
+      Review view: prompt "Recognize: word" (role=alert); "Show answer / context" (aria-keyshortcuts Space) and
+      "Replay source line"; hint "Space: show answer · 1–4: rate (Again, Hard, Good, Easy) · ?: all shortcuts".
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Review" }
+      - { kind: key, target: review.hide-answer, key: Space, note: reveal }
+      - { kind: key, target: review.btn, key: "3", note: rate Good }
+    feedback: >-
+      Reveal shows the target text, meaning (or an inline "Add meaning" when there is neither meaning nor
+      native line), the source time range and cue text; four rating buttons appear. Rating loads the next due
+      card or the empty state "No cards due right now…"; focus goes to the reveal toggle / empty state.
+    persists: [review event, "review-card state (FSRS reps 1, state learning)"]
+    api: ["PUT /api/state"]
+    focusAfter: review.hide-answer
+    source: ["apps/web/src/views/review.ts:31", "apps/web/src/views/review.ts:152", "apps/web/src/views/review.ts:18", "apps/web/src/model.ts:3727"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-05 }
+  - id: s13-practice-typed
+    view: practice
+    title: Practise by typing
+    userSees: >-
+      Practice view: prompt (role=alert), "Mode" select (Typed input / Multiple choice / Sentence builder /
+      Audio recall / Speaking), "Your answer" field, Replay source line · Skip · Submit attempt; "Reveal answer"
+      below.
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Practice" }
+      - { kind: type, target: practice.practice-answer-2, note: the exact saved text }
+      - { kind: click, target: practice.submit-attempt }
+    feedback: 'Feedback banner (role=status, tabindex -1) "Previous card — Result: pass ✓"; the next due card loads; focus moves to the banner.'
+    persists: ["practice attempt (typed-input, pass)", FSRS state update + review event]
+    api: ["PUT /api/state"]
+    focusAfter: practice-feedback (status banner)
+    source: ["apps/web/src/views/practice.ts:303", "apps/web/src/views/practice.ts:373", "apps/web/src/views/practice.ts:43", "apps/web/src/model.ts:3868"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-06 }
+  - id: s14-practice-choice
+    view: practice
+    title: Switch to multiple choice and answer
+    userSees: Mode select; after switching, a "Multiple choice answers" group of buttons.
+    userDoes:
+      - { kind: key, target: practice.practice-mode, key: ArrowDown, note: 'select "Multiple choice"' }
+      - { kind: click, target: practice.choicebtn, note: a wrong choice }
+    decision: 'Which practice mode to use (5 modes; Speaking shows "Speaking is not available. No microphone is requested or used.").'
+    feedback: 'Feedback banner "Previous card — Result: fail. Expected: …"; focus to the banner.'
+    persists: ["practice attempt (multiple-choice, fail)", FSRS state update]
+    api: ["PUT /api/state"]
+    focusAfter: practice-feedback (status banner)
+    source: ["apps/web/src/views/practice.ts:86", "apps/web/src/views/practice.ts:120", "apps/web/src/views/practice.ts:114"]
+    evidence: { kind: observed-live, ref: lt-3kk journey-06 }
+  - id: s15-persist-reload
+    view: settings
+    title: Save, reload, re-pair
+    userSees: >-
+      Settings; "Save state now" (disabled while a save is in flight). After reload the app boots from the
+      browser snapshot cache and the service is "not connected" until paired again.
+    userDoes:
+      - { kind: click, target: shell.btn, note: nav "Settings" }
+      - { kind: click, target: settings.save-state-now }
+      - { kind: navigate, note: browser reload }
+      - { kind: type, target: settings.local-service-capability, note: "pair again (capability is not retained unless Remember pairing is on)" }
+      - { kind: click, target: settings.connect-local-service }
+    decision: On reconnect with differing browser work the Keep browser work / Load service state / Cancel group appears.
+    feedback: '"Connected to local service and loaded durable state."; Saved lists the same items; review/practice history intact.'
+    api: ["PUT /api/state", "GET /api/status", "GET /api/state"]
+    canFail:
+      - condition: Autosave PUT still in flight
+        appResponse: '"Save state now" is disabled until the sync settles'
+        recovery: Wait; the button re-enables
+        source: "apps/web/src/views/settings.ts:267"
+    source: ["apps/web/src/views/settings.ts:263", "apps/web/src/model.ts:446", "apps/web/src/browserSnapshotCache.ts:1"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-09 (projection and revision identical after reload)" }
+outcome:
+  summary: >-
+    Media and both subtitle tracks, a corrected+approved transcript (on a separate caption-candidate item),
+    three saved items with occurrences, three review cards with one review and two practice attempts are
+    durable in the local service and survive reload + re-pair.
+  persisted: ["media assets ×2", "subtitle tracks ×4", cues, "saved items ×3", "saved occurrences ×3", "review cards ×3 with states", review events, "practice attempts ×2"]
+observations:
+  - id: o1-draft-not-on-imported-video
+    atStep: s06-import-draft
+    text: >-
+      The only offline way to get a draft (demo caption) creates a separate media item, so correcting and
+      approving never happens on the learner's own imported video in this journey (lt-3kk G1). Own .srt files
+      are approved on import (F1), so the correction tools are unreachable for them.
+    evidence: { kind: observed-live, ref: lt-3kk run 4 G1/F1 }
+  - id: o2-tools-live-in-library
+    atStep: s05-open-transcript-tools
+    text: >-
+      Transcript correction/approval is in Library (inside a disclosure) while saving words happens in Player;
+      the draft→approve→save loop needs two nav round-trips (s05, s09).
+    evidence: { kind: source-reading, ref: "apps/web/src/views/library.ts:1012" }
+  - id: o3-focus-lost-after-import-and-apply
+    atStep: s07-correct
+    text: >-
+      Import local media (s04) and Create corrected transcript version (s07) re-render without a focus
+      successor, so keyboard focus lands on body; Approve, Rate, Submit and choice buttons do have successors
+      (lt-r4k.2).
+    evidence: { kind: observed-live, ref: "lt-3kk run 4 observation: focus after Apply lands on body (lt-5lb.1)" }
+  - id: o4-cards-auto-created
+    atStep: s09-save-word
+    text: >-
+      Saving creates the review card automatically (idempotent per item) and Saved shows an "In review ✓"
+      toggle; the lt-3kk plan text about an explicit "Create review card" predates lt-uzo.
+    evidence: { kind: source-reading, ref: "apps/web/src/model.ts:3426" }
+  - id: o5-pairing-every-session
+    atStep: s15-persist-reload
+    text: >-
+      The capability is cleared after Connect and must be re-entered after every reload and every service
+      restart unless "Remember pairing" is opted in.
+    evidence: { kind: source-reading, ref: "apps/web/src/views/settings.ts:217" }
+  - id: o6-two-answer-fields
+    atStep: s13-practice-typed
+    text: >-
+      Two different "practice-answer" inputs exist in source (audio-recall branch and typed branch); only one
+      renders at a time, so the pass-1 ids are practice.practice-answer and practice.practice-answer-2.
+    evidence: { kind: source-reading, ref: "apps/web/src/views/practice.ts:218" }

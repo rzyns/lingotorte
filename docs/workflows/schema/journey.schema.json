@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lingotorte.local/schema/workflow-journey.v1.json",
+  "title": "Lingotorte as-is user journey (pass 2)",
+  "description": "One observed learner workflow through the current app. Steps reference pass-1 structure IDs (controls, views, routes) so the validator can detect drift. Every journey and every non-trivial claim carries an evidence label.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "title", "goal", "actor", "evidence", "preconditions", "steps", "outcome"],
+  "properties": {
+    "schema": { "const": "lingotorte.workflow-journey.v1" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "Stable journey id, also the file name." },
+    "title": { "type": "string", "minLength": 1 },
+    "goal": { "type": "string", "minLength": 1, "description": "What the learner is trying to achieve, in their words." },
+    "actor": { "enum": ["learner", "operator"] },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "preconditions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "variants": {
+      "type": "array",
+      "description": "Alternative paths through the same goal that this journey does not walk (name + where they diverge).",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "divergesAt", "summary"],
+        "properties": { "id": { "type": "string" }, "divergesAt": { "type": "string", "description": "Step id where the variant branches off." }, "summary": { "type": "string" }, "evidence": { "$ref": "#/$defs/evidence" } }
+      }
+    },
+    "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+    "outcome": {
+      "type": "object", "additionalProperties": false, "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string" },
+        "persisted": { "type": "array", "items": { "type": "string" }, "description": "Durable learner-state effects of the whole journey (domain terms, no values)." }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "description": "UX facts noticed while walking the journey that are not themselves steps. Neutral: no proposals here.",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "text", "evidence"],
+        "properties": { "id": { "type": "string" }, "text": { "type": "string" }, "atStep": { "type": "string" }, "evidence": { "$ref": "#/$defs/evidence" } }
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["observed-live", "source-reading", "jsdom-test", "inference"], "description": "observed-live: a recorded live browser run; source-reading: traced in code; jsdom-test: exercised by a vitest/JSDOM test; inference: not verified." },
+        "ref": { "type": "string", "description": "Where the evidence lives (doc path, test file, run id)." },
+        "note": { "type": "string" }
+      }
+    },
+    "sourceRef": { "type": "string", "pattern": "^[A-Za-z0-9_./-]+\\.(ts|mjs|css):[0-9]+$", "description": "path:line into the repo; validated against the live tree." },
+    "interaction": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["click", "key", "type", "select-text", "file-input", "paste", "read", "wait", "navigate", "drag"] },
+        "target": { "type": "string", "description": "Pass-1 control id (structure.yaml controls[].id). Required for click/key/type/file-input/paste/select-text." },
+        "key": { "type": "string" },
+        "count": { "type": "integer", "minimum": 1, "default": 1 },
+        "note": { "type": "string" }
+      }
+    },
+    "step": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "view", "userSees", "userDoes", "feedback"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^s[0-9]{2}(-[a-z0-9]+)*$" },
+        "view": { "type": "string", "description": "Pass-1 view id where the step's interactions happen. A nav click that opens this view belongs to the step (it is counted as a view switch against the previous step's end view)." },
+        "title": { "type": "string" },
+        "userSees": { "type": "string", "minLength": 1, "description": "What is on screen that matters for this step (exact visible strings in quotes when they are app text)." },
+        "userDoes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/interaction" } },
+        "decision": { "type": "string", "description": "Present when the learner must choose between options at this step." },
+        "feedback": { "type": "string", "minLength": 1, "description": "The app's visible/announced response (toast, banner, focus move, navigation, disabled state)." },
+        "persists": { "type": "array", "items": { "type": "string" }, "description": "What becomes durable learner state at this step (domain terms, no values)." },
+        "api": { "type": "array", "items": { "type": "string", "pattern": "^(GET|PUT|POST|DELETE) /api/" }, "description": "Service routes hit (METHOD /api/path), from structure.yaml api.routes." },
+        "canFail": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["condition", "appResponse"],
+            "properties": { "condition": { "type": "string" }, "appResponse": { "type": "string" }, "recovery": { "type": "string" }, "source": { "$ref": "#/$defs/sourceRef" } }
+          }
+        },
+        "focusAfter": { "type": "string", "description": "Where keyboard focus lands after the step (control id, 'body' = lost, or a free description)." },
+        "modal": { "type": "boolean", "description": "True when the step blocks the rest of the UI (dialog, confirm)." },
+        "navigatesTo": { "type": "string", "description": "View id when the APP changes view as a result of the step (not the learner clicking nav)." },
+        "source": { "type": "array", "items": { "$ref": "#/$defs/sourceRef" } },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    }
+  }
+}

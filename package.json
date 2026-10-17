@@ -24,6 +24,9 @@
     "test:web": "vitest run tests/web",
     "test:all": "vitest run",
     "scan:privacy": "node scripts/check-privacy-boundaries.mjs",
+    "workflows:extract": "node scripts/workflows/extract-structure.cli.ts",
+    "workflows:generate": "node scripts/workflows/generate-projections.cli.ts",
+    "workflows:validate": "node scripts/workflows/validate-catalog.cli.ts && node scripts/workflows/generate-projections.cli.ts --check",
     "e2e": "node scripts/run-e2e.mjs",
     "e2e:host": "playwright test -c apps/web/e2e/playwright.config.ts"
   },
@@ -38,10 +41,12 @@
     "@playwright/test": "1.62.0",
     "@types/jsdom": "^28.0.3",
     "@types/node": "26.0.0",
+    "ajv": "^8.20.0",
     "jsdom": "^29.1.1",
     "typescript": "6.0.3",
     "vite": "8.0.16",
-    "vitest": "4.1.9"
+    "vitest": "4.1.9",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "@rzyns/morfeusz-ts": "file:vendor/morfeusz-ts",

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lingotorte.local/schema/workflow-structure.v1.json",
+  "title": "Lingotorte as-is app structure (pass 1, generated)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generatedBy", "sourceRoots", "views", "controls", "keyboard", "api", "persistence"],
+  "properties": {
+    "schema": { "const": "lingotorte.workflow-structure.v1" },
+    "generatedBy": { "type": "string" },
+    "sourceRoots": { "type": "array", "items": { "type": "string" } },
+    "views": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "label", "navOrder", "renderer"],
+        "properties": {
+          "id": { "type": "string" }, "label": { "type": "string" }, "navOrder": { "type": "integer", "minimum": 1 },
+          "renderer": { "type": "object", "additionalProperties": false, "required": ["path", "symbol"], "properties": { "path": { "type": "string" }, "symbol": { "type": "string" } } }
+        }
+      }
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "scope", "tag", "variable", "labels", "events", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z-]+\\.[a-z0-9-]+$" },
+          "scope": { "type": "string" }, "tag": { "type": "string" }, "variable": { "type": "string" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "labelExpr": { "type": "string" }, "ariaLabel": { "type": "string" }, "elementId": { "type": "string" }, "type": { "type": "string" },
+          "className": { "type": "string" }, "dataset": { "type": "object", "additionalProperties": { "type": "string" } },
+          "guarded": { "type": "string" }, "title": { "type": "string" }, "placeholder": { "type": "string" },
+          "events": { "type": "array", "items": { "type": "string" } },
+          "source": { "$ref": "#/$defs/sourceRef" }
+        }
+      }
+    },
+    "keyboard": {
+      "type": "object", "additionalProperties": false, "required": ["declared", "handlers"],
+      "properties": {
+        "declared": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["section", "key", "action"], "properties": { "section": { "type": "string" }, "key": { "type": "string" }, "action": { "type": "string" } } } },
+        "handlers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["key", "scope", "source"], "properties": { "key": { "type": "string" }, "scope": { "type": "string" }, "source": { "$ref": "#/$defs/sourceRef" } } } }
+      }
+    },
+    "api": {
+      "type": "object", "additionalProperties": false, "required": ["routes", "callers"],
+      "properties": {
+        "routes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["path", "methods", "source"], "properties": { "path": { "type": "string" }, "methods": { "type": "array", "items": { "enum": ["GET", "PUT", "POST", "DELETE"] } }, "bodyLimitBytes": { "type": "integer" }, "source": { "$ref": "#/$defs/sourceRef" } } } },
+        "callers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["route", "source"], "properties": { "route": { "type": "string" }, "source": { "$ref": "#/$defs/sourceRef" } } } }
+      }
+    },
+    "persistence": {
+      "type": "object", "additionalProperties": false, "required": ["autosaveCallers", "unsavedMarkers"],
+      "properties": {
+        "autosaveCallers": { "$ref": "#/$defs/callers" },
+        "unsavedMarkers": { "$ref": "#/$defs/callers" }
+      }
+    }
+  },
+  "$defs": {
+    "sourceRef": { "type": "object", "additionalProperties": false, "required": ["path", "line", "snippet"], "properties": { "path": { "type": "string" }, "line": { "type": "integer", "minimum": 1 }, "snippet": { "type": "string" } } },
+    "callers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["symbol", "source"], "properties": { "symbol": { "type": "string" }, "source": { "$ref": "#/$defs/sourceRef" } } } }
+  }
+}
