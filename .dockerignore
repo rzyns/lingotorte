@@ -17,6 +17,9 @@
 !scripts/**
 !tests/
 !tests/**
+# lt-5lb.5: as-is workflow catalog, validated by tests/workflows inside the contributor image (only this docs subtree).
+!docs/workflows/
+!docs/workflows/**
 **/dist
 # Reviewed tracked vendored runtime, not host-generated build output.
 !vendor/morfeusz-ts/dist/

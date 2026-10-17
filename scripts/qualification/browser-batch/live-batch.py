@@ -100,7 +100,7 @@ def binding(image):
 # a --network none container from the same list. Any mismatch, dirty tree or HEAD drift refuses the run.
 # Actions whose post-press focus is asserted (apply is OBSERVED only: async re-render, no successor).
 FOCUS_ASSERTED = ('approve', 'grade', 'practice-submit', 'practice-choice', 'analyse')
-SOURCE_ROOTS = ('apps', 'packages', 'vendor', 'fixtures', 'scripts', 'tests')
+SOURCE_ROOTS = ('apps', 'packages', 'vendor', 'fixtures', 'scripts', 'tests', 'docs/workflows')  # mirrors the Dockerfile COPY roots
 SOURCE_FILES = ('package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'vitest.config.ts')
 IMAGE_HASH_JS = ("const{createHash}=require('node:crypto');const{readFileSync}=require('node:fs');let s='';"
                  "process.stdin.on('data',d=>s+=d).on('end',()=>{const h=createHash('sha256');for(const f of JSON.parse(s)){let b;"

@@ -11,6 +11,8 @@ COPY apps/ apps/
 COPY fixtures/ fixtures/
 COPY scripts/ scripts/
 COPY tests/ tests/
+# lt-5lb.5: tests/workflows validates the as-is workflow catalog against the copied sources.
+COPY docs/workflows/ docs/workflows/
 COPY tsconfig.json vite.config.ts vitest.config.ts ./
 # nativeConfig's checkout exclusion expects a .git directory. This empty
 # image-only sentinel protects /app without importing any host Git metadata.

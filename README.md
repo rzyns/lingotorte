@@ -81,6 +81,7 @@ The same transcript lifecycle panel also has an explicit **Import public YouTube
 1. `AGENTS.md` — automatically loaded project context and operating boundaries for future agents.
 2. `docs/dev/local-runbook.md` — how to run and smoke-test the local fixture-backed app.
 3. `docs/dev/v1-local-acceptance.md` — V1 local acceptance scope, cleanup decisions, and verification matrix.
+   - `docs/workflows/README.md` — as-is user workflow catalog (YAML + JSON Schema, generated Mermaid/friction projections) for UX review with an LLM; `npm run workflows:validate` keeps it in step with the code.
 4. `docs/mission/hermes-war-room-mission-statement.md` — pasteable mission statement for the `hermes-war-room` orchestrator.
 5. `docs/mission/lingopie-war-room-brief.md` — lane-oriented mission brief for a fleet of agents.
 6. `docs/research/preliminary-grounding-research.md` — consolidated preliminary research and architecture direction.
