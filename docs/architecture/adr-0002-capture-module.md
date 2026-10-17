@@ -21,14 +21,14 @@ Git history (`git log -L3289,3620:apps/web/src/model.ts`) shows lt-cms, lt-uzo, 
 1. A `CaptureService` (`packages/review/src/capture.ts`) is the only module that creates or removes `SavedItem`, `SavedOccurrence` and `ReviewCard` rows from the app. Interface: `capture`, `canUndo`, `undo`, `cardsFor`, `archiveCards`, `reactivate`, `setMeaning` (full signatures in the plan §2.2).
 2. The invariants live inside it: item/occurrence dedupe (delegated to `SavedOccurrenceService`), approved-transcript gate, one recognition card per item including the "archived counts" rule, undo preconditions, archive-not-delete.
 3. `model.ts` keeps its exported function names as thin delegates (UI inputs in, UI side effects + persistence out). Views and tests do not change for the move.
-4. Three legacy save helpers with zero app callers become wrappers over `capture` (D-B2) so there is no card-less save path left.
+4. The three legacy save helpers and `createReviewCardForSavedItem`, all with zero app callers, are deleted (D-B2); tests migrate to a tests-only helper that drives the real product path (`saveSelectionWithReceipt`). No card-less save path is left in production code.
 5. Three grep rules (plan §2.2) make the decision checkable: `createCard`, `saveSelection` and `remove*` have exactly one app caller — `capture.ts`.
 
 ## Alternatives considered
 
 - **Enforce uniqueness inside `ReviewService.createCard`.** Rejected alone: the rule spans two aggregates (item ↔ card) and undo spans three; a check in one service leaves undo and archive scattered. Could be added later as defence in depth.
 - **New `packages/learner` package.** Rejected for now: lockfile/`npm install` not in scope; `@lingotorte/review` already depends on both inputs.
-- **Delete the three legacy helpers.** Rejected: 24 test files / 75 call sites for no product gain. Wrapping them gives the same invariant with a 3-assertion test diff.
+- **Keep the three legacy helpers as wrappers over `capture`.** Rejected by Janusz: it leaves a second production write path alive solely for tests. Deleting costs a mechanical rename + `await` across 24 test files, with one-for-one parameter order via `tests/helpers/capture.ts`.
 - **Also narrow `LocalStore` and stop views reading `model.store` (review candidate 4).** Deferred: larger blast radius (11 files, 34 tests); this ADR makes it cheap by concentrating the write surface first.
 
 ## Consequences

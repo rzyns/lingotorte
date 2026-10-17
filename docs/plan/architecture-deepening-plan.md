@@ -10,7 +10,7 @@ Related: `docs/architecture/adr-0001-subtitle-parser-seam.md`, `docs/architectur
 
 ## 0. Ground rules for the implementer
 
-1. **Scope.** This is a refactor. Product behaviour must not change except at the two decision points marked **D-A2** and **D-B2** below, which are already decided here. If a step seems to require a change to the SQLite schema, the snapshot JSON shape, the learner export manifest, any `/api/*` wire contract, or `DECISIONS.md`: **stop, comment on the Beads issue, and wait.**
+1. **Scope.** This is a refactor. Product behaviour must not change except at decision point **D-A2** below (already decided). **D-B2** deletes dead code and migrates tests; it changes no product behaviour. If a step seems to require a change to the SQLite schema, the snapshot JSON shape, the learner export manifest, any `/api/*` wire contract, or `DECISIONS.md`: **stop, comment on the Beads issue, and wait.**
 2. **One child = one branch = one atomic merge.** Branch `work/<issue-id>-<slug>` from current `main`. Commit in small verified steps (GIT-POLICY.md). Request an independent review (spec + quality) before merging `--no-ff` into `main`, as `lt-5lb.5` did. Record the merge hash on the issue.
 3. **Beads.** Claim the child (`bd --sandbox update <id> --status in_progress --assignee <actor>`), read it back, work, append evidence comments with exact commands and results, and leave closure to the parent/operator. Children are sequential by dependency; `bd --sandbox ready --exclude-type epic` shows exactly one `lt-2se.*` child at a time.
 4. **Verification commands** (run from repo root, host):
@@ -147,8 +147,8 @@ Done when: all recorded on the issue; merged. **This is the gate for Lane B** (`
 | --- | --- |
 | "One recognition card per SavedItem" is enforced only in `ensureReviewCardForSavedItem` | `model.ts:3548-3563`; `ReviewService.createCard` (`packages/review/src/reviewService.ts:39-56`) has no check; `LocalStore.putReviewCard` (`packages/storage/src/localStore.ts:246`) is a blind upsert |
 | Only **one** of four save paths goes through it | `saveSelectionWithReceipt` `model.ts:3374-3431`; the other three (`saveSentenceFromCue :3433`, `saveLexemeFromCue :3461`, `saveSelectedPhraseFromCue :3491`) call `savedOccurrenceService.saveSelection` directly and create no card |
-| Those three have **zero app callers**; 24 test files / 75 call sites use them | `rg "saveSentenceFromCue|saveLexemeFromCue|saveSelectedPhraseFromCue" apps --glob '!apps/web/src/model.ts'` → 0 |
-| `createReviewCardForSavedItem` (`:3521`) bypasses uniqueness and also has zero app callers (25 test references) | `rg createReviewCardForSavedItem apps --glob '!apps/web/src/model.ts'` → 0 |
+| Those three have **zero app callers**; 24 test files / 44 call expressions use them | `rg "saveSentenceFromCue|saveLexemeFromCue|saveSelectedPhraseFromCue" apps --glob '!apps/web/src/model.ts'` → 0 |
+| `createReviewCardForSavedItem` (`:3521`) bypasses uniqueness and also has zero app callers (14 test call sites) | `rg createReviewCardForSavedItem apps --glob '!apps/web/src/model.ts'` → 0 |
 | Undo is the only caller of `LocalStore.remove*`, guarded by 8 conditions in the caller | `undoSave`/`canUndoSave` `model.ts:3333-3366` |
 | `SavedItem.archivedAt` is read (`views/saved.ts:41`, `savedOccurrenceService.ts:67,157`) but never written by app code | `rg "archivedAt:" apps packages` → only the SQLite row reader |
 | 34 web tests seed state with `model.store.put*` instead of a save path | `rg -l "model\.store\.(put|add|remove)" tests/web` → 34 |
@@ -244,21 +244,48 @@ Done when: §2.2 grep rule 1 and 2 hold **except** for the three legacy save hel
 
 Stop and report if: moving `canUndoSave` requires knowledge of `model.practice`/`model.review` beyond the three card ids (it should not — check `:3363`); a web test fails because it relied on `undoSave` mutating before checking (there is none known); the `@lingotorte/review` ↔ `@lingotorte/storage` import creates a runtime cycle that Vite or vitest reports (today `practiceService.ts:1` already imports review from storage, so this is expected to be fine — but verify `npm run build`).
 
-### 2.4 Child B2 — `lt-2se.5` Route the legacy save helpers and `createReviewCardForSavedItem` through Capture
+### 2.4 Child B2 — `lt-2se.5` Delete the legacy save helpers and `createReviewCardForSavedItem`; migrate tests to the product path
 
-Branch: `work/lt-2se.5-capture-legacy-paths`. Depends on `lt-2se.4`.
+Branch: `work/lt-2se.5-delete-legacy-save-paths`. Depends on `lt-2se.4`.
 
-**D-B2 (decided): the three legacy helpers stay as named exports but become thin wrappers over `model.capture.capture(...)`, so they now create the one recognition card.** They have zero app callers; this is a test-fixture behaviour change, not a product change. Deleting them instead would touch 24 test files / 75 call sites for no product gain — not authorised here.
+**D-B2 (decided by Janusz, 2026-10-17): delete `saveSentenceFromCue`, `saveLexemeFromCue`, `saveSelectedPhraseFromCue` (`model.ts:3433-3519`) and `createReviewCardForSavedItem` (`:3521-3535`).** They have zero app callers (`rg "saveSentenceFromCue|saveLexemeFromCue|saveSelectedPhraseFromCue|createReviewCardForSavedItem" apps --glob '!apps/web/src/model.ts'` → 0). Keeping dead card-less save paths in production code, even as wrappers, leaves a second way to write learner state. Tests migrate to a helper that drives the **real** product path (`saveSelectionWithReceipt`), so nothing is duplicated.
+
+Inventory on `0bcf2e0` (re-run before starting): 24 test files; call expressions `saveSentenceFromCue(` ×34, `saveLexemeFromCue(` ×6, `saveSelectedPhraseFromCue(` ×4, `createReviewCardForSavedItem(` ×14 (one of which passes `'production'`).
 
 Steps:
-1. Rewrite `saveSentenceFromCue`, `saveLexemeFromCue`, `saveSelectedPhraseFromCue` (`model.ts:3433-3519`) to build `sourceContext` exactly as today, then `return model.capture.capture({...}).item` + persist. They lose their direct `savedOccurrenceService.saveSelection` call.
-2. Inventory first, change second: `rg -n "createReviewCardForSavedItem" tests` (25 refs). Classify each as (i) creates a `recognition` card for an item that has none — route through `capture`'s idempotent ensure (add a `CaptureService.ensureCard(item, occurrence)` public method only if needed); (ii) creates a `production` card or a deliberate **second** card — these tests pin behaviour the invariant forbids; **list them in the issue and stop for a decision** before changing them. Paste the classification table as an evidence comment.
-3. Three tests assert **zero** cards right after a legacy save and will now see one: `tests/web/frontendUi.test.ts`, `tests/web/lt3biLearningLoop.test.ts`, `tests/web/p4SavedOccurrences.test.ts` (each has one `toHaveLength(0)`/`toBe(0)` on `reviewCards`; confirm with `rg -n "reviewCards" <file>`). Update **only** those assertions to the new count, each with a one-line comment `// lt-2se.5: legacy save helpers now capture (one recognition card per item)`. Any other test that changes expectation → stop and report.
-4. Grep rules 1 and 2 from §2.2 must now hold with no exceptions. Full verification set.
+1. Add `tests/helpers/capture.ts` (tests-only; never imported from `apps/` or `packages/`):
+   ```ts
+   import type { Cue, SavedItem } from '@lingotorte/domain';
+   import { saveSelectionWithReceipt } from '../../apps/web/src/model.ts';
+   import type { AppModel } from '../../apps/web/src/uiTypes.ts';
 
-Done when: grep rules hold; test diff is limited to the assertions listed in step 3 (paste `git diff --stat tests/` into the issue); review PASS; merged.
+   /** Drives the product save path: sets model.selection, saves with receipt, restores the previous selection. */
+   async function captureSelection(model: AppModel, selection: NonNullable<AppModel['selection']>): Promise<SavedItem | null> {
+     const previous = model.selection;
+     model.selection = selection;
+     try { return (await saveSelectionWithReceipt(model))?.item ?? null; }
+     finally { model.selection = previous; }
+   }
+   export function captureSentence(model: AppModel, cue: Cue) {
+     const tokens = cue.text.split(/\s+/).filter(Boolean).length;
+     return captureSelection(model, { kind: 'sentence', text: cue.text, cueId: cue.id, tokenStart: 0, tokenEnd: tokens, charStart: 0, charEnd: cue.text.length });
+   }
+   export function captureLexeme(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenIndex: number) {
+     return captureSelection(model, { kind: 'lexeme', text, cueId: cue.id, tokenStart: tokenIndex, tokenEnd: tokenIndex + 1, charStart, charEnd });
+   }
+   export function capturePhrase(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenStart: number, tokenEnd: number) {
+     return captureSelection(model, { kind: 'phrase', text, cueId: cue.id, tokenStart, tokenEnd, charStart, charEnd });
+   }
+   ```
+   Parameter order mirrors the deleted helpers one-for-one so the migration is a rename plus `await`. Note the helper reads `model.pendingMeaning`/`model.pendingNotes` exactly as the product does; a test that set those before a legacy save will now get them on the item — if that changes an assertion, stop and report (not expected).
+2. Migrate the 44 save call sites: `saveSentenceFromCue` → `captureSentence` (already awaited); `saveLexemeFromCue`/`saveSelectedPhraseFromCue` → `captureLexeme`/`capturePhrase` **with `await`** (the deleted helpers were synchronous; the product path is async — check every enclosing function is `async`). Update the import lines. The approved-transcript gate still throws through this path (`tests/core/p7TranscriptAdapters.test.ts:256` `rejects.toThrow(/approved transcript/i)` keeps passing).
+3. Migrate the 14 `createReviewCardForSavedItem` call sites. Classify first (table on the issue): (i) creates the first `recognition` card for an item that was just saved — after step 2 the card already exists, so replace with `model.capture.cardsFor(item.id).active[0]!`; (ii) passes `'production'` (1 site) or deliberately creates a **second** card for the same item — these pin behaviour the invariant forbids; **list them and stop for a decision** before changing. Delete the four functions from `model.ts` only after step 2–3 compile.
+4. Three tests assert **zero** cards right after a legacy save: `tests/web/frontendUi.test.ts`, `tests/web/lt3biLearningLoop.test.ts`, `tests/web/p4SavedOccurrences.test.ts`. Update **only** those assertions to the new count with the comment `// lt-2se.5: capture creates one recognition card per item`. Any other changed expectation → stop and report.
+5. Grep rules 1–3 from §2.2 must now hold with no exceptions. Full verification set.
 
-Stop and report if: step 2 class (ii) is non-empty (expected: possible — report, do not guess); any test outside the three named ones needs a changed expectation.
+Done when: `rg "saveSentenceFromCue|saveLexemeFromCue|saveSelectedPhraseFromCue|createReviewCardForSavedItem" apps packages tests` → 0; grep rules hold; `git diff --stat tests/` pasted on the issue; `model.ts` ~100 lines shorter (`wc -l` before/after); review PASS; merged.
+
+Stop and report if: step 3 class (ii) is non-empty beyond the one known `'production'` site (report it too — do not guess); any test outside the three named ones needs a changed expectation; a migrated test cannot be made `async` without restructuring it.
 
 ### 2.5 Child B3 — `lt-2se.6` Lane B gate: Docker verification, ADR-0002 accepted, invariant table in the data-model doc
 
@@ -287,5 +314,5 @@ Done when: recorded; merged; epic acceptance criteria re-checked by the operator
 | D-A1 | Parser core lives in `packages/subtitles/src/parse.ts`; `normalizeCueText` moves to `@lingotorte/domain` (storage re-exports) | New `packages/subtitle-core` package; or `parse.ts` keeping its own copy of `normalizeCueText` | New package = lockfile/`npm install`, not authorised; a second copy is the smell being removed |
 | D-A2 | VTT header optional | Strict header (Node today) | Browser already shipped tolerant; no test pins the throw |
 | D-B1 | `CaptureService` in `packages/review` | New `packages/learner`; or inside `apps/web` | Same lockfile reason; `apps/web` would make it unreachable from the service later |
-| D-B2 | Legacy save helpers become wrappers that capture (and so create a card) | Delete them and migrate 75 test call sites | Zero app callers; a 24-file test churn buys nothing |
+| D-B2 | Delete the three legacy save helpers and `createReviewCardForSavedItem`; tests migrate to a `tests/helpers/capture.ts` that drives `saveSelectionWithReceipt` | Keep them as wrappers over `capture` | Janusz's call: wrappers would leave a second production write path alive for tests only; the migration is a rename + `await` across 24 files, one-for-one parameter order |
 | D-B3 | Lane B waits for Lane A gate | Run lanes in parallel | Janusz chose sequential so one weaker agent sees one ready child at a time |
