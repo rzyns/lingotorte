@@ -88,7 +88,7 @@ describe('lt-5lb.5 as-is workflow catalog', () => {
     expect(mermaid.indexOf('s04_import[')).toBeLessThan(mermaid.indexOf('subgraph player'));
     expect(mermaid).toContain('s04_import -->|"app → player; nav → library"| s05_open_transcript_tools');
     // Edge labels are always quoted: an unquoted `(s08)` in a recovery label is a Mermaid parse error (GitHub, mermaid 12).
-    expect(mermaid).not.toMatch(/-->\|[^"]/);
+    expect(mermaid).not.toMatch(/-[.-]>\|[^"]/); // solid and dotted arrows
     expect(mermaid).toContain('-.->|"Approve the transcript (s08)"|');
   });
 });
