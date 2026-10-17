@@ -19,6 +19,27 @@ describe('lt-5lb.5 as-is workflow catalog', () => {
     expect(findings.map((f) => `${f.file}: ${f.message}`)).toEqual([]);
   });
 
+  it('detects drift: renamed control id, altered snippet, unknown step target, bad route', () => {
+    const tampered = structuredClone(catalog) as unknown as { structure: { controls: Array<{ id: string; source: { snippet: string } }> }; journeys: Array<{ journey: { steps: Array<{ userDoes: Array<{ target?: string }>; api?: string[] }> } }> };
+    const save = tampered.structure.controls.find((c) => c.id === 'player.save')!;
+    save.id = 'player.save-renamed';
+    tampered.structure.controls[0]!.source.snippet = 'const nothing = here();';
+    const step = tampered.journeys[0]!.journey.steps[0]!;
+    step.userDoes[0]!.target = 'shell.does-not-exist';
+    step.api = ['POST /api/nope'];
+    const messages = validateCatalog(root, tampered as unknown as typeof catalog).map((f) => f.message);
+    expect(messages.some((m) => m.startsWith('stale:'))).toBe(true);
+    expect(messages.some((m) => m.startsWith('provenance drift'))).toBe(true);
+    expect(messages.some((m) => m.includes('unknown control shell.does-not-exist'))).toBe(true);
+    expect(messages.some((m) => m.includes('unknown route POST /api/nope'))).toBe(true);
+    expect(messages.some((m) => m.includes('unknown control player.save'))).toBe(true); // journeys still reference the old id
+  });
+
+  it('extracts labels from one-line createElement + textContent statements', () => {
+    const refresh = extractStructure(root).controls.find((c) => c.source.path === 'apps/web/src/views/exportImport.ts' && c.labels.includes('Refresh authoritative service preview'));
+    expect(refresh?.id).toBe('export-import.refresh-authoritative-service-preview');
+  });
+
   it('has at least the two journeys the spike promised, with observed-live evidence', () => {
     const ids = catalog.journeys.map((j) => j.journey.id);
     expect(ids).toContain('daily-driver-learning-loop');

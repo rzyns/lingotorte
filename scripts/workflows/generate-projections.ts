@@ -9,7 +9,8 @@ export const GENERATED_DIR = 'docs/workflows/generated';
 const HEADER = (source: string) => `<!-- GENERATED from ${source} by scripts/workflows/generate-projections.cli.ts. Do not edit; edit the YAML and regenerate. -->\n`;
 
 function mermaidLabel(text: string): string {
-  return text.replace(/"/g, '#quot;').replace(/[<>]/g, '');
+  // `|` delimits edge labels and `"` node labels; both are replaced so any catalog text renders.
+  return text.replace(/"/g, '#quot;').replace(/\|/g, '#124;').replace(/[<>]/g, '');
 }
 
 /** Mermaid node ids: letters/digits/underscore only (hyphens are parsed as edge syntax in some renderers). */

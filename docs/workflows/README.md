@@ -41,6 +41,6 @@ Granularity is view/action level on purpose: UX optimisation happens there, and 
 
 ## Known limits
 
-- Pass 1 is text analysis of the codebase's own `createElement` + `textContent` convention, not a type-checked program model. Labels set from ternaries record both strings; labels set from helper functions or template literals are kept as `labelExpr`. `<span role="button">` word buttons are recognised; controls created through other helpers (`renderFilePicker`) appear under the inputs they wrap.
+- Pass 1 is text analysis of the codebase's own `createElement` + `textContent` convention, not a type-checked program model. Labels set from ternaries record both strings; labels set from helper functions or template literals are kept as `labelExpr`; only single-line `export const UPPER_CASE = '…'` constants are resolved. Several statements on one line are read individually. `<span role="button">` word buttons are recognised; controls created through other helpers (`renderFilePicker`) appear under the inputs they wrap.
 - Journeys cover the learner paths that have live evidence. Not yet walked: Library media list (Open/Relink), source-range loops and practice audio, embedded-subtitle extraction, local ASR, Anki export, Clear browser cache, shortcut help dialog. Add them as further `as-is/journeys/*.yaml`.
 - Frictions are counts, not judgements. Proposals belong in to-be files or review docs, never in `observations`.

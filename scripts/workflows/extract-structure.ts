@@ -146,9 +146,14 @@ function extractControls(root: string, files: readonly string[]): ControlEntry[]
         } else if (variable) {
           live.delete(variable);
         }
-        continue;
+        // One-liners (`const b = document.createElement('button'); b.textContent = '…'; …`) keep their
+        // attribute statements on the declaration line; scan them below instead of skipping the line.
+        if (!line.includes(';', decl.index + decl[0].length)) continue;
       }
-      for (const [variable, draft] of live) {
+      // Statements are matched one at a time so a line with several `x.attr = …;` statements is read fully.
+      const statements = line.split(/;(?=\s*(?:\w+\.|$))/).map((s) => `${s.trimStart()};`);
+      for (const stmtRaw of statements) for (const [variable, draft] of live) {
+        const line = stmtRaw;
         const v = escapeRegExp(variable);
         let m: RegExpExecArray | null;
         if ((m = new RegExp(`^\\s*${v}\\.textContent\\s*=\\s*(.+?);?\\s*$`).exec(line))) {

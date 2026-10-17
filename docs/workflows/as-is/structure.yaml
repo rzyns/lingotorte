@@ -354,11 +354,12 @@ controls:
       path: apps/web/src/views/exportImport.ts
       line: 165
       snippet: const previewBtn = document.createElement('button');
-  - id: export-import.resume
+  - id: export-import.preview-pending-session-restore-for-durable-save
     scope: export-import
     tag: button
     variable: resume
-    labels: []
+    labels:
+      - Preview pending session restore for durable save
     events:
       - click
     source:
@@ -432,12 +433,13 @@ controls:
       path: apps/web/src/views/exportImport.ts
       line: 347
       snippet: const restoreBtn = document.createElement('button');
-  - id: export-import.refresh
+  - id: export-import.refresh-authoritative-service-preview
     scope: export-import
     tag: button
     variable: refresh
-    labels: []
-    guarded: "true"
+    labels:
+      - Refresh authoritative service preview
+    guarded: restoreIsBusy(model)
     events:
       - click
     source:
@@ -1261,6 +1263,7 @@ controls:
     labelExpr: model.browserLocalMedia.permissionState === 'prompt' && handleName ? `Reconnect…
     type: button
     className: btn-primary
+    title: Reconnect
     events:
       - click
     source:
@@ -1493,11 +1496,12 @@ controls:
       path: apps/web/src/views/practice.ts
       line: 162
       snippet: const prepareButton = document.createElement('button');
-  - id: practice.cleanbutton
+  - id: practice.clean-browser-audio
     scope: practice
     tag: button
     variable: cleanButton
-    labels: []
+    labels:
+      - Clean browser audio
     type: button
     events:
       - click
@@ -1511,6 +1515,7 @@ controls:
     variable: answerInput
     labels: []
     elementId: practice-answer
+    type: text
     events:
       - input
     source:
@@ -1622,13 +1627,15 @@ controls:
       path: apps/web/src/views/practice.ts
       line: 359
       snippet: const submitBtn = document.createElement('button');
-  - id: practice.revealbutton
+  - id: practice.reveal-answer
     scope: practice
     tag: button
     variable: revealButton
-    labels: []
+    labels:
+      - Reveal answer
     ariaLabel: "dynamic: 'Reveal answer (a later submission counts as fail"
     type: button
+    className: btn-secondary
     events:
       - click
     source:

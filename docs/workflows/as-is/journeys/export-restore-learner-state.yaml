@@ -109,7 +109,7 @@ steps:
     title: Refresh the authoritative service preview
     userSees: '"Refresh authoritative service preview" button next to "Restore now" (connected only).'
     userDoes:
-      - { kind: click, target: export-import.refresh }
+      - { kind: click, target: export-import.refresh-authoritative-service-preview }
     feedback: The service-side preview replaces the local one; "Restore now" becomes enabled.
     api: ["POST /api/restore/preview"]
     canFail:
