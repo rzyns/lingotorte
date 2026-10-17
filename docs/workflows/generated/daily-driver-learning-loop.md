@@ -43,44 +43,44 @@ flowchart TD
     s14_practice_choice{"s14-practice-choice: Switch to multiple choice and answer"}
   end
   s01_open_settings --> s02_pair
-  s02_pair -->|nav → library| s03_choose_files
+  s02_pair -->|"nav → library"| s03_choose_files
   s02_pair_f1(["Wrong origin or empty capability"])
-  s02_pair -.->|fails| s02_pair_f1
-  s02_pair_f1 -.->|Re-enter and Connect again| s02_pair
+  s02_pair -.->|"fails"| s02_pair_f1
+  s02_pair_f1 -.->|"Re-enter and Connect again"| s02_pair
   s02_pair_f2(["Service unreachable or 401"])
-  s02_pair -.->|fails| s02_pair_f2
-  s02_pair_f2 -.->|Fix URL/capability and Connect again| s02_pair
+  s02_pair -.->|"fails"| s02_pair_f2
+  s02_pair_f2 -.->|"Fix URL/capability and Connect again"| s02_pair
   s03_choose_files --> s04_import
-  s04_import -->|app → player; nav → library| s05_open_transcript_tools
+  s04_import -->|"app → player; nav → library"| s05_open_transcript_tools
   s04_import_f1(["No media file chosen"])
-  s04_import -.->|fails| s04_import_f1
-  s04_import_f1 -.->|Choose a file and click again| s04_import
+  s04_import -.->|"fails"| s04_import_f1
+  s04_import_f1 -.->|"Choose a file and click again"| s04_import
   s04_import_f2(["File name matches existing media with different content"])
-  s04_import -.->|fails| s04_import_f2
-  s04_import_f2 -.->|Choose one of the two buttons| s04_import
+  s04_import -.->|"fails"| s04_import_f2
+  s04_import_f2 -.->|"Choose one of the two buttons"| s04_import
   s04_import_f3(["One subtitle file unreadable"])
-  s04_import -.->|fails| s04_import_f3
+  s04_import -.->|"fails"| s04_import_f3
   s05_open_transcript_tools --> s06_import_draft
   s06_import_draft --> s07_correct
   s06_import_draft_f1(["Authorization checkbox not ticked"])
-  s06_import_draft -.->|fails| s06_import_draft_f1
-  s06_import_draft_f1 -.->|Tick the checkbox and retry| s06_import_draft
+  s06_import_draft -.->|"fails"| s06_import_draft_f1
+  s06_import_draft_f1 -.->|"Tick the checkbox and retry"| s06_import_draft
   s07_correct --> s08_approve
   s07_correct_f1(["Apply clicked while an apply is pending or the selected track changed"])
-  s07_correct -.->|fails| s07_correct_f1
-  s08_approve -->|nav → player| s09_save_word
+  s07_correct -.->|"fails"| s07_correct_f1
+  s08_approve -->|"nav → player"| s09_save_word
   s09_save_word --> s10_save_sentence
   s09_save_word_f1(["Target track not approved"])
-  s09_save_word -.->|fails| s09_save_word_f1
-  s09_save_word_f1 -.->|Approve the transcript (s08)| s09_save_word
-  s10_save_sentence -->|nav → saved| s11_check_saved
-  s11_check_saved -->|nav → review| s12_review
-  s12_review -->|nav → practice| s13_practice_typed
+  s09_save_word -.->|"fails"| s09_save_word_f1
+  s09_save_word_f1 -.->|"Approve the transcript (s08)"| s09_save_word
+  s10_save_sentence -->|"nav → saved"| s11_check_saved
+  s11_check_saved -->|"nav → review"| s12_review
+  s12_review -->|"nav → practice"| s13_practice_typed
   s13_practice_typed --> s14_practice_choice
-  s14_practice_choice -->|nav → settings| s15_persist_reload
+  s14_practice_choice -->|"nav → settings"| s15_persist_reload
   s15_persist_reload_f1(["Autosave PUT still in flight"])
-  s15_persist_reload -.->|fails| s15_persist_reload_f1
-  s15_persist_reload_f1 -.->|Wait; the button re-enables| s15_persist_reload
+  s15_persist_reload -.->|"fails"| s15_persist_reload_f1
+  s15_persist_reload_f1 -.->|"Wait; the button re-enables"| s15_persist_reload
   done(["Media and both subtitle tracks, a corrected+approved transcript (on a separate caption-candidate item), three saved items with occurrences, three review cards with one review and two practice attempts are durable in the local service and survive reload + re-pair."])
   s15_persist_reload --> done
 ```

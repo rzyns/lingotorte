@@ -13,6 +13,11 @@ function mermaidLabel(text: string): string {
   return text.replace(/"/g, '#quot;').replace(/\|/g, '#124;').replace(/[<>]/g, '');
 }
 
+/** Edge label: always the quoted form `|"…"|`, so parentheses, brackets and punctuation inside cannot be read as shape syntax. */
+function edgeLabel(text: string): string {
+  return `|"${mermaidLabel(text)}"|`;
+}
+
 /** Mermaid node ids: letters/digits/underscore only (hyphens are parsed as edge syntax in some renderers). */
 function nodeId(id: string): string {
   return id.replace(/[^A-Za-z0-9_]/g, '_');
@@ -61,13 +66,13 @@ export function journeyMermaid(journey: Journey): string {
       const appNav = step.navigatesTo && step.navigatesTo !== step.view ? `app → ${step.navigatesTo}` : '';
       const userNav = next.view !== endView(step) ? `nav → ${next.view}` : '';
       const label = [appNav, userNav].filter(Boolean).join('; ');
-      lines.push(`  ${nodeId(step.id)} -->${label ? `|${label}|` : ''} ${nodeId(next.id)}`);
+      lines.push(`  ${nodeId(step.id)} -->${label ? edgeLabel(label) : ''} ${nodeId(next.id)}`);
     }
     (step.canFail ?? []).forEach((failure, j) => {
       const id = `${nodeId(step.id)}_f${j + 1}`;
       lines.push(`  ${id}(["${mermaidLabel(failure.condition)}"])`);
-      lines.push(`  ${nodeId(step.id)} -.->|fails| ${id}`);
-      if (failure.recovery) lines.push(`  ${id} -.->|${mermaidLabel(failure.recovery).slice(0, 60)}| ${nodeId(step.id)}`);
+      lines.push(`  ${nodeId(step.id)} -.->${edgeLabel('fails')} ${id}`);
+      if (failure.recovery) lines.push(`  ${id} -.->${edgeLabel(failure.recovery.slice(0, 60))} ${nodeId(step.id)}`);
     });
   }
   const last = journey.steps.at(-1);
