@@ -25,19 +25,19 @@ flowchart TD
   s02_download --> s03_paste_and_preview
   s03_paste_and_preview --> s04_choose_mode
   s03_paste_and_preview_f1(["Textarea content is not a valid manifest"])
-  s03_paste_and_preview -.->|fails| s03_paste_and_preview_f1
-  s03_paste_and_preview_f1 -.->|Fix the pasted text and preview again| s03_paste_and_preview
+  s03_paste_and_preview -.->|"fails"| s03_paste_and_preview_f1
+  s03_paste_and_preview_f1 -.->|"Fix the pasted text and preview again"| s03_paste_and_preview
   s03_paste_and_preview_f2(["Manifest root hash does not match"])
-  s03_paste_and_preview -.->|fails| s03_paste_and_preview_f2
+  s03_paste_and_preview -.->|"fails"| s03_paste_and_preview_f2
   s03_paste_and_preview_f3(["Textarea edited after preview"])
-  s03_paste_and_preview -.->|fails| s03_paste_and_preview_f3
-  s03_paste_and_preview_f3 -.->|Preview again| s03_paste_and_preview
+  s03_paste_and_preview -.->|"fails"| s03_paste_and_preview_f3
+  s03_paste_and_preview_f3 -.->|"Preview again"| s03_paste_and_preview
   s04_choose_mode --> s05_refresh_service_preview
   s05_refresh_service_preview --> s06_restore
   s05_refresh_service_preview_f1(["Service preview fails"])
-  s05_refresh_service_preview -.->|fails| s05_refresh_service_preview_f1
+  s05_refresh_service_preview -.->|"fails"| s05_refresh_service_preview_f1
   s06_restore_f1(["Commit rejected or outcome unknown"])
-  s06_restore -.->|fails| s06_restore_f1
+  s06_restore -.->|"fails"| s06_restore_f1
   done(["A local JSON export exists outside the app, and restoring it as a merge leaves the service state identical to before (same records), with a durable receipt."])
   s06_restore --> done
 ```
