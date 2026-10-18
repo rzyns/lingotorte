@@ -37,6 +37,23 @@ describe('shared subtitle parser browser adapter', () => {
     });
   }
 
+  it.each(['ass', 'ssa'])('preserves overlapping dialogue on browser .%s imports', async (extension) => {
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:adapter', revokeObjectURL: vi.fn() });
+    const text = `${ass}\nDialogue: 0:00:00.50,0:00:01.50,Second voice`;
+    const model = createAppModel();
+    await importBrowserLocalFiles(model, {
+      mediaFile: new File([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])], 'synthetic.webm'),
+      targetSubtitleFile: new File([text], `target.${extension}`),
+    });
+    expect(model.importWarning).toBeNull();
+    expect(model.cues.map(({ startMs, endMs, text }) => ({ startMs, endMs, text }))).toEqual([
+      { startMs: 100, endMs: 1000, text: 'Cześć świecie, tutaj' },
+      { startMs: 500, endMs: 1500, text: 'Second voice' },
+    ]);
+    expect(model.store.getSubtitleTrack(model.targetTrackId!)?.format).toBe('ass');
+    expect(model.cues.map((cue) => cue.textSha256)).toEqual(model.cues.map((cue) => digest(cue.text)));
+  });
+
   it('preserves synthetic sourceKind on the browser fixture path', async () => {
     vi.stubGlobal('process', undefined);
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));

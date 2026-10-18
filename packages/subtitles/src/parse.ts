@@ -301,8 +301,13 @@ function splitVttBlocks(text: string): string[] {
     .filter((block) => block.length > 0);
 }
 
-/** Pure, synchronous. Normalises line endings and cue text, validates timing, text and ordering. */
-export function parseSubtitleText(text: string, format: ParsedSubtitleFormat): SubtitleCueDraft[] {
+export type SubtitleParseOptions = Readonly<{
+  /** Browser ASS/SSA compatibility only; SRT/VTT always enforce non-overlap. Defaults to false. */
+  allowAssOverlap?: boolean;
+}>;
+
+/** Pure, synchronous. Validates timing/text; ordering is strict unless ASS overlap is explicitly allowed. */
+export function parseSubtitleText(text: string, format: ParsedSubtitleFormat, options: SubtitleParseOptions = {}): SubtitleCueDraft[] {
   let drafts: SubtitleCueDraft[];
   switch (format) {
     case 'srt':
@@ -317,8 +322,8 @@ export function parseSubtitleText(text: string, format: ParsedSubtitleFormat): S
     default:
       throw new SubtitleParseError('unsupported-format', format, null, `Unsupported subtitle format: ${String(format)}`);
   }
-  // Validate strict monotonic ordering and non-overlap.
-  validateCueOrdering(drafts, format);
+  // Preserve browser ASS/SSA dialogue overlap only when explicitly requested.
+  if (format !== 'ass' || options.allowAssOverlap !== true) validateCueOrdering(drafts, format);
   return drafts;
 }
 

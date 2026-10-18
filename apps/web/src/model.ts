@@ -921,7 +921,7 @@ async function adaptSubtitleText(input: {
   sourceKind?: SourceKind;
 }): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
   const format = inferParsedSubtitleFormat(input.path, input.text);
-  const drafts = parseSubtitleText(input.text, format);
+  const drafts = parseSubtitleText(input.text, format, { allowAssOverlap: true });
   const track = makeSubtitleTrack({
     mediaId: input.mediaId,
     language: input.language,
