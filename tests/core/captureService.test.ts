@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { makeMediaAsset, type Cue } from '@lingotorte/domain';
 import { LocalStore, SavedOccurrenceService, sha256File } from '@lingotorte/storage';
 import { CaptureService, ReviewService } from '@lingotorte/review';
@@ -36,6 +37,12 @@ async function setup(transcriptStatus: 'approved' | 'draft' = 'approved') {
 }
 
 describe('CaptureService', () => {
+  it('loads the review package in the native strip-only Node runtime', () => {
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e',
+      "import { CaptureService } from './packages/review/src/index.ts'; console.log(typeof CaptureService);"], { encoding: 'utf8' });
+    expect(output.trim()).toBe('function');
+  });
+
   it('(a) captures item, immutable occurrence and exactly one recognition card', async () => {
     const { store, capture, input } = await setup();
     const receipt = capture.capture(input());

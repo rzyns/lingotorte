@@ -23,12 +23,17 @@ export type CaptureReceipt = Readonly<{
 export type UndoGuard = Readonly<{ activeCardIds: readonly (UUID | null)[] }>;
 
 export class CaptureService {
-  constructor(
-    private readonly store: LocalStore,
-    private readonly saved: SavedOccurrenceService,
-    private readonly review: ReviewService,
-    private readonly clock: () => Date,
-  ) {}
+  private readonly store: LocalStore;
+  private readonly saved: SavedOccurrenceService;
+  private readonly review: ReviewService;
+  private readonly clock: () => Date;
+
+  constructor(store: LocalStore, saved: SavedOccurrenceService, review: ReviewService, clock: () => Date) {
+    this.store = store;
+    this.saved = saved;
+    this.review = review;
+    this.clock = clock;
+  }
 
   capture(input: CaptureInput): CaptureReceipt {
     const result = this.saved.saveSelection(input);
