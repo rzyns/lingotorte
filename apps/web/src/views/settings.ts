@@ -8,7 +8,7 @@ import {
   setLocalServiceAutosave,
   setLocalServiceBaseUrl,
 } from '../model';
-import { rerenderApp } from '../appShell.ts';
+import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import {
   REMEMBERED_PAIRING_NOTE,
   REMEMBER_PAIRING_LABEL,
@@ -282,7 +282,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     ] as const) {
       const button = document.createElement('button');
       button.textContent = label;
-      button.addEventListener('click', () => { resolveLocalServiceConnection(model, choice); rerenderApp(model); });
+      button.addEventListener('click', () => { resolveLocalServiceConnection(model, choice); requestFocusAfterRender(model, 'local-service-status'); rerenderApp(model); });
       choices.appendChild(button);
     }
     servicePanel.appendChild(choices);
@@ -305,6 +305,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
 
   const serviceStatus = document.createElement('div');
   serviceStatus.className = `status-banner ${model.localService.status === 'error' ? 'error' : model.localService.status === 'connected' ? 'success' : ''}`;
+  serviceStatus.id = 'local-service-status'; serviceStatus.tabIndex = -1;
   serviceStatus.setAttribute('role', 'status');
   serviceStatus.dataset.localServiceSync = 'true';
   serviceStatus.textContent = model.localService.lastMessage ?? 'Local service not connected.';

@@ -28,7 +28,7 @@ import {
   toggleLoopRange,
   togglePlay,
 } from '../../model';
-import { rerenderApp } from '../../appShell.ts';
+import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { renderShortcutHelpButton } from '../../ui/shortcutHelp.ts';
 import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
@@ -466,6 +466,7 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
   const prepare = document.createElement('button');
   prepare.type = 'button';
   prepare.className = 'btn-primary';
+  prepare.id = 'source-range-audio-prepare';
   prepare.textContent = 'Prepare audio for practice';
   prepare.disabled = range === null || rangeTooLong || !pathValid || !mediaExtractable || model.localService.status !== 'connected' || snippet.status === 'preparing';
   prepare.addEventListener('click', () => {
@@ -482,7 +483,8 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     snippet.status = 'preparing';
     snippet.message = 'Preparing temporary source audio for this range…';
     const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
-    rerenderApp(model);
+    requestFocusAfterRender(model, 'source-range-audio-status'); rerenderApp(model);
+    const focusOutcome = captureFocusContinuation(model, 'source-range-audio-status');
     void prepareSourceAudioSnippet({
       transport, pathPolicy: model.localService.pathPolicy,
       mediaPath: operationPath,
@@ -498,13 +500,13 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
       operationLifecycle.objectUrl = null;
       snippet.status = 'ready';
       snippet.message = 'Source audio ready; service scratch copy was deleted after browser retrieval.';
-      rerenderApp(model);
+      focusOutcome(); rerenderApp(model);
     }).catch((error: unknown) => {
       releaseSourceAudioSnippet(operationLifecycle);
       if (!stillOwned() || snippet.generation !== generation || sourceRangeContextKey(model, snippet) !== contextKey) return;
       snippet.status = 'failed';
       snippet.message = redactSourceAudioSnippetError(error);
-      rerenderApp(model);
+      focusOutcome(); rerenderApp(model);
     });
   });
   panel.appendChild(prepare);
@@ -514,20 +516,29 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     audio.controls = true;
     audio.autoplay = false;
     audio.src = snippet.objectUrl;
+    audio.addEventListener('error', () => {
+      if (snippet.objectUrl !== audio.getAttribute('src')) return;
+      snippet.status = 'failed';
+      snippet.message = 'Source audio could not be played. Prepare it again or clean browser audio.';
+      const status = panel.querySelector<HTMLElement>('#source-range-audio-status');
+      if (status) { status.textContent = snippet.message; status.setAttribute('aria-live', 'assertive'); }
+    });
     panel.appendChild(audio);
     const clean = document.createElement('button');
     clean.type = 'button';
     clean.textContent = 'Clean browser audio';
     clean.addEventListener('click', () => {
       invalidateSourceRangeSnippet(model, 'Temporary browser audio cleaned.');
-      rerenderApp(model);
+      requestFocusAfterRender(model, 'source-range-audio-prepare', 'source-range-audio-status'); rerenderApp(model);
     });
     panel.appendChild(clean);
   }
 
   const status = document.createElement('p');
   status.className = 'source-range-status';
+  status.id = 'source-range-audio-status'; status.tabIndex = -1;
   status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', snippet.status === 'failed' ? 'assertive' : 'polite');
   if (snippet.status === 'failed') status.textContent = snippet.message;
   else if (durationMs <= 0) status.textContent = 'Media duration/range unavailable.';
   else if (model.localService.status !== 'connected') status.textContent = model.localService.status === 'connecting' ? 'Connecting to the local service…' : 'Local service not connected.';

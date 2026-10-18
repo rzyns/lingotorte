@@ -15,7 +15,7 @@ import {
   cueWordTokens,
   tokenizeCueText,
 } from '../../model';
-import { requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
+import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
@@ -76,15 +76,19 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     const isActive = cue.id === model.player.activeCueId;
     const row = document.createElement('div');
     row.className = `cue-row${isActive ? ' active' : ''}`;
-    row.setAttribute('role', 'button');
+    row.setAttribute('role', 'group');
     row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-keyshortcuts', 'Enter Space');
     row.id = `cue-row-${cue.id}`;
     row.setAttribute('data-cue-id', cue.id);
     row.setAttribute('aria-label', `Line at ${formatTimeMs(cue.startMs)}: ${cue.text}`);
     if (isActive) row.setAttribute('aria-current', 'true');
 
-    const time = document.createElement('div');
-    time.className = 'cue-time';
+    const time = document.createElement('button');
+    time.type = 'button';
+    time.className = 'cue-time cue-seek';
+    time.id = `cue-seek-${cue.id}`;
+    time.setAttribute('aria-label', `Play line at ${formatTimeMs(cue.startMs)}`);
     time.textContent = `${formatTimeMs(cue.startMs)} – ${formatTimeMs(cue.endMs)}`;
     row.appendChild(time);
 
@@ -171,9 +175,10 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
       }
       rerenderApp(model);
     };
+    time.addEventListener('click', (e) => { e.stopPropagation(); seek(); });
     row.addEventListener('click', (e) => {
       // lt-z8s: word buttons are handled by the panel's delegated listener; they never seek the row.
-      if ((e.target as Element | null)?.closest?.('.cue-word')) return;
+      if ((e.target as Element | null)?.closest?.('button, a[href], input, select, textarea, summary, [role="button"]')) return;
       seek();
     });
     row.addEventListener('keydown', (e) => {
@@ -573,16 +578,18 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const returnFocusToRow = `cue-row-${model.selection.cueId}`;
   const commit = () => {
     if (!canSave) return;
+    const focusOutcome = captureFocusContinuation(model, returnFocusToRow);
+    const focusError = captureFocusContinuation(model, 'selection-meaning');
     void saveSelectionWithReceipt(model)
       .then((receipt) => {
         clearSelection(model);
-        requestFocusAfterRender(model, returnFocusToRow);
+        focusOutcome();
         if (receipt) showSaveToast(model, receipt);
         rerenderApp(model);
       })
       .catch((err: unknown) => {
         model.importError = err instanceof Error ? err.message : String(err);
-        rerenderApp(model);
+        focusError(); rerenderApp(model);
       });
   };
   const cancel = () => {
