@@ -1,12 +1,13 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { importFixtureMediaAndSubtitles, setPracticeMode, setExportImportConfirmReplace, connectLocalService, previewRestoreManifest, previewDurableRestore } from '../../apps/web/src/model';
+import { importFixtureMediaAndSubtitles, setPracticeMode, setExportImportConfirmReplace, connectLocalService, previewRestoreManifest, previewDurableRestore, setLocalServiceBaseUrl } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { LocalStore, ExportService } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { pairedModel } from './pairingFixture';
 import { captureSentence } from '../helpers/capture';
 import { synchronizePracticeSnippet, synchronizeSourceRangeSnippet } from '../../apps/web/src/ui/snippets';
+import { captureFocusContinuation } from '../../apps/web/src/appShell';
 
 let dom: JSDOM;
 beforeEach(() => {
@@ -22,6 +23,20 @@ async function fixture() {
 }
 function button(text: string) { return [...document.querySelectorAll('button')].find(b => b.textContent === text)!; }
 describe('lt-5lb.1 error feedback and focus continuity', () => {
+  it.each(['owned', 'moved'] as const)('async focus %s survives an intervening same-control render without stealing user focus', async ownership => {
+    const model = await fixture(); model.view = 'export-import';
+    previewRestoreManifest(model, JSON.stringify(model.exportService.buildManifest()));
+    rerenderApp(model);
+    document.getElementById('restore-preview')!.focus();
+    const continuation = captureFocusContinuation(model, 'restore-error');
+    rerenderApp(model);
+    if (ownership === 'moved') {
+      const input = document.createElement('input'); input.id = 'outside-async-focus'; document.body.appendChild(input); input.focus();
+    }
+    model.exportImport.lastError = 'Synthetic outcome';
+    continuation(); rerenderApp(model);
+    expect(document.activeElement?.id).toBe(ownership === 'moved' ? 'outside-async-focus' : 'restore-error');
+  });
   it.each(['practice', 'range'] as const)('%s audio failure is visible, generic, recoverable and clean returns focus', async kind => {
     const model = await fixture();
     if (kind === 'practice') {
@@ -46,6 +61,36 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
     const clean = button('Clean browser audio'); clean.focus(); clean.click();
     expect(document.querySelector(`${selector} audio`)).toBeNull();
     expect(document.activeElement?.id).toBe(kind === 'practice' ? 'practice-audio-prepare' : 'source-range-audio-prepare');
+  });
+  it.each(['practice', 'range'] as const)('%s ignores superseded audio errors without mutating the current snippet', async kind => {
+    for (const change of ['detached', 'generation', 'context', 'owner'] as const) {
+      const model = await fixture();
+      model.localService.status = 'connected';
+      model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
+      if (kind === 'practice') {
+        await captureSentence(model, model.cues[0]!);
+        model.view = 'practice'; setPracticeMode(model, 'audio-recall');
+      } else model.player.sourceRange = { startMs: 100, endMs: 1000 };
+      rerenderApp(model);
+      const state = kind === 'practice' ? synchronizePracticeSnippet(model) : synchronizeSourceRangeSnippet(model);
+      state.mediaPath = '/synthetic/movie.webm';
+      if (kind === 'practice') synchronizePracticeSnippet(model); else synchronizeSourceRangeSnippet(model);
+      state.objectUrl = 'blob:synthetic'; state.status = 'ready'; state.message = 'Source audio ready.';
+      rerenderApp(model);
+      const selector = kind === 'practice' ? '.practice-audio-recall' : '[data-testid="source-range-panel"]';
+      const previous = document.querySelector(`${selector} audio`)!;
+      if (change === 'detached') rerenderApp(model);
+      if (change === 'generation') state.generation += 1;
+      if (change === 'context') {
+        if (kind === 'practice') model.view = 'player';
+        else model.player.sourceRange = { startMs: 200, endMs: 1000 };
+      }
+      if (change === 'owner') setLocalServiceBaseUrl(model, 'http://localhost:5180');
+      const before = { status: state.status, message: state.message };
+      previous.dispatchEvent(new dom.window.Event('error'));
+      expect({ status: state.status, message: state.message }).toEqual(before);
+      expect(document.querySelector(selector)?.textContent).not.toContain('Source audio could not be played.');
+    }
   });
   it('cue groups are not interactive ancestors; mouse and row keyboard still seek but children do not', async () => {
     const model = await fixture(); rerenderApp(model);
@@ -134,6 +179,7 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
     await vi.waitFor(() => expect(model.transcriptLifecycle.lastMessage).toContain('Merged line'));
     expect(document.activeElement?.id).toBe('transcript-lifecycle-status');
     const corrected = button('Create corrected transcript version'); corrected.focus(); corrected.click();
+    expect(document.activeElement?.id).toBe('transcript-lifecycle-status');
     await vi.waitFor(() => expect(model.transcriptLifecycle.lastMessage).toBe('Corrected transcript version created'));
     expect(document.activeElement?.id).toBe('transcript-lifecycle-status');
     button('Apply offset to all cues').click(); expect(document.activeElement?.id).toBe('library-error');
@@ -169,6 +215,34 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
       release(outcome === 'failure' ? new Response('{}', { status: 500 }) : committed);
       await vi.waitFor(() => expect(outcome === 'failure' ? model.exportImport.lastError : model.exportImport.lastRestore).toBeTruthy());
       expect(document.activeElement?.id).toBe(outcome === 'moved' ? 'outside-focus' : outcome === 'failure' ? 'restore-error' : 'restore-receipt');
+    } finally { db.close(); }
+  });
+  it.each(['success', 'failure', 'moved'] as const)('authoritative preview refresh %s keeps focus only while owned', async outcome => {
+    const db = SqliteLocalPersistence.open(':memory:'); db.saveStore(new LocalStore());
+    let block = false; let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const json = (body: unknown) => new Response(JSON.stringify(body));
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      const path = new URL(input).pathname;
+      if (path === '/api/status') return json({ ok: true, config: {} });
+      if (path === '/api/state') return json({ ok: true, ...db.loadVersionedSnapshot(), restoreCapability: 'active-audit-restore-v1' });
+      if (path === '/api/restore/preview') {
+        if (block) { await pending; if (outcome === 'failure') return new Response('{}', { status: 500 }); }
+        const body = JSON.parse(String(init?.body));
+        return json({ ok: true, ...db.previewRestore(body.manifest, body.mode, body.expectedRevision, body.learnerAudit) });
+      }
+      throw new Error('Unexpected synthetic route');
+    }));
+    try {
+      const model = pairedModel(); await connectLocalService(model); model.view = 'export-import';
+      previewRestoreManifest(model, JSON.stringify(new ExportService(new LocalStore(), 'synthetic').buildManifest()));
+      setExportImportConfirmReplace(model, true);
+      await previewDurableRestore(model); rerenderApp(model); block = true;
+      const refresh = button('Refresh authoritative service preview'); refresh.focus(); refresh.click();
+      if (outcome === 'moved') { const outside = document.createElement('input'); outside.id = 'outside-preview-focus'; document.body.appendChild(outside); outside.focus(); }
+      release();
+      await vi.waitFor(() => expect(outcome === 'failure' ? model.exportImport.lastError : !button('Refresh authoritative service preview').disabled).toBeTruthy());
+      expect(document.activeElement?.id).toBe(outcome === 'moved' ? 'outside-preview-focus' : outcome === 'failure' ? 'restore-error' : 'restore-preview');
     } finally { db.close(); }
   });
   it.each(['browser', 'service', 'cancel'] as const)('local service %s choice focuses the resulting status', async choice => {

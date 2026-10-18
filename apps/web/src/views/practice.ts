@@ -22,9 +22,10 @@ import {
   syncPracticeCard,
   revealPracticeAnswer,
   PRACTICE_SPEAKING_UNAVAILABLE,
+  captureLocalServiceTransport,
 } from '../model';
 import { PRACTICE_SUCCESSORS, captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource, uiOwnerCurrent } from '../ui/common.ts';
 import { hasNativeInputPath, invalidatePracticeSnippet, practiceSnippetContextKey, practiceSnippetStates, synchronizePracticeSnippet } from '../ui/snippets.ts';
 
 export function renderPracticeView(model: AppModel): HTMLElement {
@@ -202,14 +203,21 @@ export function renderPracticeView(model: AppModel): HTMLElement {
       audio.controls = true;
       audio.autoplay = false;
       audio.src = snippet.objectUrl;
+      const generation = snippet.generation;
+      const contextKey = practiceSnippetContextKey(model, snippet);
+      let owner: ReturnType<typeof captureLocalServiceTransport> | null = null;
+      try { owner = captureLocalServiceTransport(model); } catch { /* Unpaired audio no longer owns events. */ }
+      const ownsAudio = () => audio.isConnected && owner !== null && uiOwnerCurrent(owner)
+        && snippet.generation === generation && practiceSnippetContextKey(model, snippet) === contextKey
+        && snippet.objectUrl === audio.getAttribute('src');
       audio.addEventListener('error', () => {
-        if (snippet.objectUrl !== audio.getAttribute('src')) return;
+        if (!ownsAudio()) return;
         snippet.status = 'failed';
         snippet.message = 'Source audio could not be played. Prepare it again or clean browser audio.';
         const status = audioGroup.querySelector<HTMLElement>('#practice-audio-status');
         if (status) { status.textContent = snippet.message; status.setAttribute('aria-live', 'assertive'); }
       });
-      audio.addEventListener('play', () => { snippet.status = 'playing'; });
+      audio.addEventListener('play', () => { if (ownsAudio()) snippet.status = 'playing'; });
       audioGroup.appendChild(audio);
       const cleanButton = document.createElement('button');
       cleanButton.type = 'button'; cleanButton.textContent = 'Clean browser audio';

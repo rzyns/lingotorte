@@ -27,10 +27,11 @@ import {
   toggleLoopCue,
   toggleLoopRange,
   togglePlay,
+  captureLocalServiceTransport,
 } from '../../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { renderShortcutHelpButton } from '../../ui/shortcutHelp.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel } from '../../ui/common.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, currentKeyboardCue, mediaLabel, uiOwnerCurrent } from '../../ui/common.ts';
 import { hasExtractableCurrentMedia, hasNativeInputPath, invalidateSourceRangeSnippet, sourceRangeContextKey, synchronizeSourceRangeSnippet } from '../../ui/snippets.ts';
 
 export function renderPlayerControls(model: AppModel): HTMLElement {
@@ -516,8 +517,15 @@ export function renderSourceRangePanel(model: AppModel): HTMLElement {
     audio.controls = true;
     audio.autoplay = false;
     audio.src = snippet.objectUrl;
+    const generation = snippet.generation;
+    const contextKey = sourceRangeContextKey(model, snippet);
+    let owner: ReturnType<typeof captureLocalServiceTransport> | null = null;
+    try { owner = captureLocalServiceTransport(model); } catch { /* Unpaired audio no longer owns events. */ }
+    const ownsAudio = () => audio.isConnected && owner !== null && uiOwnerCurrent(owner)
+      && snippet.generation === generation && sourceRangeContextKey(model, snippet) === contextKey
+      && snippet.objectUrl === audio.getAttribute('src');
     audio.addEventListener('error', () => {
-      if (snippet.objectUrl !== audio.getAttribute('src')) return;
+      if (!ownsAudio()) return;
       snippet.status = 'failed';
       snippet.message = 'Source audio could not be played. Prepare it again or clean browser audio.';
       const status = panel.querySelector<HTMLElement>('#source-range-audio-status');

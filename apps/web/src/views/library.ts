@@ -560,9 +560,13 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         });
       const parentCues = model.cues.slice();
       const parentWords = parentCues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
-      const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
       const applying = createCorrectedTranscriptVersion(model, targetTrack.id, edits);
       refreshApprovalGate();
+      requestFocusAfterRender(model, 'transcript-lifecycle-status'); rerenderApp(model);
+      // Keep the completion message unchanged while the operation is pending.
+      const pendingStatus = document.getElementById('transcript-lifecycle-status');
+      if (pendingStatus) pendingStatus.textContent = 'Creating corrected transcript version…';
+      const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
       void applying
         .then((corrected) => {
           // Consume only the edits that were submitted; edits made while Apply was pending are retained and

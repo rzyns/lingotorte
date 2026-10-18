@@ -762,7 +762,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 605
+      line: 609
       snippet: const approveBtn = document.createElement('button');
   - id: library.open
     scope: library
@@ -777,7 +777,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 697
+      line: 701
       snippet: const openBtn = document.createElement('button');
   - id: library.relink
     scope: library
@@ -792,7 +792,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 719
+      line: 723
       snippet: const relinkBtn = document.createElement('button');
   - id: library.load-synthetic-fixture
     scope: library
@@ -806,7 +806,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 758
+      line: 762
       snippet: const loadBtn = document.createElement('button');
   - id: library.local-subtitle-files
     scope: library
@@ -819,7 +819,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/library.ts
-      line: 795
+      line: 799
       snippet: const multiInput = document.createElement('input');
   - id: library.local-target-subtitle-file
     scope: library
@@ -832,7 +832,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/library.ts
-      line: 815
+      line: 819
       snippet: const targetInput = document.createElement('input');
   - id: library.local-native-subtitle-file
     scope: library
@@ -845,7 +845,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/library.ts
-      line: 831
+      line: 835
       snippet: const nativeInput = document.createElement('input');
   - id: library.swap
     scope: library
@@ -859,7 +859,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 859
+      line: 863
       snippet: const swap = document.createElement('button');
   - id: library.separatetoggle
     scope: library
@@ -870,7 +870,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/library.ts
-      line: 879
+      line: 883
       snippet: const separateToggle = document.createElement('details');
   - id: library.local-media-file
     scope: library
@@ -883,7 +883,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/library.ts
-      line: 896
+      line: 900
       snippet: const mediaInput = document.createElement('input');
   - id: library.import-local-media
     scope: library
@@ -897,7 +897,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 915
+      line: 919
       snippet: const localImportBtn = document.createElement('button');
   - id: library.choose-video-recommended-stays-linked-after-relo
     scope: library
@@ -910,7 +910,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/library.ts
-      line: 950
+      line: 954
       snippet: const persistentImportBtn = document.createElement('button');
   - id: library.disclosure
     scope: library
@@ -922,7 +922,7 @@ controls:
       - toggle
     source:
       path: apps/web/src/views/library.ts
-      line: 1017
+      line: 1021
       snippet: const disclosure = document.createElement('details');
   - id: player.playbtn
     scope: player
@@ -935,7 +935,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 42
+      line: 43
       snippet: const playBtn = document.createElement('button');
   - id: player.prev-line
     scope: player
@@ -949,7 +949,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 49
+      line: 50
       snippet: const prevBtn = document.createElement('button');
   - id: player.next-line
     scope: player
@@ -963,7 +963,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 73
+      line: 74
       snippet: const nextBtn = document.createElement('button');
   - id: player.loop-on
     scope: player
@@ -977,7 +977,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 96
+      line: 97
       snippet: const loopBtn = document.createElement('button');
   - id: player.stop-looping
     scope: player
@@ -993,7 +993,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 106
+      line: 107
       snippet: const loopRangeBtn = document.createElement('button');
   - id: player.playback-speed
     scope: player
@@ -1007,7 +1007,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 149
+      line: 150
       snippet: const speedInput = document.createElement('input');
   - id: player.seek
     scope: player
@@ -1024,7 +1024,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 171
+      line: 172
       snippet: const seek = document.createElement('input');
   - id: player.mutebtn
     scope: player
@@ -1039,7 +1039,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 195
+      line: 196
       snippet: const muteBtn = document.createElement('button');
   - id: player.fullscreenbtn
     scope: player
@@ -1054,7 +1054,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 209
+      line: 210
       snippet: const fullscreenBtn = document.createElement('button');
   - id: player.input
     scope: player
@@ -1068,7 +1068,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 348
+      line: 349
       snippet: const input = document.createElement('input');
   - id: player.loop-selected-range
     scope: player
@@ -1082,7 +1082,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 391
+      line: 392
       snippet: const loopSelected = document.createElement('button');
   - id: player.clear-loop
     scope: player
@@ -1096,7 +1096,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 400
+      line: 401
       snippet: const clearLoop = document.createElement('button');
   - id: player.clear-selected-range
     scope: player
@@ -1110,7 +1110,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 408
+      line: 409
       snippet: const clearRange = document.createElement('button');
   - id: player.use-transcript-selection
     scope: player
@@ -1124,7 +1124,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 417
+      line: 418
       snippet: const useTranscriptSelection = document.createElement('button');
   - id: player.source-range-media-path
     scope: player
@@ -1138,7 +1138,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 446
+      line: 447
       snippet: const pathInput = document.createElement('input');
   - id: player.prepare-audio-for-practice
     scope: player
@@ -1154,7 +1154,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 466
+      line: 467
       snippet: const prepare = document.createElement('button');
   - id: player.clean-browser-audio
     scope: player
@@ -1167,7 +1167,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 527
+      line: 535
       snippet: const clean = document.createElement('button');
   - id: player.button
     scope: player
@@ -1188,7 +1188,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/player/controls.ts
-      line: 592
+      line: 600
       snippet: const button = document.createElement('span');
   - id: player.details
     scope: player
@@ -1466,7 +1466,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/practice.ts
-      line: 86
+      line: 87
       snippet: const modeSelect = document.createElement('select');
   - id: practice.choicebtn
     scope: practice
@@ -1483,7 +1483,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 127
+      line: 128
       snippet: const choiceBtn = document.createElement('button');
   - id: practice.practice-audio-media-path
     scope: practice
@@ -1497,7 +1497,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/practice.ts
-      line: 148
+      line: 149
       snippet: const pathInput = document.createElement('input');
   - id: practice.prepare-audio-for-practice
     scope: practice
@@ -1513,7 +1513,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 162
+      line: 163
       snippet: const prepareButton = document.createElement('button');
   - id: practice.clean-browser-audio
     scope: practice
@@ -1526,7 +1526,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 214
+      line: 222
       snippet: const cleanButton = document.createElement('button');
   - id: practice.practice-answer
     scope: practice
@@ -1539,7 +1539,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/practice.ts
-      line: 230
+      line: 238
       snippet: const answerInput = document.createElement('input');
   - id: practice.tokenbtn
     scope: practice
@@ -1555,7 +1555,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 258
+      line: 266
       snippet: const tokenBtn = document.createElement('button');
   - id: practice.tokenbtn-2
     scope: practice
@@ -1571,7 +1571,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 288
+      line: 296
       snippet: const tokenBtn = document.createElement('button');
   - id: practice.reset-sentence
     scope: practice
@@ -1586,7 +1586,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 306
+      line: 314
       snippet: const resetBtn = document.createElement('button');
   - id: practice.practice-answer-2
     scope: practice
@@ -1601,7 +1601,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/practice.ts
-      line: 326
+      line: 334
       snippet: const answerInput = document.createElement('input');
   - id: practice.replay-source-line
     scope: practice
@@ -1616,7 +1616,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 345
+      line: 353
       snippet: const replayBtn = document.createElement('button');
   - id: practice.skip
     scope: practice
@@ -1631,7 +1631,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 364
+      line: 372
       snippet: const skipBtn = document.createElement('button');
   - id: practice.submit-attempt
     scope: practice
@@ -1647,7 +1647,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 376
+      line: 384
       snippet: const submitBtn = document.createElement('button');
   - id: practice.reveal-answer
     scope: practice
@@ -1662,7 +1662,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/practice.ts
-      line: 410
+      line: 418
       snippet: const revealButton = document.createElement('button');
   - id: review.hide-answer
     scope: review

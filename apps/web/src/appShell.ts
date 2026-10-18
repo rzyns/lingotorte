@@ -340,8 +340,11 @@ export function captureFocusContinuation(model: AppModel, ...ids: string[]): () 
   const doc = document;
   const view = model.view;
   const focused = doc.activeElement;
+  const focusId = focused?.id;
   return () => {
-    if (document === doc && model.view === view && doc.activeElement === focused) requestFocusAfterRender(model, ...ids);
+    // Root replacement preserves focus by stable id; it need not preserve the DOM node itself.
+    const stillFocused = doc.activeElement === focused || (focusId && doc.activeElement?.id === focusId);
+    if (document === doc && model.view === view && stillFocused) requestFocusAfterRender(model, ...ids);
   };
 }
 
