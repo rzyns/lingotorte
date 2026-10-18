@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, exportLearnerState, importFixtureMediaAndSubtitles, pairLocalService, setLocalServiceBaseUrl, setPracticeMode, setView, syncPracticeCard } from '../../apps/web/src/model';
+import { createAppModel, exportLearnerState, importFixtureMediaAndSubtitles, pairLocalService, setLocalServiceBaseUrl, setPracticeMode, setReviewBucketAsOf, setView, syncPracticeCard } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { SYNTHETIC_CAPABILITY } from './pairingFixture.ts';
 
@@ -13,9 +13,12 @@ const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
 const nativeSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.native.srt';
 const SNIP = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
 type Model = ReturnType<typeof createAppModel>;
+// lt-41v: pin the clock; a backward wall-clock step after capture would leave no due card to practise.
+const PRACTICE_NOW = new Date('2026-01-15T12:00:00.000Z');
 
 async function practiceModel(cards = 2): Promise<Model> {
   const model = createAppModel();
+  setReviewBucketAsOf(model, PRACTICE_NOW);
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
     await captureSentence(model, cue);
