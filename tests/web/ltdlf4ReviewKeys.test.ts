@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, setView } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 // lt-dlf.4: Review keyboard flow — Space toggles reveal, 1-4 rate Again/Hard/Good/Easy once revealed.
@@ -11,9 +11,13 @@ const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
 const nativeSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.native.srt';
 type Model = ReturnType<typeof createAppModel>;
 let dom: JSDOM;
+// lt-41v: cards are created due at the model clock and only listed once dueAt <= now. On the live wall clock a
+// backward step between capture and render empties the queue (no reveal toggle, keys ignored), so pin it.
+const REVIEW_NOW = new Date('2026-01-15T12:00:00.000Z');
 
 async function reviewModel(cards = 4): Promise<Model> {
   const model = createAppModel();
+  setReviewBucketAsOf(model, REVIEW_NOW);
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
     await captureSentence(model, cue);
