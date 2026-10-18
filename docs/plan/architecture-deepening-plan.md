@@ -77,8 +77,10 @@ export class SubtitleParseError extends TypeError {
   );
 }
 
-/** Pure, synchronous. Normalises line endings and cue text, validates timing, text and ordering. */
-export function parseSubtitleText(text: string, format: ParsedSubtitleFormat): SubtitleCueDraft[];
+export type SubtitleParseOptions = Readonly<{ allowAssOverlap?: boolean }>;
+
+/** Pure, synchronous. Timing/text always validated; ASS overlap opt-in defaults to false. */
+export function parseSubtitleText(text: string, format: ParsedSubtitleFormat, options?: SubtitleParseOptions): SubtitleCueDraft[];
 
 /** `.srt`/`.vtt`/`.ass`/`.ssa` by extension; a `WEBVTT` first line also means 'vtt'. Throws SubtitleParseError('unsupported-format'). */
 export function inferParsedSubtitleFormat(fileName: string, text?: string): ParsedSubtitleFormat;
@@ -120,13 +122,14 @@ Steps:
    ```ts
    async function parseBrowserSubtitle(input: { mediaId; language; role; path; text; isActive?; sourceKind? }): Promise<{ track: SubtitleTrack; cues: Cue[] }>
    ```
-   that calls `inferParsedSubtitleFormat(input.path, input.text)`, `parseSubtitleText(text, format)`, builds the track with `sha256BrowserText(input.text)` and cues with `sha256BrowserText(draft.text)`. Update the two callers (`tryParseBrowserSubtitle` `:1347`, `importBrowserSyntheticFixture` `:1191,1199`).
+   that calls `inferParsedSubtitleFormat(input.path, input.text)`, `parseSubtitleText(text, format, { allowAssOverlap: true })`, builds the track with `sha256BrowserText(input.text)` and cues with `sha256BrowserText(draft.text)`. Update the two callers (`tryParseBrowserSubtitle` `:1347`, `importBrowserSyntheticFixture` `:1191,1199`).
+   **Approved compatibility policy (lt-2se.2):** preserve the old browser ASS/SSA overlapping-dialogue acceptance. The optional core policy defaults to false and is honored only for `format === 'ass'`; the Node adapter remains unchanged and strict. SRT/VTT always reject overlap, even with opt-in. ASS timing, required headers and text validation remain enforced. Add red-then-green real `importBrowserLocalFiles` File-shape tests for both extensions, core default and real Node strictness tests, and opt-in SRT/VTT/malformed-ASS rejection tests. This is compatibility preservation, not a second parser or a new product behavior exception to §0.1.
 2. Delete from `model.ts`: `normalizeBrowserCueText` (`:843-849`), `srtTimestampPattern`/`assTimestampPattern` (`:851-852`), `parseBrowserAssTimestamp`, `stripBrowserAssOverrideTags`, `stripBrowserAssLineBreaks`, `parseBrowserAssText`, `BrowserAssSection`, `splitBrowserAssSections`, `parseBrowserAssDialogueLine` (`:854-930`), `parseBrowserSrtTimestamp`, `browserVttTimestampPattern`, `parseBrowserVttTimestamp` (`:1052-1078`). **Before deleting `validateBrowserCueOrdering` (`:932`, exported)** run `rg validateBrowserCueOrdering apps tests`; if `applyTrackOffsetMs` or `createOffsetCorrectedTranscriptVersion` (`:944-1000`, used by `tests/core/b7SubtitleRobustness.test.ts`) call it, keep it, and have it throw `SubtitleParseError('overlap', …)` using the same message text. Anything else that used `normalizeBrowserCueText` (there are 11 references; `putTranscriptSegments` `:2669` and `putTranscriptWordTimingsForSegments` `:2710` do) switches to the relocated `normalizeCueText`.
 3. Rewrite `plainSubtitleFailureReason` (`:1369-1375`) to branch on `err instanceof SubtitleParseError` → `code`/`blockIndex`, producing the **same three strings** as today (`the timing on block N is not valid`, `block N has no text`, `it is not a valid subtitle file`). Keep the regex fallback for non-`SubtitleParseError` errors. Tests that pin these strings: `tests/web/ltddy5MalformedSubtitle.test.ts`, `tests/web/frontendUi.test.ts`, `tests/web/ltfoe34GlossUi.test.ts`.
 4. Keep `sha256Bytes`/`sha256BrowserText`/`isNodeRuntime`/`hexFromBytes` (`:820-841`): they are the browser hashing adapter and are still used by transcript import.
 5. Run `npm run typecheck` (0 outside e2e), `npx vitest run tests/web tests/core`, full suite, `npm run build`, `npm run scan:privacy`, `npm run test:no-network`.
 
-Done when: `rg "parseBrowser|BrowserAss|normalizeBrowserCueText|browserVttTimestampPattern" apps/web/src` → 0; `model.ts` is ≥300 lines shorter (record `wc -l` before/after); all tests green against baseline; evidence + review PASS; merged.
+Done when: `rg "parseBrowser|BrowserAss|normalizeBrowserCueText|browserVttTimestampPattern" apps/web/src` → 0; the duplicate parser is removed and the browser uses the shared core (record the actual `model.ts` line count before/after); all tests green against baseline; evidence + review PASS; merged. Janusz approved replacing the original ≥300-line estimate with this structural criterion: the designated parser sections total only 251 lines before adding the replacement adapter and typed failure handling.
 
 Stop and report if: a test asserts a browser-specific error message that the core does not produce; `importBrowserSyntheticFixture` behaviour (fixture `sourceKind: 'synthetic'`) cannot be preserved through the adapter.
 

@@ -14,10 +14,11 @@ Deletion test on the browser copy: if the package were importable from the brows
 
 ## Decision
 
-1. Parsing is a pure module: `parseSubtitleText(text, format): SubtitleCueDraft[]` in `packages/subtitles/src/parse.ts`, importing only types from `@lingotorte/domain`. A test asserts the file has no `node:` or `@lingotorte/storage` import.
+1. Parsing is a pure module: `parseSubtitleText(text, format, options?): SubtitleCueDraft[]` in `packages/subtitles/src/parse.ts`, importing only domain types and the relocated `normalizeCueText` from `@lingotorte/domain`. A test asserts the file has no `node:` or `@lingotorte/storage` import.
 2. Failures are typed: `SubtitleParseError extends TypeError` with `code`, `format`, `blockIndex`. Message strings stay identical to today's so existing `toThrow(/…/)` tests hold; callers switch to `code`.
 3. Two adapters satisfy the seam: the Node adapter (`import.ts`, same exported names) reads the file and hashes with `node:crypto`; the browser adapter (inside `model.ts`) reads `File.text()` and hashes with `crypto.subtle`/portable SHA-256. The browser copy of the parser is deleted.
 4. Resolved drift (D-A2): the `WEBVTT` header is **optional** for `format === 'vtt'` in both runtimes.
+5. Preserve existing ASS/SSA overlap compatibility (approved on `lt-2se.2`): `options: { allowAssOverlap?: boolean }` defaults to false. Only the browser adapter opts in, preserving its previous overlapping-dialogue imports for both `.ass` and `.ssa`. The Node adapter is unchanged and remains strict; SRT/VTT always enforce non-overlap, even with this option. ASS timing, required-header and nonempty-text validation still run. This explicit policy belongs in the one shared parser, not in a duplicated browser implementation.
 
 ## Alternatives considered
 

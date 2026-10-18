@@ -8,6 +8,7 @@ import { ExportService, RestoreService } from '../../../packages/storage/src/exp
 import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter, tokenizeWhitespaceText } from '@lingotorte/language';
 import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
+import { inferParsedSubtitleFormat, parseSubtitleText, SubtitleParseError, normalizeCueText } from '../../../packages/subtitles/src/parse.ts';
 import type {
   Cue,
   MediaAsset,
@@ -840,101 +841,12 @@ async function sha256BrowserText(text: string): Promise<Sha256Digest> {
   return sha256Bytes(new TextEncoder().encode(text));
 }
 
-function normalizeBrowserCueText(text: string): string {
-  return text
-    .replace(/\r\n?/g, '\n')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const srtTimestampPattern = /^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/;
-const assTimestampPattern = /^(\d{1,2}):(\d{2}):(\d{2})\.(\d{2})$/;
-
-function parseBrowserAssTimestamp(value: string): number {
-  const match = assTimestampPattern.exec(value);
-  if (!match) {
-    throw new TypeError(`Invalid ASS/SSA timestamp: ${value}`);
-  }
-  return (
-    Number.parseInt(match[1]!, 10) * 3_600_000 +
-    Number.parseInt(match[2]!, 10) * 60_000 +
-    Number.parseInt(match[3]!, 10) * 1_000 +
-    Number.parseInt(match[4]!, 10) * 10
-  );
-}
-
-function stripBrowserAssOverrideTags(text: string): string {
-  return text.replace(/\{[^}]*\}/g, '');
-}
-
-function stripBrowserAssLineBreaks(text: string): string {
-  return text.replace(/\\[Nn]/g, ' ').replace(/\\h/g, ' ');
-}
-
-function parseBrowserAssText(raw: string): string {
-  return normalizeBrowserCueText(stripBrowserAssLineBreaks(stripBrowserAssOverrideTags(raw)));
-}
-
-type BrowserAssSection = Readonly<{
-  name: string;
-  lines: string[];
-}>;
-
-function splitBrowserAssSections(text: string): BrowserAssSection[] {
-  const normalized = text.replace(/\r\n?/g, '\n');
-  const sections: BrowserAssSection[] = [];
-  let current: BrowserAssSection | null = null;
-  for (const rawLine of normalized.split('\n')) {
-    const line = rawLine.trim();
-    if (line.length === 0) continue;
-    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
-    if (sectionMatch) {
-      if (current) sections.push(current);
-      current = { name: sectionMatch[1]!, lines: [] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current) sections.push(current);
-  return sections;
-}
-
-function parseBrowserAssDialogueLine(line: string, formatHeader: string, index: number): { cueIndex: number; startMs: number; endMs: number; text: string; normalizedText: string } | null {
-  const headerMatch = /^Format:\s*(.+)$/i.exec(formatHeader);
-  if (!headerMatch) throw new TypeError('ASS/SSA [Events] section missing Format header');
-  const fieldNames = headerMatch[1]!.split(',').map((f) => f.trim().toLowerCase());
-  const startIndex = fieldNames.indexOf('start');
-  const endIndex = fieldNames.indexOf('end');
-  const textIndex = fieldNames.indexOf('text');
-  if (startIndex < 0 || endIndex < 0 || textIndex < 0) {
-    throw new TypeError('ASS/SSA Events Format must include Start, End, and Text fields');
-  }
-  const dialogueMatch = /^Dialogue:\s*/i.exec(line);
-  if (!dialogueMatch) return null;
-  const rawFields = line.slice(dialogueMatch[0].length).split(',');
-  if (rawFields.length < fieldNames.length) {
-    throw new TypeError(`ASS/SSA Dialogue line ${index + 1} has too few fields`);
-  }
-  const startMs = parseBrowserAssTimestamp(rawFields[startIndex]!.trim());
-  const endMs = parseBrowserAssTimestamp(rawFields[endIndex]!.trim());
-  if (endMs <= startMs) {
-    throw new TypeError(`ASS/SSA cue ${index + 1} end time must be after start time`);
-  }
-  const rawText = rawFields.slice(textIndex).join(',').trim();
-  const text = parseBrowserAssText(rawText);
-  if (text.length === 0) {
-    throw new TypeError(`ASS/SSA cue ${index + 1} has empty cue text after stripping tags`);
-  }
-  return { cueIndex: index + 1, startMs, endMs, text, normalizedText: text.toLowerCase() };
-}
-
 export function validateBrowserCueOrdering(cues: readonly Cue[]): void {
   for (let i = 1; i < cues.length; i++) {
     const prev = cues[i - 1]!;
     const curr = cues[i]!;
     if (curr.startMs < prev.endMs) {
-      throw new TypeError(
+      throw new SubtitleParseError('overlap', 'srt', i + 1,
         `Cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
       );
     }
@@ -999,7 +911,7 @@ export async function createOffsetCorrectedTranscriptVersion(
   return { track: offsetTrack, cues: result.cues };
 }
 
-async function parseBrowserAssTextBody(input: {
+async function adaptSubtitleText(input: {
   mediaId: string;
   language: string;
   role: 'target' | 'native' | 'other';
@@ -1008,92 +920,8 @@ async function parseBrowserAssTextBody(input: {
   isActive?: boolean;
   sourceKind?: SourceKind;
 }): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
-  const track = makeSubtitleTrack({
-    mediaId: input.mediaId,
-    language: input.language,
-    role: input.role,
-    format: 'ass',
-    sourceKind: input.sourceKind ?? 'synthetic',
-    sourcePath: input.path,
-    contentSha256: await sha256BrowserText(input.text),
-    isActive: input.isActive ?? true,
-  });
-  const sections = splitBrowserAssSections(input.text);
-  if (sections.length === 0) throw new TypeError('ASS/SSA file has no sections');
-  const events = sections.find((s) => s.name.toLowerCase() === 'events');
-  if (!events) throw new TypeError('ASS/SSA file missing [Events] section');
-  const formatHeader = events.lines.find((line) => /^Format:/i.test(line));
-  if (!formatHeader) throw new TypeError('ASS/SSA [Events] section missing Format header');
-  const cueDtos: { cueIndex: number; startMs: number; endMs: number; text: string; normalizedText: string }[] = [];
-  for (const line of events.lines) {
-    if (!/^Dialogue:/i.test(line)) continue;
-    const cue = parseBrowserAssDialogueLine(line, formatHeader, cueDtos.length);
-    if (cue) cueDtos.push(cue);
-  }
-  if (cueDtos.length === 0) throw new TypeError('ASS/SSA file has no Dialogue lines');
-  const cues: Cue[] = [];
-  for (const dto of cueDtos) {
-    cues.push(
-      makeCue({
-        trackId: track.id,
-        cueIndex: dto.cueIndex,
-        startMs: dto.startMs,
-        endMs: dto.endMs,
-        text: dto.text,
-        normalizedText: dto.normalizedText,
-        textSha256: await sha256BrowserText(dto.text),
-      }),
-    );
-  }
-  return { track, cues };
-}
-
-
-function parseBrowserSrtTimestamp(value: string): number {
-  const match = srtTimestampPattern.exec(value);
-  if (!match) {
-    throw new TypeError(`Invalid SRT timestamp: ${value}`);
-  }
-  return (
-    Number.parseInt(match[1]!, 10) * 3_600_000 +
-    Number.parseInt(match[2]!, 10) * 60_000 +
-    Number.parseInt(match[3]!, 10) * 1_000 +
-    Number.parseInt(match[4]!, 10)
-  );
-}
-
-const browserVttTimestampPattern = /^(?:(\d{2}):)?(\d{2}):(\d{2})\.(\d{3})$/;
-
-function parseBrowserVttTimestamp(value: string): number {
-  const match = browserVttTimestampPattern.exec(value);
-  if (!match) {
-    throw new TypeError(`Invalid VTT timestamp: ${value}`);
-  }
-  return (
-    Number.parseInt(match[1] ?? '0', 10) * 3_600_000 +
-    Number.parseInt(match[2]!, 10) * 60_000 +
-    Number.parseInt(match[3]!, 10) * 1_000 +
-    Number.parseInt(match[4]!, 10)
-  );
-}
-
-async function parseBrowserSrtText(input: {
-  mediaId: string;
-  language: string;
-  role: 'target' | 'native' | 'other';
-  path: string;
-  text: string;
-  isActive?: boolean;
-  sourceKind?: SourceKind;
-}): Promise<{ track: SubtitleTrack; cues: Cue[] }> {
-  const isAss = input.path.toLowerCase().endsWith('.ass') || input.path.toLowerCase().endsWith('.ssa');
-  const isVtt = !isAss && (input.path.toLowerCase().endsWith('.vtt') || input.text.trim().startsWith('WEBVTT'));
-  const format: SubtitleFormat = isAss ? 'ass' : isVtt ? 'vtt' : 'srt';
-
-  if (isAss) {
-    return parseBrowserAssTextBody(input);
-  }
-
+  const format = inferParsedSubtitleFormat(input.path, input.text);
+  const drafts = parseSubtitleText(input.text, format, { allowAssOverlap: true });
   const track = makeSubtitleTrack({
     mediaId: input.mediaId,
     language: input.language,
@@ -1104,63 +932,14 @@ async function parseBrowserSrtText(input: {
     contentSha256: await sha256BrowserText(input.text),
     isActive: input.isActive ?? true,
   });
-
-  const normalizedText = input.text.replace(/\r\n?/g, '\n').trim();
-  const body = isVtt && normalizedText.startsWith('WEBVTT')
-    ? normalizedText.slice('WEBVTT'.length).trim()
-    : normalizedText;
-  const blocks = body
-    .split(/\n\s*\n/)
-    .map((block) => block.trim())
-    .filter((block) => block.length > 0);
   const cues: Cue[] = [];
-  for (let index = 0; index < blocks.length; index++) {
-    const block = blocks[index]!;
-    const lines = block.split('\n').map((line) => line.trim());
-    let lineIndex = 0;
-    let cueIndex = index;
-    const firstLine = lines[0] ?? '';
-    if (/^\d+$/.test(firstLine)) {
-      cueIndex = Number.parseInt(firstLine, 10);
-      lineIndex = 1;
-    } else if (!isVtt) {
-      throw new TypeError(`SRT block ${index} missing numeric cue id`);
-    }
-    const timingLine = lines[lineIndex] ?? '';
-    const timestampPattern = isVtt
-      ? /^(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})\s*-->\s*(?:(\d{2}:)?\d{2}:\d{2}\.\d{3})/
-      : /^(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/;
-    const timingMatch = timestampPattern.exec(timingLine);
-    if (!timingMatch) {
-      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} has invalid timing line: ${timingLine}`);
-    }
-    const timingParts = timingMatch[0]!.split(/\s*-->\s*/);
-    const startMs = isVtt ? parseBrowserVttTimestamp(timingParts[0]!) : parseBrowserSrtTimestamp(timingParts[0]!);
-    const endMs = isVtt ? parseBrowserVttTimestamp(timingParts[1]!) : parseBrowserSrtTimestamp(timingParts[1]!);
-    if (endMs <= startMs) {
-      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} end time must be after start time`);
-    }
-    const text = normalizeBrowserCueText(lines.slice(lineIndex + 1).join('\n'));
-    if (text.length === 0) {
-      throw new TypeError(`${isVtt ? 'VTT' : 'SRT'} block ${cueIndex} has empty cue text`);
-    }
-    cues.push(
-      makeCue({
-        trackId: track.id,
-        cueIndex,
-        startMs,
-        endMs,
-        text,
-        normalizedText: text.toLowerCase(),
-        textSha256: await sha256BrowserText(text),
-      }),
-    );
+  for (const draft of drafts) {
+    cues.push(makeCue({
+      ...draft,
+      trackId: track.id,
+      textSha256: await sha256BrowserText(draft.text),
+    }));
   }
-
-  for (let i = 1; i < cues.length; i++) {
-    validateBrowserCueOrdering(cues.slice(i - 1, i + 1));
-  }
-
   return { track, cues };
 }
 
@@ -1188,7 +967,7 @@ async function importBrowserSyntheticFixture(
     privacyLabel: 'synthetic',
   });
 
-  const targetParsed = await parseBrowserSrtText({
+  const targetParsed = await adaptSubtitleText({
     mediaId: asset.id,
     language: 'pl',
     role: 'target',
@@ -1196,7 +975,7 @@ async function importBrowserSyntheticFixture(
     text: browserFixtureTargetSrt,
   });
   const nativeParsed = nativeSrtPath
-    ? await parseBrowserSrtText({
+    ? await adaptSubtitleText({
         mediaId: asset.id,
         language: 'en',
         role: 'native',
@@ -1331,7 +1110,7 @@ function pickTrackForRelink(tracks: readonly SubtitleTrack[], role: 'target' | '
 export type SubtitleImportFailure = Readonly<{ fileName: string; role: 'target' | 'native'; reason: string }>;
 
 /** lt-ddy.5: read and parse one subtitle file; on failure record it and return null so the video still imports. */
-async function tryParseBrowserSubtitle(
+async function tryAdaptSubtitleFile(
   failures: SubtitleImportFailure[],
   file: File,
   text: string | null,
@@ -1344,7 +1123,7 @@ async function tryParseBrowserSubtitle(
     return null;
   }
   try {
-    return await parseBrowserSrtText({ ...input, path: file.name, text, sourceKind: 'owned' });
+    return await adaptSubtitleText({ ...input, path: file.name, text, sourceKind: 'owned' });
   } catch (err) {
     failures.push({ fileName: file.name, role: input.role, reason: plainSubtitleFailureReason(err) });
     return null;
@@ -1367,6 +1146,13 @@ async function readSubtitleText(failures: SubtitleImportFailure[], file: File | 
  * repeats the file's text. Only the block number is kept, so the learner can find the problem.
  */
 export function plainSubtitleFailureReason(err: unknown): string {
+  if (err instanceof SubtitleParseError) {
+    // Core messages retain the shipped display numbering (not always blockIndex).
+    const block = /\b(?:block|cue) (\d+)\b/i.exec(err.message)?.[1] ?? err.blockIndex;
+    if (block !== null && err.code === 'invalid-timing') return `the timing on block ${block} is not valid`;
+    if (block !== null && err.code === 'empty-text') return `block ${block} has no text`;
+    return 'it is not a valid subtitle file';
+  }
   const message = err instanceof Error ? err.message : String(err);
   const block = /\b(?:block|cue) (\d+)\b/i.exec(message)?.[1];
   if (block && /timing|timestamp/i.test(message)) return `the timing on block ${block} is not valid`;
@@ -1412,7 +1198,7 @@ async function relinkExistingBrowserMedia(
       continue;
     }
     // Explicitly supplied different subtitles are added beside existing tracks; existing tracks/cues are never replaced.
-    const parsed = await tryParseBrowserSubtitle(failures, file, text, { mediaId: existing.id, language, role });
+    const parsed = await tryAdaptSubtitleFile(failures, file, text, { mediaId: existing.id, language, role });
     if (!parsed) continue;
     newTracks.push(parsed);
     if (role === 'target') targetTrackId = parsed.track.id; else nativeTrackId = parsed.track.id;
@@ -1517,10 +1303,10 @@ export async function importBrowserLocalFiles(
       privacyLabel: 'owned',
     });
     const targetParsed = input.targetSubtitleFile
-      ? await tryParseBrowserSubtitle(failures, input.targetSubtitleFile, targetText, { mediaId: asset.id, language: input.targetLanguage ?? 'pl', role: 'target' })
+      ? await tryAdaptSubtitleFile(failures, input.targetSubtitleFile, targetText, { mediaId: asset.id, language: input.targetLanguage ?? 'pl', role: 'target' })
       : null;
     const nativeParsed = input.nativeSubtitleFile
-      ? await tryParseBrowserSubtitle(failures, input.nativeSubtitleFile, nativeText, { mediaId: asset.id, language: input.nativeLanguage ?? 'en', role: 'native' })
+      ? await tryAdaptSubtitleFile(failures, input.nativeSubtitleFile, nativeText, { mediaId: asset.id, language: input.nativeLanguage ?? 'en', role: 'native' })
       : null;
     const allParsedCues = [...(targetParsed?.cues ?? []), ...(nativeParsed?.cues ?? [])];
     const durationMs = Math.max(1000, ...allParsedCues.map((cue) => cue.endMs));
@@ -2666,7 +2452,7 @@ async function putTranscriptSegments(model: AppModel, input: {
   const cues: Cue[] = [];
   for (let index = 0; index < input.segments.length; index++) {
     const segment = input.segments[index]!;
-    const text = normalizeBrowserCueText(segment.text);
+    const text = normalizeCueText(segment.text);
     if (!text) throw new TypeError(`Transcript segment ${index + 1} has empty cue text`);
     if (segment.endMs <= segment.startMs) throw new TypeError(`Transcript segment ${index + 1} end time must be after start time`);
     cues.push(makeCue({
@@ -2707,7 +2493,7 @@ function putTranscriptWordTimingsForSegments(model: AppModel, input: {
     const cue = input.imported.cues[segmentIndex];
     if (!cue) throw new TypeError(`Transcript word timings reference missing cue for segment ${segmentIndex + 1}`);
     for (const word of segment.words ?? []) {
-      const text = normalizeBrowserCueText(word.text);
+      const text = normalizeCueText(word.text);
       if (!text) throw new TypeError(`Transcript word timing ${word.wordIndex} has empty text`);
       if (word.endMs <= word.startMs) throw new TypeError(`Transcript word timing ${word.wordIndex} end time must be after start time`);
       model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
@@ -2909,7 +2695,7 @@ async function createCorrectedTranscriptVersionNow(
   // Validate word edits before any store write so a rejected word edit cannot leave a partial corrected version.
   for (const edit of edits) {
     for (const word of edit.wordTimings ?? []) {
-      if (!normalizeBrowserCueText(word.text)) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
+      if (!normalizeCueText(word.text)) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
       if (!Number.isFinite(word.startMs) || !Number.isFinite(word.endMs) || word.endMs <= word.startMs) {
         throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
       }
@@ -2956,7 +2742,7 @@ async function createCorrectedTranscriptVersionNow(
     const edit = editsByCueId.get(parentCue.id);
     if (!correctedCue || !edit?.wordTimings || edit.wordTimings.length === 0) continue;
     for (const word of edit.wordTimings) {
-      const text = normalizeBrowserCueText(word.text);
+      const text = normalizeCueText(word.text);
       if (!text) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
       if (word.endMs <= word.startMs) throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
       model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
@@ -2983,7 +2769,7 @@ async function createCorrectedTranscriptVersionNow(
 }
 
 function splitCueTextForCorrection(text: string): readonly [string, string] {
-  const normalized = normalizeBrowserCueText(text);
+  const normalized = normalizeCueText(text);
   if (!normalized) return ['', ''];
   const midpoint = Math.floor(normalized.length / 2);
   const afterMidpoint = normalized.indexOf(' ', midpoint);
@@ -2993,8 +2779,8 @@ function splitCueTextForCorrection(text: string): readonly [string, string] {
     : beforeMidpoint > 0
       ? beforeMidpoint
       : midpoint;
-  const first = normalizeBrowserCueText(normalized.slice(0, splitAt));
-  const second = normalizeBrowserCueText(normalized.slice(splitAt));
+  const first = normalizeCueText(normalized.slice(0, splitAt));
+  const second = normalizeCueText(normalized.slice(splitAt));
   if (first && second) return [first, second];
   const tokens = normalized.split(/\s+/);
   if (tokens.length > 1) {
@@ -3088,7 +2874,7 @@ export async function mergeTranscriptCueWithNextInCorrectedVersion(
       segments.push({
         startMs: target.startMs,
         endMs: next.endMs,
-        text: normalizeBrowserCueText(`${target.text} ${next.text}`),
+        text: normalizeCueText(`${target.text} ${next.text}`),
       });
       index++;
       continue;
