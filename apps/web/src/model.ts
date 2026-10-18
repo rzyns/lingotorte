@@ -7,7 +7,7 @@ import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
 import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter, tokenizeWhitespaceText } from '@lingotorte/language';
-import { ReviewService, defaultFsrsConfig } from '@lingotorte/review';
+import { CaptureService, ReviewService, defaultFsrsConfig, type CaptureReceipt } from '@lingotorte/review';
 import { inferParsedSubtitleFormat, parseSubtitleText, SubtitleParseError, normalizeCueText } from '../../../packages/subtitles/src/parse.ts';
 import type {
   Cue,
@@ -82,12 +82,15 @@ function browserLocalMediaForHydratedMedia(media: MediaAsset | null): BrowserLoc
 export function createAppModel(): AppModel {
   const policy = defaultProviderPolicy();
   const store = new LocalStore();
-  return {
+  const savedOccurrenceService = new SavedOccurrenceService(store);
+  const reviewService = new ReviewService(store, defaultFsrsConfig());
+  const model: AppModel = {
     store,
     clock: () => new Date(),
     ui: { toast: null },
-    savedOccurrenceService: new SavedOccurrenceService(store),
-    reviewService: new ReviewService(store, defaultFsrsConfig()),
+    savedOccurrenceService,
+    reviewService,
+    capture: new CaptureService(store, savedOccurrenceService, reviewService, () => model.clock()),
     practiceService: new PracticeService(store),
     exportService: new ExportService(store, '0.0.0-p6'),
     restoreService: new RestoreService(store),
@@ -181,6 +184,7 @@ export function createAppModel(): AppModel {
       autosaveEnabled: true,
     },
   };
+  return model;
 }
 
 import { exactServiceOrigin, pairTransport, capturedTransport, clearPairing, PAIR_AGAIN, type PairedTransport } from './pairedTransport.ts';
@@ -3085,69 +3089,19 @@ function selectionTimeRangeForCue(model: AppModel, cue: Cue, charStart: number, 
   };
 }
 
-/**
- * lt-e0j: what one capture-form save created, so Undo removes exactly that and never a pre-existing item.
- * `isNewItem` false + `isNewOccurrence` true is the lt-cms dedupe path (occurrence added to an existing item).
- * `createdCardId` is set only when this save's lt-uzo ensureReviewCardForSavedItem created the card.
- */
-export type SaveReceipt = Readonly<{
-  item: SavedItem;
-  occurrence: SavedOccurrence;
-  isNewItem: boolean;
-  isNewOccurrence: boolean;
-  createdCardId: string | null;
+export type SaveReceipt = CaptureReceipt & Readonly<{
   selection: NonNullable<AppModel['selection']>;
   meaning: string;
   notes: string;
-  /** Save-time state Undo re-checks before mutating anything. */
-  baseline: Readonly<{ itemUpdatedAt: string; itemJson: string; occurrenceCount: number }>;
 }>;
 
 export async function saveSelection(model: AppModel): Promise<SavedItem | null> {
   return (await saveSelectionWithReceipt(model))?.item ?? null;
 }
 
-/**
- * lt-e0j Undo. Refuses (returns false, mutates nothing) unless everything this save created is still untouched:
- * the item's updatedAt and occurrence count match the save-time baseline, the created card is still FSRS 'new' with
- * no review events or practice attempts, it is not the card on screen in Review/Practice, and the occurrence is
- * referenced by no card other than the created one. Under that guarantee nothing else can reference what the save
- * created, so a new item is removed outright (item, its occurrence, the created card and its state) instead of being
- * archived; an archived phantom would otherwise still reach Practice/Export. A dedupe save removes only its own
- * occurrence plus a card it created.
- */
 export function undoSave(model: AppModel, receipt: SaveReceipt): boolean {
-  if (!receipt.isNewItem && !receipt.isNewOccurrence) return false;
-  if (!canUndoSave(model, receipt)) return false;
-  if (receipt.createdCardId) {
-    model.store.removeReviewCard(receipt.createdCardId);
-    model.store.removeReviewCardState(receipt.createdCardId);
-  }
-  model.store.removeSavedOccurrence(receipt.occurrence.id);
-  if (receipt.isNewItem) model.store.removeSavedItem(receipt.item.id);
+  if (!model.capture.undo(receipt, { activeCardIds: [model.review.activeCardId, model.review.currentCardId, model.practice.cardId] })) return false;
   persistIfLocalServiceAutosaveEnabled(model);
-  return true;
-}
-
-function canUndoSave(model: AppModel, receipt: SaveReceipt): boolean {
-  const item = model.store.getSavedItem(receipt.item.id);
-  // updatedAt plus the full record: an edit within the same clock tick still counts as a change.
-  if (!item || item.updatedAt !== receipt.baseline.itemUpdatedAt || JSON.stringify(item) !== receipt.baseline.itemJson) return false;
-  if (model.store.listSavedOccurrencesForItem(item.id).length !== receipt.baseline.occurrenceCount) return false;
-  if (!model.store.getSavedOccurrence(receipt.occurrence.id)) return false;
-  const cardId = receipt.createdCardId;
-  const cards = Object.values(model.store.snapshot().reviewCards);
-  // The occurrence (and, for a new item, the item) may be referenced only by the card this save created.
-  if (cards.some((c) => c.id !== cardId && (c.savedOccurrenceId === receipt.occurrence.id || (receipt.isNewItem && c.savedItemId === item.id)))) return false;
-  // Practice attempts reference cards only (no occurrence id), so checking the created card covers them.
-  if (cardId !== null && model.store.listPracticeAttemptsForCard(cardId).length > 0) return false;
-  if (cardId) {
-    const card = model.store.getReviewCard(cardId);
-    if (!card || card.suspendedAt !== undefined || card.deletedAt !== undefined) return false;
-    if (model.store.getReviewCardState(cardId)?.state !== 'new') return false;
-    if (model.store.listReviewEventsForCard(cardId).length > 0) return false;
-    if ([model.review.activeCardId, model.review.currentCardId, model.practice.cardId].includes(cardId)) return false;
-  }
   return true;
 }
 
@@ -3170,32 +3124,20 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
     ? { start: cue.startMs, end: cue.endMs }
     : selectionTimeRangeForCue(model, cue, model.selection.charStart, model.selection.charEnd);
 
-  const sourceContext = isSentence
-    ? buildSourceContext(
-      model.currentMedia.id,
-      model.currentMedia.originalPath,
-      model.currentMedia.contentSha256,
-      model.targetTrackId,
-      cue,
-      0,
-      cue.text.split(/\s+/).filter(Boolean).length,
-      0,
-      cue.text.length,
-    )
-    : buildSourceContext(
-      model.currentMedia.id,
-      model.currentMedia.originalPath,
-      model.currentMedia.contentSha256,
-      model.targetTrackId,
-      cue,
-      model.selection.tokenStart,
-      model.selection.tokenEnd,
-      model.selection.charStart,
-      model.selection.charEnd,
-      selectionTimeRange,
-    );
+  const sourceContext = buildSourceContext(
+    model.currentMedia.id,
+    model.currentMedia.originalPath,
+    model.currentMedia.contentSha256,
+    model.targetTrackId,
+    cue,
+    isSentence ? 0 : model.selection.tokenStart,
+    isSentence ? cue.text.split(/\s+/).filter(Boolean).length : model.selection.tokenEnd,
+    isSentence ? 0 : model.selection.charStart,
+    isSentence ? cue.text.length : model.selection.charEnd,
+    isSentence ? undefined : selectionTimeRange,
+  );
 
-  const result = model.savedOccurrenceService.saveSelection({
+  const result = model.capture.capture({
     kind: model.selection.kind,
     language: 'pl',
     displayText: isSentence ? cue.text : model.selection.text,
@@ -3207,13 +3149,8 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
     endMs: selectionTimeRange.end,
     sourceContext,
   });
-  // lt-uzo: a saved item becomes one recognition card (idempotent per saved item, not per occurrence).
-  const cardsBefore = reviewCardsForSavedItem(model, result.item.id);
-  const card = ensureReviewCardForSavedItem(model, result.item, result.occurrence);
-  const createdCardId = cardsBefore.active.length + cardsBefore.archived.length === 0 ? card.id : null;
-  const baseline = { itemUpdatedAt: result.item.updatedAt, itemJson: JSON.stringify(model.store.getSavedItem(result.item.id) ?? result.item), occurrenceCount: model.store.listSavedOccurrencesForItem(result.item.id).length };
   persistIfLocalServiceAutosaveEnabled(model);
-  return { ...result, createdCardId, selection, meaning, notes, baseline };
+  return { ...result, selection, meaning, notes };
 }
 
 export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<SavedItem | null> {
@@ -3320,59 +3257,23 @@ export function createReviewCardForSavedItem(
   return card;
 }
 
-/** Cards referencing a saved item, split into active (in review) and archived (suspended, history kept). */
 export function reviewCardsForSavedItem(model: AppModel, savedItemId: string): { active: ReviewCard[]; archived: ReviewCard[] } {
-  const cards = Object.values(model.store.snapshot().reviewCards).filter((c) => c.savedItemId === savedItemId && c.deletedAt === undefined);
-  return { active: cards.filter((c) => c.suspendedAt === undefined), archived: cards.filter((c) => c.suspendedAt !== undefined) };
+  return model.capture.cardsFor(savedItemId);
 }
 
-/**
- * lt-uzo: create the item's recognition card unless one already references it. Archived (suspended) cards count:
- * an item the learner took out of review is not silently re-added by saving another occurrence.
- * Returns the existing or new card; the new card starts FSRS 'new', due at model.clock().
- */
 export function ensureReviewCardForSavedItem(model: AppModel, item: SavedItem, occurrence: SavedOccurrence): ReviewCard {
-  const { active, archived } = reviewCardsForSavedItem(model, item.id);
-  const existing = active[0] ?? archived[0];
-  if (existing) return existing;
-  const now = model.clock().toISOString();
-  const { card, state } = model.reviewService.createCard({
-    savedItem: item,
-    savedOccurrence: occurrence,
-    cardType: 'recognition',
-    promptTemplate: `Recognize: ${item.displayText}`,
-  });
-  const stamped = { ...card, createdAt: now };
-  model.store.putReviewCard(stamped);
-  model.store.putReviewCardState({ ...state, dueAt: now });
-  return stamped;
+  return model.capture.ensureCard(item, occurrence);
 }
 
-/** Saved-view toggle off: archive (suspend) the item's active cards. Card, state and review events are kept. */
 export function archiveReviewCardsForSavedItem(model: AppModel, savedItemId: string): void {
-  const now = model.clock().toISOString();
-  const active = reviewCardsForSavedItem(model, savedItemId).active;
-  if (active.length === 0) return;
-  for (const card of active) model.store.putReviewCard({ ...card, suspendedAt: now });
+  if (model.capture.archiveCards(savedItemId).length === 0) return;
   if (model.review.activeCardId && model.store.getReviewCard(model.review.activeCardId)?.suspendedAt !== undefined) model.review.activeCardId = null;
   persistIfLocalServiceAutosaveEnabled(model);
 }
 
-/** Saved-view toggle on: re-activate the most recent archived card (keeping its schedule), else create one. */
 export function addSavedItemToReview(model: AppModel, item: SavedItem, persist = true): ReviewCard | null {
-  const { active, archived } = reviewCardsForSavedItem(model, item.id);
-  if (active[0]) return active[0];
-  let result: ReviewCard | null = null;
-  const latest = [...archived].sort((a, b) => (b.suspendedAt ?? '').localeCompare(a.suspendedAt ?? ''))[0];
-  if (latest) {
-    const { suspendedAt: _suspendedAt, ...rest } = latest;
-    result = rest;
-    model.store.putReviewCard(result);
-  } else {
-    const occurrence = [...model.savedOccurrenceService.listOccurrencesForItem(item.id)]
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-    if (occurrence) result = ensureReviewCardForSavedItem(model, item, occurrence);
-  }
+  if (model.capture.cardsFor(item.id).active[0]) return model.capture.cardsFor(item.id).active[0]!;
+  const result = model.capture.reactivate(item);
   if (persist) persistIfLocalServiceAutosaveEnabled(model);
   return result;
 }
@@ -3388,22 +3289,10 @@ export function addSavedItemsToReview(model: AppModel, items: readonly SavedItem
   return added;
 }
 
-/**
- * Inline 'Add meaning' / 'Edit meaning': writes savedItem.meaning with a learner source and persists (also marks
- * the snapshot cache dirty). lt-foe.3.1: with `allowClear`, an empty value removes the meaning and its source.
- */
 export function setSavedItemMeaning(model: AppModel, savedItemId: string, meaning: string, options: { allowClear?: boolean } = {}): SavedItem | null {
-  const item = model.store.getSavedItem(savedItemId);
-  const trimmed = meaning.trim();
-  if (!item || (!trimmed && !options.allowClear)) return null;
-  // An unchanged re-save keeps the existing provenance (e.g. an accepted dictionary suggestion).
-  if (trimmed && trimmed === item.meaning) return item;
-  const { meaning: _meaning, meaningSource: _source, ...rest } = item;
-  const updated: SavedItem = trimmed
-    ? { ...rest, meaning: trimmed, meaningSource: { kind: 'learner' }, updatedAt: model.clock().toISOString() }
-    : { ...rest, updatedAt: model.clock().toISOString() };
-  model.store.putSavedItem(updated);
-  persistIfLocalServiceAutosaveEnabled(model);
+  const before = model.store.getSavedItem(savedItemId);
+  const updated = model.capture.setMeaning(savedItemId, meaning, options);
+  if (updated && updated !== before) persistIfLocalServiceAutosaveEnabled(model);
   return updated;
 }
 

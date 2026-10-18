@@ -76,9 +76,9 @@ steps:
       - condition: Service unreachable or 401
         appResponse: Status in error tone with the error message; browser work kept
         recovery: Fix URL/capability and Connect again
-        source: "apps/web/src/model.ts:515"
+        source: "apps/web/src/model.ts:519"
     focusAfter: settings.connect-local-service
-    source: ["apps/web/src/views/settings.ts:245", "apps/web/src/model.ts:447", "apps/web/src/views/settings.ts:274"]
+    source: ["apps/web/src/views/settings.ts:245", "apps/web/src/model.ts:451", "apps/web/src/views/settings.ts:274"]
     evidence: { kind: observed-live, ref: lt-3kk journey-01 }
   - id: s03-choose-files
     view: library
@@ -124,7 +124,7 @@ steps:
         appResponse: Import proceeds; a dismissible warning banner (role=status) stays visible across views until "Dismiss"
         source: "apps/web/src/appShell.ts:72"
     focusAfter: body
-    source: ["apps/web/src/views/library.ts:915", "apps/web/src/model.ts:1268"]
+    source: ["apps/web/src/views/library.ts:915", "apps/web/src/model.ts:1272"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-02 (server fingerprint and both track roles verified)" }
   - id: s05-open-transcript-tools
     view: library
@@ -160,8 +160,8 @@ steps:
       - condition: Authorization checkbox not ticked
         appResponse: Import refused by the gate; error shown in the lifecycle panel
         recovery: Tick the checkbox and retry
-        source: "apps/web/src/model.ts:2526"
-    source: ["apps/web/src/views/library.ts:124", "apps/web/src/model.ts:2520"]
+        source: "apps/web/src/model.ts:2530"
+    source: ["apps/web/src/views/library.ts:124", "apps/web/src/model.ts:2524"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-03 (G1 recorded)" }
   - id: s07-correct
     view: library
@@ -182,7 +182,7 @@ steps:
         appResponse: Button stays disabled; the gate note (role=status, aria-live=polite) explains
         source: "apps/web/src/views/library.ts:610"
     focusAfter: body
-    source: ["apps/web/src/views/library.ts:520", "apps/web/src/model.ts:2678", "apps/web/src/views/library.ts:358"]
+    source: ["apps/web/src/views/library.ts:520", "apps/web/src/model.ts:2682", "apps/web/src/views/library.ts:358"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-03; run-4 observation: focus after Apply lands on body (lt-5lb.1)" }
   - id: s08-approve
     view: library
@@ -196,7 +196,7 @@ steps:
     persists: ["corrected track status approved (approvedAt); original draft stays draft"]
     api: ["PUT /api/state"]
     focusAfter: transcript-lifecycle-status (status line)
-    source: ["apps/web/src/views/library.ts:619", "apps/web/src/model.ts:2936"]
+    source: ["apps/web/src/views/library.ts:619", "apps/web/src/model.ts:2940"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-03 (focus ring present after Approve)" }
   - id: s09-save-word
     view: player
@@ -222,7 +222,7 @@ steps:
         recovery: Approve the transcript (s08)
         source: "apps/web/src/ui/capture.ts:14"
     focusAfter: cue row of the saved line
-    source: ["apps/web/src/views/player/transcript.ts:196", "apps/web/src/ui/capture.ts:14", "apps/web/src/views/player/transcript.ts:574", "apps/web/src/model.ts:3160", "apps/web/src/model.ts:3212", "apps/web/src/ui/capture.ts:45"]
+    source: ["apps/web/src/views/player/transcript.ts:196", "apps/web/src/ui/capture.ts:14", "apps/web/src/views/player/transcript.ts:574", "apps/web/src/model.ts:3114", "packages/review/src/capture.ts:37", "apps/web/src/ui/capture.ts:45"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-04 (two words, anchors 5–10 and 13–17 verified server-side); auto card creation is source-reading (lt-uzo, after run 4)" }
   - id: s10-save-sentence
     view: player
@@ -268,7 +268,7 @@ steps:
     persists: [review event, "review-card state (FSRS reps 1, state learning)"]
     api: ["PUT /api/state"]
     focusAfter: review.hide-answer
-    source: ["apps/web/src/views/review.ts:31", "apps/web/src/views/review.ts:152", "apps/web/src/views/review.ts:18", "apps/web/src/model.ts:3513"]
+    source: ["apps/web/src/views/review.ts:31", "apps/web/src/views/review.ts:152", "apps/web/src/views/review.ts:18", "apps/web/src/model.ts:3402"]
     evidence: { kind: observed-live, ref: lt-3kk journey-05 }
   - id: s13-practice-typed
     view: practice
@@ -285,7 +285,7 @@ steps:
     persists: ["practice attempt (typed-input, pass)", FSRS state update + review event]
     api: ["PUT /api/state"]
     focusAfter: practice-feedback (status banner)
-    source: ["apps/web/src/views/practice.ts:303", "apps/web/src/views/practice.ts:373", "apps/web/src/views/practice.ts:43", "apps/web/src/model.ts:3654"]
+    source: ["apps/web/src/views/practice.ts:303", "apps/web/src/views/practice.ts:373", "apps/web/src/views/practice.ts:43", "apps/web/src/model.ts:3543"]
     evidence: { kind: observed-live, ref: lt-3kk journey-06 }
   - id: s14-practice-choice
     view: practice
@@ -321,7 +321,7 @@ steps:
         appResponse: '"Save state now" is disabled until the sync settles'
         recovery: Wait; the button re-enables
         source: "apps/web/src/views/settings.ts:267"
-    source: ["apps/web/src/views/settings.ts:263", "apps/web/src/model.ts:447", "apps/web/src/browserSnapshotCache.ts:1"]
+    source: ["apps/web/src/views/settings.ts:263", "apps/web/src/model.ts:451", "apps/web/src/browserSnapshotCache.ts:1"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-09 (projection and revision identical after reload)" }
 outcome:
   summary: >-
@@ -355,7 +355,7 @@ observations:
     text: >-
       Saving creates the review card automatically (idempotent per item) and Saved shows an "In review ✓"
       toggle; the lt-3kk plan text about an explicit "Create review card" predates lt-uzo.
-    evidence: { kind: source-reading, ref: "apps/web/src/model.ts:3212" }
+    evidence: { kind: source-reading, ref: "packages/review/src/capture.ts:37" }
   - id: o5-pairing-every-session
     atStep: s15-persist-reload
     text: >-

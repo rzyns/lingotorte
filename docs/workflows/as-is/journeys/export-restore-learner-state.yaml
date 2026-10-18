@@ -49,7 +49,7 @@ steps:
       Success banner (role=status) "Learner-state export v1 ready: <file> • N records • N privacy warnings •
       manifest integrity verified … • no media files copied"; a Schema / App version / Exported at / root hash
       list; then "Download export JSON" (and "Save export to chosen file" when supported).
-    source: ["apps/web/src/views/exportImport.ts:40", "apps/web/src/model.ts:3864"]
+    source: ["apps/web/src/views/exportImport.ts:40", "apps/web/src/model.ts:3753"]
     evidence: { kind: observed-live, ref: lt-3kk journey-11 }
   - id: s02-download
     view: export-import
@@ -84,7 +84,7 @@ steps:
         appResponse: '"Restore input changed; preview and confirm again." and the preview is discarded'
         recovery: Preview again
         source: "apps/web/src/views/exportImport.ts:159"
-    source: ["apps/web/src/views/exportImport.ts:151", "apps/web/src/views/exportImport.ts:165", "apps/web/src/model.ts:3904"]
+    source: ["apps/web/src/views/exportImport.ts:151", "apps/web/src/views/exportImport.ts:165", "apps/web/src/model.ts:3793"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-11 (preview integrity verified)" }
   - id: s04-choose-mode
     view: export-import
@@ -116,7 +116,7 @@ steps:
       - condition: Service preview fails
         appResponse: Error message in the view; Restore stays disabled
         source: "apps/web/src/views/exportImport.ts:368"
-    source: ["apps/web/src/views/exportImport.ts:364", "apps/web/src/model.ts:3991"]
+    source: ["apps/web/src/views/exportImport.ts:364", "apps/web/src/model.ts:3880"]
     evidence: { kind: observed-live, ref: lt-3kk journey-11 }
   - id: s06-restore
     view: export-import
@@ -132,8 +132,8 @@ steps:
     canFail:
       - condition: Commit rejected or outcome unknown
         appResponse: 'Error message in the view; reconnect is blocked with "Restore pending; wait for acknowledgement/readback before reconnecting."'
-        source: "apps/web/src/model.ts:450"
-    source: ["apps/web/src/views/exportImport.ts:347", "apps/web/src/model.ts:4030"]
+        source: "apps/web/src/model.ts:454"
+    source: ["apps/web/src/views/exportImport.ts:347", "apps/web/src/model.ts:3919"]
     evidence: { kind: observed-live, ref: "lt-3kk journey-11 (exactly 1 commit, 200, readback equal to pre-merge projection)" }
 outcome:
   summary: >-
