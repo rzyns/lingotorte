@@ -78,3 +78,11 @@ export function requireNonNegativeInteger(record: Record<string, unknown>, key: 
   }
   return value;
 }
+
+export function normalizeCueText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
