@@ -73,6 +73,7 @@ export type AppModel = {
   store: import('@lingotorte/storage').LocalStore;
   savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
   reviewService: import('@lingotorte/review').ReviewService;
+  capture: import('@lingotorte/review').CaptureService;
   practiceService: import('@lingotorte/storage').PracticeService;
   exportService: import('@lingotorte/storage').ExportService;
   restoreService: import('@lingotorte/storage').RestoreService;

@@ -2310,62 +2310,62 @@ api:
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 395
+        line: 399
         snippet: "const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT…"
     - route: /api/status
       source:
         path: apps/web/src/model.ts
-        line: 469
+        line: 473
         snippet: const status = await fetchLocalServiceJson(transport, '/api/status');
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 474
+        line: 478
         snippet: const state = await fetchLocalServiceJson(transport, '/api/state');
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2036
+        line: 2040
         snippet: const created = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2131
+        line: 2135
         snippet: const created = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2224
+        line: 2228
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2273
+        line: 2277
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2327
+        line: 2331
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4007
+        line: 3896
         snippet: const state = await fetchLocalServiceJson(transport, '/api/state'); current();
     - route: /api/restore/preview
       source:
         path: apps/web/src/model.ts
-        line: 4014
+        line: 3903
         snippet: const reply = await fetchLocalServiceJson(transport, '/api/restore/preview', { …
     - route: /api/restore/commit
       source:
         path: apps/web/src/model.ts
-        line: 4057
+        line: 3946
         snippet: const ack = await fetchLocalServiceJson(binding.transport, '/api/restore/commit…
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4063
+        line: 3952
         snippet: const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); …
     - route: /api/language/morphology
       source:
@@ -2382,126 +2382,126 @@ persistence:
     - symbol: createOffsetCorrectedTranscriptVersion
       source:
         path: apps/web/src/model.ts
-        line: 910
+        line: 914
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: relinkExistingBrowserMedia
       source:
         path: apps/web/src/model.ts
-        line: 1231
+        line: 1235
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importBrowserLocalFiles
       source:
         path: apps/web/src/model.ts
-        line: 1346
+        line: 1350
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: putTranscriptSegments
       source:
         path: apps/web/src/model.ts
-        line: 2479
+        line: 2483
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: generateLocalAsrDraft
       source:
         path: apps/web/src/model.ts
-        line: 2605
+        line: 2609
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: generateElevenLabsScribeDraft
       source:
         path: apps/web/src/model.ts
-        line: 2655
+        line: 2659
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: createCorrectedTranscriptVersionNow
       source:
         path: apps/web/src/model.ts
-        line: 2767
+        line: 2771
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: createStructuralCorrectedTranscriptVersionNow
       source:
         path: apps/web/src/model.ts
-        line: 2834
+        line: 2838
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: approveTranscriptTrack
       source:
         path: apps/web/src/model.ts
-        line: 2948
+        line: 2952
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importTargetOnlyFixture
       source:
         path: apps/web/src/model.ts
-        line: 3024
+        line: 3028
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importFixtureMediaAndSubtitles
       source:
         path: apps/web/src/model.ts
-        line: 3072
+        line: 3076
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: undoSave
       source:
         path: apps/web/src/model.ts
-        line: 3128
+        line: 3104
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveSelectionWithReceipt
       source:
         path: apps/web/src/model.ts
-        line: 3215
+        line: 3152
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveSentenceFromCue
       source:
         path: apps/web/src/model.ts
-        line: 3243
+        line: 3180
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveLexemeFromCue
       source:
         path: apps/web/src/model.ts
-        line: 3273
+        line: 3210
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveSelectedPhraseFromCue
       source:
         path: apps/web/src/model.ts
-        line: 3303
+        line: 3240
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: createReviewCardForSavedItem
       source:
         path: apps/web/src/model.ts
-        line: 3319
+        line: 3256
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: archiveReviewCardsForSavedItem
       source:
         path: apps/web/src/model.ts
-        line: 3358
+        line: 3271
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemToReview
       source:
         path: apps/web/src/model.ts
-        line: 3376
+        line: 3277
         snippet: if (persist) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemsToReview
       source:
         path: apps/web/src/model.ts
-        line: 3387
+        line: 3288
         snippet: if (added > 0) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: setSavedItemMeaning
       source:
         path: apps/web/src/model.ts
-        line: 3406
-        snippet: persistIfLocalServiceAutosaveEnabled(model);
+        line: 3295
+        snippet: if (updated && updated !== before) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: submitReviewRating
       source:
         path: apps/web/src/model.ts
-        line: 3516
+        line: 3405
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: recordPracticeAttempt
       source:
         path: apps/web/src/model.ts
-        line: 3650
+        line: 3539
         snippet: persistIfLocalServiceAutosaveEnabled(model);
   unsavedMarkers:
     - symbol: persistIfLocalServiceAutosaveEnabled
       source:
         path: apps/web/src/model.ts
-        line: 595
+        line: 599
         snippet: markUnsavedBrowserEdits(model);
     - symbol: confirmRestore
       source:
         path: apps/web/src/model.ts
-        line: 4041
+        line: 3930
         snippet: markUnsavedBrowserEdits(model); return;

@@ -201,6 +201,8 @@ export class CaptureService {
   undo(receipt: CaptureReceipt, guard: UndoGuard): boolean;
 
   cardsFor(itemId: UUID): { active: ReviewCard[]; archived: ReviewCard[] };
+  /** Compatibility delegate for the unchanged model helper; honors the supplied occurrence and card uniqueness. */
+  ensureCard(item: SavedItem, occurrence: SavedOccurrence): ReviewCard;
   /** Suspend the item's active cards (card, state, events kept). Returns the suspended card ids. */
   archiveCards(itemId: UUID): UUID[];
   /** Un-suspend the most recently archived card, else create one from the earliest occurrence. */
@@ -219,12 +221,14 @@ What moves **verbatim** from `model.ts` into the class (keep comments, keep logi
 | `canUndoSave` (`:3346-3366`) | `canUndo()` — the three UI card ids become `guard.activeCardIds` |
 | `undoSave` (`:3333-3344`) minus the persist call | `undo()` |
 | `reviewCardsForSavedItem` (`:3538-3541`) | `cardsFor()` |
-| `ensureReviewCardForSavedItem` (`:3548-3563`) | private `ensureCard()` used by `capture()` and `reactivate()` |
+| `ensureReviewCardForSavedItem` (`:3548-3563`) | `ensureCard()` used by `capture()`, `reactivate()` and the unchanged model delegate |
 | `archiveReviewCardsForSavedItem` (`:3566-3573`) minus the `model.review.activeCardId` reset and persist | `archiveCards()` (returns ids so `model.ts` can do the UI reset) |
 | `addSavedItemToReview` (`:3576-3592`) minus persist | `reactivate()` |
 | `setSavedItemMeaning` (`:3609-3622`) minus persist | `setMeaning()` |
 
 What **stays** in `model.ts` (UI concerns): building `sourceContext` from `model.selection`/`model.currentMedia` (`:3375-3410`), `selectionTimeRangeForCue` (`:3289`), the `SaveReceipt` type (now `CaptureReceipt & { selection; meaning; notes }`), `meaningSourceForPending` (`:3369`), the `model.review.activeCardId` reset, every `persistIfLocalServiceAutosaveEnabled(model)` call, and `addSavedItemsToReview` (batch loop + one persist).
+
+Implementation reconciliation (`lt-2se.4`, independent review): `ensureCard` is public rather than the originally proposed private helper so the existing exported `ensureReviewCardForSavedItem(model, item, occurrence)` stays a behavior-preserving thin delegate. `reactivate` could choose a different occurrence and `capture` would add save semantics. This internal-interface exception preserves uniqueness and centralizes writes; it changes no product or wire behavior.
 
 `AppModel` (`apps/web/src/uiTypes.ts:72-80`) gains `capture: import('@lingotorte/review').CaptureService;` and `createAppModel` (`model.ts:81-93`) constructs it after the services it wraps.
 
