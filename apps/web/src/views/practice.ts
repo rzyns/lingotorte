@@ -22,9 +22,10 @@ import {
   syncPracticeCard,
   revealPracticeAnswer,
   PRACTICE_SPEAKING_UNAVAILABLE,
+  captureLocalServiceTransport,
 } from '../model';
-import { PRACTICE_SUCCESSORS, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
+import { PRACTICE_SUCCESSORS, captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource, uiOwnerCurrent } from '../ui/common.ts';
 import { hasNativeInputPath, invalidatePracticeSnippet, practiceSnippetContextKey, practiceSnippetStates, synchronizePracticeSnippet } from '../ui/snippets.ts';
 
 export function renderPracticeView(model: AppModel): HTMLElement {
@@ -161,6 +162,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     audioGroup.appendChild(pathLabel);
     const prepareButton = document.createElement('button');
     prepareButton.type = 'button';
+    prepareButton.id = 'practice-audio-prepare';
     prepareButton.className = 'btn-primary';
     prepareButton.textContent = 'Prepare audio for practice';
     prepareButton.disabled = model.localService.status !== 'connected' || !currentCue || !hasNativeInputPath(model, snippet.mediaPath);
@@ -179,18 +181,20 @@ export function renderPracticeView(model: AppModel): HTMLElement {
       snippet.contextKey = contextKey;
       const current = () => stillOwned() && snippet.generation === generation && practiceSnippetContextKey(model, snippet) === contextKey;
       const operationLifecycle: SourceAudioSnippetLifecycle = { objectUrl: null };
-      snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…'; rerenderApp(model);
+      snippet.status = 'preparing'; snippet.message = 'Preparing cue-bounded source audio…';
+      requestFocusAfterRender(model, 'practice-audio-status'); rerenderApp(model);
+      const focusOutcome = captureFocusContinuation(model, 'practice-audio-status');
       void prepareSourceAudioSnippet({ transport, pathPolicy: model.localService.pathPolicy, mediaPath: operationPath, startMs: currentCue.startMs, endMs: currentCue.endMs, lifecycle: operationLifecycle }).then(() => {
         if (!current()) { releaseSourceAudioSnippet(operationLifecycle); return; }
         snippet.objectUrl = operationLifecycle.objectUrl;
         operationLifecycle.objectUrl = null;
         snippet.status = 'ready'; snippet.message = 'Source audio ready; service scratch copy was deleted.';
-        rerenderApp(model);
+        focusOutcome(); rerenderApp(model);
       }).catch((error: unknown) => {
         releaseSourceAudioSnippet(operationLifecycle);
         if (!current()) return;
         snippet.status = 'failed'; snippet.message = redactSourceAudioSnippetError(error);
-        rerenderApp(model);
+        focusOutcome(); rerenderApp(model);
       });
     });
     audioGroup.appendChild(prepareButton);
@@ -199,15 +203,31 @@ export function renderPracticeView(model: AppModel): HTMLElement {
       audio.controls = true;
       audio.autoplay = false;
       audio.src = snippet.objectUrl;
-      audio.addEventListener('play', () => { snippet.status = 'playing'; });
+      const generation = snippet.generation;
+      const contextKey = practiceSnippetContextKey(model, snippet);
+      let owner: ReturnType<typeof captureLocalServiceTransport> | null = null;
+      try { owner = captureLocalServiceTransport(model); } catch { /* Unpaired audio no longer owns events. */ }
+      const ownsAudio = () => audio.isConnected && owner !== null && uiOwnerCurrent(owner)
+        && snippet.generation === generation && practiceSnippetContextKey(model, snippet) === contextKey
+        && snippet.objectUrl === audio.getAttribute('src');
+      audio.addEventListener('error', () => {
+        if (!ownsAudio()) return;
+        snippet.status = 'failed';
+        snippet.message = 'Source audio could not be played. Prepare it again or clean browser audio.';
+        const status = audioGroup.querySelector<HTMLElement>('#practice-audio-status');
+        if (status) { status.textContent = snippet.message; status.setAttribute('aria-live', 'assertive'); }
+      });
+      audio.addEventListener('play', () => { if (ownsAudio()) snippet.status = 'playing'; });
       audioGroup.appendChild(audio);
       const cleanButton = document.createElement('button');
       cleanButton.type = 'button'; cleanButton.textContent = 'Clean browser audio';
-      cleanButton.addEventListener('click', () => { releaseSourceAudioSnippet(snippet); snippet.status = 'cleaned'; snippet.message = 'Temporary browser audio cleaned.'; rerenderApp(model); });
+      cleanButton.addEventListener('click', () => { releaseSourceAudioSnippet(snippet); snippet.status = 'cleaned'; snippet.message = 'Temporary browser audio cleaned.'; requestFocusAfterRender(model, 'practice-audio-prepare', 'practice-audio-status'); rerenderApp(model); });
       audioGroup.appendChild(cleanButton);
     }
     const status = document.createElement('p');
+    status.id = 'practice-audio-status'; status.tabIndex = -1;
     status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', snippet.status === 'failed' ? 'assertive' : 'polite');
     status.textContent = model.localService.status === 'connecting' ? 'Connecting to the local service…' : model.localService.status !== 'connected' ? 'Local service not connected.' : !readNativePathPolicy(model.localService.pathPolicy) ? NATIVE_PATH_COMPATIBILITY_MESSAGE : snippet.message;
     audioGroup.appendChild(status);
     const privacy = document.createElement('p');
@@ -246,12 +266,14 @@ export function renderPracticeView(model: AppModel): HTMLElement {
         const tokenBtn = document.createElement('button');
         tokenBtn.type = 'button';
         tokenBtn.className = 'sentence-builder-token sentence-builder-token--ordered';
+        tokenBtn.id = `sentence-ordered-${i}`;
         tokenBtn.textContent = token;
         tokenBtn.setAttribute('aria-label', `Remove ${token} from position ${i + 1}`);
         tokenBtn.addEventListener('click', () => {
           const nextOrdered = ordered.filter((_, index) => index !== i);
           const nextPool = [...pool, token];
           setSentenceBuilderTokens(model, nextPool, nextOrdered);
+          requestFocusAfterRender(model, `sentence-pool-${Math.min(i, nextPool.length - 1)}`, 'sentence-pool-0', 'practice-submit');
           rerenderApp(model);
         });
         answerArea.appendChild(tokenBtn);
@@ -274,12 +296,14 @@ export function renderPracticeView(model: AppModel): HTMLElement {
         const tokenBtn = document.createElement('button');
         tokenBtn.type = 'button';
         tokenBtn.className = 'sentence-builder-token sentence-builder-token--pool';
+        tokenBtn.id = `sentence-pool-${i}`;
         tokenBtn.textContent = token;
         tokenBtn.setAttribute('aria-label', `Add ${token}`);
         tokenBtn.addEventListener('click', () => {
           const nextOrdered = [...ordered, token];
           const nextPool = pool.filter((_, index) => index !== i);
           setSentenceBuilderTokens(model, nextPool, nextOrdered);
+          requestFocusAfterRender(model, `sentence-pool-${Math.min(i, nextPool.length - 1)}`, 'sentence-pool-0', 'practice-submit');
           rerenderApp(model);
         });
         poolArea.appendChild(tokenBtn);
@@ -295,6 +319,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     resetBtn.addEventListener('click', () => {
       const initial = prepareSentenceBuilderForCue(expectedText);
       setSentenceBuilderTokens(model, initial.poolTokens, initial.orderedTokens);
+      requestFocusAfterRender(model, 'sentence-pool-0', 'practice-submit');
       rerenderApp(model);
     });
     builderGroup.appendChild(resetBtn);
@@ -358,6 +383,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
 
   const submitBtn = document.createElement('button');
   submitBtn.className = 'btn-primary';
+  submitBtn.id = 'practice-submit';
   submitBtn.textContent = 'Submit attempt';
   submitBtn.setAttribute('aria-label', 'Submit practice attempt');
   submitBtn.disabled = !contract;

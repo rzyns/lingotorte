@@ -6,7 +6,7 @@
 
 Views in nav order: **Player** (`player`) → **Library** (`library`) → **Saved** (`saved`) → **Review** (`review`) → **Practice** (`practice`) → **Export / Import** (`export-import`) → **Settings** (`settings`).
 
-141 interactive controls: shell 4, shared 13, export-import 16, library 32, player 35, practice 14, review 4, saved 10, settings 13.
+142 interactive controls: shell 4, shared 13, export-import 16, library 32, player 36, practice 14, review 4, saved 10, settings 13.
 
 Keyboard: 10 shortcuts declared in the help overlay; 25 `event.key` handler sites in source.
 

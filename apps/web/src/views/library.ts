@@ -29,7 +29,7 @@ import {
   openMediaAsset,
   restoreOpenedMediaHandle,
 } from '../model';
-import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
+import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderStatusToken, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../ui/mediaConflict.ts';
 import { hasNativeInputPath } from '../ui/snippets.ts';
@@ -325,9 +325,10 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const offsetMs = Number(offsetInput.value);
       if (!Number.isFinite(offsetMs) || offsetMs === 0) {
         model.importError = 'Select a non-zero offset before applying.';
-        rerenderApp(model);
+        requestFocusAfterRender(model, 'library-error'); rerenderApp(model);
         return;
       }
+      const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
       void createOffsetCorrectedTranscriptVersion(model, targetTrack.id, offsetMs)
         .then(() => {
           model.transcriptLifecycle.pendingCueEdits = {};
@@ -335,11 +336,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           model.transcriptLifecycle.pendingWordTimingEdits = {};
           model.transcriptLifecycle.lastMessage = `Applied ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms offset to all cues`;
           model.importError = null;
-          rerenderApp(model);
+          focusOutcome(); rerenderApp(model);
         })
         .catch((err: unknown) => {
           model.importError = err instanceof Error ? err.message : String(err);
-          rerenderApp(model);
+          focusOutcome(); rerenderApp(model);
         });
     });
     offsetGroup.append(offsetLabel, offsetPreview, applyOffsetBtn);
@@ -467,7 +468,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         if (editorBlocked()) { refreshApprovalGate(); return; }
         splitCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Splitting line ${cue.cueIndex}…`;
-        rerenderApp(model);
+        requestFocusAfterRender(model, 'transcript-lifecycle-status'); rerenderApp(model);
+        const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
         splitTranscriptCueInCorrectedVersion(model, model.targetTrackId!, cue.id)
           .then(() => {
             model.transcriptLifecycle.pendingCueEdits = {};
@@ -475,11 +477,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             model.transcriptLifecycle.pendingWordTimingEdits = {};
             model.transcriptLifecycle.lastMessage = `Split line ${cue.cueIndex} into a corrected version`;
             model.importError = null;
-            rerenderApp(model);
+            focusOutcome(); rerenderApp(model);
           })
           .catch((err: unknown) => {
             model.importError = err instanceof Error ? err.message : String(err);
-            rerenderApp(model);
+            focusOutcome(); rerenderApp(model);
           });
       });
       const mergeCueButton = document.createElement('button');
@@ -492,7 +494,8 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
         if (!mergeHasNext || editorBlocked()) { refreshApprovalGate(); return; }
         mergeCueButton.disabled = true;
         model.transcriptLifecycle.lastMessage = `Merging line ${cue.cueIndex} with next…`;
-        rerenderApp(model);
+        requestFocusAfterRender(model, 'transcript-lifecycle-status'); rerenderApp(model);
+        const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
         mergeTranscriptCueWithNextInCorrectedVersion(model, model.targetTrackId!, cue.id)
           .then(() => {
             model.transcriptLifecycle.pendingCueEdits = {};
@@ -500,11 +503,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             model.transcriptLifecycle.pendingWordTimingEdits = {};
             model.transcriptLifecycle.lastMessage = `Merged line ${cue.cueIndex} with next into a corrected version`;
             model.importError = null;
-            rerenderApp(model);
+            focusOutcome(); rerenderApp(model);
           })
           .catch((err: unknown) => {
             model.importError = err instanceof Error ? err.message : String(err);
-            rerenderApp(model);
+            focusOutcome(); rerenderApp(model);
           });
       });
       structureRow.append(splitCueButton, mergeCueButton);
@@ -559,6 +562,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const parentWords = parentCues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
       const applying = createCorrectedTranscriptVersion(model, targetTrack.id, edits);
       refreshApprovalGate();
+      requestFocusAfterRender(model, 'transcript-lifecycle-status'); rerenderApp(model);
+      // Keep the completion message unchanged while the operation is pending.
+      const pendingStatus = document.getElementById('transcript-lifecycle-status');
+      if (pendingStatus) pendingStatus.textContent = 'Creating corrected transcript version…';
+      const focusOutcome = captureFocusContinuation(model, 'library-error', 'transcript-lifecycle-status');
       void applying
         .then((corrected) => {
           // Consume only the edits that were submitted; edits made while Apply was pending are retained and
@@ -588,11 +596,11 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
             ? 'Corrected transcript version created; edits made during Apply were kept and still need to be applied'
             : 'Corrected transcript version created';
           model.importError = null;
-          rerenderApp(model);
+          focusOutcome(); rerenderApp(model);
         })
         .catch((err: unknown) => {
           model.importError = err instanceof Error ? err.message : String(err);
-          rerenderApp(model);
+          focusOutcome(); rerenderApp(model);
         });
     });
     panel.appendChild(correctBtn);
@@ -1005,6 +1013,7 @@ export function renderLibraryView(model: AppModel): HTMLElement {
     const banner = document.createElement('div');
     banner.className = 'status-banner error';
     banner.setAttribute('role', 'alert');
+    banner.id = 'library-error'; banner.tabIndex = -1;
     banner.textContent = model.importError;
     form.appendChild(banner);
   }

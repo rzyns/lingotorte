@@ -335,6 +335,19 @@ function scheduleLearningWake(model: AppModel): void {
 const pendingFocusRequests = new WeakMap<AppModel, readonly string[]>();
 export const PRACTICE_SUCCESSORS = ['practice-feedback', 'practice-empty', 'practice-prompt'] as const;
 
+/** Capture after the initiating render; asynchronous outcomes must not steal later user focus. */
+export function captureFocusContinuation(model: AppModel, ...ids: string[]): () => void {
+  const doc = document;
+  const view = model.view;
+  const focused = doc.activeElement;
+  const focusId = focused?.id;
+  return () => {
+    // Root replacement preserves focus by stable id; it need not preserve the DOM node itself.
+    const stillFocused = doc.activeElement === focused || (focusId && doc.activeElement?.id === focusId);
+    if (document === doc && model.view === view && stillFocused) requestFocusAfterRender(model, ...ids);
+  };
+}
+
 /** Ask the next rerenderApp(model) to focus the first of `ids` that exists after rendering. */
 // lt-dlf.5: applies to every caller (capture, library, practice, review): the successor is focused with
 // preventScroll and then revealed with scrollIntoView({ block: 'nearest' }) after the cue scroll, so the
@@ -396,7 +409,7 @@ export function rerenderApp(model: AppModel): void {
   else app.appendChild(currentRoot);
   // A browser may have paused the moved <video> while it was detached; resume if the model says playing.
   resumePersistentVideoAfterRender(model);
-  const successor = requested?.map((id) => document.getElementById(id)).find((el): el is HTMLElement => el !== null);
+  const successor = requested?.map((id) => document.getElementById(id)).find((el): el is HTMLElement => el !== null && !el.matches(':disabled'));
   if (successor) {
     // lt-dlf.5: no default focus jump; the field is revealed with block 'nearest' after the cue scroll below.
     successor.focus({ preventScroll: true });

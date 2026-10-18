@@ -16,7 +16,7 @@ import {
   setExportImportError,
   captureLocalServiceTransport,
 } from '../model';
-import { rerenderApp } from '../appShell.ts';
+import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileSavePickerGlobal, appendDefinitionRow, readPreviewManifest, shortHash } from '../ui/common.ts';
 
 export function renderExportImportView(model: AppModel): HTMLElement {
@@ -164,6 +164,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
 
   const previewBtn = document.createElement('button');
   previewBtn.className = 'btn-secondary';
+  previewBtn.id = 'restore-preview-action';
   previewBtn.textContent = 'Preview restore';
   previewBtn.setAttribute('aria-label', 'Preview restore from manifest JSON');
   previewBtn.disabled = restoreIsBusy(model);
@@ -175,12 +176,12 @@ export function renderExportImportView(model: AppModel): HTMLElement {
       if (!restoreIsBusy(model)) { model.exportImport.preview = null; model.exportImport.manifestJson = importTextarea.value; model.exportImport.lastRestore = null; }
       setExportImportError(model, err instanceof Error ? err.message : String(err));
     }
-    rerenderApp(model);
+    requestFocusAfterRender(model, 'restore-error', 'restore-preview'); rerenderApp(model);
   });
   importGroup.appendChild(previewBtn);
   if (model.store.snapshotPendingRestoreIntent()) {
     const resume = document.createElement('button'); resume.textContent = 'Preview pending session restore for durable save';
-    resume.addEventListener('click', () => { try { previewPendingSessionRestore(model); } catch (err) { setExportImportError(model, err instanceof Error ? err.message : 'Pending intent changed.'); } rerenderApp(model); });
+    resume.addEventListener('click', () => { try { previewPendingSessionRestore(model); } catch (err) { setExportImportError(model, err instanceof Error ? err.message : 'Pending intent changed.'); } requestFocusAfterRender(model, 'restore-error', 'restore-preview'); rerenderApp(model); });
     importGroup.appendChild(resume);
   }
 
@@ -188,6 +189,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
     const previewManifest = readPreviewManifest(model);
     const previewPanel = document.createElement('div');
     previewPanel.className = 'restore-preview';
+    previewPanel.id = 'restore-preview'; previewPanel.tabIndex = -1;
     previewPanel.setAttribute('role', 'region');
     previewPanel.setAttribute('aria-label', 'Restore preview');
 
@@ -350,22 +352,25 @@ export function renderExportImportView(model: AppModel): HTMLElement {
     restoreBtn.setAttribute('aria-label', 'Restore learner state from manifest');
     restoreBtn.disabled = !canRestore || restoreIsBusy(model) || (model.localService.status !== 'disconnected' && !hasCurrentDurableRestorePreview(model));
     restoreBtn.addEventListener('click', () => {
+      let focusOutcome = () => {};
       try {
         const completion = confirmRestore(model);
         if (completion) {
           restoreBtn.disabled = true;
-          void completion.then(() => { setExportImportError(model, null); rerenderApp(model); }, err => { setExportImportError(model, err instanceof Error ? err.message : 'Restore failed.'); rerenderApp(model); });
+          void completion.then(() => { setExportImportError(model, null); focusOutcome(); rerenderApp(model); }, err => { setExportImportError(model, err instanceof Error ? err.message : 'Restore failed.'); focusOutcome(); rerenderApp(model); });
         } else setExportImportError(model, null);
       } catch (err: unknown) {
         setExportImportError(model, err instanceof Error ? err.message : String(err));
       }
-      rerenderApp(model);
+      requestFocusAfterRender(model, 'restore-error', 'restore-receipt', 'restore-preview'); rerenderApp(model);
+      focusOutcome = captureFocusContinuation(model, 'restore-error', 'restore-receipt', 'restore-preview');
     });
     if (model.localService.status !== 'disconnected') {
       const refresh = document.createElement('button'); refresh.textContent = 'Refresh authoritative service preview'; refresh.disabled = restoreIsBusy(model);
       refresh.addEventListener('click', () => {
         refresh.disabled = true;
-        void previewDurableRestore(model).then(() => rerenderApp(model), err => { setExportImportError(model, err instanceof Error ? err.message : 'Preview failed.'); rerenderApp(model); });
+        const focusOutcome = captureFocusContinuation(model, 'restore-error', 'restore-preview');
+        void previewDurableRestore(model).then(() => { focusOutcome(); rerenderApp(model); }, err => { setExportImportError(model, err instanceof Error ? err.message : 'Preview failed.'); focusOutcome(); rerenderApp(model); });
       });
       previewPanel.appendChild(refresh);
     }
@@ -381,6 +386,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
   if (model.exportImport.lastError) {
     const errorBanner = document.createElement('div');
     errorBanner.className = 'status-banner error';
+    errorBanner.id = 'restore-error'; errorBanner.tabIndex = -1;
     errorBanner.setAttribute('role', 'alert');
     errorBanner.textContent = model.exportImport.lastError;
     importGroup.appendChild(errorBanner);
@@ -393,6 +399,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
 function renderRestoreReceipt(receipt: NonNullable<AppModel['exportImport']['lastRestore']>): HTMLElement {
   const container = document.createElement('div');
   container.className = 'restore-receipt';
+  container.id = 'restore-receipt'; container.tabIndex = -1;
   container.setAttribute('role', 'status');
   container.dataset.testid = 'restore-receipt';
 

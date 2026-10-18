@@ -731,6 +731,15 @@ textarea:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+/* The seek action is a sibling of capture/analysis controls, never their interactive parent. */
+.cue-seek {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
 .cue-target {
   max-width: 60ch;
   font-size: var(--fs-lg);
