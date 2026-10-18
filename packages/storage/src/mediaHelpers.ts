@@ -56,13 +56,7 @@ export function inferSubtitleFormat(path: string): SubtitleFormat {
   }
 }
 
-export function normalizeCueText(text: string): string {
-  return text
-    .replace(/\r\n?/g, '\n')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { normalizeCueText } from '@lingotorte/domain';
 
 export async function readLocalSubtitle(path: string): Promise<{ text: string; sha256: Sha256Digest }> {
   const text = await readFile(path, 'utf8');
