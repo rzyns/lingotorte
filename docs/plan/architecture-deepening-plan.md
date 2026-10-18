@@ -126,7 +126,7 @@ Steps:
 4. Keep `sha256Bytes`/`sha256BrowserText`/`isNodeRuntime`/`hexFromBytes` (`:820-841`): they are the browser hashing adapter and are still used by transcript import.
 5. Run `npm run typecheck` (0 outside e2e), `npx vitest run tests/web tests/core`, full suite, `npm run build`, `npm run scan:privacy`, `npm run test:no-network`.
 
-Done when: `rg "parseBrowser|BrowserAss|normalizeBrowserCueText|browserVttTimestampPattern" apps/web/src` → 0; `model.ts` is ≥300 lines shorter (record `wc -l` before/after); all tests green against baseline; evidence + review PASS; merged.
+Done when: `rg "parseBrowser|BrowserAss|normalizeBrowserCueText|browserVttTimestampPattern" apps/web/src` → 0; the duplicate parser is removed and the browser uses the shared core (record the actual `model.ts` line count before/after); all tests green against baseline; evidence + review PASS; merged. Janusz approved replacing the original ≥300-line estimate with this structural criterion: the designated parser sections total only 251 lines before adding the replacement adapter and typed failure handling.
 
 Stop and report if: a test asserts a browser-specific error message that the core does not produce; `importBrowserSyntheticFixture` behaviour (fixture `sourceKind: 'synthetic'`) cannot be preserved through the adapter.
 
