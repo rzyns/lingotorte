@@ -16,9 +16,7 @@ async function reviewModel(cards = 4): Promise<Model> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
-    const item = (await captureSentence(model, cue))!;
-
-    model.capture.cardsFor(item.id).active[0]!;
+    await captureSentence(model, cue);
   }
   setView(model, 'review');
   rerenderApp(model);

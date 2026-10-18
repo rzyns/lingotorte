@@ -18,9 +18,7 @@ async function practiceModel(cards = 2): Promise<Model> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
-    const item = (await captureSentence(model, cue))!;
-
-    model.capture.cardsFor(item.id).active[0]!;
+    await captureSentence(model, cue);
   }
   pairLocalService(model, SYNTHETIC_CAPABILITY);
   model.localService.status = 'connected';

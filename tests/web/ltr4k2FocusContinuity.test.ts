@@ -15,8 +15,7 @@ async function cards(n: number): Promise<AppModel> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, MEDIA, TARGET, NATIVE);
   for (const cue of model.cues.slice(0, n)) {
-    const item = (await captureSentence(model, cue))!;
-    model.capture.cardsFor(item.id).active[0]!;
+    await captureSentence(model, cue);
   }
   return model;
 }
