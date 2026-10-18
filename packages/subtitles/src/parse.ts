@@ -27,7 +27,11 @@ export type SubtitleParseErrorCode =
 export class SubtitleParseError extends TypeError {
   readonly code: SubtitleParseErrorCode;
   readonly format: ParsedSubtitleFormat;
-  /** 1-based block / cue number the learner can look for; null when the whole file is at fault. */
+  /**
+   * Block the error points at; null when the whole file is at fault. SRT block errors use the
+   * cue id read from the file (as the message does); VTT/ASS block errors and overlap use the
+   * 1-based position. The message text keeps its historical numbering, which may differ.
+   */
   readonly blockIndex: number | null;
 
   constructor(code: SubtitleParseErrorCode, format: ParsedSubtitleFormat, blockIndex: number | null, message: string) {
@@ -207,7 +211,7 @@ function validateCueOrdering(cues: readonly SubtitleCueDraft[], format: ParsedSu
 
 function parseSrtBlock(block: string, index: number): SubtitleCueDraft {
   const lines = block.split('\n').map((line) => line.trim());
-  // First line is the numeric cue index. If missing or malformed, we use the provided index.
+  // First line must be the numeric cue id; a missing or malformed id is an error.
   const firstLine = lines[0] ?? '';
   if (!/^\d+$/.test(firstLine)) {
     throw new SubtitleParseError('missing-cue-id', 'srt', index + 1, `SRT block ${index} missing numeric cue id`);
