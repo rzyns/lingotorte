@@ -1,8 +1,9 @@
+import { captureSentence } from '../helpers/capture';
 import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as modelModule from '../../apps/web/src/model';
-import { importBrowserLocalFiles, importBrowserLocalFileHandles, restoreBrowserMediaHandle, saveSentenceFromCue } from '../../apps/web/src/model';
+import { importBrowserLocalFiles, importBrowserLocalFileHandles, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 
@@ -53,7 +54,7 @@ async function importWithAnchors(model: AppModel) {
     targetSubtitleFile: srt(TARGET, 'clip.pl.srt'),
     nativeSubtitleFile: srt(NATIVE, 'clip.en.srt'),
   });
-  const saved = await saveSentenceFromCue(model, model.cues[1]!);
+  const saved = await captureSentence(model, model.cues[1]!);
   expect(saved).toBeTruthy();
   return snapshotIdentity(model);
 }

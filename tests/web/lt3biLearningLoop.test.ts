@@ -1,3 +1,4 @@
+import { captureLexeme, captureSentence } from '../helpers/capture';
 // lt-3bi: cross-surface learning-loop qualification. One synthetic library is driven through import,
 // saving, review, practice, transcript correction/approval, SQLite restart + relink and metrics, on one
 // model and one file-backed SQLite store. Unit coverage for each surface lives in the lt-3wr/lt-2rl/lt-0g9/
@@ -8,22 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createReviewCardForSavedItem,
-  fixedOffsetDayKey,
-  importBrowserLocalFiles,
-  learnerProgress,
-  listReviewBuckets,
-  pickNextDueCard,
-  saveLexemeFromCue,
-  saveSentenceFromCue,
-  setLearningClock,
-  setPracticeMode,
-  setView,
-  studyActionInstants,
-  studyMetrics,
-  STUDY_ESTIMATE_MS_PER_ACTION,
-} from '../../apps/web/src/model';
+import { fixedOffsetDayKey, importBrowserLocalFiles, learnerProgress, listReviewBuckets, pickNextDueCard, setLearningClock, setPracticeMode, setView, studyActionInstants, studyMetrics, STUDY_ESTIMATE_MS_PER_ACTION } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 import { validateSavedOccurrenceSourceContext } from '../../packages/domain/src/sourceContext.ts';
@@ -123,12 +109,12 @@ describe('lt-3bi cross-surface learning loop', { timeout: 60_000 }, () => {
     const mediaId = model.currentMedia!.id;
     const v1 = model.targetTrackId!;
     const [cueA, cueB] = model.cues;
-    const card = (item: NonNullable<Awaited<ReturnType<typeof saveSentenceFromCue>>>) =>
-      createReviewCardForSavedItem(model, item, model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!).id;
-    const mature = card((await saveSentenceFromCue(model, cueA!))!);
-    const fresh = card((await saveSentenceFromCue(model, cueB!))!);
-    const lexA = card(saveLexemeFromCue(model, cueA!, 'Cześć', 0, 5, 0)!);
-    const lexB = card(saveLexemeFromCue(model, cueB!, 'Druga', 0, 5, 0)!);
+    const card = (item: NonNullable<Awaited<ReturnType<typeof captureSentence>>>) =>
+      model.capture.cardsFor(item.id).active[0]!.id;
+    const mature = card((await captureSentence(model, cueA!))!);
+    const fresh = card((await captureSentence(model, cueB!))!);
+    const lexA = card((await captureLexeme(model, cueA!, 'Cześć', 0, 5, 0))!);
+    const lexB = card((await captureLexeme(model, cueB!, 'Druga', 0, 5, 0))!);
     // Defer the two lexeme cards to later in the session; age `mature` into an overdue 30-day review card.
     const setState = (id: string, patch: object) => model.store.putReviewCardState({ ...model.store.getReviewCardState(id)!, ...patch });
     setState(mature, { state: 'review', scheduledDays: 30, dueAt: new Date(T0.valueOf() - 86_400_000).toISOString() });

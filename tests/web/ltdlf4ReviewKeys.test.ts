@@ -1,12 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAppModel,
-  createReviewCardForSavedItem,
-  importFixtureMediaAndSubtitles,
-  saveSentenceFromCue,
-  setView,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 // lt-dlf.4: Review keyboard flow — Space toggles reveal, 1-4 rate Again/Hard/Good/Easy once revealed.
@@ -21,9 +16,9 @@ async function reviewModel(cards = 4): Promise<Model> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
-    const item = (await saveSentenceFromCue(model, cue))!;
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-    createReviewCardForSavedItem(model, item, occurrence);
+    const item = (await captureSentence(model, cue))!;
+
+    model.capture.cardsFor(item.id).active[0]!;
   }
   setView(model, 'review');
   rerenderApp(model);

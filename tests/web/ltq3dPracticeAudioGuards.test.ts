@@ -1,17 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAppModel,
-  createReviewCardForSavedItem,
-  exportLearnerState,
-  importFixtureMediaAndSubtitles,
-  pairLocalService,
-  saveSentenceFromCue,
-  setLocalServiceBaseUrl,
-  setPracticeMode,
-  setView,
-  syncPracticeCard,
-} from '../../apps/web/src/model';
+import { createAppModel, exportLearnerState, importFixtureMediaAndSubtitles, pairLocalService, setLocalServiceBaseUrl, setPracticeMode, setView, syncPracticeCard } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { SYNTHETIC_CAPABILITY } from './pairingFixture.ts';
 
@@ -28,9 +18,9 @@ async function practiceModel(cards = 2): Promise<Model> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
-    const item = (await saveSentenceFromCue(model, cue))!;
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-    createReviewCardForSavedItem(model, item, occurrence);
+    const item = (await captureSentence(model, cue))!;
+
+    model.capture.cardsFor(item.id).active[0]!;
   }
   pairLocalService(model, SYNTHETIC_CAPABILITY);
   model.localService.status = 'connected';

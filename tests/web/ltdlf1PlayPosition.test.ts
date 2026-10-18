@@ -1,6 +1,7 @@
+import { captureLexeme } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, saveLexemeFromCue } from '../../apps/web/src/model';
+import { createAppModel } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -219,9 +220,9 @@ describe('lt-dlf.1 play button and playback position across rerenders', () => {
     expect(v.currentTime).toBe(0);
   });
 
-  it('jumping to a saved occurrence lands at the occurrence start after the rebuild', () => {
+  it('jumping to a saved occurrence lands at the occurrence start after the rebuild', async () => {
     const { model, c0, c1 } = installModel();
-    expect(saveLexemeFromCue(model, c1, 'widzenia', 3, 11, 1)).not.toBeNull();
+    expect(await captureLexeme(model, c1, 'widzenia', 3, 11, 1)).not.toBeNull();
     model.player.currentTimeMs = 500;
     model.view = 'saved';
     rerenderApp(model);

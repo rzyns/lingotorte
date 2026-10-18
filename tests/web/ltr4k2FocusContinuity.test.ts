@@ -1,10 +1,8 @@
+import { captureSentence } from '../helpers/capture';
 // lt-r4k.2 — keyboard focus continuity after actions that remove the activated control (synthetic, offline, JSDOM).
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAppModel, createReviewCardForSavedItem, generateLocalAsrDraft, importFixtureMediaAndSubtitles,
-  makeFakeLocalAsrProvider, saveSentenceFromCue, setPracticeMode, setView,
-} from '../../apps/web/src/model';
+import { createAppModel, generateLocalAsrDraft, importFixtureMediaAndSubtitles, makeFakeLocalAsrProvider, setPracticeMode, setView } from '../../apps/web/src/model';
 import { requestFocusAfterRender, rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 
@@ -17,8 +15,8 @@ async function cards(n: number): Promise<AppModel> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, MEDIA, TARGET, NATIVE);
   for (const cue of model.cues.slice(0, n)) {
-    const item = (await saveSentenceFromCue(model, cue))!;
-    createReviewCardForSavedItem(model, item, model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!);
+    const item = (await captureSentence(model, cue))!;
+    model.capture.cardsFor(item.id).active[0]!;
   }
   return model;
 }

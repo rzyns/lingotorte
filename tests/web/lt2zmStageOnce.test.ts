@@ -1,6 +1,7 @@
+import { captureLexeme } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, saveLexemeFromCue } from '../../apps/web/src/model';
+import { createAppModel } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -101,12 +102,12 @@ describe('lt-2zm video stage mounted once', () => {
     expect(srcSets).toHaveLength(2);
   });
 
-  it('a Save keeps the playback position on the same element', () => {
+  it('a Save keeps the playback position on the same element', async () => {
     const { model, c1 } = installModel();
     const v = video();
     v.currentTime = 2.7;
     v.dispatchEvent(new dom.window.Event('timeupdate'));
-    expect(saveLexemeFromCue(model, c1, 'widzenia', 3, 11, 1)).not.toBeNull();
+    expect(await captureLexeme(model, c1, 'widzenia', 3, 11, 1)).not.toBeNull();
     rerenderApp(model);
     expect(video()).toBe(v);
     expect(v.currentTime).toBeCloseTo(2.7);

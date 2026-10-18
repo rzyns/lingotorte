@@ -1,17 +1,10 @@
+import { captureSentence } from '../helpers/capture';
 // lt-aur.1 — dirty transcript approval regressions (synthetic, offline, JSDOM).
 // Block → Apply → inspect → Approve. No providers, no network, no real stores.
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { validateSavedOccurrenceSourceContext } from '../../packages/domain/src/sourceContext.ts';
-import {
-  approveTranscriptTrack,
-  createAppModel,
-  createCorrectedTranscriptVersion,
-  generateLocalAsrDraft,
-  importFixtureMediaAndSubtitles,
-  makeFakeLocalAsrProvider,
-  saveSentenceFromCue,
-} from '../../apps/web/src/model';
+import { approveTranscriptTrack, createAppModel, createCorrectedTranscriptVersion, generateLocalAsrDraft, importFixtureMediaAndSubtitles, makeFakeLocalAsrProvider } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 import { withNoNetwork } from '../no-network/networkTrap';
@@ -274,11 +267,11 @@ describe('lt-aur.1 saved anchors and save gate', () => {
     const v1 = track(model);
     expect(v1.transcriptStatus).toBe('approved');
     const v1Cue = model.cues[0]!;
-    await saveSentenceFromCue(model, v1Cue);
+    await captureSentence(model, v1Cue);
     const occurrence = model.store.listSavedOccurrences()[0]!;
     const occBefore = structuredClone(occurrence);
     const v2 = await createCorrectedTranscriptVersion(model, v1.id, [{ cueId: v1Cue.id, text: 'Zmieniona kwestia V2.' }]);
-    await expect(saveSentenceFromCue(model, model.cues[0]!)).rejects.toThrow(/approved transcript/i);
+    await expect(captureSentence(model, model.cues[0]!)).rejects.toThrow(/approved transcript/i);
     approveTranscriptTrack(model, v2.track.id);
     const occAfter = model.store.getSavedOccurrence(occurrence.id)!;
     expect(occAfter).toEqual(occBefore);

@@ -1,6 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, saveSentenceFromCue, createReviewCardForSavedItem, learnerProgress, listReviewBuckets, pickNextDueCard, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../no-network/networkTrap';
 
@@ -9,10 +10,10 @@ const asOf = new Date('2030-01-02T12:00:00.000Z');
 async function fixture(dueAt = '2030-01-01T12:00:00.000Z', state: 'new' | 'learning' | 'review' | 'relearning' = 'review') {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
-  const item = await saveSentenceFromCue(model, model.cues[0]!);
+  const item = await captureSentence(model, model.cues[0]!);
   if (!item) throw new Error('Missing synthetic saved item');
-  const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-  const card = createReviewCardForSavedItem(model, item, occurrence);
+
+  const card = model.capture.cardsFor(item.id).active[0]!;
   const original = model.store.getReviewCardState(card.id)!;
   model.store.putReviewCardState({ ...original, state, scheduledDays: 30, dueAt });
   setReviewBucketAsOf(model, asOf);
@@ -80,9 +81,9 @@ describe('mature cards remain scheduled, not retired', () => {
 
   it('preserves FSRS priority and earliest-due ordering across presentation labels', async () => {
     const { value: { model, card } } = await withNoNetwork(() => fixture());
-    const item = model.store.getSavedItem(card.savedItemId)!;
-    const occurrence = model.store.getSavedOccurrence(card.savedOccurrenceId)!;
-    const ordinary = createReviewCardForSavedItem(model, item, occurrence, 'production');
+    // lt-2se.5: compare automatic recognition cards for two distinct captured sentences.
+    const secondItem = (await captureSentence(model, model.cues[1]!))!;
+    const ordinary = model.capture.cardsFor(secondItem.id).active[0]!;
     const initial = model.store.getReviewCardState(ordinary.id)!;
     model.store.putReviewCardState({ ...initial, state: 'review', scheduledDays: 2, dueAt: '2030-01-02T11:00:00.000Z' });
     expect(learnerProgress(model, asOf).dueCards).toBe(2);

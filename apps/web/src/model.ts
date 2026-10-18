@@ -3118,7 +3118,7 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
   const selection = model.selection;
   const meaning = model.pendingMeaning;
   const notes = model.pendingNotes;
-  // lt-cms: a whole-cue sentence capture keeps saveSentenceFromCue's shape (cue time range, no word-range anchor).
+  // lt-cms: a whole-cue sentence capture keeps the whole-cue shape (cue time range, no word-range anchor).
   const isSentence = model.selection.kind === 'sentence';
   const selectionTimeRange = isSentence
     ? { start: cue.startMs, end: cue.endMs }
@@ -3151,110 +3151,6 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
   });
   persistIfLocalServiceAutosaveEnabled(model);
   return { ...result, selection, meaning, notes };
-}
-
-export async function saveSentenceFromCue(model: AppModel, cue: Cue): Promise<SavedItem | null> {
-  if (!model.currentMedia || !model.targetTrackId) return null;
-  const sourceContext = buildSourceContext(
-    model.currentMedia.id,
-    model.currentMedia.originalPath,
-    model.currentMedia.contentSha256,
-    model.targetTrackId,
-    cue,
-    0,
-    cue.text.split(/\s+/).filter(Boolean).length,
-    0,
-    cue.text.length,
-  );
-
-  const result = model.savedOccurrenceService.saveSelection({
-    kind: 'sentence',
-    language: 'pl',
-    displayText: cue.text,
-    mediaId: model.currentMedia.id,
-    cueId: cue.id,
-    startMs: cue.startMs,
-    endMs: cue.endMs,
-    sourceContext,
-  });
-  persistIfLocalServiceAutosaveEnabled(model);
-  return result.item;
-}
-
-export function saveLexemeFromCue(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenIndex: number): SavedItem | null {
-  if (!model.currentMedia || !model.targetTrackId) return null;
-  const selectionTimeRange = selectionTimeRangeForCue(model, cue, charStart, charEnd);
-  const sourceContext = buildSourceContext(
-    model.currentMedia.id,
-    model.currentMedia.originalPath,
-    model.currentMedia.contentSha256,
-    model.targetTrackId,
-    cue,
-    tokenIndex,
-    tokenIndex + 1,
-    charStart,
-    charEnd,
-    selectionTimeRange,
-  );
-
-  const result = model.savedOccurrenceService.saveSelection({
-    kind: 'lexeme',
-    language: 'pl',
-    displayText: text,
-    mediaId: model.currentMedia.id,
-    cueId: cue.id,
-    startMs: selectionTimeRange.start,
-    endMs: selectionTimeRange.end,
-    sourceContext,
-  });
-  persistIfLocalServiceAutosaveEnabled(model);
-  return result.item;
-}
-
-export function saveSelectedPhraseFromCue(model: AppModel, cue: Cue, text: string, charStart: number, charEnd: number, tokenStart: number, tokenEnd: number): SavedItem | null {
-  if (!model.currentMedia || !model.targetTrackId) return null;
-  const selectionTimeRange = selectionTimeRangeForCue(model, cue, charStart, charEnd);
-  const sourceContext = buildSourceContext(
-    model.currentMedia.id,
-    model.currentMedia.originalPath,
-    model.currentMedia.contentSha256,
-    model.targetTrackId,
-    cue,
-    tokenStart,
-    tokenEnd,
-    charStart,
-    charEnd,
-    selectionTimeRange,
-  );
-
-  const result = model.savedOccurrenceService.saveSelection({
-    kind: 'phrase',
-    language: 'pl',
-    displayText: text,
-    mediaId: model.currentMedia.id,
-    cueId: cue.id,
-    startMs: selectionTimeRange.start,
-    endMs: selectionTimeRange.end,
-    sourceContext,
-  });
-  persistIfLocalServiceAutosaveEnabled(model);
-  return result.item;
-}
-
-export function createReviewCardForSavedItem(
-  model: AppModel,
-  item: SavedItem,
-  occurrence: SavedOccurrence,
-  cardType: 'recognition' | 'production' = 'recognition',
-): ReviewCard {
-  const card = model.reviewService.createCard({
-    savedItem: item,
-    savedOccurrence: occurrence,
-    cardType,
-    promptTemplate: cardType === 'recognition' ? `Recognize: ${item.displayText}` : `Produce: ${item.meaning ?? item.displayText}`,
-  }).card;
-  persistIfLocalServiceAutosaveEnabled(model);
-  return card;
 }
 
 export function reviewCardsForSavedItem(model: AppModel, savedItemId: string): { active: ReviewCard[]; archived: ReviewCard[] } {

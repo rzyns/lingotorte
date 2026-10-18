@@ -1,18 +1,6 @@
+import { captureSentence } from '../helpers/capture';
 import { describe, expect, it } from 'vitest';
-import {
-  approveTranscriptTrack,
-  createAppModel,
-  createCorrectedTranscriptVersion,
-  generateElevenLabsScribeDraft,
-  generateLocalAsrDraft,
-  importFixtureMediaAndSubtitles,
-  importYouTubeCaptionCandidate,
-  makeFakeElevenLabsScribeProvider,
-  makeFakeLocalAsrProvider,
-  makeFakeYouTubeCaptionProvider,
-  planYtDlpMediaAcquisition,
-  saveSentenceFromCue,
-} from '../../apps/web/src/model';
+import { approveTranscriptTrack, createAppModel, createCorrectedTranscriptVersion, generateElevenLabsScribeDraft, generateLocalAsrDraft, importFixtureMediaAndSubtitles, importYouTubeCaptionCandidate, makeFakeElevenLabsScribeProvider, makeFakeLocalAsrProvider, makeFakeYouTubeCaptionProvider, planYtDlpMediaAcquisition } from '../../apps/web/src/model';
 
 describe('P7 transcript provider adapters and correction lifecycle', () => {
   it('refuses ElevenLabs Scribe drafts before explicit provider consent and adapter execution', async () => {
@@ -253,7 +241,7 @@ describe('P7 transcript provider adapters and correction lifecycle', () => {
     }, provider);
     const draftCue = model.cues[0]!;
 
-    await expect(saveSentenceFromCue(model, draftCue)).rejects.toThrow(/approved transcript/i);
+    await expect(captureSentence(model, draftCue)).rejects.toThrow(/approved transcript/i);
 
     const corrected = await createCorrectedTranscriptVersion(model, imported.track.id, [{
       cueId: draftCue.id,
@@ -268,7 +256,7 @@ describe('P7 transcript provider adapters and correction lifecycle', () => {
     expect(model.cues[0]?.text).toBe('Corrected transcript text.');
 
     approveTranscriptTrack(model, corrected.track.id, '2026-06-22T12:30:00.000Z');
-    const saved = await saveSentenceFromCue(model, model.cues[0]!);
+    const saved = await captureSentence(model, model.cues[0]!);
 
     expect(model.store.getSubtitleTrack(corrected.track.id)?.transcriptStatus).toBe('approved');
     expect(model.store.getSubtitleTrack(corrected.track.id)?.qualityReport?.approvedAt).toBe('2026-06-22T12:30:00.000Z');

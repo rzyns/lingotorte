@@ -1,6 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, saveSentenceFromCue } from '../../apps/web/src/model';
+import { createAppModel } from '../../apps/web/src/model';
 import { makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -204,7 +205,7 @@ describe('lt-cms unified capture state', () => {
     expect(model.selection).not.toBeNull();
   });
 
-  it('saving the same sentence twice dedupes exactly like saveSentenceFromCue', async () => {
+  it('saving the same sentence twice dedupes exactly like captureSentence', async () => {
     const { model } = installModel();
     rerenderApp(model);
     for (let i = 1; i <= 2; i += 1) {
@@ -212,10 +213,10 @@ describe('lt-cms unified capture state', () => {
       (document.querySelector('[data-action="save-occurrence"]') as HTMLButtonElement | null)!.click();
       await vi.waitFor(() => expect(model.selection).toBeNull());
     }
-    // Reference: the direct saveSentenceFromCue path, twice, on a fresh model.
+    // Reference: the direct captureSentence path, twice, on a fresh model.
     const ref = installModel();
-    await saveSentenceFromCue(ref.model, ref.cue);
-    await saveSentenceFromCue(ref.model, ref.cue);
+    await captureSentence(ref.model, ref.cue);
+    await captureSentence(ref.model, ref.cue);
     const refItems = savedItems(ref.model);
     expect(savedItems(model)).toHaveLength(refItems.length);
     expect(model.savedOccurrenceService.listOccurrencesForItem(savedItems(model)[0]!.id)).toHaveLength(

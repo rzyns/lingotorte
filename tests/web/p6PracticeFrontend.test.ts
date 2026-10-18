@@ -1,22 +1,8 @@
+import { captureSentence } from '../helpers/capture';
 import { SYNTHETIC_CAPABILITY } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import {
-  createAppModel,
-  pairLocalService,
-  setLocalServiceBaseUrl,
-  importFixtureMediaAndSubtitles,
-  saveSentenceFromCue,
-  createReviewCardForSavedItem,
-  setReviewBucketAsOf,
-  setView,
-  submitPracticeAttempt,
-  setPracticeMode,
-  setExportImportAcknowledgedWarning,
-  setExportImportConfirmOverwrite,
-  setExportImportConfirmReplace,
-  previewRestoreManifest,
-} from '../../apps/web/src/model';
+import { createAppModel, pairLocalService, setLocalServiceBaseUrl, importFixtureMediaAndSubtitles, setReviewBucketAsOf, setView, submitPracticeAttempt, setPracticeMode, setExportImportAcknowledgedWarning, setExportImportConfirmOverwrite, setExportImportConfirmReplace, previewRestoreManifest } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -51,11 +37,11 @@ async function createPracticeModel() {
     const m = createAppModel();
     await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
     const firstCue = m.cues[0]!;
-    const item = await saveSentenceFromCue(m, firstCue);
+    const item = await captureSentence(m, firstCue);
     if (!item) throw new Error('Expected saved item');
     const occurrence = m.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
     if (!occurrence) throw new Error('Expected saved occurrence');
-    const card = createReviewCardForSavedItem(m, item, occurrence, 'recognition');
+    const card = m.capture.cardsFor(item.id).active[0]!;
     const asOf = dueAsOf(m, card.id);
     setReviewBucketAsOf(m, asOf);
     return { model: m, item, occurrence, firstCue, card };

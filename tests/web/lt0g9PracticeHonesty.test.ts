@@ -1,18 +1,10 @@
+import { captureLexeme, captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAppModel,
-  createReviewCardForSavedItem,
-  importFixtureMediaAndSubtitles,
-  saveLexemeFromCue,
-  saveSentenceFromCue,
-  setPracticeMode,
-  setView,
-  submitPracticeAttempt,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, setPracticeMode, setView, submitPracticeAttempt } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { withNoNetwork } from '../no-network/networkTrap';
@@ -32,9 +24,9 @@ async function twoSentenceCards(): Promise<{ model: Model; texts: Record<string,
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   const texts: Record<string, string> = {};
   for (const cue of model.cues.slice(0, 2)) {
-    const item = (await saveSentenceFromCue(model, cue))!;
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-    texts[createReviewCardForSavedItem(model, item, occurrence).id] = cue.text;
+    const item = (await captureSentence(model, cue))!;
+
+    texts[model.capture.cardsFor(item.id).active[0]!.id] = cue.text;
   }
   return { model, texts };
 }
@@ -184,9 +176,9 @@ describe('lt-0g9 practice honesty', () => {
     const model = createAppModel();
     await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
     const cue = model.cues[0]!; const word = 'lokalny'; const start = cue.text.indexOf(word);
-    const item = saveLexemeFromCue(model, cue, word, start, start + word.length, 3)!;
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-    const card = createReviewCardForSavedItem(model, item, occurrence);
+    const item = (await captureLexeme(model, cue, word, start, start + word.length, 3))!;
+
+    const card = model.capture.cardsFor(item.id).active[0]!;
     render(model);
     expect(promptText()).not.toMatch(/lokalny/i);
     expect(promptText()).toContain('Cześć, to jest ____ test.');

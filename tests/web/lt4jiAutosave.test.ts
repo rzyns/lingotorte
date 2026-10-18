@@ -1,9 +1,7 @@
+import { captureLexeme } from '../helpers/capture';
 import { SYNTHETIC_CAPABILITY, pairedModel } from './pairingFixture.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  connectLocalService, createAppModel, importFixtureMediaAndSubtitles, pairLocalService, persistIfLocalServiceAutosaveEnabled,
-  saveLexemeFromCue, setLocalServiceAutosave,
-} from '../../apps/web/src/model';
+import { connectLocalService, createAppModel, importFixtureMediaAndSubtitles, pairLocalService, persistIfLocalServiceAutosaveEnabled, setLocalServiceAutosave } from '../../apps/web/src/model';
 import {
   SNAPSHOT_CACHE_KEY, SNAPSHOT_CACHE_SCHEMA_VERSION, bootSnapshotCache, buildSnapshotCacheRecord, type SnapshotCacheBackend,
 } from '../../apps/web/src/browserSnapshotCache';
@@ -174,7 +172,7 @@ describe('lt-4ji connect never writes to the service', () => {
     expect(puts).toHaveLength(0);
     expect(model.localService.lastSavedAt).toBeNull();
     const cue = model.cues[0]!; const word = cue.text.split(/\s+/)[0]!;
-    expect(saveLexemeFromCue(model, cue, word, 0, word.length, 0)).not.toBeNull();
+    expect(await captureLexeme(model, cue, word, 0, word.length, 0)).not.toBeNull();
     await settle();
     expect(puts).toHaveLength(1);
     expect(String(puts[0])).toContain(word);
