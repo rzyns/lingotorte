@@ -34,6 +34,18 @@ Core invariants:
 4. Deleting/removing media must not silently destroy learner state; show broken-source state or require explicit cascade.
 5. Backups/exports must state whether they include cue text, media snippets, notes, and review history.
 
+Current enforcement (Lane B gate; these paths describe implemented boundaries, not blanket enforcement of every planning recommendation below):
+
+| Invariant | Enforcing module / current limit |
+| --- | --- |
+| Source-anchored capture; approved transcript only | `packages/storage/src/savedOccurrenceService.ts:94-105` gates the track; `:113-149` stores the supplied cue/media/time/source context. `packages/review/src/capture.ts:38-45` is the product capture entry point; this is not independent validation of every supplied anchor field. |
+| One recognition card per saved item; archived cards count | `packages/review/src/capture.ts:92-117` reuses active or suspended cards before creating one. Low-level `ReviewService`/store APIs are not uniqueness constraints. |
+| Occurrence anchors retained; suspend rather than silently delete | `packages/storage/src/savedOccurrenceService.ts:108-125` reuses an existing occurrence or adds a new one; `packages/review/src/capture.ts:120-144` suspends/reactivates cards without rewriting anchors. Hard deletion is confined to guarded capture undo (`:57-88`); low-level upsert/explicit restore are outside this product-path rule. `SavedItem.archivedAt` is still unwritten by app code (follow-on, not enforced item archiving). |
+| Review events and practice attempts append-only | `packages/storage/src/localStore.ts:264-284` appends through `packages/storage/src/learnerAudit.ts:6-13`, which rejects conflicting payloads for an existing ID. `packages/storage/src/sqliteLocalPersistence.ts:1729-1745` merges durable audit history on snapshot save. Full scheduler-version replay is not established by Capture. |
+| Provider provenance/consent and invalidation | `packages/domain/src/providerPolicy.ts:3-10` supplies default-off policy; `packages/language/src/adapters.ts:565` rejects online-enabled local-only pipelines. These gates do not by themselves enforce complete versioned provenance, consent records and invalidation for every provider output; that broader invariant is not established by Lane B. |
+| Missing/removed media must not silently erase learner state | Capture does not cascade media deletion; its only hard-delete path is guarded undo (`packages/review/src/capture.ts:57-88`). This is not a general media-removal/broken-source enforcement module or proof of every explicit-cascade workflow. |
+| Export contents/privacy are explicit | `packages/storage/src/exportRestoreService.ts:37-57` constructs content and privacy warnings, including review history. This learner-state manifest path does not implement every planned media-snippet/backup disclosure policy. |
+
 
 
 ## Domain identity layers
