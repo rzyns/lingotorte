@@ -1,6 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, saveSentenceFromCue } from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 // lt-dlf.13 (audit P5 + P8): details panels show learner-meaningful provenance only, and the
@@ -50,7 +51,7 @@ describe('lt-dlf.13 provenance in details panels', () => {
   it('Saved: with every details open there is no blob:, token, char or hash text', async () => {
     const model = await loadedModel();
     const cue = model.cues[0]!;
-    await saveSentenceFromCue(model, cue);
+    await captureSentence(model, cue);
     model.view = 'saved';
     rerenderApp(model);
     let opened = 0;

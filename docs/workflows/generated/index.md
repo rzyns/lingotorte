@@ -12,7 +12,7 @@ Keyboard: 10 shortcuts declared in the help overlay; 25 `event.key` handler site
 
 Service API: 13 routes (`GET /api/health`, `GET /api/status`, `GET/PUT /api/state`, `POST /api/restore/preview`, `POST /api/restore/commit`, `POST /api/jobs`, `POST /api/artifacts/cleanup`, `POST /api/language/morphology`, `POST /api/language/gloss`, `POST /api/export/anki`, `GET /api/jobs/{uuid}`, `POST /api/jobs/{uuid}/cancel`, `GET/DELETE /api/snippets/{uuid}`); the browser references 8 of them.
 
-Persistence: 23 model functions autosave to the local service when enabled; 2 mark browser-only edits as unsaved.
+Persistence: 19 model functions autosave to the local service when enabled; 2 mark browser-only edits as unsaved.
 
 ## Journeys (pass 2)
 

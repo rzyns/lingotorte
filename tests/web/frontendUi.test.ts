@@ -1,7 +1,8 @@
+import { captureSentence } from '../helpers/capture';
 import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { connectLocalService, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, saveSentenceFromCue, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
+import { connectLocalService, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -600,7 +601,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
     );
     const firstCue = model.cues[0];
     expect(firstCue).toBeDefined();
-    await saveSentenceFromCue(model, firstCue!);
+    await captureSentence(model, firstCue!);
     rerenderApp(model);
     const savedBtn = Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Saved') as HTMLElement | null;
     savedBtn?.click();
@@ -644,11 +645,12 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
     );
     const firstCue = model.cues[0]!;
-    await saveSentenceFromCue(model, firstCue);
+    await captureSentence(model, firstCue);
 
     const progress = learnerProgress(model, new Date('2026-07-04T09:00:00.000Z'));
     expect(progress.savedItems).toBe(1);
-    expect(progress.reviewCards).toBe(0);
+    // lt-2se.5: capture creates one recognition card per item
+    expect(progress.reviewCards).toBe(1);
     expect(progress.dueCards).toBe(0);
     expect(progress.totalReviews).toBe(0);
     expect(progress.practiceAttempts).toBe(0);
@@ -818,7 +820,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
       'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
     );
-    await saveSentenceFromCue(sourceModel, sourceModel.cues[0]!);
+    await captureSentence(sourceModel, sourceModel.cues[0]!);
     sourceModel.view = 'export-import';
     rerenderApp(sourceModel);
     const generateBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Generate local export');
@@ -833,7 +835,7 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
       'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
     );
-    await saveSentenceFromCue(model, model.cues[1]!);
+    await captureSentence(model, model.cues[1]!);
     model.view = 'export-import';
     rerenderApp(model);
 

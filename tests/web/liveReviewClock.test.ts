@@ -1,15 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  createAppModel,
-  createReviewCardForSavedItem,
-  importFixtureMediaAndSubtitles,
-  learnerProgress,
-  listReviewBuckets,
-  pickNextDueCard,
-  saveSentenceFromCue,
-  setView,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../no-network/networkTrap';
 
@@ -28,10 +20,10 @@ async function modelWithCards(count: number): Promise<{ model: Model; cardIds: s
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   const cardIds: string[] = [];
   for (const cue of model.cues.slice(0, count)) {
-    const item = await saveSentenceFromCue(model, cue);
+    const item = await captureSentence(model, cue);
     if (!item) throw new Error('Missing synthetic saved item');
-    const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-    cardIds.push(createReviewCardForSavedItem(model, item, occurrence).id);
+
+    cardIds.push(model.capture.cardsFor(item.id).active[0]!.id);
   }
   return { model, cardIds };
 }

@@ -1,17 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import {
-  createAppModel,
-  importFixtureMediaAndSubtitles,
-  saveSentenceFromCue,
-  createReviewCardForSavedItem,
-  setReviewBucketAsOf,
-  setView,
-  submitPracticeAttempt,
-  exportLearnerState,
-  previewRestoreManifest,
-  confirmRestore,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, setReviewBucketAsOf, setView, submitPracticeAttempt, exportLearnerState, previewRestoreManifest, confirmRestore } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { canonicalJson } from '../../packages/domain/src';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
@@ -37,10 +27,10 @@ const nativeSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.native.srt';
 async function sourceModelWithLinkedPractice() {
   const m = createAppModel();
   await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
-  const item = await saveSentenceFromCue(m, m.cues[0]!);
+  const item = await captureSentence(m, m.cues[0]!);
   if (!item) throw new Error('Expected saved item');
   const occurrence = m.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-  const card = createReviewCardForSavedItem(m, item, occurrence, 'recognition');
+  const card = m.capture.cardsFor(item.id).active[0]!;
   const due = new Date(new Date(m.store.getReviewCardState(card.id)!.dueAt).valueOf() + 1);
   setReviewBucketAsOf(m, due);
   const attempt = submitPracticeAttempt(m, 'wrong answer', due);

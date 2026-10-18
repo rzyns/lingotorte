@@ -1,11 +1,7 @@
+import { captureSentence, capturePhrase } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import {
-  createAppModel,
-  importFixtureMediaAndSubtitles,
-  saveSentenceFromCue,
-  saveSelectedPhraseFromCue,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -46,7 +42,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0];
       expect(firstCue).toBeDefined();
-      await saveSentenceFromCue(m, firstCue!);
+      await captureSentence(m, firstCue!);
       rerenderApp(m);
       return m;
     });
@@ -75,7 +71,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       const m = createAppModel();
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
-      saveSelectedPhraseFromCue(m, firstCue, 'lokalny test', firstCue.text.indexOf('lokalny test'), firstCue.text.indexOf('lokalny test') + 'lokalny test'.length, 3, 5);
+      await capturePhrase(m, firstCue, 'lokalny test', firstCue.text.indexOf('lokalny test'), firstCue.text.indexOf('lokalny test') + 'lokalny test'.length, 3, 5);
       rerenderApp(m);
       return m;
     });
@@ -93,7 +89,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
       const start = firstCue.text.indexOf('lokalny');
-      saveSelectedPhraseFromCue(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
+      await capturePhrase(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
       rerenderApp(m);
       return m;
     });
@@ -113,9 +109,9 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
       const start = firstCue.text.indexOf('lokalny');
-      await saveSentenceFromCue(m, firstCue);
-      saveSelectedPhraseFromCue(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
-      saveSelectedPhraseFromCue(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
+      await captureSentence(m, firstCue);
+      await capturePhrase(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
+      await capturePhrase(m, firstCue, 'lokalny', start, start + 'lokalny'.length, 3, 4);
       rerenderApp(m);
       return m;
     });
@@ -138,7 +134,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       const m = createAppModel();
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
-      await saveSentenceFromCue(m, firstCue);
+      await captureSentence(m, firstCue);
       rerenderApp(m);
       return m;
     });
@@ -161,7 +157,7 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
       const m = createAppModel();
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
-      await saveSentenceFromCue(m, firstCue);
+      await captureSentence(m, firstCue);
       rerenderApp(m);
       return m;
     });
@@ -172,10 +168,8 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     sentencesTab?.click();
     rerenderApp(model);
 
-    // lt-uzo: the Saved button is now an in-review toggle. saveSentenceFromCue (not the capture path) creates no
-    // card, so the item offers 'Add to review'; the learner then opens Review from the nav.
-    const createCardBtn = Array.from(document.querySelectorAll('.saved-item button')).find((b) => b.textContent === 'Add to review') as HTMLElement | null;
-    createCardBtn?.click();
+    // lt-2se.5: capture creates one recognition card per item
+    // The item is already in review; the learner opens Review from the nav.
     expect(Object.keys(model.store.snapshot().reviewCards)).toHaveLength(1);
     (Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Review') as HTMLElement | null)?.click();
 

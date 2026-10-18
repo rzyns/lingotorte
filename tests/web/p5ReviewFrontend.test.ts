@@ -1,15 +1,7 @@
+import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import {
-  createAppModel,
-  importFixtureMediaAndSubtitles,
-  saveSentenceFromCue,
-  createReviewCardForSavedItem,
-  listReviewBuckets,
-  submitReviewRating,
-  setReviewBucketAsOf,
-  setView,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, listReviewBuckets, submitReviewRating, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -66,11 +58,11 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
       const m = createAppModel();
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
-      const item = await saveSentenceFromCue(m, firstCue);
+      const item = await captureSentence(m, firstCue);
       if (!item) throw new Error('Expected saved item');
       const occurrence = m.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
       if (!occurrence) throw new Error('Expected saved occurrence');
-      const card = createReviewCardForSavedItem(m, item, occurrence, 'recognition');
+      const card = m.capture.cardsFor(item.id).active[0]!;
       return { model: m, card, item, occurrence, firstCue };
     });
   }
@@ -163,11 +155,11 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
     const { value: { model, card, firstCue } } = await createDueCard();
     const secondCue = model.cues[1];
     if (!secondCue) throw new Error('This test needs at least two cues');
-    const secondItem = await saveSentenceFromCue(model, secondCue);
+    const secondItem = await captureSentence(model, secondCue);
     if (!secondItem) throw new Error('Expected second saved item');
     const secondOccurrence = model.savedOccurrenceService.listOccurrencesForItem(secondItem.id)[0];
     if (!secondOccurrence) throw new Error('Expected second occurrence');
-    const secondCard = createReviewCardForSavedItem(model, secondItem, secondOccurrence, 'recognition');
+    const secondCard = model.capture.cardsFor(secondItem.id).active[0]!;
 
     const asOf = dueAsOf(model, card.id, secondCard.id);
     setReviewBucketAsOf(model, asOf);

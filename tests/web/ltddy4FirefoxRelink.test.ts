@@ -1,7 +1,8 @@
+import { captureSentence } from '../helpers/capture';
 import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { importBrowserLocalFiles, saveSentenceFromCue, needsMediaRelink } from '../../apps/web/src/model';
+import { importBrowserLocalFiles, needsMediaRelink } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 
@@ -42,7 +43,7 @@ async function sessionCopyThenReload(): Promise<{ model: AppModel; mediaId: stri
     targetSubtitleFile: srt(TARGET, 'clip.pl.srt'),
     nativeSubtitleFile: srt(NATIVE, 'clip.en.srt'),
   });
-  expect(await saveSentenceFromCue(model, model.cues[1]!)).toBeTruthy();
+  expect(await captureSentence(model, model.cues[1]!)).toBeTruthy();
   const mediaId = model.currentMedia!.id;
   const tracks = model.store.listSubtitleTracksForMedia(mediaId).map((t) => t.id).sort();
   const occurrences = JSON.stringify(model.store.listSavedOccurrences());

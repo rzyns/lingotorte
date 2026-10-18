@@ -1,3 +1,4 @@
+import { captureSentence } from '../helpers/capture';
 // lt-3bi: positive regressions replacing docs/review/probes/plan-review-2026-10-10.mjs.
 // The original probe asserted four DEFECTIVE observations; each test below runs the same scenario and
 // asserts the corrected behaviour, so it fails if the defect returns. Synthetic fixtures, in-memory/temp stores.
@@ -5,14 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  createAppModel,
-  createReviewCardForSavedItem,
-  importFixtureMediaAndSubtitles,
-  learnerProgress,
-  pickNextDueCard,
-  saveSentenceFromCue,
-} from '../../apps/web/src/model';
+import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, pickNextDueCard } from '../../apps/web/src/model';
 import { LocalStore } from '../../packages/storage/src/localStore';
 import { ExportService, RestoreService } from '../../packages/storage/src/exportRestoreService';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
@@ -21,9 +15,9 @@ import type { PracticeMode } from '../../packages/domain/src';
 async function fixture() {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
-  const item = (await saveSentenceFromCue(model, model.cues[0]!))!;
+  const item = (await captureSentence(model, model.cues[0]!))!;
   const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-  const card = createReviewCardForSavedItem(model, item, occurrence);
+  const card = model.capture.cardsFor(item.id).active[0]!;
   return { model, card, occurrence };
 }
 function attempt(f: Awaited<ReturnType<typeof fixture>>, mode: PracticeMode) {

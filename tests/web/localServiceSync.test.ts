@@ -1,8 +1,9 @@
+import { captureSentence } from '../helpers/capture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createAppModel, pairLocalService, importFixtureMediaAndSubtitles, saveModelToLocalService, connectLocalService, saveSentenceFromCue, setLocalServiceAutosave } from '../../apps/web/src/model';
+import { createAppModel, pairLocalService, importFixtureMediaAndSubtitles, saveModelToLocalService, connectLocalService, setLocalServiceAutosave } from '../../apps/web/src/model';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server';
 
 async function makeTempConfig() {
@@ -44,7 +45,7 @@ describe('web model local-service sync', () => {
     expect((await saveModelToLocalService(seed, service.origin)).ok).toBe(true);
     const first = createAppModel(); const stale = createAppModel(); service.pair(first); service.pair(stale);
     await connectLocalService(first, service.origin); await connectLocalService(stale, service.origin);
-    await saveSentenceFromCue(first, first.cues[0]!);
+    await captureSentence(first, first.cues[0]!);
     expect((await saveModelToLocalService(first)).ok).toBe(true);
     stale.store.putMediaAsset({ ...stale.currentMedia!, title: 'unsaved stale edit' }); const prior = stale.store.snapshot();
     expect((await saveModelToLocalService(stale)).ok).toBe(false);
@@ -93,7 +94,7 @@ describe('web model local-service sync', () => {
       'fixtures/subtitles/synthetic-polish-dialogue.target.srt',
       'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
     );
-    await saveSentenceFromCue(model, model.cues[0]!);
+    await captureSentence(model, model.cues[0]!);
 
     const saved = await saveModelToLocalService(model, service.origin);
     expect(saved.ok).toBe(true);
@@ -127,7 +128,7 @@ describe('web model local-service sync', () => {
     await connectLocalService(model, service.origin);
     setLocalServiceAutosave(model, true);
 
-    await saveSentenceFromCue(model, model.cues[0]!);
+    await captureSentence(model, model.cues[0]!);
     for (let i = 0; i < 20 && !model.localService.lastSavedAt; i++) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
