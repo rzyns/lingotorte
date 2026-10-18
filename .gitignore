@@ -14,3 +14,6 @@ vendor/morfeusz-ts/morfeusz2/dict/
 # Beads runtime/database exclusions live in .beads/.gitignore.
 .beads.gate.lock*
 apps/web/e2e/artifacts/
+
+# repowise local index (not a source of truth)
+.repowise/
