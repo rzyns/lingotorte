@@ -1,6 +1,6 @@
 # ADR-0001 — Subtitle parsing is a runtime-agnostic module; file I/O and hashing are adapters
 
-Status: **Proposed** (set to Accepted by `lt-2se.3` with merge hashes in Outcome)
+Status: **Accepted** (`lt-2se.3`; Lane A implementation and Docker receipts below)
 Date: 2026-10-17 · Author: Code Architect · Beads: `lt-2se`, `lt-2se.1`, `lt-2se.2`, `lt-2se.3`
 Plan: `docs/plan/architecture-deepening-plan.md` §1
 
@@ -34,4 +34,18 @@ Deletion test on the browser copy: if the package were importable from the brows
 
 ## Outcome
 
-_Filled in by `lt-2se.3`: merge hashes for `lt-2se.1`/`lt-2se.2`, `model.ts` line count before/after, Docker vitest counts._
+- `lt-2se.1` merged as `125980e30152eded25b2d697efb5eb7a80f713a3` (parser core and Node adapter; reviewed tip `133ed2876d775c7580e9c37f5727949353a78ae0`).
+- `lt-2se.2` merged as `e47a3e9d5855a1cbd0e8a33689faabf2f47b0275` (browser adapter and ASS/SSA compatibility; tip `cc7eb995ef9f267238f88145140287556894ab2e`).
+- `apps/web/src/model.ts`: **4,399 → 4,185 lines**, **214 fewer**, measured from the A1 merge to the A2 merged tree. The duplicate parser sections are deleted; the browser uses the shared core. This satisfies Janusz's approved structural-deletion criterion in plan §1.4, replacing the original ≥300-line estimate, not a claim of ≥300 lines removed.
+
+Docker contributor verification for `lt-2se.3` used source base `c918704d13fe6a9db6a94aa586acdafb348b411d`, tag `lingotorte:verify-lt-2se3`, image ID `sha256:dd663d687ef467d7239bd2595147dfa88d9858ec51114dcbcb689310a8f45531`. The image built successfully with `docker build --target contributor -t lingotorte:verify-lt-2se3 .`. Each check below ran sequentially in the foreground as `docker run --rm --init --network none lingotorte:verify-lt-2se3 <command>`, without host, media or learner-state mounts and with providers disabled by the image default.
+
+| Command inside contributor image | Actual result |
+| --- | --- |
+| `node node_modules/vitest/vitest.mjs run` | Exit 0; **121 files passed, 1 skipped; 1,940 tests passed, 1 skipped**; 30.84 s |
+| `node node_modules/typescript/bin/tsc --noEmit` | Exit 0; no diagnostics (including no e2e baseline errors) |
+| `node node_modules/vite/bin/vite.js build --config vite.config.ts` | Exit 0; 62 modules transformed; build completed |
+| `node scripts/check-privacy-boundaries.mjs` | Exit 0; `ok: true`, 111 files scanned |
+| `node node_modules/vitest/vitest.mjs run tests/no-network` | Exit 0; **3 files / 6 tests passed** |
+
+Actual logs are retained locally under the operator's Hermes scratch directory (`$TMPDIR`): `lt-2se3-build.log`, `lt-2se3-vitest.log`, `lt-2se3-typecheck.log`, `lt-2se3-vite.log`, `lt-2se3-privacy.log`, `lt-2se3-no-network.log`. These are Docker receipts, not host-suite results. The privacy scan checks runtime reference-product markers; the no-network suite covers its exercised intercepted flows, not every possible browser/subprocess path. Independent Lane A specification/quality review and the gate's merge/closure are recorded separately by the coordinator; this implementation receipt does not assert their completion.

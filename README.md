@@ -86,6 +86,7 @@ The same transcript lifecycle panel also has an explicit **Import public YouTube
 5. `docs/mission/lingopie-war-room-brief.md` — lane-oriented mission brief for a fleet of agents.
 6. `docs/research/preliminary-grounding-research.md` — consolidated preliminary research and architecture direction.
 7. `docs/research/live-ui-inventory.md` — sanitized live Lingopie UI observations from CDP/MCP inspection.
+8. `docs/plan/architecture-deepening-plan.md` — sequential subtitle-parser seam and Capture-module refactor plan, ADRs, scope boundaries, and verification gates.
 
 ## Final planning bundle
 
