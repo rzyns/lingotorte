@@ -34,7 +34,7 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     try { first.saveStore(store); } finally { first.close(); }
     const reopened = SqliteLocalPersistence.open(file);
     try {
-      expect(reopened.status().schemaVersion).toBe(10);
+      expect(reopened.status().schemaVersion).toBe(11);
       const byId = new Map(reopened.listSavedItems().map((i) => [i.id, i]));
       expect(byId.get(items[0]!.id)?.meaningSource).toEqual({ kind: 'learner' });
       expect(byId.get(items[1]!.id)?.meaningSource).toEqual(suggested);
@@ -51,15 +51,15 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     try { v10.saveStore(store); } finally { v10.close(); }
     // Rewind to an exact v9 shape: drop the v10 column, ledger row and versions.
     const raw = new DatabaseSync(file);
-    raw.exec("ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; UPDATE lingotorte_schema SET schema_version=9; UPDATE lingotorte_snapshots SET schema_version=9;");
+    raw.exec("DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; UPDATE lingotorte_schema SET schema_version=9; UPDATE lingotorte_snapshots SET schema_version=9;");
     expect((raw.prepare('PRAGMA table_info(saved_item)').all() as { name: string }[]).map((c) => c.name)).not.toContain('meaning_source_json');
     raw.close();
     for (let pass = 0; pass < 2; pass += 1) {
       const db = SqliteLocalPersistence.open(file);
       try {
-        expect(db.listMigrations().map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(db.listMigrations().map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         expect(db.listMigrations()[9]).toMatchObject({ name: 'saved_item_meaning_source', result: 'applied' });
-        expect(db.status().schemaVersion).toBe(10);
+        expect(db.status().schemaVersion).toBe(11);
         const listed = db.listSavedItems();
         expect(listed.find((i) => i.id === items[0]!.id)).toMatchObject({ meaning: 'dog' });
         expect(listed.every((i) => !('meaningSource' in i))).toBe(true);
@@ -68,7 +68,7 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     }
     const check = new DatabaseSync(file);
     try {
-      expect(check.prepare('SELECT schema_version FROM lingotorte_snapshots').get()).toEqual({ schema_version: 10 });
+      expect(check.prepare('SELECT schema_version FROM lingotorte_snapshots').get()).toEqual({ schema_version: 11 });
       expect(check.prepare('SELECT COUNT(*) AS n FROM saved_item WHERE meaning_source_json IS NOT NULL').get()).toEqual({ n: 0 });
     } finally { check.close(); }
   });
