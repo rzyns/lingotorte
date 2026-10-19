@@ -43,7 +43,7 @@ Reading: (inference)
 
 ## 3. Write-once hypothesis (plan §1 row 6) — STOP triggered, decided
 
-`grep -n "putCue(\|putTranscriptWordTiming(" apps/web/src/model.ts`: 16 sites at `6082901` (the plan estimated about 24). Each was classified as inside the function that also creates and puts the track, or not (source):
+`grep -n "putCue(\|putTranscriptWordTiming(" apps/web/src/model.ts`: 11 call lines in 8 functions at `6082901` (the plan estimated about 24 sites; that figure is not reproduced). Each was classified as inside the function that also creates and puts the track, or not (source):
 
 | Site (by symbol, ~line) | Call | Same function creates the track? | Bundle changes after the track's first persist? |
 | --- | --- | --- | --- |
@@ -94,4 +94,4 @@ Result: yes for all 15 collections; `learnerAudit` is derived. Seventeen `list*`
 
 ## 6. Retention
 
-The spike script stays in `scripts/spike/` so C5 can re-measure the same synthetic sets against the new loaders (plan §3 C5 step 2). It is not imported by product code or tests.
+The spike script stays in `scripts/spike/` so C5 can re-measure the same synthetic sets against the new loaders (plan §3 C5 step 2). It is not imported by product code or tests (`grep -rln scripts/spike tests apps packages` → 0).
