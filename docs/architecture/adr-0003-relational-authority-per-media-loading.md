@@ -18,6 +18,8 @@ The browser mirrors this: `GET /api/state` returns the entire snapshot (`server.
 
 Cost today is small (fixtures: 30 cues). Janusz plans a large video library. Transcript data — cues and word timings — is the bulk of the state and grows linearly with media; the learner data (items, cards, events) grows with study, not with library size. Under the current design every review rating rewrites every cue of every video.
 
+Measured in the C0 spike (`docs/dev/relational-authority-spike-2026-10-19.md`, synthetic: 8 word timings per cue, 200 items/cards, 2,000 review events, file-backed DB). At 10 media × 500 cues, one study save (one rating) takes 4.7 s, `loadVersionedSnapshot` 1.0 s, and `GET /api/state` is 21 MB. At 100 media × 500 cues the same save takes 53 s, the load 12.5 s, `revisionOf` 7.4 s, the body 200 MB and the database file 591 MB. At 300 media × 1,000 cues the first `saveSnapshot` fails with `RangeError: Invalid string length`, because the blob exceeds V8's 512 MiB string limit. The learner-only body stays at 1.5–1.6 MB across those sizes.
+
 Also an abstraction-quality finding (`docs/review/abstraction-review-2026-10-19.md` F3): two interfaces to the same data at the same level (`LocalStore.listMediaAssets()` vs `SqliteLocalPersistence.listMediaAssets()`), one live, with no declaration of which is the truth.
 
 ## Decision
