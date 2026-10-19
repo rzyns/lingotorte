@@ -38,20 +38,11 @@ import { sameHistoryPayload, unionHistory, normalizeLearnerAudit, type LearnerAu
 import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
 import { requireRestoreConfirmation, validateMeaningSource, type RestoreConfirmation } from '@lingotorte/domain';
 
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
   constructor() { super('Durable state changed. Reconnect and choose which state to keep; browser work was not saved.'); }
-}
-
-// Equivalent durable content is the same revision; object ordering is immaterial.
-function revisionOf(snapshot: LocalStoreSnapshot): string {
-  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
-    : value !== null && typeof value === 'object'
-      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]))
-      : value;
-  return `sha256:${createHash('sha256').update(JSON.stringify(canonical(snapshot))).digest('hex')}`;
 }
 
 const CREATE_SNAPSHOT_STORE_SQL = `
@@ -356,6 +347,18 @@ const EXPAND_PRACTICE_MODES_SQL = `
 const SAVED_ITEM_MEANING_SOURCE_SQL = `
   ALTER TABLE saved_item ADD COLUMN meaning_source_json TEXT;
   INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 10)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
+// lt-584.2 (ADR-0003 Decision 2): opaque monotonic durable revision, bumped in every committed write transaction.
+const DURABLE_STATE_SQL = `
+  CREATE TABLE durable_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    revision INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  INSERT INTO durable_state (id, revision, updated_at) VALUES (1, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 11)
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
@@ -708,6 +711,7 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
   },
   { version: 9, name: 'active_learner_audit_membership', sql: ACTIVE_AUDIT_SQL, checksum: migrationChecksum(ACTIVE_AUDIT_SQL) },
   { version: 10, name: 'saved_item_meaning_source', sql: SAVED_ITEM_MEANING_SOURCE_SQL, checksum: migrationChecksum(SAVED_ITEM_MEANING_SOURCE_SQL) },
+  { version: 11, name: 'durable_state_revision', sql: DURABLE_STATE_SQL, checksum: migrationChecksum(DURABLE_STATE_SQL) },
 ];
 
 export class SqliteLocalPersistence {
@@ -769,6 +773,8 @@ export class SqliteLocalPersistence {
       if (migration.version === 9) this.initializeActiveAudit();
       // The snapshot row content is unchanged by v10 (no item has a source yet); only its version tag moves.
       if (migration.version === 10) this.db.prepare('UPDATE lingotorte_snapshots SET schema_version = ? WHERE schema_version = 9').run(10);
+      // The snapshot row content is unchanged by v11 (the revision lives in durable_state); only its version tag moves.
+      if (migration.version === 11) this.db.prepare('UPDATE lingotorte_snapshots SET schema_version = ? WHERE schema_version = 10').run(11);
       this.db
         .prepare('INSERT INTO schema_migration (version, name, applied_at, checksum, result) VALUES (?, ?, ?, ?, ?)')
         .run(migration.version, migration.name, new Date().toISOString(), migration.checksum, 'applied');
@@ -1638,10 +1644,23 @@ export class SqliteLocalPersistence {
     this.db.exec('BEGIN');
     try {
       const snapshot = this.loadSnapshot();
-      const result = { snapshot, revision: revisionOf(snapshot) };
+      const result = { snapshot, revision: this.currentRevision() };
       this.db.exec('COMMIT');
       return result;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  private currentRevision(): string {
+    const row = this.db.prepare('SELECT revision FROM durable_state WHERE id=1').get() as { revision: number } | undefined;
+    if (!row || !Number.isSafeInteger(row.revision) || row.revision < 1) throw new Error('Missing or invalid durable state revision');
+    return `rev:${row.revision}`;
+  }
+
+  // Call only inside an open write transaction: the bump commits or rolls back with the write.
+  private bumpRevision(updatedAt: string): string {
+    const result = this.db.prepare('UPDATE durable_state SET revision = revision + 1, updated_at = ? WHERE id=1').run(updatedAt);
+    if (result.changes !== 1) throw new Error('Missing durable state revision');
+    return this.currentRevision();
   }
 
   private assertAuditFormat(): void {
@@ -1731,7 +1750,7 @@ export class SqliteLocalPersistence {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const current = this.loadSnapshot();
-      if (expectedRevision !== undefined && expectedRevision !== revisionOf(current)) throw new SnapshotRevisionConflictError();
+      if (expectedRevision !== undefined && expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
       const audit = normalizeLearnerAudit(current.learnerAudit, current);
       for (const name of ['reviewEvents', 'practiceAttempts'] as const) {
         const active = new Set(current[name].map(e => e.id)); const retained = new Set(audit[name].map(e => e.id));
@@ -1744,15 +1763,16 @@ export class SqliteLocalPersistence {
           reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, normalized.learnerAudit!.reviewEvents),
           practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, normalized.learnerAudit!.practiceAttempts) },
       };
-      const revision = revisionOf(this.writeCandidate(candidate, updatedAt));
+      this.writeCandidate(candidate, updatedAt);
+      const revision = this.bumpRevision(updatedAt);
       this.db.exec('COMMIT'); return revision;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
   private restorePlan(manifest: unknown, mode: RestoreMode, expectedRevision: string, stagedAudit?: LearnerAudit) {
-    if (typeof expectedRevision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(expectedRevision)) throw new TypeError('Invalid durable state revision');
+    if (typeof expectedRevision !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(expectedRevision)) throw new TypeError('Invalid durable state revision');
     const current = this.loadSnapshot();
-    if (expectedRevision !== revisionOf(current)) throw new SnapshotRevisionConflictError();
+    if (expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
     const audit = normalizeLearnerAudit(current.learnerAudit, current);
     const staged = stagedAudit === undefined ? audit : normalizeLearnerAudit(stagedAudit, { reviewEvents: [], practiceAttempts: [] });
     const combined = { reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, staged.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, staged.practiceAttempts) };
@@ -1777,9 +1797,10 @@ export class SqliteLocalPersistence {
       const confirmation = requireRestoreConfirmation(request.confirmation);
       if (confirmation.confirmReplace !== (request.mode === 'replace-active') || confirmation.confirmOverwrite !== (request.mode === 'merge')) throw new TypeError('Restore mode confirmation mismatch');
       for (const warning of plan.preview.warnings) if (!confirmation.acknowledgedWarnings.includes(warning.kind)) throw new TypeError('Restore warning not acknowledged');
-      const snapshot = this.writeCandidate(plan.candidate, new Date().toISOString());
+      const updatedAt = new Date().toISOString();
+      const snapshot = this.writeCandidate(plan.candidate, updatedAt);
       if (!sameHistoryPayload(snapshot, { ...plan.candidate, importJobEvents: snapshot.importJobEvents })) throw new Error('Restore result reconciliation mismatch');
-      const revision = revisionOf(snapshot);
+      const revision = this.bumpRevision(updatedAt);
       const receipt = { mode: plan.mode, effects: plan.effects, auditEffects: plan.auditEffects, coalesced: plan.coalesced,
         integrity: plan.integrity, durability: 'durable-committed/readback-verified' as const, durablySaved: true as const };
       this.db.exec('COMMIT'); return { snapshot, revision, receipt, capability: 'active-audit-restore-v1' as const };

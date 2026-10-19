@@ -140,7 +140,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-typed-input')?.eventLink).toEqual({ reviewEventId: 'r-a' });
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-multiple-choice')?.eventLink).toEqual({});
         expect(db.status().learnerAuditRecovery).toMatchObject({ snapshotOnlyReviews: 2, tableOnlyReviews: 0, snapshotOnlyAttempts: 5, tableOnlyAttempts: 0, orphanReviews: 0, orphanAttempts: 0, unresolvedAttemptLinks: 0 });
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         if (i === 0) revision = s.revision; else expect(s.revision).toBe(revision);
       } finally { db.close(); }
       const state = tableState(file);
@@ -194,7 +194,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
       db = SqliteLocalPersistence.open(file);
       try {
         const s = db.loadVersionedSnapshot();
-        expect(s.revision).toBe(committed);
+        expect(s.revision).toBe(`rev:${Number(committed.slice(4)) + 1}`);
         expect(s.snapshot.reviewEvents).toEqual([]); expect(s.snapshot.practiceAttempts).toEqual([]);
         expect(db.listReviewEvents()).toEqual([]); expect(db.listPracticeAttempts()).toEqual([]);
         expect(sortById(db.listAuditReviewEvents())).toEqual(sortById(f.union.reviews));
@@ -256,8 +256,8 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   });
 
   it.each([
-    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (11, 'future_migration', ?, 'f', 'applied')").run(AT)],
-    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=11').run()],
+    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (12, 'future_migration', ?, 'f', 'applied')").run(AT)],
+    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=12').run()],
   ])('upgraded populated DB with %s is refused at open without mutation (no in-place downgrade)', (_, mutate) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     SqliteLocalPersistence.open(file).close();
@@ -269,7 +269,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   it('future snapshot schema row is refused on load and on save without mutation', () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     SqliteLocalPersistence.open(file).close();
-    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=11').run(); raw.close(); const pre = tableState(file);
+    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=12').run(); raw.close(); const pre = tableState(file);
     const db = SqliteLocalPersistence.open(file);
     try {
       expect(refusal(() => db.loadSnapshot())).toMatch(/unsupported/i);
@@ -299,7 +299,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     for (let i = 0; i < 2; i++) {
       const db = SqliteLocalPersistence.open(file);
       try {
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         expect(sortById(db.loadSnapshot().reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(f.union.attempts));
         expect(sortById(db.loadSnapshot().importJobEvents)).toEqual(sortById(f.union.jobEvents));
@@ -317,7 +317,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(tableState(file)).toEqual(pre);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
     const db = SqliteLocalPersistence.open(file);
-    try { expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(10); } finally { db.close(); }
+    try { expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(11); } finally { db.close(); }
   });
 });
 
@@ -366,7 +366,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
     expect(tableState(file)).toEqual(upgraded);
     // No in-place downgrade: the upgraded file presented as a "newer" schema to this binary is refused (simulated by future marker above);
     // here, the upgraded file must not be readable as a v7 database: its ledger already records v8/v9.
-    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 });
 

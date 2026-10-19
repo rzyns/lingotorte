@@ -68,7 +68,7 @@ describe('lt-04i durable active/audit boundary', () => {
       db.close(); db = SqliteLocalPersistence.open(file);
       expect(db.loadSnapshot().practiceAttempts).toEqual(source.snapshot().practiceAttempts);
       expect(db.listAuditPracticeAttempts()).toEqual(source.snapshot().practiceAttempts);
-      expect(db.loadVersionedSnapshot().revision).toBe(restored.revision);
+      expect(db.loadVersionedSnapshot().revision).toBe(`rev:${Number(restored.revision.slice(4)) + 1}`);
     } finally { db.close(); await rm(root, { recursive: true, force: true }); }
   });
   it('v8 forward membership migration recovers valid snapshot-only history and import-job events once', async () => {
@@ -76,7 +76,7 @@ describe('lt-04i durable active/audit boundary', () => {
     const store = fixture(); const original = store.snapshot(); const first = SqliteLocalPersistence.open(file); first.saveStore(store); first.close();
     const raw = new DatabaseSync(file);
     const legacy = { ...original, learnerAudit: undefined, importJobEvents: [...original.importJobEvents, { id: 'synthetic-job-event', jobId: 'synthetic-job', level: 'info', message: 'synthetic', createdAt: '2026-06-21T12:00:00.000Z' }] };
-    raw.exec('ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
+    raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
     raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
     try {
       for (let i = 0; i < 2; i++) {
@@ -86,7 +86,7 @@ describe('lt-04i durable active/audit boundary', () => {
           expect(snapshot.reviewEvents).toEqual(original.reviewEvents); expect(snapshot.practiceAttempts).toEqual(original.practiceAttempts);
           expect(snapshot.importJobEvents).toEqual(legacy.importJobEvents);
           expect(snapshot.subtitleTracks).toEqual(original.subtitleTracks);
-          expect(db.listMigrations()).toHaveLength(10); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
+          expect(db.listMigrations()).toHaveLength(11); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
         } finally { db.close(); }
       }
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -95,7 +95,7 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-bad-v8-')); const file = join(root, 'state.db'); const store = fixture();
     const original = store.snapshot(); const first = SqliteLocalPersistence.open(file); first.saveStore(store); first.close();
     let raw = new DatabaseSync(file);
-    raw.exec('ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
+    raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
     const legacy = { ...original, learnerAudit: undefined, reviewEvents: original.reviewEvents.map(e => ({ ...e, rating: 'again' })) };
     raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
     try {
@@ -112,9 +112,9 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-ledger-')); const file = join(root, 'state.db');
     const first = SqliteLocalPersistence.open(file); first.close();
     try {
-      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (11, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
+      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (12, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
       expect(() => SqliteLocalPersistence.open(file)).toThrow(/ledger|future/);
-      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=11'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
+      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=12'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
       expect(() => SqliteLocalPersistence.open(file)).toThrow(/ledger/);
       raw = new DatabaseSync(file); raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run(checksum); raw.exec('DELETE FROM learner_audit_format'); raw.close();
       const opened = SqliteLocalPersistence.open(file); try { expect(() => opened.loadSnapshot()).toThrow(/initialized/); } finally { opened.close(); }
@@ -150,7 +150,7 @@ describe('lt-04i durable active/audit boundary', () => {
       expect(result.receipt.auditEffects.reviewEvents.retained).toBe(2);
       expect(result.receipt.auditEffects.reviewEvents.inactiveAfter).toBe(1);
       const again = db.commitRestore(request(db, manifest));
-      expect(again.snapshot).toEqual(result.snapshot); expect(again.revision).toBe(result.revision);
+      expect(again.snapshot).toEqual(result.snapshot); expect(again.revision).toBe(`rev:${Number(result.revision.slice(4)) + 1}`);
       expect(again.receipt.effects.reviewEvents.skippedIdentical).toBe(1);
       expect(again.receipt.auditEffects.reviewEvents.appended).toBe(0);
     } finally { db.close(); }
@@ -233,7 +233,7 @@ describe('lt-04i durable active/audit boundary', () => {
       expect(actual.snapshot.reviewEvents).toEqual([]); expect(actual.snapshot.practiceAttempts).toEqual([]);
       for (const name of ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates'] as const) expect(actual.snapshot[name]).toEqual({});
       expect(db.listAuditReviewEvents()).toEqual(before.reviewEvents); expect(db.listAuditPracticeAttempts()).toEqual(before.practiceAttempts);
-      expect(actual.revision).toBe(result.revision);
+      expect(actual.revision).toBe(`rev:${Number(result.revision.slice(4)) + 1}`);
       expect(db.listReviewEvents()).toEqual([]); expect(db.listPracticeAttempts()).toEqual([]);
     } finally { db.close(); await rm(root, { recursive: true, force: true }); }
   });

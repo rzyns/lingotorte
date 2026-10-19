@@ -1095,7 +1095,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           sendError(response, 428, 'A durable state revision is required. Read state before saving.');
           return;
         }
-        if (typeof body.expectedRevision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(body.expectedRevision)) {
+        if (typeof body.expectedRevision !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(body.expectedRevision)) {
           sendError(response, 400, 'Invalid durable state revision.');
           return;
         }

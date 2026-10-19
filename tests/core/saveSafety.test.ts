@@ -29,7 +29,7 @@ it('rejects two stale HTTP writers and missing revisions without replacing durab
   const acknowledged = await get();
   expect((await put(stale, b.revision)).status).toBe(409);
   expect((await put(stale)).status).toBe(428);
-  expect((await put(stale, 'bad-token')).status).toBe(400);
+  expect((await put(stale, 'bad token!')).status).toBe(400);
   const invalid = snapshot('invalid'); const media = Object.values(invalid.mediaAssets)[0]!;
   invalid.mediaAssets[media.id] = { ...media, durationMs: -1 };
   const failed = await put(invalid, acknowledged.revision);
@@ -70,7 +70,7 @@ it('enforces CAS across independent SQLite connections and direct trusted persis
     a.saveSnapshot(snapshot('trusted internal change'));
     expect(() => b.saveSnapshot(snapshot('stale after internal write'), undefined, fresh.revision)).toThrow(/Durable state changed/);
     const equivalent = a.loadVersionedSnapshot();
-    expect(a.saveSnapshot(equivalent.snapshot, undefined, equivalent.revision)).toBe(equivalent.revision);
+    expect(a.saveSnapshot(equivalent.snapshot, undefined, equivalent.revision)).toBe(`rev:${Number(equivalent.revision.slice(4)) + 1}`);
   } finally { a.close(); b.close(); }
 });
 

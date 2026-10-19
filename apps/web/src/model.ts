@@ -364,7 +364,7 @@ function hasPendingTranscriptEdits(model: AppModel): boolean {
     model.transcriptLifecycle.pendingWordTimingEdits].some(value => Object.keys(value).length > 0);
 }
 function stateRevision(value: unknown): string {
-  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) throw new TypeError('Local service revision missing or invalid. Update the service before saving.');
+  if (typeof value !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(value)) throw new TypeError('Local service revision missing or invalid. Update the service before saving.');
   return value;
 }
 const supersededSync = (): LocalServiceSyncResult => ({ ok: false, message: 'Local service operation superseded; browser work was kept.' });
