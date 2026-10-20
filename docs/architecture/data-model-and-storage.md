@@ -240,4 +240,4 @@ The rule is checkable with one grep, which must print nothing:
 rg "model\.store\." apps/web/src/views apps/web/src/ui   # 0 matches
 ```
 
-`tests/web/viewsStoreBoundary.test.ts` enforces it (it also rejects a `model.store` reference split across lines).
+`tests/web/viewsStoreBoundary.test.ts` enforces it (its pattern `\bmodel\s*\.\s*store\b` also rejects a `model.store` reference split across lines; aliases such as `const { store } = model` are not detected).

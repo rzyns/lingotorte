@@ -20,7 +20,7 @@ it('views and ui never read or write through model.store', () => {
   expect(files.length).toBeGreaterThan(10);
   const offenders = files.flatMap((file) => {
     const text = readFileSync(file, 'utf8');
-    return /model\.store\b/.test(text) ? [file] : [];
+    return /\bmodel\s*\.\s*store\b/.test(text) ? [file] : [];
   });
   expect(offenders).toEqual([]);
 });
