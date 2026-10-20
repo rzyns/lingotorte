@@ -61,7 +61,7 @@ function answerCorrectly(mode: Mode, expected: string) {
 function persistedRoundTrip(model: Model) {
   const root = mkdtempSync(join(tmpdir(), 'lt-0g9-')); const file = join(root, 'state.sqlite');
   try {
-    const first = SqliteLocalPersistence.open(file); try { first.saveStore(model.store); } finally { first.close(); }
+    const first = SqliteLocalPersistence.open(file); try { first.saveSnapshot(model.store.snapshot()); } finally { first.close(); }
     const reopened = SqliteLocalPersistence.open(file);
     try { return reopened.listPracticeAttempts(); } finally { reopened.close(); }
   } finally { rmSync(root, { recursive: true, force: true }); }

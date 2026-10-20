@@ -12,8 +12,8 @@ import { ANKI_EXPORT_ROUTE, AnkiValidationError, buildApkg, validateAnkiExportRe
 import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROUTE, type GlossRuntimeOptions, type GlossService } from './gloss.ts';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SqliteLocalPersistence, SnapshotRevisionConflictError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
-import type { LocalStoreSnapshot } from '../../../packages/storage/src/localStore.ts';
+import { SqliteLocalPersistence, SnapshotRevisionConflictError, TranscriptBundleConflictError, DurableEntityNotFoundError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
+import type { LocalStoreSnapshot, TrackTranscriptBundle } from '../../../packages/storage/src/localStore.ts';
 import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
@@ -130,6 +130,38 @@ function objectBody(value: unknown): Record<string, unknown> {
     throw new TypeError('Expected a JSON object body.');
   }
   return value as Record<string, unknown>;
+}
+
+const REVISION_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/;
+const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const MEDIA_TRANSCRIPTS_ROUTE = new RegExp(`^/api/media/(${UUID_SEGMENT})/transcripts$`);
+const TRACK_TRANSCRIPT_ROUTE = new RegExp(`^/api/tracks/(${UUID_SEGMENT})/transcript$`);
+
+// lt-584.4: strict structural validation of one track's transcript bundle (PUT /api/tracks/{trackId}/transcript).
+function transcriptBundleBody(value: unknown, trackId: string): TrackTranscriptBundle {
+  const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const str = (v: unknown) => typeof v === 'string' && v.length > 0;
+  const nat = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+  const only = (record: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
+    required.every(key => Object.hasOwn(record, key)) && Object.keys(record).every(key => required.includes(key) || optional.includes(key));
+  if (!isPlain(value) || !Array.isArray(value.cues) || !Array.isArray(value.wordTimings)) throw new TypeError('Invalid transcript bundle.');
+  const cueKeys = ['id', 'trackId', 'cueIndex', 'startMs', 'endMs', 'text', 'normalizedText', 'textSha256', 'createdAt'];
+  for (const cue of value.cues) {
+    if (!isPlain(cue) || !only(cue, cueKeys) || !str(cue.id) || cue.trackId !== trackId || !nat(cue.cueIndex) || !nat(cue.startMs) || !nat(cue.endMs)
+      || (cue.endMs as number) < (cue.startMs as number) || typeof cue.text !== 'string' || typeof cue.normalizedText !== 'string'
+      || typeof cue.textSha256 !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(cue.textSha256) || !str(cue.createdAt)) throw new TypeError('Invalid transcript cue.');
+  }
+  const timingKeys = ['id', 'trackId', 'cueId', 'wordIndex', 'charStart', 'charEnd', 'text', 'normalizedText', 'startMs', 'endMs', 'sourceKind', 'engine', 'modelName', 'createdAt'];
+  for (const timing of value.wordTimings) {
+    if (!isPlain(timing) || !only(timing, timingKeys, ['analysisRunId', 'confidence', 'speakerId', 'modelVersion']) || !str(timing.id) || timing.trackId !== trackId
+      || !str(timing.cueId) || !nat(timing.wordIndex) || !nat(timing.charStart) || !nat(timing.charEnd) || (timing.charEnd as number) < (timing.charStart as number)
+      || !nat(timing.startMs) || !nat(timing.endMs) || (timing.endMs as number) < (timing.startMs as number) || typeof timing.text !== 'string'
+      || typeof timing.normalizedText !== 'string' || !['provider-word-timing', 'forced-alignment', 'manual-edit'].includes(timing.sourceKind as string)
+      || typeof timing.engine !== 'string' || typeof timing.modelName !== 'string' || !str(timing.createdAt)
+      || (timing.analysisRunId !== undefined && !str(timing.analysisRunId)) || (timing.confidence !== undefined && (typeof timing.confidence !== 'number' || !Number.isFinite(timing.confidence)))
+      || (timing.speakerId !== undefined && typeof timing.speakerId !== 'string') || (timing.modelVersion !== undefined && typeof timing.modelVersion !== 'string')) throw new TypeError('Invalid transcript word timing.');
+  }
+  return { cues: value.cues as unknown as TrackTranscriptBundle['cues'], wordTimings: value.wordTimings as unknown as TrackTranscriptBundle['wordTimings'] };
 }
 
 function jobKind(value: unknown): LocalJobKind {
@@ -1064,7 +1096,40 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/state') {
-        sendJson(response, 200, { ok: true, ...persistence.loadVersionedSnapshot(), restoreCapability: 'active-audit-restore-v1' });
+        // lt-584.4 (D-R8): transitional in C3 — the full snapshot, transcripts assembled from the tables; C4 flips to learner state only.
+        const { snapshot, revision } = persistence.loadVersionedSnapshot();
+        sendJson(response, 200, { ok: true, snapshot, revision, restoreCapability: 'active-audit-restore-v1' });
+        return;
+      }
+
+      const mediaTranscripts = MEDIA_TRANSCRIPTS_ROUTE.exec(path);
+      if (mediaTranscripts && request.method === 'GET') {
+        try {
+          const { mediaId, revision, tracks } = persistence.loadTranscripts(mediaTranscripts[1]!);
+          sendJson(response, 200, { ok: true, mediaId, revision, tracks });
+        } catch (error) {
+          if (error instanceof DurableEntityNotFoundError) sendError(response, 404, 'Media not found.');
+          else throw error;
+        }
+        return;
+      }
+
+      const trackTranscript = TRACK_TRANSCRIPT_ROUTE.exec(path);
+      if (trackTranscript && request.method === 'PUT') {
+        const body = objectBody(admittedBody);
+        if (Object.keys(body).some(key => !['cues', 'wordTimings', 'expectedRevision'].includes(key))) { sendError(response, 400, 'Invalid transcript bundle envelope.'); return; }
+        if (body.expectedRevision === undefined) { sendError(response, 428, 'A durable state revision is required. Read state before saving.'); return; }
+        if (typeof body.expectedRevision !== 'string' || !REVISION_TOKEN.test(body.expectedRevision)) { sendError(response, 400, 'Invalid durable state revision.'); return; }
+        const trackId = trackTranscript[1]!;
+        const bundle = transcriptBundleBody(body, trackId);
+        const savedAt = new Date().toISOString();
+        try {
+          const revision = persistence.saveTrackTranscript(trackId, bundle, body.expectedRevision, savedAt);
+          sendJson(response, 200, { ok: true, trackId, revision, savedAt });
+        } catch (error) {
+          if (error instanceof SnapshotRevisionConflictError || error instanceof TranscriptBundleConflictError) sendError(response, 409, error.message);
+          else throw error;
+        }
         return;
       }
 
@@ -1095,16 +1160,29 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           sendError(response, 428, 'A durable state revision is required. Read state before saving.');
           return;
         }
-        if (typeof body.expectedRevision !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(body.expectedRevision)) {
+        if (typeof body.expectedRevision !== 'string' || !REVISION_TOKEN.test(body.expectedRevision)) {
           sendError(response, 400, 'Invalid durable state revision.');
           return;
         }
+        const snapshot = body.snapshot;
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) { sendError(response, 400, 'Invalid learner state.'); return; }
+        // lt-584.4 (D-R8): transitional legacy body — cues/transcriptWordTimings are optional; a supplied bundle is written once
+        // for a track without one and must equal the stored bundle exactly otherwise (never rewritten).
+        const bodyCues = (snapshot as { cues?: unknown }).cues;
+        if (bodyCues !== undefined && (!bodyCues || typeof bodyCues !== 'object' || Array.isArray(bodyCues))) { sendError(response, 400, 'Invalid learner state.'); return; }
+        const bodyTimings = (snapshot as { transcriptWordTimings?: unknown }).transcriptWordTimings;
+        if (bodyTimings !== undefined && (!bodyTimings || typeof bodyTimings !== 'object' || Array.isArray(bodyTimings))) { sendError(response, 400, 'Invalid learner state.'); return; }
+        const tracks = (snapshot as { subtitleTracks?: unknown }).subtitleTracks;
+        if (tracks !== undefined && (!tracks || typeof tracks !== 'object' || Array.isArray(tracks))) { sendError(response, 400, 'Invalid learner state.'); return; }
+        // lt-584.4 (D-R8): the non-candidate-track-needs-a-bundle check (plan 2.4) is NOT applied on the transitional route;
+        // existing legacy fixtures save approved tracks without cues. C4 enables it with the strict contract.
         const savedAt = new Date().toISOString();
         try {
-          const revision = persistence.saveSnapshot(body.snapshot as LocalStoreSnapshot, savedAt, body.expectedRevision);
+          const revision = persistence.saveSnapshot(snapshot as LocalStoreSnapshot, savedAt, body.expectedRevision);
           sendJson(response, 200, { ok: true, revision, savedAt, persistence: persistence.status() });
         } catch (error) {
           if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
+          else if (error instanceof TranscriptBundleConflictError) sendError(response, 400, 'A supplied transcript bundle differs from the stored bundle; stored transcripts are write-once.');
           else throw error;
         }
         return;

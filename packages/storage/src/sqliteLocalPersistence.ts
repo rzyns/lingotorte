@@ -33,17 +33,29 @@ import type {
   TranscriptWordTiming,
   TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
-import { LocalStore, createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LocalStoreSnapshot } from './localStore.ts';
+import { createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LearnerStateSnapshot, type LocalStoreSnapshot, type TrackTranscriptBundle, type TranscriptBundle } from './localStore.ts';
 import { sameHistoryPayload, unionHistory, normalizeLearnerAudit, type LearnerAudit } from './learnerAudit.ts';
 import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
 import { requireRestoreConfirmation, validateMeaningSource, type RestoreConfirmation } from '@lingotorte/domain';
 
-const CURRENT_SCHEMA_VERSION = 11;
+const CURRENT_SCHEMA_VERSION = 12;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
   constructor() { super('Durable state changed. Reconnect and choose which state to keep; browser work was not saved.'); }
 }
+
+/** lt-584.4: a track's transcript bundle is write-once; a second write is a conflict (HTTP 409). */
+export class TranscriptBundleConflictError extends Error {
+  constructor(trackId: string) { super(`Transcript bundle for track ${trackId} already exists and is write-once.`); }
+}
+
+/** lt-584.4: the addressed subtitle track or media asset is not in durable state (HTTP 404). */
+export class DurableEntityNotFoundError extends Error {
+  constructor(kind: 'track' | 'media', id: string) { super(`Unknown ${kind} ${id}.`); }
+}
+
+const TRANSCRIPT_KEYS = ['cues', 'transcriptWordTimings'] as const;
 
 const CREATE_SNAPSHOT_STORE_SQL = `
   CREATE TABLE IF NOT EXISTS lingotorte_schema (
@@ -362,6 +374,14 @@ const DURABLE_STATE_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+// lt-584.4 (C3): entity tables become authoritative. The legacy blob is renamed, kept read-only as rollback evidence,
+// and the migration hook rewrites every entity table from it once. A new version: v11 is checksummed in existing ledgers.
+const RETIRE_SNAPSHOT_BLOB_SQL = `
+  ALTER TABLE lingotorte_snapshots RENAME TO legacy_snapshot_json;
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 12)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
 const ACTIVE_AUDIT_SQL = `
   CREATE TABLE active_review_event (id TEXT PRIMARY KEY REFERENCES review_event(id));
   CREATE TABLE active_practice_attempt (id TEXT PRIMARY KEY REFERENCES practice_attempt(id));
@@ -371,6 +391,7 @@ const ACTIVE_AUDIT_SQL = `
 `.trim();
 
 export type ShadowCollectionDiff = Readonly<{ blob: number; tables: number; missing: number; extra: number; changed: number; equal: boolean }>;
+export type ShadowDiff = { equal: boolean; collections: Record<keyof LocalStoreSnapshot, ShadowCollectionDiff> };
 
 export type DurableRestoreRequest = { manifest: unknown; mode: RestoreMode; expectedRevision: string; confirmation: RestoreConfirmation; learnerAudit?: LearnerAudit };
 
@@ -600,6 +621,7 @@ export type SqliteSchemaMigration = Readonly<{
 export type SqliteLocalPersistenceStatus = Readonly<{
   schemaVersion: number;
   hasSnapshot: boolean;
+  revision: string;
   appliedMigrations: readonly SqliteSchemaMigration[];
   learnerAuditRecovery: Record<string, number>;
 }>;
@@ -617,6 +639,106 @@ function migrationChecksum(sql: string): string {
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+const CUE_COLUMNS = 'c.id, c.track_id, c.cue_index, c.start_ms, c.end_ms, c.text, c.normalized_text, c.text_sha256, c.created_at';
+const WORD_TIMING_COLUMNS = `w.id, w.track_id, w.cue_id, w.analysis_run_id, w.word_index, w.char_start, w.char_end, w.text,
+  w.normalized_text, w.start_ms, w.end_ms, w.confidence, w.speaker_id, w.source_kind, w.engine, w.model_name, w.model_version, w.created_at`;
+
+function cueFromRow(row: CueRow): Cue {
+  return {
+    id: row.id,
+    trackId: row.track_id,
+    cueIndex: row.cue_index,
+    startMs: row.start_ms,
+    endMs: row.end_ms,
+    text: row.text,
+    normalizedText: row.normalized_text,
+    textSha256: row.text_sha256 as Sha256Digest,
+    createdAt: row.created_at,
+  };
+}
+
+function wordTimingFromRow(row: TranscriptWordTimingRow): TranscriptWordTiming {
+  const timing: TranscriptWordTiming = {
+    id: row.id,
+    trackId: row.track_id,
+    cueId: row.cue_id,
+    wordIndex: row.word_index,
+    charStart: row.char_start,
+    charEnd: row.char_end,
+    text: row.text,
+    normalizedText: row.normalized_text,
+    startMs: row.start_ms,
+    endMs: row.end_ms,
+    sourceKind: row.source_kind as TranscriptWordTimingSourceKind,
+    engine: row.engine,
+    modelName: row.model_name,
+    createdAt: row.created_at,
+  };
+  return {
+    ...timing,
+    ...(row.analysis_run_id === null ? {} : { analysisRunId: row.analysis_run_id }),
+    ...(row.confidence === null ? {} : { confidence: row.confidence }),
+    ...(row.speaker_id === null ? {} : { speakerId: row.speaker_id }),
+    ...(row.model_version === null ? {} : { modelVersion: row.model_version }),
+  };
+}
+
+function observationFromRow(row: MediaFileObservationRow): MediaFileObservation {
+  return {
+    id: row.id,
+    mediaId: row.media_id,
+    path: row.path,
+    sizeBytes: row.size_bytes,
+    mtimeMs: row.mtime_ms,
+    contentSha256: row.content_sha256 as Sha256Digest,
+    observedAt: row.observed_at,
+    exists: row.exists_on_disk === 1,
+  };
+}
+
+/** Per-collection, per-identity comparison (record key, or `id` for arrays); array order is not significant. */
+function diffSnapshots(blob: LocalStoreSnapshot, tables: LocalStoreSnapshot, names: readonly (keyof LocalStoreSnapshot)[] = Object.keys(createEmptyLocalStoreSnapshot()) as (keyof LocalStoreSnapshot)[]): ShadowDiff {
+  const entries = (value: unknown): Map<string, unknown> => Array.isArray(value)
+    ? new Map(value.map(entry => [String((entry as { id?: unknown }).id), entry]))
+    : new Map(Object.entries((value ?? {}) as Record<string, unknown>));
+  const audit = (value: LocalStoreSnapshot['learnerAudit']): Map<string, unknown> => new Map([
+    ['version', value?.version],
+    ...[...entries(value?.reviewEvents)].map(([id, e]) => [`reviewEvents:${id}`, e] as const),
+    ...[...entries(value?.practiceAttempts)].map(([id, a]) => [`practiceAttempts:${id}`, a] as const),
+  ]);
+  const collections = {} as Record<keyof LocalStoreSnapshot, ShadowCollectionDiff>;
+  for (const name of names) {
+    const a = name === 'learnerAudit' ? audit(blob.learnerAudit) : entries(blob[name]);
+    const b = name === 'learnerAudit' ? audit(tables.learnerAudit) : entries(tables[name]);
+    const missing = [...a.keys()].filter(key => !b.has(key)).length;
+    const extra = [...b.keys()].filter(key => !a.has(key)).length;
+    const changed = [...a.keys()].filter(key => b.has(key) && !sameHistoryPayload(a.get(key), b.get(key))).length;
+    collections[name] = { blob: a.size, tables: b.size, missing, extra, changed, equal: missing === 0 && extra === 0 && changed === 0 };
+  }
+  return { equal: Object.values(collections).every(c => c.equal), collections };
+}
+
+const LEARNER_COLLECTIONS = (Object.keys(createEmptyLocalStoreSnapshot()) as (keyof LocalStoreSnapshot)[]).filter(name => !(TRANSCRIPT_KEYS as readonly string[]).includes(name));
+
+function withoutTranscripts(snapshot: LocalStoreSnapshot): LearnerStateSnapshot {
+  const { cues: _cues, transcriptWordTimings: _timings, ...state } = snapshot;
+  return state;
+}
+
+function groupByTrack(snapshot: Pick<LocalStoreSnapshot, 'cues' | 'transcriptWordTimings'>): Map<string, TrackTranscriptBundle> {
+  const tracks = new Map<string, { cues: Cue[]; wordTimings: TranscriptWordTiming[] }>();
+  const slot = (trackId: string) => { let entry = tracks.get(trackId); if (!entry) tracks.set(trackId, entry = { cues: [], wordTimings: [] }); return entry; };
+  for (const cue of Object.values(snapshot.cues)) slot(cue.trackId).cues.push(cue);
+  for (const timing of Object.values(snapshot.transcriptWordTimings)) slot(timing.trackId).wordTimings.push(timing);
+  return tracks;
+}
+
+function sameBundle(a: TrackTranscriptBundle, b: TrackTranscriptBundle): boolean {
+  const byId = <T extends { id: string }>(rows: readonly T[]) => Object.fromEntries(rows.map(row => [row.id, row]));
+  return a.cues.length === b.cues.length && a.wordTimings.length === b.wordTimings.length
+    && sameHistoryPayload(byId(a.cues), byId(b.cues)) && sameHistoryPayload(byId(a.wordTimings), byId(b.wordTimings));
 }
 
 function reviewEventFromRow(row: ReviewEventRow): ReviewEvent {
@@ -714,6 +836,7 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
   { version: 9, name: 'active_learner_audit_membership', sql: ACTIVE_AUDIT_SQL, checksum: migrationChecksum(ACTIVE_AUDIT_SQL) },
   { version: 10, name: 'saved_item_meaning_source', sql: SAVED_ITEM_MEANING_SOURCE_SQL, checksum: migrationChecksum(SAVED_ITEM_MEANING_SOURCE_SQL) },
   { version: 11, name: 'durable_state_revision', sql: DURABLE_STATE_SQL, checksum: migrationChecksum(DURABLE_STATE_SQL) },
+  { version: 12, name: 'retire_snapshot_blob', sql: RETIRE_SNAPSHOT_BLOB_SQL, checksum: migrationChecksum(RETIRE_SNAPSHOT_BLOB_SQL) },
 ];
 
 export class SqliteLocalPersistence {
@@ -777,6 +900,7 @@ export class SqliteLocalPersistence {
       if (migration.version === 10) this.db.prepare('UPDATE lingotorte_snapshots SET schema_version = ? WHERE schema_version = 9').run(10);
       // The snapshot row content is unchanged by v11 (the revision lives in durable_state); only its version tag moves.
       if (migration.version === 11) this.db.prepare('UPDATE lingotorte_snapshots SET schema_version = ? WHERE schema_version = 10').run(11);
+      if (migration.version === 12) this.backfillTablesFromLegacyBlob();
       this.db
         .prepare('INSERT INTO schema_migration (version, name, applied_at, checksum, result) VALUES (?, ?, ?, ?, ?)')
         .run(migration.version, migration.name, new Date().toISOString(), migration.checksum, 'applied');
@@ -874,17 +998,7 @@ export class SqliteLocalPersistence {
         ORDER BY cue_index ASC, start_ms ASC, id ASC
       `)
       .all(trackId) as CueRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      trackId: row.track_id,
-      cueIndex: row.cue_index,
-      startMs: row.start_ms,
-      endMs: row.end_ms,
-      text: row.text,
-      normalizedText: row.normalized_text,
-      textSha256: row.text_sha256 as Sha256Digest,
-      createdAt: row.created_at,
-    }));
+    return rows.map(cueFromRow);
   }
 
   listTranscriptWordTimingsForCue(cueId: string): readonly TranscriptWordTiming[] {
@@ -899,31 +1013,7 @@ export class SqliteLocalPersistence {
         ORDER BY start_ms ASC, word_index ASC, id ASC
       `)
       .all(cueId) as TranscriptWordTimingRow[];
-    return rows.map((row) => {
-      const timing: TranscriptWordTiming = {
-        id: row.id,
-        trackId: row.track_id,
-        cueId: row.cue_id,
-        wordIndex: row.word_index,
-        charStart: row.char_start,
-        charEnd: row.char_end,
-        text: row.text,
-        normalizedText: row.normalized_text,
-        startMs: row.start_ms,
-        endMs: row.end_ms,
-        sourceKind: row.source_kind as TranscriptWordTimingSourceKind,
-        engine: row.engine,
-        modelName: row.model_name,
-        createdAt: row.created_at,
-      };
-      return {
-        ...timing,
-        ...(row.analysis_run_id === null ? {} : { analysisRunId: row.analysis_run_id }),
-        ...(row.confidence === null ? {} : { confidence: row.confidence }),
-        ...(row.speaker_id === null ? {} : { speakerId: row.speaker_id }),
-        ...(row.model_version === null ? {} : { modelVersion: row.model_version }),
-      };
-    });
+    return rows.map(wordTimingFromRow);
   }
 
   listMediaFileObservations(mediaId: string): readonly MediaFileObservation[] {
@@ -936,16 +1026,34 @@ export class SqliteLocalPersistence {
         ORDER BY observed_at ASC, id ASC
       `)
       .all(mediaId) as MediaFileObservationRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      mediaId: row.media_id,
-      path: row.path,
-      sizeBytes: row.size_bytes,
-      mtimeMs: row.mtime_ms,
-      contentSha256: row.content_sha256 as Sha256Digest,
-      observedAt: row.observed_at,
-      exists: row.exists_on_disk === 1,
-    }));
+    return rows.map(observationFromRow);
+  }
+
+  // lt-584.4: unkeyed readers for the authoritative path (one query per collection, not one per key).
+  private listAllCues(): readonly Cue[] {
+    return (this.db.prepare(`SELECT ${CUE_COLUMNS} FROM cue c ORDER BY c.track_id ASC, c.cue_index ASC, c.start_ms ASC, c.id ASC`).all() as CueRow[]).map(cueFromRow);
+  }
+
+  private listAllTranscriptWordTimings(): readonly TranscriptWordTiming[] {
+    return (this.db.prepare(`SELECT ${WORD_TIMING_COLUMNS} FROM transcript_word_timing w ORDER BY w.cue_id ASC, w.start_ms ASC, w.word_index ASC, w.id ASC`).all() as TranscriptWordTimingRow[]).map(wordTimingFromRow);
+  }
+
+  private listAllMediaFileObservations(): readonly MediaFileObservation[] {
+    return (this.db.prepare(`
+      SELECT id, media_id, path, size_bytes, mtime_ms, content_sha256, observed_at, exists_on_disk
+      FROM media_file_observation ORDER BY media_id ASC, observed_at ASC, id ASC
+    `).all() as MediaFileObservationRow[]).map(observationFromRow);
+  }
+
+  private bundleForTrack(trackId: string): TrackTranscriptBundle {
+    return {
+      cues: (this.db.prepare(`SELECT ${CUE_COLUMNS} FROM cue c WHERE c.track_id = ? ORDER BY c.cue_index ASC, c.start_ms ASC, c.id ASC`).all(trackId) as CueRow[]).map(cueFromRow),
+      wordTimings: (this.db.prepare(`SELECT ${WORD_TIMING_COLUMNS} FROM transcript_word_timing w WHERE w.track_id = ? ORDER BY w.start_ms ASC, w.word_index ASC, w.id ASC`).all(trackId) as TranscriptWordTimingRow[]).map(wordTimingFromRow),
+    };
+  }
+
+  private trackHasCues(trackId: string): boolean {
+    return this.db.prepare('SELECT 1 FROM cue WHERE track_id = ? LIMIT 1').get(trackId) !== undefined;
   }
 
   listSavedItems(): readonly SavedItem[] {
@@ -1209,7 +1317,7 @@ export class SqliteLocalPersistence {
     return rows.map(importJobEventFromRow);
   }
 
-  private saveMediaAssetProjection(snapshot: LocalStoreSnapshot): void {
+  private saveMediaAssetProjection(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM media_asset').run();
     const insert = this.db.prepare(`
       INSERT INTO media_asset (
@@ -1233,9 +1341,8 @@ export class SqliteLocalPersistence {
     }
   }
 
-  private saveTranscriptProjections(snapshot: LocalStoreSnapshot): void {
-    this.db.prepare('DELETE FROM transcript_word_timing').run();
-    this.db.prepare('DELETE FROM cue').run();
+  // Track metadata is learner state: rewritten with every learner-state save.
+  private saveSubtitleTrackProjection(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM subtitle_track').run();
 
     const insertTrack = this.db.prepare(`
@@ -1264,7 +1371,10 @@ export class SqliteLocalPersistence {
         track.createdAt,
       );
     }
+  }
 
+  // lt-584.4: insert-only (no DELETE): transcript bundles are write-once per track; callers enforce that.
+  private saveTranscriptProjections(snapshot: Pick<LocalStoreSnapshot, 'cues' | 'transcriptWordTimings'>): void {
     const insertCue = this.db.prepare(`
       INSERT INTO cue (
         id, track_id, cue_index, start_ms, end_ms, text,
@@ -1316,7 +1426,7 @@ export class SqliteLocalPersistence {
     }
   }
 
-  private saveLearnerSourceProjections(snapshot: LocalStoreSnapshot): void {
+  private saveLearnerSourceProjections(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM saved_occurrence').run();
     this.db.prepare('DELETE FROM saved_item').run();
     this.db.prepare('DELETE FROM media_file_observation').run();
@@ -1386,7 +1496,7 @@ export class SqliteLocalPersistence {
     }
   }
 
-  private saveReviewPracticeJobProjections(snapshot: LocalStoreSnapshot): void {
+  private saveReviewPracticeJobProjections(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM import_job').run();
 
     this.db.prepare('DELETE FROM review_card_state').run();
@@ -1505,7 +1615,7 @@ export class SqliteLocalPersistence {
 
   }
 
-  private saveImportJobs(snapshot: LocalStoreSnapshot): void {
+  private saveImportJobs(snapshot: LearnerStateSnapshot): void {
     const insertImportJob = this.db.prepare(`
       INSERT INTO import_job (
         id, status, source_kind, started_at, completed_at,
@@ -1554,7 +1664,7 @@ export class SqliteLocalPersistence {
     }
   }
 
-  private saveExportJobProjection(snapshot: LocalStoreSnapshot): void {
+  private saveExportJobProjection(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM export_job').run();
     const insertExportJob = this.db.prepare(`
       INSERT INTO export_job (
@@ -1578,7 +1688,7 @@ export class SqliteLocalPersistence {
     }
   }
 
-  private saveProviderPolicyProjection(snapshot: LocalStoreSnapshot): void {
+  private saveProviderPolicyProjection(snapshot: LearnerStateSnapshot): void {
     this.db.prepare('DELETE FROM provider_policy').run();
     const insertProviderPolicy = this.db.prepare(`
       INSERT INTO provider_policy (
@@ -1601,72 +1711,69 @@ export class SqliteLocalPersistence {
   }
 
   status(): SqliteLocalPersistenceStatus {
-    const hasSnapshot = this.db
-      .prepare('SELECT 1 FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
-      .get(SNAPSHOT_KEY) !== undefined;
+    const hasSnapshot = this.db.prepare('SELECT 1 FROM media_asset LIMIT 1').get() !== undefined
+      || this.db.prepare('SELECT 1 FROM subtitle_track LIMIT 1').get() !== undefined
+      || this.db.prepare('SELECT 1 FROM saved_item LIMIT 1').get() !== undefined
+      || this.db.prepare('SELECT 1 FROM review_card LIMIT 1').get() !== undefined
+      || this.db.prepare('SELECT revision FROM durable_state WHERE id=1 AND revision > 1').get() !== undefined;
     const schemaRow = this.db
       .prepare('SELECT MAX(version) AS schema_version FROM schema_migration WHERE result = ?')
       .get('applied') as SchemaVersionRow;
     return {
       schemaVersion: schemaRow.schema_version ?? CURRENT_SCHEMA_VERSION,
       hasSnapshot,
+      revision: this.currentRevision(),
       appliedMigrations: this.listMigrations(),
       learnerAuditRecovery: JSON.parse((this.db.prepare('SELECT recovery_json FROM learner_audit_format WHERE id=1').get() as { recovery_json: string }).recovery_json),
     };
   }
 
+  /** The whole durable state, assembled from the authoritative entity tables (lt-584.4). */
   loadSnapshot(): LocalStoreSnapshot {
-    const row = this.db
-      .prepare('SELECT snapshot_json, schema_version FROM lingotorte_snapshots WHERE snapshot_key = ? LIMIT 1')
-      .get(SNAPSHOT_KEY) as SnapshotRow | undefined;
-    let snapshot = createEmptyLocalStoreSnapshot();
-    if (row) {
-      if (row.schema_version !== CURRENT_SCHEMA_VERSION) throw new Error('Unsupported durable snapshot schema');
-      let raw: unknown;
-      try { raw = JSON.parse(row.snapshot_json); } catch { throw new Error('Corrupt durable snapshot'); }
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Corrupt durable snapshot');
-      const record = raw as Record<string, unknown>;
-      for (const [name, empty] of Object.entries(createEmptyLocalStoreSnapshot())) {
-        const value = record[name];
-        if (name === 'learnerAudit') { if (value === undefined) throw new Error('Missing internal learner audit'); continue; }
-        if (Array.isArray(empty) ? !Array.isArray(value) : !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Corrupt durable snapshot collection');
-      }
-      snapshot = normalizeLocalStoreSnapshot(raw);
-    }
-    return {
-      ...snapshot,
-      reviewEvents: [...this.listReviewEvents()],
-      practiceAttempts: [...this.listPracticeAttempts()],
-      learnerAudit: { version: 1, reviewEvents: [...this.listAuditReviewEvents()], practiceAttempts: [...this.listAuditPracticeAttempts()] },
-      importJobEvents: [...this.listImportJobEvents()],
-    };
+    return this.loadSnapshotFromTables(true);
   }
 
+  /** @internal Test support: the full snapshot and its revision, read in one transaction. */
   loadVersionedSnapshot(): { snapshot: LocalStoreSnapshot; revision: string } {
-    this.db.exec('BEGIN');
-    try {
-      const snapshot = this.loadSnapshot();
-      const result = { snapshot, revision: this.currentRevision() };
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return this.read(() => ({ snapshot: this.loadSnapshot(), revision: this.currentRevision() }));
   }
 
-  // lt-584.3 (C2, shadow mode): the same snapshot assembled from the entity tables. Not authoritative yet;
-  // keyed readers are driven by the DISTINCT keys present in their own table, because cue, word-timing and
-  // observation rows carry no foreign key and may legally reference absent parents.
-  private loadSnapshotFromTables(): LocalStoreSnapshot {
+  /** Learner state (everything except the per-media transcript bundles) and its revision, read in one transaction. */
+  loadLearnerState(): { state: LearnerStateSnapshot; revision: string } {
+    return this.read(() => ({ state: withoutTranscripts(this.loadSnapshotFromTables(false)), revision: this.currentRevision() }));
+  }
+
+  /** Every transcript bundle of one media, keyed by track id; tracks of other media are never read. */
+  loadTranscripts(mediaId: string): TranscriptBundle & { mediaId: string; revision: string } {
+    return this.read(() => {
+      if (this.db.prepare('SELECT 1 FROM media_asset WHERE id = ? LIMIT 1').get(mediaId) === undefined) throw new DurableEntityNotFoundError('media', mediaId);
+      const tracks: Record<string, { cues: Cue[]; wordTimings: TranscriptWordTiming[] }> = {};
+      for (const row of this.db.prepare('SELECT id FROM subtitle_track WHERE media_id = ? ORDER BY id').all(mediaId) as { id: string }[]) tracks[row.id] = { cues: [], wordTimings: [] };
+      const cues = this.db.prepare(`SELECT ${CUE_COLUMNS} FROM cue c JOIN subtitle_track t ON t.id = c.track_id
+        WHERE t.media_id = ? ORDER BY c.track_id ASC, c.cue_index ASC, c.start_ms ASC, c.id ASC`).all(mediaId) as CueRow[];
+      for (const row of cues) tracks[row.track_id]!.cues.push(cueFromRow(row));
+      const timings = this.db.prepare(`SELECT ${WORD_TIMING_COLUMNS} FROM transcript_word_timing w JOIN subtitle_track t ON t.id = w.track_id
+        WHERE t.media_id = ? ORDER BY w.track_id ASC, w.start_ms ASC, w.word_index ASC, w.id ASC`).all(mediaId) as TranscriptWordTimingRow[];
+      for (const row of timings) tracks[row.track_id]!.wordTimings.push(wordTimingFromRow(row));
+      return { mediaId, revision: this.currentRevision(), tracks };
+    });
+  }
+
+  private read<T>(body: () => T): T {
+    this.db.exec('BEGIN');
+    try { const result = body(); this.db.exec('COMMIT'); return result; } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  // Cue, word-timing and observation rows carry no foreign key and may legally reference absent parents, so the
+  // full snapshot reads them unkeyed rather than through their parents.
+  private loadSnapshotFromTables(includeTranscripts: boolean): LocalStoreSnapshot {
     const byId = <T extends { readonly id: string }>(rows: readonly T[]): Record<string, T> => Object.fromEntries(rows.map(row => [row.id, row]));
-    const keys = (sql: string): string[] => (this.db.prepare(sql).all() as { key: string }[]).map(row => row.key);
-    const cues = keys('SELECT DISTINCT track_id AS key FROM cue ORDER BY key').flatMap(trackId => this.listCuesForTrack(trackId));
-    const timings = keys('SELECT DISTINCT cue_id AS key FROM transcript_word_timing ORDER BY key').flatMap(cueId => this.listTranscriptWordTimingsForCue(cueId));
-    const observations = keys('SELECT DISTINCT media_id AS key FROM media_file_observation ORDER BY key').flatMap(mediaId => this.listMediaFileObservations(mediaId));
     return {
       mediaAssets: byId(this.listMediaAssets()),
-      mediaObservations: observations,
+      mediaObservations: [...this.listAllMediaFileObservations()],
       subtitleTracks: byId(this.listSubtitleTracks()),
-      cues: byId(cues),
-      transcriptWordTimings: byId(timings),
+      cues: includeTranscripts ? byId(this.listAllCues()) : {},
+      transcriptWordTimings: includeTranscripts ? byId(this.listAllTranscriptWordTimings()) : {},
       savedItems: byId(this.listSavedItems()),
       savedOccurrences: byId(this.listSavedOccurrences()),
       reviewCards: byId(this.listReviewCards()),
@@ -1681,33 +1788,60 @@ export class SqliteLocalPersistence {
     };
   }
 
-  /** Test support (lt-584.3 shadow mode): compares the blob-backed loadSnapshot() with the table-assembled snapshot,
-   *  per collection and per entity identity (record key, or `id` for arrays; table readers impose their own order).
-   *  `missing` = in the blob only, `extra` = in the tables only, `changed` = same identity, different payload. */
-  loadSnapshotShadowDiff(): { equal: boolean; collections: Record<string, ShadowCollectionDiff> } {
-    this.db.exec('BEGIN');
-    try {
-      const blob = this.loadSnapshot(); const tables = this.loadSnapshotFromTables();
-      const entries = (value: unknown): Map<string, unknown> => Array.isArray(value)
-        ? new Map(value.map(entry => [String((entry as { id?: unknown }).id), entry]))
-        : new Map(Object.entries((value ?? {}) as Record<string, unknown>));
-      const audit = (value: LocalStoreSnapshot['learnerAudit']): Map<string, unknown> => new Map([
-        ['version', value?.version],
-        ...[...entries(value?.reviewEvents)].map(([id, e]) => [`reviewEvents:${id}`, e] as const),
-        ...[...entries(value?.practiceAttempts)].map(([id, a]) => [`practiceAttempts:${id}`, a] as const),
-      ]);
-      const collections: Record<string, ShadowCollectionDiff> = {};
-      for (const name of Object.keys(createEmptyLocalStoreSnapshot()) as (keyof LocalStoreSnapshot)[]) {
-        const a = name === 'learnerAudit' ? audit(blob.learnerAudit) : entries(blob[name]);
-        const b = name === 'learnerAudit' ? audit(tables.learnerAudit) : entries(tables[name]);
-        const missing = [...a.keys()].filter(key => !b.has(key)).length;
-        const extra = [...b.keys()].filter(key => !a.has(key)).length;
-        const changed = [...a.keys()].filter(key => b.has(key) && !sameHistoryPayload(a.get(key), b.get(key))).length;
-        collections[name] = { blob: a.size, tables: b.size, missing, extra, changed, equal: missing === 0 && extra === 0 && changed === 0 };
-      }
-      this.db.exec('COMMIT');
-      return { equal: Object.values(collections).every(c => c.equal), collections };
-    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  /** Test support: compares the authoritative tables with a reference snapshot, per collection and per entity identity
+   *  (record key, or `id` for arrays; table readers impose their own order). The reference is `expected` when given,
+   *  else the retired legacy blob (legacy_snapshot_json, overlaid with table history as the blob loader did) when one
+   *  is present; with neither, the tables are compared with themselves and `reference` is 'none'.
+   *  `missing` = in the reference only, `extra` = in the tables only, `changed` = same identity, different payload.
+   *  Opens its own read transaction: never call it inside one (the v12 hook uses the in-transaction diffSnapshots). */
+  loadSnapshotShadowDiff(expected?: LocalStoreSnapshot): ShadowDiff & { reference: 'expected' | 'legacy-blob' | 'none' } {
+    return this.read(() => {
+      const tables = this.loadSnapshot();
+      if (expected !== undefined) return { ...diffSnapshots(normalizeLocalStoreSnapshot(expected), tables), reference: 'expected' as const };
+      const legacy = this.readLegacyBlob('legacy_snapshot_json');
+      return { ...diffSnapshots(legacy ?? tables, tables), reference: legacy === undefined ? 'none' as const : 'legacy-blob' as const };
+    });
+  }
+
+  // Reads a legacy blob row and overlays the relational history exactly as the pre-C3 blob loader did. Returns undefined
+  // when the table or the row is absent (fresh database). Runs inside the caller's transaction.
+  private readLegacyBlob(table: 'legacy_snapshot_json'): LocalStoreSnapshot | undefined {
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table) === undefined) return undefined;
+    const row = this.db.prepare(`SELECT snapshot_json, schema_version FROM ${table} WHERE snapshot_key = ? LIMIT 1`).get(SNAPSHOT_KEY) as SnapshotRow | undefined;
+    if (!row) return undefined;
+    if ((row.schema_version ?? 0) > 11) throw new Error('Unsupported durable snapshot schema');
+    let raw: unknown;
+    try { raw = JSON.parse(row.snapshot_json); } catch { throw new Error('Corrupt durable snapshot'); }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Corrupt durable snapshot');
+    const record = raw as Record<string, unknown>;
+    for (const [name, empty] of Object.entries(createEmptyLocalStoreSnapshot())) {
+      const value = record[name];
+      if (name === 'learnerAudit' || value === undefined) continue;
+      if (Array.isArray(empty) ? !Array.isArray(value) : !value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Corrupt durable snapshot collection');
+    }
+    const snapshot = normalizeLocalStoreSnapshot(raw);
+    return {
+      ...snapshot,
+      reviewEvents: [...this.listReviewEvents()],
+      practiceAttempts: [...this.listPracticeAttempts()],
+      learnerAudit: { version: 1, reviewEvents: [...this.listAuditReviewEvents()], practiceAttempts: [...this.listAuditPracticeAttempts()] },
+      importJobEvents: [...this.listImportJobEvents()],
+    };
+  }
+
+  // v12 migration hook (inside the migration transaction): rewrite every entity table once from the legacy blob,
+  // assert the tables now equal it, and restart the durable revision. History and import-job events are already
+  // relational (v9) and are overlaid, not rewritten. A fresh database has no blob row and nothing to backfill.
+  private backfillTablesFromLegacyBlob(): void {
+    const legacy = this.readLegacyBlob('legacy_snapshot_json');
+    if (legacy !== undefined) {
+      for (const table of ['transcript_word_timing', 'cue', 'import_job']) this.db.prepare(`DELETE FROM ${table}`).run();
+      this.writeLearnerProjections(legacy);
+      this.saveTranscriptProjections(legacy);
+      const diff = diffSnapshots(legacy, this.loadSnapshot());
+      if (!diff.equal) throw new Error(`Legacy snapshot backfill mismatch: ${Object.entries(diff.collections).filter(([, c]) => !c.equal).map(([name]) => name).join(', ')}`);
+    }
+    this.db.prepare("UPDATE durable_state SET revision = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = 1").run();
   }
 
   private currentRevision(): string {
@@ -1729,14 +1863,7 @@ export class SqliteLocalPersistence {
     if (this.db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Invalid active history membership');
   }
 
-  private writeSnapshot(snapshot: LocalStoreSnapshot, updatedAt: string): void {
-    this.db.prepare(`INSERT INTO lingotorte_snapshots (snapshot_key, schema_version, snapshot_json, updated_at)
-      VALUES (?, ?, ?, ?) ON CONFLICT(snapshot_key) DO UPDATE SET schema_version=excluded.schema_version,
-      snapshot_json=excluded.snapshot_json, updated_at=excluded.updated_at`)
-      .run(SNAPSHOT_KEY, CURRENT_SCHEMA_VERSION, JSON.stringify(snapshot), updatedAt);
-  }
-
-  private selectHistory(snapshot: LocalStoreSnapshot): void {
+  private selectHistory(snapshot: { reviewEvents: readonly ReviewEvent[]; practiceAttempts: readonly PracticeAttempt[] }): void {
     this.db.prepare('DELETE FROM active_review_event').run();
     this.db.prepare('DELETE FROM active_practice_attempt').run();
     const review = this.db.prepare('INSERT INTO active_review_event (id) VALUES (?)');
@@ -1745,6 +1872,8 @@ export class SqliteLocalPersistence {
     for (const a of snapshot.practiceAttempts) practice.run(a.id);
   }
 
+  // v9 migration hook. Runs only inside the v9 migration, i.e. before v12 renames the blob table, so it still reads the
+  // historical name. It no longer rewrites the blob: v12 backfills the tables from it and overlays this relational history.
   private initializeActiveAudit(): void {
     const row = this.db.prepare('SELECT snapshot_json, schema_version FROM lingotorte_snapshots WHERE snapshot_key=?').get(SNAPSHOT_KEY) as SnapshotRow | undefined;
     if (row && (row.schema_version ?? 0) > CURRENT_SCHEMA_VERSION) throw new Error('Unsupported future snapshot schema');
@@ -1786,52 +1915,102 @@ export class SqliteLocalPersistence {
     }
     this.selectHistory(active);
     this.db.prepare('INSERT INTO learner_audit_format (id, version, recovery_json) VALUES (1, 1, ?)').run(JSON.stringify({ ...recovery, ...inconsistencies }));
-    if (row) this.writeSnapshot({ ...active, importJobEvents: [...this.listImportJobEvents()] }, new Date().toISOString());
   }
 
-  private writeCandidate(snapshot: LocalStoreSnapshot, updatedAt: string): LocalStoreSnapshot {
-    this.appendLearnerAudit(snapshot.learnerAudit!);
+  // Every non-transcript projection, plus append-only history and active membership. Runs inside a write transaction.
+  private writeLearnerProjections(snapshot: LearnerStateSnapshot): void {
+    this.appendLearnerAudit(snapshot.learnerAudit ?? normalizeLearnerAudit(undefined, snapshot));
     this.selectHistory(snapshot);
     this.saveMediaAssetProjection(snapshot);
-    this.saveTranscriptProjections(snapshot);
+    this.saveSubtitleTrackProjection(snapshot);
     this.saveLearnerSourceProjections(snapshot);
     this.saveReviewPracticeJobProjections(snapshot);
     this.saveExportJobProjection(snapshot);
     this.saveProviderPolicyProjection(snapshot);
-    this.writeSnapshot(snapshot, updatedAt);
-    const authoritative = this.loadSnapshot();
-    this.writeSnapshot(authoritative, updatedAt);
-    if (!sameHistoryPayload(authoritative, this.loadSnapshot())) throw new Error('Durable candidate readback mismatch');
+  }
+
+  // Merge the incoming learner state with retained history (never reactivating inactive history implicitly).
+  private learnerCandidate(normalized: LocalStoreSnapshot): LearnerStateSnapshot {
+    const current = this.loadSnapshotFromTables(false);
+    const audit = normalizeLearnerAudit(current.learnerAudit, current);
+    for (const name of ['reviewEvents', 'practiceAttempts'] as const) {
+      const active = new Set(current[name].map(e => e.id)); const retained = new Set(audit[name].map(e => e.id));
+      if (normalized[name].some(e => retained.has(e.id) && !active.has(e.id))) throw new TypeError('Explicit restore required to reactivate inactive history');
+    }
+    return withoutTranscripts({ ...normalized,
+      reviewEvents: unionHistory('reviewEvents', current.reviewEvents, normalized.reviewEvents),
+      practiceAttempts: unionHistory('practiceAttempts', current.practiceAttempts, normalized.practiceAttempts),
+      learnerAudit: { version: 1 as const,
+        reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, normalized.learnerAudit!.reviewEvents),
+        practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, normalized.learnerAudit!.practiceAttempts) },
+      // Import-job events are append-only: retained events stay; a conflicting payload is rejected on write.
+      importJobEvents: [...new Map([...current.importJobEvents, ...normalized.importJobEvents].map(e => [e.id, e])).values()],
+    });
+  }
+
+  // Write a learner candidate and verify the tables read it back exactly. Runs inside a write transaction.
+  private writeLearnerCandidate(candidate: LearnerStateSnapshot): LearnerStateSnapshot {
+    this.writeLearnerProjections(candidate);
+    const authoritative = withoutTranscripts(this.loadSnapshotFromTables(false));
+    const diff = diffSnapshots(normalizeLocalStoreSnapshot(candidate), normalizeLocalStoreSnapshot(authoritative), LEARNER_COLLECTIONS);
+    if (!diff.equal) throw new Error(`Durable candidate readback mismatch: ${Object.entries(diff.collections).filter(([, c]) => !c.equal).map(([name]) => name).join(', ')}`);
     return authoritative;
   }
 
-  saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString(), expectedRevision?: string): string {
-    const normalized = normalizeLocalStoreSnapshot(snapshot);
+  // Insert one track's bundle; the caller has checked that the track has no stored cue rows. Runs inside a write transaction.
+  private insertTrackBundle(trackId: string, bundle: TrackTranscriptBundle): void {
+    if (bundle.cues.some(cue => cue.trackId !== trackId) || bundle.wordTimings.some(timing => timing.trackId !== trackId)) throw new TypeError('Transcript bundle rows must belong to the addressed track');
+    this.saveTranscriptProjections({ cues: Object.fromEntries(bundle.cues.map(cue => [cue.id, cue])), transcriptWordTimings: Object.fromEntries(bundle.wordTimings.map(timing => [timing.id, timing])) });
+  }
+
+  private write<T>(expectedRevision: string | undefined, updatedAt: string, body: () => T): { result: T; revision: string } {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const current = this.loadSnapshot();
       if (expectedRevision !== undefined && expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
-      const audit = normalizeLearnerAudit(current.learnerAudit, current);
-      for (const name of ['reviewEvents', 'practiceAttempts'] as const) {
-        const active = new Set(current[name].map(e => e.id)); const retained = new Set(audit[name].map(e => e.id));
-        if (normalized[name].some(e => retained.has(e.id) && !active.has(e.id))) throw new TypeError('Explicit restore required to reactivate inactive history');
-      }
-      const candidate = { ...normalized,
-        reviewEvents: unionHistory('reviewEvents', current.reviewEvents, normalized.reviewEvents),
-        practiceAttempts: unionHistory('practiceAttempts', current.practiceAttempts, normalized.practiceAttempts),
-        learnerAudit: { version: 1 as const,
-          reviewEvents: unionHistory('reviewEvents', audit.reviewEvents, normalized.learnerAudit!.reviewEvents),
-          practiceAttempts: unionHistory('practiceAttempts', audit.practiceAttempts, normalized.learnerAudit!.practiceAttempts) },
-      };
-      this.writeCandidate(candidate, updatedAt);
+      const result = body();
       const revision = this.bumpRevision(updatedAt);
-      this.db.exec('COMMIT'); return revision;
+      this.db.exec('COMMIT'); return { result, revision };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  /** Save learner state (everything except transcript bundles) under whole-document CAS; returns the new revision.
+   *  Transcript bundles are written per track through saveTrackTranscript and are never touched here. */
+  saveLearnerState(state: LearnerStateSnapshot, expectedRevision: string, updatedAt = new Date().toISOString()): string {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) throw new TypeError('Invalid learner state');
+    if (TRANSCRIPT_KEYS.some(key => Object.hasOwn(state, key))) throw new TypeError('Learner state must not carry cues or transcriptWordTimings');
+    if (typeof expectedRevision !== 'string') throw new TypeError('Invalid durable state revision');
+    return this.write(expectedRevision, updatedAt, () => this.writeLearnerCandidate(this.learnerCandidate(normalizeLocalStoreSnapshot(state)))).revision;
+  }
+
+  /** Write one track's transcript bundle once (write-once per track) under CAS; returns the new revision. */
+  saveTrackTranscript(trackId: string, bundle: TrackTranscriptBundle, expectedRevision: string, updatedAt = new Date().toISOString()): string {
+    if (typeof expectedRevision !== 'string') throw new TypeError('Invalid durable state revision');
+    if (!bundle || !Array.isArray(bundle.cues) || !Array.isArray(bundle.wordTimings) || bundle.cues.length === 0) throw new TypeError('Invalid transcript bundle');
+    const cueIds = new Set(bundle.cues.map(cue => cue.id));
+    if (cueIds.size !== bundle.cues.length || bundle.wordTimings.some(timing => !cueIds.has(timing.cueId))) throw new TypeError('Invalid transcript bundle');
+    return this.write(expectedRevision, updatedAt, () => {
+      if (this.trackHasCues(trackId)) throw new TranscriptBundleConflictError(trackId);
+      this.insertTrackBundle(trackId, bundle);
+    }).revision;
+  }
+
+  /** @internal Composition kept for fixtures: one transaction, one bump. Each track's bundle in the snapshot is written
+   *  once when the track has no stored cues, must equal the stored bundle exactly otherwise (never rewritten), and then
+   *  the learner state is saved. */
+  saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString(), expectedRevision?: string): string {
+    const normalized = normalizeLocalStoreSnapshot(snapshot);
+    return this.write(expectedRevision, updatedAt, () => {
+      for (const [trackId, bundle] of groupByTrack(normalized)) {
+        if (!this.trackHasCues(trackId)) { this.insertTrackBundle(trackId, bundle); continue; }
+        if (!sameBundle(this.bundleForTrack(trackId), bundle)) throw new TranscriptBundleConflictError(trackId);
+      }
+      this.writeLearnerCandidate(this.learnerCandidate(normalized));
+    }).revision;
   }
 
   private restorePlan(manifest: unknown, mode: RestoreMode, expectedRevision: string, stagedAudit?: LearnerAudit) {
     if (typeof expectedRevision !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(expectedRevision)) throw new TypeError('Invalid durable state revision');
-    const current = this.loadSnapshot();
+    const current = normalizeLocalStoreSnapshot(withoutTranscripts(this.loadSnapshotFromTables(false)));
     if (expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
     const audit = normalizeLearnerAudit(current.learnerAudit, current);
     const staged = stagedAudit === undefined ? audit : normalizeLearnerAudit(stagedAudit, { reviewEvents: [], practiceAttempts: [] });
@@ -1842,12 +2021,10 @@ export class SqliteLocalPersistence {
   }
 
   previewRestore(manifest: unknown, mode: RestoreMode, expectedRevision: string, learnerAudit?: LearnerAudit) {
-    this.db.exec('BEGIN');
-    try {
+    return this.read(() => {
       const plan = this.restorePlan(manifest, mode, expectedRevision, learnerAudit);
-      const result = { revision: expectedRevision, capability: 'active-audit-restore-v1' as const, preview: plan.preview };
-      this.db.exec('COMMIT'); return result;
-    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+      return { revision: expectedRevision, capability: 'active-audit-restore-v1' as const, preview: plan.preview };
+    });
   }
 
   commitRestore(request: DurableRestoreRequest) {
@@ -1858,21 +2035,15 @@ export class SqliteLocalPersistence {
       if (confirmation.confirmReplace !== (request.mode === 'replace-active') || confirmation.confirmOverwrite !== (request.mode === 'merge')) throw new TypeError('Restore mode confirmation mismatch');
       for (const warning of plan.preview.warnings) if (!confirmation.acknowledgedWarnings.includes(warning.kind)) throw new TypeError('Restore warning not acknowledged');
       const updatedAt = new Date().toISOString();
-      const snapshot = this.writeCandidate(plan.candidate, updatedAt);
-      if (!sameHistoryPayload(snapshot, { ...plan.candidate, importJobEvents: snapshot.importJobEvents })) throw new Error('Restore result reconciliation mismatch');
+      const candidate = withoutTranscripts(plan.candidate);
+      const state = this.writeLearnerCandidate(candidate);
+      if (!diffSnapshots(normalizeLocalStoreSnapshot({ ...candidate, importJobEvents: state.importJobEvents }), normalizeLocalStoreSnapshot(state), LEARNER_COLLECTIONS).equal) throw new Error('Restore result reconciliation mismatch');
+      const snapshot = this.loadSnapshot();
       const revision = this.bumpRevision(updatedAt);
       const receipt = { mode: plan.mode, effects: plan.effects, auditEffects: plan.auditEffects, coalesced: plan.coalesced,
         integrity: plan.integrity, durability: 'durable-committed/readback-verified' as const, durablySaved: true as const };
       this.db.exec('COMMIT'); return { snapshot, revision, receipt, capability: 'active-audit-restore-v1' as const };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
-  }
-
-  saveStore(store: LocalStore, updatedAt?: string): void {
-    this.saveSnapshot(store.snapshot(), updatedAt);
-  }
-
-  hydrateStore(): LocalStore {
-    return new LocalStore(this.loadSnapshot());
   }
 
   close(): void {

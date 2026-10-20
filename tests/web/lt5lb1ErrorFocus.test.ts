@@ -189,7 +189,7 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
     expect(document.activeElement?.id).toBe('transcript-lifecycle-status');
   });
   it.each(['success', 'failure', 'moved'] as const)('durable restore %s focuses its asynchronous outcome only while focus is owned', async outcome => {
-    const db = SqliteLocalPersistence.open(':memory:'); db.saveStore(new LocalStore());
+    const db = SqliteLocalPersistence.open(':memory:'); db.saveSnapshot(new LocalStore().snapshot());
     let release!: (response: Response) => void;
     let committed!: Response;
     const pending = new Promise<Response>(resolve => { release = resolve; });
@@ -218,7 +218,7 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
     } finally { db.close(); }
   });
   it.each(['success', 'failure', 'moved'] as const)('authoritative preview refresh %s keeps focus only while owned', async outcome => {
-    const db = SqliteLocalPersistence.open(':memory:'); db.saveStore(new LocalStore());
+    const db = SqliteLocalPersistence.open(':memory:'); db.saveSnapshot(new LocalStore().snapshot());
     let block = false; let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
     const json = (body: unknown) => new Response(JSON.stringify(body));

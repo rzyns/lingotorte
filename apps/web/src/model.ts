@@ -26,6 +26,7 @@ import type {
   TranscriptQualityReport,
   TranscriptSourceKind,
   TranscriptWarningFlag,
+  TranscriptWordTiming,
   TranscriptWordTimingSourceKind,
 } from '@lingotorte/domain';
 import type { AppModel, BrowserLocalMediaState, BrowserMediaPermissionState, EmbeddedSubtitleTrackState, PlayerState, ReviewBucketConfig } from './uiTypes';
@@ -2434,12 +2435,16 @@ async function putTranscriptSegments(model: AppModel, input: {
   qualityReport: TranscriptQualityReport;
   segments: readonly TranscriptSegmentDraft[];
   beforeCommit?: () => void;
+  /** lt-584.4: final trackVersion of the new track, applied before its first put/persist (default 1). */
+  trackVersion?: number;
+  /** lt-584.4: the new track's word timings, built before its first put/persist so the bundle is complete at once. */
+  wordTimings?: (track: SubtitleTrack, cues: readonly Cue[]) => TranscriptWordTiming[];
 }): Promise<TranscriptImportResult> {
   if (input.segments.length === 0) {
     throw new TypeError('Transcript candidate contains no caption segments.');
   }
   const contentText = input.segments.map((segment) => `${segment.startMs}-${segment.endMs}:${segment.text}`).join('\n');
-  const track = makeSubtitleTrack({
+  const created = makeSubtitleTrack({
     mediaId: input.media.id,
     language: input.language,
     role: input.role,
@@ -2453,6 +2458,7 @@ async function putTranscriptSegments(model: AppModel, input: {
     provenance: input.provenance,
     qualityReport: input.qualityReport,
   });
+  const track = input.trackVersion === undefined ? created : { ...created, trackVersion: input.trackVersion };
   const cues: Cue[] = [];
   for (let index = 0; index < input.segments.length; index++) {
     const segment = input.segments[index]!;
@@ -2469,10 +2475,12 @@ async function putTranscriptSegments(model: AppModel, input: {
       textSha256: await sha256BrowserText(text),
     }));
   }
+  const wordTimings = input.wordTimings?.(track, cues) ?? [];
   input.beforeCommit?.();
   model.store.putMediaAsset(input.media);
   model.store.putSubtitleTrack(track);
   for (const cue of cues) model.store.putCue(cue);
+  for (const timing of wordTimings) model.store.putTranscriptWordTiming(timing);
   model.currentMedia = input.media;
   model.targetTrackId = track.id;
   model.cues = model.store.listCuesForTrack(track.id);
@@ -2484,14 +2492,15 @@ async function putTranscriptSegments(model: AppModel, input: {
   return { track, cues };
 }
 
-function putTranscriptWordTimingsForSegments(model: AppModel, input: {
+function buildTranscriptWordTimingsForSegments(input: {
   imported: TranscriptImportResult;
   segments: readonly TranscriptSegmentDraft[];
   sourceKind: TranscriptWordTimingSourceKind;
   engine: string;
   modelName: string;
   modelVersion?: string;
-}): void {
+}): TranscriptWordTiming[] {
+  const timings: TranscriptWordTiming[] = [];
   for (let segmentIndex = 0; segmentIndex < input.segments.length; segmentIndex++) {
     const segment = input.segments[segmentIndex]!;
     const cue = input.imported.cues[segmentIndex];
@@ -2500,7 +2509,7 @@ function putTranscriptWordTimingsForSegments(model: AppModel, input: {
       const text = normalizeCueText(word.text);
       if (!text) throw new TypeError(`Transcript word timing ${word.wordIndex} has empty text`);
       if (word.endMs <= word.startMs) throw new TypeError(`Transcript word timing ${word.wordIndex} end time must be after start time`);
-      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
+      timings.push(makeTranscriptWordTiming({
         trackId: input.imported.track.id,
         cueId: cue.id,
         wordIndex: word.wordIndex,
@@ -2519,6 +2528,7 @@ function putTranscriptWordTimingsForSegments(model: AppModel, input: {
       }));
     }
   }
+  return timings;
 }
 
 export async function importYouTubeCaptionCandidate(
@@ -2596,17 +2606,16 @@ export async function generateLocalAsrDraft(model: AppModel, provider: LocalAsrP
     beforeCommit: () => provider.assertCurrent?.(),
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
+    wordTimings: (track, cues) => buildTranscriptWordTimingsForSegments({
+      imported: { track, cues: [...cues] },
+      segments: result.segments,
+      sourceKind: 'provider-word-timing',
+      engine: result.engine,
+      modelName: result.modelName,
+      ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+    }),
   });
   provider.assertCurrent?.();
-  putTranscriptWordTimingsForSegments(model, {
-    imported,
-    segments: result.segments,
-    sourceKind: 'provider-word-timing',
-    engine: result.engine,
-    modelName: result.modelName,
-    ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
-  });
-  persistIfLocalServiceAutosaveEnabled(model);
   return imported;
 }
 
@@ -2644,19 +2653,17 @@ export async function generateElevenLabsScribeDraft(
     beforeCommit: () => provider.assertCurrent?.(),
     qualityReport: qualityReportForSegments(result.segments, warningFlags),
     segments: result.segments,
+    wordTimings: (track, cues) => buildTranscriptWordTimingsForSegments({
+      imported: { track, cues: [...cues] },
+      segments: result.segments,
+      sourceKind: 'provider-word-timing',
+      engine: 'elevenlabs',
+      modelName: result.modelName,
+      ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
+    }),
   });
 
   provider.assertCurrent?.();
-  putTranscriptWordTimingsForSegments(model, {
-    imported,
-    segments: result.segments,
-    sourceKind: 'provider-word-timing',
-    engine: 'elevenlabs',
-    modelName: result.modelName,
-    ...(result.modelVersion !== undefined ? { modelVersion: result.modelVersion } : {}),
-  });
-
-  persistIfLocalServiceAutosaveEnabled(model);
   return imported;
 }
 
@@ -2737,39 +2744,40 @@ async function createCorrectedTranscriptVersionNow(
     },
     qualityReport: qualityReportForSegments(segments, warningFlags, manualCorrectionCount),
     segments,
+    trackVersion: parent.trackVersion + 1,
+    wordTimings: (correctedTrack, correctedCues) => {
+      const timings: TranscriptWordTiming[] = [];
+      for (let cueIndex = 0; cueIndex < parentCues.length; cueIndex++) {
+        const parentCue = parentCues[cueIndex]!;
+        const correctedCue = correctedCues[cueIndex];
+        const edit = editsByCueId.get(parentCue.id);
+        if (!correctedCue || !edit?.wordTimings || edit.wordTimings.length === 0) continue;
+        for (const word of edit.wordTimings) {
+          const text = normalizeCueText(word.text);
+          if (!text) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
+          if (word.endMs <= word.startMs) throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
+          timings.push(makeTranscriptWordTiming({
+            trackId: correctedTrack.id,
+            cueId: correctedCue.id,
+            wordIndex: word.wordIndex,
+            charStart: word.charStart,
+            charEnd: word.charEnd,
+            text,
+            normalizedText: text.toLowerCase(),
+            startMs: word.startMs,
+            endMs: word.endMs,
+            sourceKind: 'manual-edit',
+            engine: 'manual-correction',
+            modelName: 'correction-editor',
+            ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
+            ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
+          }));
+        }
+      }
+      return timings;
+    },
   });
-  const correctedTrack = { ...result.track, trackVersion: parent.trackVersion + 1 };
-  model.store.putSubtitleTrack(correctedTrack);
-  for (let cueIndex = 0; cueIndex < parentCues.length; cueIndex++) {
-    const parentCue = parentCues[cueIndex]!;
-    const correctedCue = result.cues[cueIndex];
-    const edit = editsByCueId.get(parentCue.id);
-    if (!correctedCue || !edit?.wordTimings || edit.wordTimings.length === 0) continue;
-    for (const word of edit.wordTimings) {
-      const text = normalizeCueText(word.text);
-      if (!text) throw new TypeError(`Corrected word timing ${word.wordIndex} has empty text`);
-      if (word.endMs <= word.startMs) throw new TypeError(`Corrected word timing ${word.wordIndex} end time must be after start time`);
-      model.store.putTranscriptWordTiming(makeTranscriptWordTiming({
-        trackId: correctedTrack.id,
-        cueId: correctedCue.id,
-        wordIndex: word.wordIndex,
-        charStart: word.charStart,
-        charEnd: word.charEnd,
-        text,
-        normalizedText: text.toLowerCase(),
-        startMs: word.startMs,
-        endMs: word.endMs,
-        sourceKind: 'manual-edit',
-        engine: 'manual-correction',
-        modelName: 'correction-editor',
-        ...(word.confidence !== undefined ? { confidence: word.confidence } : {}),
-        ...(word.speakerId !== undefined ? { speakerId: word.speakerId } : {}),
-      }));
-    }
-  }
-  model.targetTrackId = correctedTrack.id;
-  persistIfLocalServiceAutosaveEnabled(model);
-  return { track: correctedTrack, cues: result.cues };
+  return { track: result.track, cues: result.cues };
 }
 
 function splitCueTextForCorrection(text: string): readonly [string, string] {
@@ -2830,13 +2838,9 @@ async function createStructuralCorrectedTranscriptVersionNow(
     },
     qualityReport: qualityReportForSegments(segments, warningFlags, manualCorrectionCount),
     segments,
+    trackVersion: parent.trackVersion + 1,
   });
-  const correctedTrack = { ...result.track, trackVersion: parent.trackVersion + 1 };
-  model.store.putSubtitleTrack(correctedTrack);
-  model.targetTrackId = correctedTrack.id;
-  model.cues = model.store.listCuesForTrack(correctedTrack.id);
-  persistIfLocalServiceAutosaveEnabled(model);
-  return { track: correctedTrack, cues: model.cues };
+  return { track: result.track, cues: model.cues };
 }
 
 export async function splitTranscriptCueInCorrectedVersion(

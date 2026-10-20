@@ -40,6 +40,13 @@ export type LocalStoreSnapshot = Readonly<{
   importJobEvents: ImportJobEvent[];
 }>;
 
+/** lt-584.4 (ADR-0003): the durable learner-state document; transcript bundles travel per media/track instead. */
+export type LearnerStateSnapshot = Omit<LocalStoreSnapshot, 'cues' | 'transcriptWordTimings'>;
+/** One subtitle track's transcript: its cues and their word timings. Write-once per track. */
+export type TrackTranscriptBundle = Readonly<{ cues: Cue[]; wordTimings: TranscriptWordTiming[] }>;
+/** Every transcript bundle of one media, keyed by track id. */
+export type TranscriptBundle = Readonly<{ tracks: Record<UUID, TrackTranscriptBundle> }>;
+
 export function createEmptyLocalStoreSnapshot(): LocalStoreSnapshot {
   return {
     mediaAssets: {},

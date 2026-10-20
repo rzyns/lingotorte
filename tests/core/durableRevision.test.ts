@@ -154,19 +154,21 @@ describe('lt-584.2 durable revision token', () => {
       let expected;
       try { first.saveSnapshot(snapshot('v10 content'), AT); expected = first.loadSnapshot(); } finally { first.close(); }
       const raw = new DatabaseSync(file);
-      raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; UPDATE lingotorte_schema SET schema_version=10; UPDATE lingotorte_snapshots SET schema_version=10;');
+      // lt-584.4: undo v12 too, and put back the blob row a v10 binary always kept (C3 no longer writes one).
+      raw.exec('ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; UPDATE lingotorte_schema SET schema_version=10;');
+      raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 10, JSON.stringify(expected), AT);
       raw.close();
       for (let pass = 0; pass < 2; pass += 1) {
         const db = SqliteLocalPersistence.open(file);
         try {
-          expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+          expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
           expect(db.listMigrations()[10]).toMatchObject({ name: 'durable_state_revision', result: 'applied' });
-          expect(db.status().schemaVersion).toBe(11);
+          expect(db.status().schemaVersion).toBe(12);
           expect(db.loadVersionedSnapshot()).toEqual({ snapshot: expected, revision: 'rev:1' });
         } finally { db.close(); }
       }
       const check = new DatabaseSync(file);
-      try { expect(check.prepare('SELECT schema_version FROM lingotorte_snapshots').get()).toEqual({ schema_version: 11 }); } finally { check.close(); }
+      try { expect(check.prepare('SELECT schema_version FROM legacy_snapshot_json').get()).toEqual({ schema_version: 11 }); } finally { check.close(); }
     });
   });
 });

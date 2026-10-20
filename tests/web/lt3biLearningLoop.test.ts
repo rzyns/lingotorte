@@ -213,7 +213,7 @@ describe('lt-3bi cross-surface learning loop', { timeout: 60_000 }, () => {
     // 5. Persist to file-backed SQLite, restart into a fresh model and relink a renamed identical file.
     const dbPath = join(root, 'state.sqlite');
     const db = SqliteLocalPersistence.open(dbPath);
-    try { db.saveStore(model.store); } finally { db.close(); }
+    try { db.saveSnapshot(model.store.snapshot()); } finally { db.close(); }
     const expected = identity(model);
     const metricsBefore = studyMetrics(model, new Date(now), UTC);
     dom.window.close(); installDom();
@@ -251,7 +251,7 @@ describe('lt-3bi cross-surface learning loop', { timeout: 60_000 }, () => {
     // 7. Reload persisted state once more after the relink and recheck everything.
     const db2 = SqliteLocalPersistence.open(dbPath);
     try {
-      db2.saveStore(restarted.store);
+      db2.saveSnapshot(restarted.store.snapshot());
       expect(db2.loadSnapshot()).toEqual(restarted.store.snapshot());
       expect(db2.listPracticeAttempts().map(a => a.mode).sort()).toEqual(['sentence-builder', 'typed-input']);
       expect(db2.listMediaAssets().map(m => m.id)).toEqual([mediaId]);
