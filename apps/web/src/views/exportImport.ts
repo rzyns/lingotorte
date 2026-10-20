@@ -15,6 +15,9 @@ import {
   setExportImportConfirmReplace,
   setExportImportError,
   captureLocalServiceTransport,
+  hasPendingRestoreIntent,
+  listAllSavedItemsAndOccurrences,
+  cueById,
 } from '../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileSavePickerGlobal, appendDefinitionRow, readPreviewManifest, shortHash } from '../ui/common.ts';
@@ -179,7 +182,7 @@ export function renderExportImportView(model: AppModel): HTMLElement {
     requestFocusAfterRender(model, 'restore-error', 'restore-preview'); rerenderApp(model);
   });
   importGroup.appendChild(previewBtn);
-  if (model.store.snapshotPendingRestoreIntent()) {
+  if (hasPendingRestoreIntent(model)) {
     const resume = document.createElement('button'); resume.textContent = 'Preview pending session restore for durable save';
     resume.addEventListener('click', () => { try { previewPendingSessionRestore(model); } catch (err) { setExportImportError(model, err instanceof Error ? err.message : 'Pending intent changed.'); } requestFocusAfterRender(model, 'restore-error', 'restore-preview'); rerenderApp(model); });
     importGroup.appendChild(resume);
@@ -555,8 +558,8 @@ function renderAnkiExportGroup(model: AppModel): HTMLElement {
   heading.textContent = 'Export to Anki';
   group.appendChild(heading);
 
-  const snapshot = model.store.snapshot();
-  const plan = buildAnkiExportPlan(Object.values(snapshot.savedItems), Object.values(snapshot.savedOccurrences), cueId => model.store.getCue(cueId)?.text);
+  const { savedItems, savedOccurrences } = listAllSavedItemsAndOccurrences(model);
+  const plan = buildAnkiExportPlan(savedItems, savedOccurrences, cueId => cueById(model, cueId)?.text);
   const counts = document.createElement('p');
   counts.className = 'meta anki-export-counts';
   counts.dataset.ankiExportCounts = '';

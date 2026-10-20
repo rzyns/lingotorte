@@ -7,16 +7,18 @@ import {
   listEmbeddedSubtitleTracksFromService,
   selectEmbeddedSubtitleTrack,
   setEmbeddedSubtitleMediaPath,
+  subtitleTrackById,
+  subtitleTracksForMedia,
+  cuesForTrack,
 } from '../model';
 import { rerenderApp } from '../appShell.ts';
 import { captureUiServiceOwner, uiOwnerCurrent } from './common.ts';
 import { hasNativeInputPath } from './snippets.ts';
 
 export function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrackId: typeof cue.trackId): HTMLElement | null {
-  const currentTrack = model.store.getSubtitleTrack(currentTrackId);
+  const currentTrack = subtitleTrackById(model, currentTrackId);
   if (!currentTrack) return null;
-  const sourceTracks = model.store
-    .listSubtitleTracksForMedia(currentTrack.mediaId)
+  const sourceTracks = subtitleTracksForMedia(model, currentTrack.mediaId)
     .filter((track) => track.id !== currentTrackId && track.role === currentTrack.role);
   if (sourceTracks.length === 0) return null;
 
@@ -29,7 +31,7 @@ export function renderCueSourceComparison(model: AppModel, cue: Cue, currentTrac
   comparison.appendChild(heading);
 
   for (const track of sourceTracks) {
-    const sourceCues = model.store.listCuesForTrack(track.id);
+    const sourceCues = cuesForTrack(model, track.id);
     const sourceCue = sourceCues.find((candidate) => candidate.cueIndex === cue.cueIndex)
       ?? sourceCues.find((candidate) => candidate.startMs < cue.endMs && candidate.endMs > cue.startMs)
       ?? null;

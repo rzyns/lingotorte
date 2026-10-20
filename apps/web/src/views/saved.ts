@@ -1,7 +1,7 @@
 import type { AppModel } from '../uiTypes';
 import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
-import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, nativeTextForCue, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
+import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, cueById, cuesForTrack, listAllSavedItems, mediaAssetById, occurrenceContext, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, mediaDisplayName } from '../ui/common.ts';
 
@@ -36,7 +36,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
   }
   section.appendChild(tabs);
 
-  const allItems = Object.values(model.store.snapshot().savedItems) as SavedItem[];
+  const allItems = listAllSavedItems(model);
   const selectedKinds = categories.find((c) => c.id === currentTab)?.kinds ?? ['lexeme', 'phrase'];
   const items = allItems.filter((i) => selectedKinds.includes(i.kind) && !i.archivedAt);
 
@@ -100,7 +100,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
       const link = document.createElement('a');
       link.className = 'occurrence-link';
       link.href = '#';
-      const cue = model.store.getCue(occurrence.cueId);
+      const cue = cueById(model, occurrence.cueId);
       const cueText = cue?.text ?? occurrence.selectionText;
       link.textContent = `▶ ${formatTimeMs(occurrence.startMs)} — ${cueText}`;
       link.setAttribute('aria-label', `Jump to ${formatTimeMs(occurrence.startMs)} in ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`);
@@ -112,10 +112,10 @@ export function renderSavedView(model: AppModel): HTMLElement {
         model.targetTrackId = occurrence.sourceContext.subtitleTrackId;
         model.nativeTrackId = model.currentMedia?.id === occurrence.sourceContext.mediaId ? model.nativeTrackId : null;
         if (model.currentMedia?.id !== occurrence.sourceContext.mediaId) {
-          const asset = model.store.getMediaAsset(occurrence.sourceContext.mediaId);
+          const asset = mediaAssetById(model, occurrence.sourceContext.mediaId);
           if (asset) {
             model.currentMedia = asset;
-            model.cues = model.store.listCuesForTrack(occurrence.sourceContext.subtitleTrackId);
+            model.cues = cuesForTrack(model, occurrence.sourceContext.subtitleTrackId);
           }
         }
         const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
@@ -131,7 +131,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
       // lt-dlf.13 (P5): details hold learner-meaningful provenance only (video, time range, line N);
       // never blob: URLs, content hashes or token/char offsets.
       const videoName = mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath);
-      const lineIndex = model.store.listCuesForTrack(occurrence.sourceContext.subtitleTrackId)
+      const lineIndex = cuesForTrack(model, occurrence.sourceContext.subtitleTrackId)
         .findIndex((cue) => cue.id === occurrence.sourceContext.cueId);
       const detailParts = [videoName, `${formatTimeMs(occurrence.startMs)}–${formatTimeMs(occurrence.endMs)}`];
       if (lineIndex >= 0) detailParts.push(`line ${lineIndex + 1}`);
@@ -166,9 +166,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
 
 function savedItemNativeLine(model: AppModel, cueId: string | undefined): string | undefined {
   if (!cueId || !model.nativeTrackId) return undefined;
-  const cue = model.store.getCue(cueId);
-  if (!cue) return undefined;
-  return nativeTextForCue(cue, model.store.getSubtitleTrack(model.nativeTrackId) ?? null, model.store.listCuesForTrack(model.nativeTrackId));
+  return occurrenceContext(model, { cueId })?.nativeText;
 }
 
 /** lt-uzo: inline 'Add meaning' for items with neither a meaning nor a native cue line (shared with Review reveal). */

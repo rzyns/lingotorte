@@ -9,6 +9,8 @@ import {
   studyMetrics,
   formatCompactDurationMs,
   STUDY_ESTIMATE_MS_PER_ACTION,
+  currentTargetTrack,
+  mediaAssetById,
 } from '../model';
 import { rerenderApp } from '../appShell.ts';
 
@@ -108,7 +110,7 @@ export function compactPathLabel(path: string): string {
 
 /** lt-unl: learner-facing media name: asset title, else the path's file name; never a data URL or hash. */
 export function mediaDisplayName(model: AppModel, mediaId: string | undefined, mediaPath: string): string {
-  const title = mediaId ? model.store.getMediaAsset(mediaId)?.title : undefined;
+  const title = mediaId ? mediaAssetById(model, mediaId)?.title : undefined;
   if (title) return title;
   if (mediaPath.startsWith('data:')) return 'media file';
   const name = compactPathLabel(mediaPath);
@@ -161,7 +163,7 @@ export function renderStudyStatusRail(model: AppModel): HTMLElement {
   rail.className = 'status-token-rail';
   rail.setAttribute('aria-label', 'Study status');
 
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const transcriptStatus = targetTrack?.transcriptStatus ?? 'no transcript';
   const statusTone = transcriptStatus === 'approved'
     ? 'approved'
@@ -193,7 +195,7 @@ export function renderStudyStatusFooter(model: AppModel): HTMLElement {
   const rail = document.createElement('div');
   rail.className = 'status-token-rail study-status-footer-rail';
   rail.appendChild(renderStatusToken('local/private', 'local'));
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const sourceLabel = targetTrack?.transcriptSourceKind ?? 'local import ready';
   rail.appendChild(renderStatusToken(sourceLabel, targetTrack?.transcriptStatus === 'draft' ? 'warning' : 'neutral'));
   const progress = learnerProgress(model, model.clock());
@@ -231,7 +233,7 @@ export function renderSourceContextRow(model: AppModel): HTMLElement {
   row.setAttribute('aria-label', 'Current source context');
 
   const activeCue = currentKeyboardCue(model);
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const parts: string[] = [];
   const visibleParts: string[] = [];
   if (model.currentMedia) {
@@ -285,7 +287,7 @@ function renderRiskToken(label: string, tone: 'local' | 'warning' | 'draft' | 'n
 }
 
 function lifecycleStageState(model: AppModel, index: number): 'completed' | 'active' | 'pending' {
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   if (!targetTrack) return index === 0 ? 'active' : 'pending';
   if (targetTrack.transcriptStatus === 'approved') return 'completed';
   if (targetTrack.transcriptStatus === 'correcting') {
