@@ -1,5 +1,5 @@
 import { requireServiceNativePath, readNativePathPolicy, NATIVE_PATH_COMPATIBILITY_MESSAGE, type NativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
-import { LocalStore, type LocalStoreSnapshot } from '../../../packages/storage/src/localStore';
+import { LocalStore, type LearnerStateSnapshot, type LocalStoreSnapshot } from '../../../packages/storage/src/localStore';
 import { planLearnerRestore } from '../../../packages/storage/src/restorePlanner.ts';
 import { sameHistoryPayload, unionHistory } from '../../../packages/storage/src/learnerAudit.ts';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
@@ -112,6 +112,7 @@ export function createAppModel(): AppModel {
     targetTrackId: null,
     nativeTrackId: null,
     cues: [],
+    transcriptLoading: null,
     selection: null,
     importError: null,
     importWarning: null,
@@ -256,7 +257,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 class LocalServiceRequestError extends TypeError {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
 }
 
 async function fetchLocalServiceJson(transport: PairedTransport, path: string, init?: RequestInit): Promise<Record<string, unknown>> {
@@ -267,7 +268,7 @@ async function fetchLocalServiceJson(transport: PairedTransport, path: string, i
     throw new TypeError('Local service returned a non-object JSON response.');
   }
   if (!response.ok || value.ok === false) {
-    throw new LocalServiceRequestError(response.status, typeof value.error === 'string' ? value.error : `Local service request failed with HTTP ${response.status}`);
+    throw new LocalServiceRequestError(response.status, typeof value.error === 'string' ? value.error : `Local service request failed with HTTP ${response.status}`, typeof value.code === 'string' ? value.code : undefined);
   }
   return value;
 }
@@ -285,7 +286,7 @@ function chooseActiveTrack(tracks: SubtitleTrack[], role: 'target' | 'native'): 
   return candidates[0] ?? null;
 }
 
-function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
+function snapshotHasDurableContent(snapshot: LocalStoreSnapshot | LearnerStateSnapshot): boolean {
   return Object.entries(snapshot).some(([key, value]) => key === 'learnerAudit'
     ? (snapshot.learnerAudit?.reviewEvents.length ?? 0) + (snapshot.learnerAudit?.practiceAttempts.length ?? 0) > 0
     : key !== 'schemaVersion' && value !== null && typeof value === 'object' && Object.keys(value).length > 0);
@@ -293,6 +294,7 @@ function snapshotHasDurableContent(snapshot: LocalStoreSnapshot): boolean {
 
 export function projectHydratedSnapshotIntoModel(model: AppModel, snapshot: LocalStoreSnapshot): void {
   const hydrated = model.store.replaceSnapshot(snapshot);
+  loadedTranscriptMedia.delete(model); // lt-584.5: the store was replaced, so nothing is loaded from the service yet
   const media = Object.values(hydrated.mediaAssets).sort(newestFirst)[0] ?? null;
   if (!media) {
     model.currentMedia = null;
@@ -356,7 +358,7 @@ function syncOwner(model: AppModel): SyncOwner {
 export function observeLocalServiceSync(model: AppModel, notify: () => void): void { syncOwner(model).notify = notify; }
 function notifySync(model: AppModel): void { syncOwner(model).notify?.(); }
 function browserComparison(model: AppModel): string {
-  return JSON.stringify({ editGeneration: syncOwner(model).editGeneration, pendingRestoreIntent: model.store.snapshotPendingRestoreIntent(), snapshot: model.store.snapshot(), media: model.currentMedia?.id,
+  return JSON.stringify({ editGeneration: syncOwner(model).editGeneration, pendingRestoreIntent: model.store.snapshotPendingRestoreIntent(), snapshot: learnerStateOf(model.store.snapshot()), media: model.currentMedia?.id,
     browser: model.browserLocalMedia, cueEdits: model.transcriptLifecycle.pendingCueEdits,
     timingEdits: model.transcriptLifecycle.pendingCueTimingEdits, wordEdits: model.transcriptLifecycle.pendingWordTimingEdits });
 }
@@ -369,6 +371,146 @@ function stateRevision(value: unknown): string {
   return value;
 }
 const supersededSync = (): LocalServiceSyncResult => ({ ok: false, message: 'Local service operation superseded; browser work was kept.' });
+
+/*
+ * lt-584.5 (relational-authority C4, Janusz option A 2026-10-20): transcripts load per media and are written per track.
+ *
+ * - The learner state (`learnerStateOf`) is what /api/state carries and what every baseline/dirty comparison uses;
+ *   cues/transcriptWordTimings never enter those comparisons, so loading a media's transcripts is never an edit.
+ * - `loadedTranscriptMedia`: media whose bundles were fetched (GET /api/media/{id}/transcripts) into this store.
+ *   Cleared whenever the store is replaced by a hydration.
+ * - `acknowledgedBundles`: track ids whose bundle the service at `baseUrl` is known to hold (loaded from it, a
+ *   successful PUT /api/tracks/{id}/transcript, or a verified 409). A track is PENDING when the store holds its cues
+ *   and the current service has not acknowledged it. Acknowledgements are bound to one service URL: after a URL
+ *   change every bundle in the store is pending again, because the new service may not hold it (a verified 409
+ *   makes re-sending an already-stored bundle harmless). Pending is derived, so it survives connect, disconnect and
+ *   pairing changes; the browser snapshot cache keeps pending bundles across reloads (cache v2).
+ */
+const loadedTranscriptMedia = new WeakMap<AppModel, Set<string>>();
+const acknowledgedBundles = new WeakMap<AppModel, { baseUrl: string; trackIds: Set<string> }>();
+function loadedMediaSet(model: AppModel): Set<string> {
+  let loaded = loadedTranscriptMedia.get(model);
+  if (!loaded) { loaded = new Set(); loadedTranscriptMedia.set(model, loaded); }
+  return loaded;
+}
+function currentServiceUrl(model: AppModel): string | null {
+  try { return normalizeLocalServiceBaseUrl(model.localService.baseUrl); } catch { return null; }
+}
+function acknowledgeBundle(model: AppModel, baseUrl: string, trackId: string): void {
+  let acked = acknowledgedBundles.get(model);
+  if (!acked || acked.baseUrl !== baseUrl) { acked = { baseUrl, trackIds: new Set() }; acknowledgedBundles.set(model, acked); }
+  acked.trackIds.add(trackId);
+}
+/** The learner-state document (everything except transcript bundles), the /api/state body and comparison form. */
+export function learnerStateOf(snapshot: LocalStoreSnapshot | LearnerStateSnapshot): LearnerStateSnapshot {
+  const { cues: _cues, transcriptWordTimings: _timings, ...learner } = snapshot as LocalStoreSnapshot;
+  return learner;
+}
+function learnerSerialization(snapshot: LocalStoreSnapshot | LearnerStateSnapshot): string { return JSON.stringify(learnerStateOf(snapshot)); }
+/** True when the current service URL has acknowledged this track's bundle. */
+export function transcriptBundleAcknowledged(model: AppModel, trackId: string): boolean {
+  const acked = acknowledgedBundles.get(model);
+  return Boolean(acked && acked.baseUrl === currentServiceUrl(model) && acked.trackIds.has(trackId));
+}
+/** Track ids whose cues are in the store but not acknowledged by the current service (all of them when never paired). */
+export function pendingTranscriptTrackIds(model: AppModel): string[] {
+  const ids = new Set(Object.values(model.store.snapshot().cues).map((cue) => cue.trackId));
+  return [...ids].filter((id) => !transcriptBundleAcknowledged(model, id)).sort();
+}
+/** True when this media's transcripts were fetched from the service into the store. */
+export function mediaTranscriptsLoaded(model: AppModel, mediaId: string): boolean { return loadedMediaSet(model).has(mediaId); }
+function pairedForTranscripts(model: AppModel): boolean {
+  if (!model.localService.revision || model.localService.status !== 'connected') return false;
+  try { capturedTransport(model, model.localService.baseUrl); return true; } catch { return false; }
+}
+/** True when openMediaAsset would fetch this media's transcripts first (paired, hydrated, not yet loaded). */
+export function mediaTranscriptsNeedLoading(model: AppModel, mediaId: string): boolean {
+  return Boolean(model.store.getMediaAsset(mediaId)) && !mediaTranscriptsLoaded(model, mediaId) && pairedForTranscripts(model);
+}
+function isArrayOfObjects(value: unknown): value is Record<string, unknown>[] { return Array.isArray(value) && value.every(isPlainObject); }
+function sortedById<T extends { id: string }>(rows: readonly T[]): T[] { return [...rows].sort((a, b) => a.id.localeCompare(b.id)); }
+function sameTranscriptBundle(a: { cues: readonly Cue[]; wordTimings: readonly TranscriptWordTiming[] }, b: { cues: readonly Cue[]; wordTimings: readonly TranscriptWordTiming[] }): boolean {
+  return sameHistoryPayload(sortedById(a.cues), sortedById(b.cues)) && sameHistoryPayload(sortedById(a.wordTimings), sortedById(b.wordTimings));
+}
+function transcriptTracksFromReply(reply: Record<string, unknown>): Record<string, { cues: Cue[]; wordTimings: TranscriptWordTiming[] }> {
+  if (!isPlainObject(reply.tracks)) throw new TypeError('Local service returned an invalid transcript bundle.');
+  const tracks: Record<string, { cues: Cue[]; wordTimings: TranscriptWordTiming[] }> = {};
+  for (const [trackId, bundle] of Object.entries(reply.tracks)) {
+    if (!isPlainObject(bundle) || !isArrayOfObjects(bundle.cues) || !isArrayOfObjects(bundle.wordTimings)) throw new TypeError('Local service returned an invalid transcript bundle.');
+    tracks[trackId] = { cues: bundle.cues as unknown as Cue[], wordTimings: bundle.wordTimings as unknown as TranscriptWordTiming[] };
+  }
+  return tracks;
+}
+/** GET one media's bundles into the store and mark them loaded and acknowledged. A 404 (media unknown to the service,
+ *  e.g. imported but not yet saved) leaves the store as it is and counts as loaded: there is nothing to fetch. */
+async function loadMediaTranscriptsNow(model: AppModel, transport: PairedTransport, url: string, mediaId: string): Promise<void> {
+  let reply: Record<string, unknown>;
+  try { reply = await fetchLocalServiceJson(transport, `/api/media/${mediaId}/transcripts`); }
+  catch (error) {
+    if (error instanceof LocalServiceRequestError && error.status === 404) { if (currentServiceUrl(model) === url) loadedMediaSet(model).add(mediaId); return; }
+    throw error;
+  }
+  if (currentServiceUrl(model) !== url) return;
+  const tracks = transcriptTracksFromReply(reply);
+  for (const [trackId, bundle] of Object.entries(tracks)) {
+    for (const cue of bundle.cues) model.store.putCue(cue);
+    for (const timing of bundle.wordTimings) model.store.putTranscriptWordTiming(timing);
+    acknowledgeBundle(model, url, trackId);
+  }
+  loadedMediaSet(model).add(mediaId);
+}
+function reprojectCurrentCues(model: AppModel): void {
+  const before = model.cues.length;
+  model.cues = model.targetTrackId ? model.store.listCuesForTrack(model.targetTrackId) : [];
+  if (before === 0 || !model.cues.some((cue) => cue.id === model.player.activeCueId)) model.player.activeCueId = model.cues[0]?.id ?? null;
+}
+/** Background load of the current media's transcripts (after 'Load service state'); notifies the UI when done. */
+function loadCurrentMediaTranscriptsInBackground(model: AppModel): void {
+  const media = model.currentMedia;
+  if (!media || !mediaTranscriptsNeedLoading(model, media.id)) return;
+  let transport: PairedTransport;
+  try { transport = captureLocalServiceTransport(model); } catch { return; }
+  const url = transport.origin;
+  model.transcriptLoading = { mediaId: media.id };
+  void serializeServiceJob(transport, () => loadMediaTranscriptsNow(model, transport, url, media.id))
+    .then(() => { if (model.currentMedia?.id === media.id) reprojectCurrentCues(model); }, () => undefined)
+    .finally(() => { if (model.transcriptLoading?.mediaId === media.id) model.transcriptLoading = null; notifySync(model); });
+}
+/**
+ * Flush every pending bundle (PUT /api/tracks/{id}/transcript) before the learner state that references it. Each
+ * success advances model.localService.revision. A 409 with code 'transcript-bundle-exists' ("the track already has
+ * a bundle") is verified by GET /api/media/{mediaId}/transcripts: only when that GET reports the SAME revision the PUT
+ * expected (no concurrent write happened in between) and an identical stored bundle is the bundle treated as
+ * acknowledged; a changed revision rethrows the 409 (conflict), a different/missing bundle fails. Any other 409 is a
+ * CAS conflict and ends the save like a learner-state conflict.
+ */
+async function flushPendingTranscriptBundles(model: AppModel, transport: PairedTransport, url: string, current: () => boolean): Promise<void> {
+  for (const trackId of pendingTranscriptTrackIds(model)) {
+    const cues = model.store.listCuesForTrack(trackId);
+    const wordTimings = model.store.listTranscriptWordTimingsForTrack(trackId);
+    if (cues.length === 0) continue;
+    const expectedRevision = stateRevision(model.localService.revision);
+    try {
+      const ack = await fetchLocalServiceJson(transport, `/api/tracks/${trackId}/transcript`, { method: 'PUT', body: JSON.stringify({ cues, wordTimings, expectedRevision }) });
+      const revision = stateRevision(ack.revision);
+      acknowledgeBundle(model, url, trackId);
+      if (!current()) throw new TypeError('Service job superseded.');
+      model.localService.revision = revision;
+    } catch (error) {
+      if (!(error instanceof LocalServiceRequestError && error.status === 409 && error.code === 'transcript-bundle-exists')) throw error;
+      const track = model.store.getSubtitleTrack(trackId);
+      if (!track) throw error;
+      let stored: Record<string, unknown>;
+      try { stored = await fetchLocalServiceJson(transport, `/api/media/${track.mediaId}/transcripts`); }
+      catch { throw new LocalServiceRequestError(409, 'The local service already holds a transcript for this track and it could not be verified; browser transcript kept unsent.'); }
+      if (!current()) throw new TypeError('Service job superseded.');
+      if (stateRevision(stored.revision) !== expectedRevision) throw error;
+      const bundle = transcriptTracksFromReply(stored)[trackId];
+      if (!bundle || !sameTranscriptBundle(bundle, { cues, wordTimings })) throw new LocalServiceRequestError(409, 'The local service already holds a different transcript for this track; browser transcript kept unsent.');
+      acknowledgeBundle(model, url, trackId);
+    }
+  }
+}
 
 export async function saveModelToLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   const owner = syncOwner(model);
@@ -390,13 +532,16 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
     if (!model.localService.revision) return supersededSync();
     if (owner.choice || model.localService.syncState === 'conflict') return { ok: false, message: model.localService.lastMessage ?? 'Reconnect and choose a state before saving.' };
     if (restoreStates.get(model)?.unknown || model.store.snapshotPendingRestoreIntent()) return { ok: false, message: 'Explicit restore required; no ordinary save was sent.' };
-    const snapshot = model.store.snapshot();
-    const serialized = JSON.stringify(snapshot);
-    const expectedRevision = model.localService.revision;
     model.localService.syncState = 'saving';
     model.localService.lastMessage = 'Saving browser state; waiting for durable SQLite acknowledgement.';
     notifySync(model);
     try {
+      // lt-584.5: bundles first (bundle-first track creation, D-R9), then the learner state that references them.
+      await flushPendingTranscriptBundles(model, transport, url, current);
+      if (!current()) return supersededSync();
+      const snapshot = learnerStateOf(model.store.snapshot());
+      const serialized = JSON.stringify(snapshot);
+      const expectedRevision = stateRevision(model.localService.revision);
       const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
       if (!current()) return supersededSync();
       if (ack.ok !== true) throw new TypeError('Local service did not acknowledge durable save.');
@@ -407,7 +552,7 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
       recordAckBaseline(model, url, serialized);
       model.localService.status = 'connected';
       model.localService.lastSavedAt = ack.savedAt;
-      const dirty = JSON.stringify(model.store.snapshot()) !== serialized || hasPendingTranscriptEdits(model);
+      const dirty = learnerSerialization(model.store.snapshot()) !== serialized || hasPendingTranscriptEdits(model) || pendingTranscriptTrackIds(model).length > 0;
       model.localService.syncState = dirty ? 'unsaved' : 'saved';
       model.localService.lastMessage = dirty ? 'Earlier snapshot saved; newer browser edits remain unsaved.' : `Saved local state at ${ack.savedAt}`;
       notifySync(model);
@@ -449,6 +594,18 @@ export function readGlossCapability(value: unknown): NonNullable<AppModel['local
   return { state, source: { id: src.id as string, dumpDate: src.dumpDate, attribution: src.attribution as string } };
 }
 
+/** lt-584.5: install the service learner state, keeping unsent bundles of tracks that the installed state still has. */
+function hydrateServiceLearnerState(model: AppModel, snapshot: LocalStoreSnapshot): void {
+  const keep = pendingTranscriptTrackIds(model).map((trackId) => ({ trackId, cues: model.store.listCuesForTrack(trackId), timings: model.store.listTranscriptWordTimingsForTrack(trackId) }));
+  projectHydratedSnapshotIntoModel(model, snapshot);
+  for (const bundle of keep) {
+    if (!model.store.getSubtitleTrack(bundle.trackId)) continue;
+    for (const cue of bundle.cues) model.store.putCue(cue);
+    for (const timing of bundle.timings) model.store.putTranscriptWordTiming(timing);
+  }
+  if (keep.length > 0) reprojectCurrentCues(model);
+}
+
 export async function connectLocalService(model: AppModel, baseUrl = model.localService.baseUrl): Promise<LocalServiceSyncResult> {
   // Reconnect must not revoke the commit owner or hydrate its unacknowledged result.
   // Unknown outcomes may reconnect only after the pending operation has settled.
@@ -481,15 +638,16 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     model.localService.restoreCapability = state.restoreCapability === RESTORE_CAPABILITY ? RESTORE_CAPABILITY : null;
     const revision = stateRevision(state.revision);
     if (restoreStates.get(model)?.unknown) return reconcileRestoreState(model, state);
+    // lt-584.5: /api/state carries learner state only; compare learner state with learner state.
     const serviceSnapshot = new LocalStore(state.snapshot as LocalStoreSnapshot).snapshot();
-    const serialized = JSON.stringify(model.store.snapshot());
-    const remote = JSON.stringify(serviceSnapshot);
+    const serialized = learnerSerialization(model.store.snapshot());
+    const remote = learnerSerialization(serviceSnapshot);
     const changedDuringConnect = comparison !== browserComparison(model);
     const baseline = effectiveBaseline(model, url);
     const dirty = hasPendingTranscriptEdits(model) || (baseline !== null
-      ? baseline !== serialized : snapshotHasDurableContent(model.store.snapshot()));
+      ? baseline !== serialized : snapshotHasDurableContent(learnerStateOf(model.store.snapshot())));
     model.localService.pathPolicy = pathPolicy;
-    if (model.store.snapshotPendingRestoreIntent() || changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(serviceSnapshot)) || hasPendingTranscriptEdits(model)) {
+    if (model.store.snapshotPendingRestoreIntent() || changedDuringConnect || (dirty && remote !== serialized && snapshotHasDurableContent(learnerStateOf(serviceSnapshot))) || hasPendingTranscriptEdits(model)) {
       model.localService.status = 'connected';
       owner.choice = { snapshot: serviceSnapshot, revision, comparison: browserComparison(model) };
       model.localService.syncState = 'choice';
@@ -498,18 +656,30 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
       return { ok: false, message: model.localService.lastMessage };
     }
     model.localService.revision = revision;
-    if (!snapshotHasDurableContent(serviceSnapshot) && snapshotHasDurableContent(model.store.snapshot())) {
+    if (!snapshotHasDurableContent(learnerStateOf(serviceSnapshot)) && snapshotHasDurableContent(model.store.snapshot())) {
+      // lt-584.5: an empty service holds no bundle, whatever an earlier session at this URL acknowledged.
+      acknowledgedBundles.delete(model);
       model.localService.syncState = 'unsaved';
       model.localService.lastMessage = 'Connected to empty local service; browser work is unsaved until durable acknowledgement.';
     } else {
-      projectHydratedSnapshotIntoModel(model, serviceSnapshot);
-      owner.baseline = JSON.stringify(model.store.snapshot());
+      hydrateServiceLearnerState(model, serviceSnapshot);
+      owner.baseline = learnerSerialization(model.store.snapshot());
       recordAckBaseline(model, url, owner.baseline);
+      // lt-584.5: then the current media's transcripts only; other media load when opened.
+      if (model.currentMedia) {
+        const mediaId = model.currentMedia.id;
+        const loading = { mediaId };
+        model.transcriptLoading = loading;
+        try { await loadMediaTranscriptsNow(model, transport, url, mediaId); } catch { /* stays not loaded; opening the media retries */ }
+        finally { if (model.transcriptLoading === loading) model.transcriptLoading = null; }
+        if (!current()) return supersededSync();
+        if (model.currentMedia?.id === mediaId) reprojectCurrentCues(model);
+      }
       signalSnapshotCache(model);
       const hydratedComparison = browserComparison(model);
       const restoredBrowserHandle = await restoreBrowserMediaHandle(model, () => current() && hydratedComparison === browserComparison(model));
       if (!current()) return supersededSync();
-      model.localService.syncState = JSON.stringify(model.store.snapshot()) === owner.baseline && !hasPendingTranscriptEdits(model) ? 'idle' : 'unsaved';
+      model.localService.syncState = learnerSerialization(model.store.snapshot()) === owner.baseline && !hasPendingTranscriptEdits(model) && pendingTranscriptTrackIds(model).length === 0 ? 'idle' : 'unsaved';
       model.localService.lastMessage = model.localService.syncState === 'unsaved' ? 'Connected; newer browser edits remain unsaved.'
         : restoredBrowserHandle ? 'Connected to local service, loaded durable state, and restored the browser media handle for playback.' : 'Connected to local service and loaded durable state.';
     }
@@ -549,15 +719,18 @@ export function resolveLocalServiceConnection(model: AppModel, choice: 'browser'
       model.store.installRestoreCandidate(pending.snapshot, pending.snapshot.learnerAudit!);
       sessionRestoreBaselines.delete(model);
     }
+    // lt-584.5: discarding browser edits also discards their unsent transcript bundles (the store is replaced by the
+    // service learner state); the current media's acknowledged transcripts are fetched again below.
     projectHydratedSnapshotIntoModel(model, pending.snapshot);
     model.transcriptLifecycle.pendingCueEdits = {};
     model.transcriptLifecycle.pendingCueTimingEdits = {};
     model.transcriptLifecycle.pendingWordTimingEdits = {};
-    owner.baseline = JSON.stringify(model.store.snapshot());
+    owner.baseline = learnerSerialization(model.store.snapshot());
     recordAckBaseline(model, model.localService.baseUrl, owner.baseline);
   }
   owner.choice = null;
   model.localService.revision = pending.revision;
+  if (choice === 'service') loadCurrentMediaTranscriptsInBackground(model);
   model.localService.syncState = choice === 'browser' ? 'unsaved' : 'idle';
   model.localService.lastMessage = choice === 'browser' ? 'Browser work kept. Save explicitly to replace the compared durable state; concurrent changes will conflict.' : 'Loaded compared service state; browser edits discarded by explicit confirmation.';
   notifySync(model);
@@ -683,8 +856,37 @@ function projectMediaIntoModel(model: AppModel, media: MediaAsset, tracks: Subti
   model.player.activeCueId = model.cues[0]?.id ?? null;
 }
 
-/** lt-1ur: switch to a stored media asset with the same projection as hydration. */
-export function openMediaAsset(model: AppModel, mediaId: string): boolean {
+/**
+ * lt-1ur: switch to a stored media asset with the same projection as hydration.
+ * lt-584.5: when paired and this media's transcripts are not loaded, first GET /api/media/{id}/transcripts (one
+ * request per media; `model.transcriptLoading` is set meanwhile), then project. Otherwise the projection happens
+ * synchronously inside this call and the returned promise is already settled.
+ */
+export function openMediaAsset(model: AppModel, mediaId: string): Promise<boolean> {
+  const generation = ++openGeneration(model).value;
+  if (!mediaTranscriptsNeedLoading(model, mediaId)) return Promise.resolve(projectOpenedMedia(model, mediaId));
+  return loadThenOpenMedia(model, mediaId, generation);
+}
+const openGenerations = new WeakMap<AppModel, { value: number }>();
+function openGeneration(model: AppModel): { value: number } {
+  let generation = openGenerations.get(model);
+  if (!generation) { generation = { value: 0 }; openGenerations.set(model, generation); }
+  return generation;
+}
+async function loadThenOpenMedia(model: AppModel, mediaId: string, generation: number): Promise<boolean> {
+  const loading = { mediaId };
+  model.transcriptLoading = loading;
+  try {
+    const transport = captureLocalServiceTransport(model);
+    const url = transport.origin;
+    await serializeServiceJob(transport, () => loadMediaTranscriptsNow(model, transport, url, mediaId));
+  } catch { /* not loaded: the media still opens with what the store holds; reopening retries */ }
+  finally { if (model.transcriptLoading === loading) model.transcriptLoading = null; }
+  // A later open superseded this one; do not switch media under the learner.
+  if (openGeneration(model).value !== generation) return false;
+  return projectOpenedMedia(model, mediaId);
+}
+function projectOpenedMedia(model: AppModel, mediaId: string): boolean {
   const media = model.store.getMediaAsset(mediaId);
   if (!media) return false;
   const sameMedia = model.currentMedia?.id === media.id;
@@ -790,8 +992,9 @@ export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | u
 /**
  * lt-5lb.9: a saved occurrence resolved against the loaded store: its cue, that cue's target track,
  * the aligned native line (current native track) and the media. `null` when the cue is not in the
- * store. The `status` discriminant leaves room for the relational-authority C4 `not-loaded` variant
- * (`{ status: 'not-loaded'; mediaId }`), which is not implemented here.
+ * store and cannot be loaded.
+ * lt-584.5 (C4): `{ status: 'not-loaded', mediaId }` when the cue is absent but the occurrence's media is
+ * stored and its transcripts have not been loaded from the service; views offer "Open media".
  */
 export type OccurrenceContext = Readonly<{
   status: 'ok';
@@ -799,14 +1002,17 @@ export type OccurrenceContext = Readonly<{
   targetTrack: SubtitleTrack | null;
   nativeText: string | undefined;
   media: MediaAsset | null;
-}>;
+}> | Readonly<{ status: 'not-loaded'; mediaId: string }>;
 
 export function occurrenceContext(
   model: AppModel,
   occurrence: Readonly<{ cueId: string; sourceContext?: Readonly<{ mediaId?: string }> }>,
 ): OccurrenceContext | null {
   const cue = model.store.getCue(occurrence.cueId);
-  if (!cue) return null;
+  if (!cue) {
+    const mediaId = occurrence.sourceContext?.mediaId;
+    return mediaId && model.store.getMediaAsset(mediaId) && !mediaTranscriptsLoaded(model, mediaId) ? { status: 'not-loaded', mediaId } : null;
+  }
   const targetTrack = model.store.getSubtitleTrack(cue.trackId) ?? null;
   const mediaId = occurrence.sourceContext?.mediaId ?? targetTrack?.mediaId;
   return {
@@ -3859,8 +4065,13 @@ function finishRestore(model: AppModel, manifest: import('@lingotorte/domain').L
   model.exportImport.lastExport = null; clearStaleLearnerUi(model);
 }
 function installDurableRestore(model: AppModel, binding: RestoreBinding, snapshot: LocalStoreSnapshot, revision: string): void {
-  model.store.installRestoreCandidate(snapshot, snapshot.learnerAudit!);
-  syncOwner(model).baseline = JSON.stringify(model.store.snapshot());
+  // lt-584.5: the restore changes learner state only. Keep the transcripts already loaded (no pending bundle can exist:
+  // restore requires the saved baseline) and add any the service sent; those are acknowledged.
+  const url = currentServiceUrl(model);
+  const loaded = model.store.snapshot();
+  model.store.installRestoreCandidate({ ...snapshot, cues: { ...loaded.cues, ...snapshot.cues }, transcriptWordTimings: { ...loaded.transcriptWordTimings, ...snapshot.transcriptWordTimings } }, snapshot.learnerAudit!);
+  if (url) for (const cue of Object.values(snapshot.cues)) acknowledgeBundle(model, url, cue.trackId);
+  syncOwner(model).baseline = learnerSerialization(model.store.snapshot());
   model.localService.revision = revision; model.localService.status = 'connected'; model.localService.syncState = 'saved';
   model.localService.lastMessage = 'Explicit restore committed; authoritative active/audit state and revision read back.';
   finishRestore(model, RestoreService.validateManifest(JSON.parse(binding.wire)), { mode: binding.mode, effects: binding.plan.effects, auditEffects: binding.plan.auditEffects, coalesced: binding.plan.coalesced, integrity: binding.plan.integrity, durability: 'durable-committed/readback-verified', durablySaved: true }, binding.plan.preview);
@@ -3869,7 +4080,8 @@ function installDurableRestore(model: AppModel, binding: RestoreBinding, snapsho
 function authoritativeRestoreSnapshot(value: unknown): LocalStoreSnapshot {
   if (!isPlainObject(value) || !isPlainObject(value.learnerAudit) || value.learnerAudit.version !== 1) throw new TypeError('Invalid authoritative active/audit snapshot.');
   const snapshot = new LocalStore(value as LocalStoreSnapshot).snapshot();
-  if (!sameHistoryPayload(value, snapshot)) throw new TypeError('Incomplete authoritative active/audit snapshot.');
+  // lt-584.5: /api/state omits transcript keys while the restore commit response carries them; compare learner state.
+  if (!sameHistoryPayload(learnerStateOf(value as LocalStoreSnapshot), learnerStateOf(snapshot))) throw new TypeError('Incomplete authoritative active/audit snapshot.');
   return snapshot;
 }
 function reconcileRestoreState(model: AppModel, state: Record<string, unknown>): LocalServiceSyncResult {
@@ -3881,7 +4093,7 @@ function reconcileRestoreState(model: AppModel, state: Record<string, unknown>):
     || binding.comparison !== browserComparison(model)) {
     model.localService.lastMessage = restoreUnknown; return { ok: false, message: restoreUnknown };
   }
-  if (sameHistoryPayload(snapshot, binding.intended) && (binding.acknowledgedRevision === undefined || revision === binding.acknowledgedRevision)) {
+  if (sameHistoryPayload(learnerStateOf(snapshot), learnerStateOf(binding.intended)) && (binding.acknowledgedRevision === undefined || revision === binding.acknowledgedRevision)) {
     installDurableRestore(model, binding, snapshot, revision); return { ok: true, message: model.localService.lastMessage! };
   }
   // Do not convert an unchanged or third-party state into a retry authorization.
@@ -3901,8 +4113,8 @@ export async function previewDurableRestore(model: AppModel): Promise<import('@l
     current();
     if (owner.choice || !model.localService.revision || model.localService.syncState === 'conflict' || hasPendingTranscriptEdits(model)) throw new TypeError('Resolve browser/service state choice and pending edits before restore.');
     const pending = model.store.snapshotPendingRestoreIntent();
-    if (pending && sessionRestoreBaselines.get(model) !== JSON.stringify(model.store.snapshot())) throw new TypeError('Learner edits changed after session restore. Resolve those edits explicitly before importing pending intent.');
-    if (!pending && owner.baseline !== null && owner.baseline !== JSON.stringify(model.store.snapshot())) throw new TypeError('Unsaved browser state: save or explicitly load service state before restore.');
+    if (pending && sessionRestoreBaselines.get(model) !== learnerSerialization(model.store.snapshot())) throw new TypeError('Learner edits changed after session restore. Resolve those edits explicitly before importing pending intent.');
+    if (!pending && owner.baseline !== null && owner.baseline !== learnerSerialization(model.store.snapshot())) throw new TypeError('Unsaved browser state: save or explicitly load service state before restore.');
     const revision = model.localService.revision;
     const state = await fetchLocalServiceJson(transport, '/api/state'); current();
     if (state.restoreCapability !== RESTORE_CAPABILITY || stateRevision(state.revision) !== revision) throw new TypeError('Service revision/capability changed; reconnect and refresh preview.');
@@ -3922,7 +4134,7 @@ export async function previewDurableRestore(model: AppModel): Promise<import('@l
 export function previewPendingSessionRestore(model: AppModel): import('@lingotorte/domain').RestorePreview {
   const intent = model.store.snapshotPendingRestoreIntent();
   if (!intent) throw new TypeError('No pending session restore.');
-  if (sessionRestoreBaselines.get(model) !== JSON.stringify(model.store.snapshot())) throw new TypeError('Learner edits changed since session restore; resolve them explicitly.');
+  if (sessionRestoreBaselines.get(model) !== learnerSerialization(model.store.snapshot())) throw new TypeError('Learner edits changed since session restore; resolve them explicitly.');
   const preview = previewRestoreManifest(model, JSON.stringify(intent.manifest));
   model.exportImport.confirmReplace = intent.mode === 'replace-active'; model.exportImport.confirmOverwrite = intent.mode === 'merge';
   return preview;
@@ -3936,7 +4148,7 @@ export function confirmRestore(model: AppModel): void | Promise<void> {
   const confirmation = RestoreService.requireConfirmation({ confirmedAt: new Date().toISOString(), confirmOverwrite: mode === 'merge', confirmReplace: mode === 'replace-active', acknowledgedWarnings: model.exportImport.acknowledgedWarnings });
   if (model.localService.status === 'disconnected' && !model.localService.revision) {
     const result = model.restoreService.restoreWithReceipt(manifest, confirmation);
-    sessionRestoreBaselines.set(model, JSON.stringify(model.store.snapshot()));
+    sessionRestoreBaselines.set(model, learnerSerialization(model.store.snapshot()));
     finishRestore(model, manifest, result.receipt, preview);
     markUnsavedBrowserEdits(model); return;
   }
@@ -3958,10 +4170,10 @@ export function confirmRestore(model: AppModel): void | Promise<void> {
       const revision = stateRevision(ack.revision);
       const snapshot = authoritativeRestoreSnapshot(ack.snapshot);
       const expectedReceipt = { mode, effects: binding.plan.effects, auditEffects: binding.plan.auditEffects, coalesced: binding.plan.coalesced, integrity: 'semantic-hash-verified', durability: 'durable-committed/readback-verified', durablySaved: true };
-      if (ack.ok !== true || ack.capability !== RESTORE_CAPABILITY || !sameHistoryPayload(ack.receipt, expectedReceipt) || !sameHistoryPayload(snapshot, binding.intended)) throw new TypeError('Invalid restore acknowledgement.');
+      if (ack.ok !== true || ack.capability !== RESTORE_CAPABILITY || !sameHistoryPayload(ack.receipt, expectedReceipt) || !sameHistoryPayload(learnerStateOf(snapshot), learnerStateOf(binding.intended))) throw new TypeError('Invalid restore acknowledgement.');
       binding.acknowledgedRevision = revision;
       const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); current();
-      if (readback.ok !== true || readback.restoreCapability !== RESTORE_CAPABILITY || stateRevision(readback.revision) !== revision || !sameHistoryPayload(authoritativeRestoreSnapshot(readback.snapshot), snapshot)) throw new TypeError('Restore readback mismatch.');
+      if (readback.ok !== true || readback.restoreCapability !== RESTORE_CAPABILITY || stateRevision(readback.revision) !== revision || !sameHistoryPayload(learnerStateOf(authoritativeRestoreSnapshot(readback.snapshot)), learnerStateOf(snapshot))) throw new TypeError('Restore readback mismatch.');
       installDurableRestore(model, binding, snapshot, revision);
     } catch (error) {
       binding.committing = false;

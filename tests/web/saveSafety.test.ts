@@ -6,6 +6,10 @@ import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 const revision = `sha256:${'1'.repeat(64)}`;
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 const deferred = <T>() => { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; };
+const TRANSCRIPT_PUT = /\/api\/tracks\/[^/]+\/transcript$/;
+/** Routes C4 transcript PUTs to their own fresh acknowledgement; every other request goes to `state`. */
+const routeTranscripts = (state: (...args: any[]) => unknown) => (url: string, init?: RequestInit) =>
+  init?.method === 'PUT' && TRANSCRIPT_PUT.test(String(url)) ? Promise.resolve(response({ ok: true, revision })) : state(url, init);
 afterEach(() => vi.unstubAllGlobals());
 async function dirtyModel() {
   const model = pairedModel();
@@ -38,9 +42,9 @@ it('does not report newer browser edits saved by an older durable acknowledgemen
   const model = await dirtyModel();
   vi.stubGlobal('fetch', vi.fn(async (url: string) => response(url.endsWith('/api/status') ? { config: {} } : { snapshot: createEmptyLocalStoreSnapshot(), revision })));
   await connectLocalService(model);
-  const waiting = deferred<Response>(); vi.stubGlobal('fetch', vi.fn(() => waiting.promise));
+  const waiting = deferred<Response>(); const stateFetch = vi.fn(() => waiting.promise); vi.stubGlobal('fetch', vi.fn(routeTranscripts(stateFetch)));
   const saving = saveModelToLocalService(model);
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(stateFetch).toHaveBeenCalledTimes(1));
   model.store.putMediaAsset({ ...model.currentMedia!, title: 'new edit' });
   waiting.resolve(response({ ok: true, revision, savedAt: '2026-01-01T00:00:00.000Z' }));
   await saving;
@@ -66,7 +70,7 @@ it('serializes manual and autosave requests using each preceding durable acknowl
   const model = await dirtyModel(); await connectEmpty(model);
   const first = deferred<Response>(); const second = deferred<Response>();
   const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-  vi.stubGlobal('fetch', fetchMock); setLocalServiceAutosave(model, true);
+  vi.stubGlobal('fetch', vi.fn(routeTranscripts(fetchMock))); setLocalServiceAutosave(model, true);
   const saving = saveModelToLocalService(model);
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   model.store.putMediaAsset({ ...model.currentMedia!, title: 'newest edit' });

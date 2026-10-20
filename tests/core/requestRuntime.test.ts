@@ -21,6 +21,8 @@ import { startLingotorteLocalService } from '../../apps/local-service/src/server
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence.ts';
 import { makeMediaAsset } from '../../packages/domain/src/index.ts';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src/index.ts';
+// lt-584.5 (C4): /api/state carries learner state only (no cues/transcriptWordTimings keys).
+const emptyLearnerState = () => { const { cues: _cues, transcriptWordTimings: _timings, ...learner } = createEmptyLocalStoreSnapshot(); return learner; };
 import { canonicalAuthority, canonicalOrigin } from '../../apps/local-service/src/requestAdmission.ts';
 
 async function fixture() { const root = await mkdtemp(join(tmpdir(), 'lt-sor-runtime-')); return { root, config: { host: '127.0.0.1', port: 0, databasePath: join(root, 'state.db'), scratchDir: join(root, 'scratch'), modelCacheDir: join(root, 'models'), allowOnlineProviders: false } }; }
@@ -149,7 +151,7 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
     let token = ''; let observe: (() => any) | undefined; let calls = 0; let providerCalls = 0;
     let pause = false; let release!: () => void; let started!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; }); const running = new Promise<void>(resolve => { started = resolve; });
-    const saveSpy = vi.spyOn(SqliteLocalPersistence.prototype, 'saveSnapshot');
+    const saveSpy = vi.spyOn(SqliteLocalPersistence.prototype, 'saveLearnerState');
     const service = await startLingotorteLocalService(config, { receiveCapability: value => { token = value; }, observeState: read => { observe = read; },
       commandRunner: async (command, args) => {
         calls++; if (pause) { started(); await gate; }
@@ -168,7 +170,7 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
     const oracle = async () => JSON.stringify({ state: observe!(), tables: tables(), saves: saveSpy.mock.calls.length, calls, providerCalls, files: await manifest(root) });
     try {
       let revision = JSON.parse((await raw(service.origin, '/api/state', 'GET', auth)).body).revision;
-      const seededSnapshot = createEmptyLocalStoreSnapshot();
+      const seededSnapshot = emptyLearnerState();
       const seededMedia = makeMediaAsset({ title: 'Private synthetic state sentinel', originalPath: 'synthetic.webm', contentSha256: `sha256:${'1'.repeat(64)}`, durationMs: 1, container: 'webm', sizeBytes: 1, privacyLabel: 'synthetic' });
       seededSnapshot.mediaAssets[seededMedia.id] = seededMedia;
       const saved = await raw(service.origin, '/api/state', 'PUT', json, JSON.stringify({ expectedRevision: revision, snapshot: seededSnapshot }));
@@ -203,7 +205,7 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
       }
       const routes = [
         { path: '/api/status', method: 'GET' }, { path: '/api/state', method: 'GET' }, { path: `/api/jobs/${waiting}`, method: 'GET' }, { path: snippet, method: 'GET' },
-        { path: '/api/state', method: 'PUT', body: JSON.stringify({ expectedRevision: revision, snapshot: createEmptyLocalStoreSnapshot() }) },
+        { path: '/api/state', method: 'PUT', body: JSON.stringify({ expectedRevision: revision, snapshot: emptyLearnerState() }) },
         { path: `/api/jobs/${waiting}/cancel`, method: 'POST', body: '{}' }, { path: snippet, method: 'DELETE' }, { path: '/api/artifacts/cleanup', method: 'POST', body: '{}' },
         ...Object.entries({ waiting: {}, noop: {}, 'local-transcription': { mediaPath, alignWords: false }, 'elevenlabs-scribe': { mediaPath, allowOnlineProvider: true }, 'youtube-caption': { url: 'https://www.youtube.com/watch?v=abcdefghijk', language: 'en', allowPublicRead: true }, 'embedded-subtitle-list': { mediaPath }, 'embedded-subtitle-extract': { mediaPath, streamIndex: 0, outputFormat: 'srt', role: 'target', language: 'en' }, 'source-audio-snippet': { mediaPath, startMs: 0, endMs: 1 } }).map(([kind, payload]) => ({ path: '/api/jobs', method: 'POST', body: JSON.stringify({ kind, payload }) })),
       ];
@@ -366,7 +368,7 @@ describe('runtime startup, owner fences and seeded dispatch qualification', () =
       try {
         for (const path of ['/api/status', '/api/state']) { const result = await raw(service.origin, path, 'GET', auth); expect(result.status).toBe(200); expect(result.headers['access-control-allow-origin']).toBe(uiOrigin); }
         const state = JSON.parse((await raw(service.origin, '/api/state', 'GET', auth)).body);
-        expect((await raw(service.origin, '/api/state', 'PUT', json, JSON.stringify({ expectedRevision: state.revision, snapshot: createEmptyLocalStoreSnapshot() }))).status).toBe(200);
+        expect((await raw(service.origin, '/api/state', 'PUT', json, JSON.stringify({ expectedRevision: state.revision, snapshot: emptyLearnerState() }))).status).toBe(200);
         const waiting = JSON.parse((await raw(service.origin, '/api/jobs', 'POST', json, '{"kind":"waiting"}')).body).job.id;
         expect((await raw(service.origin, `/api/jobs/${waiting}`, 'GET', auth)).status).toBe(200);
         const id = JSON.parse((await raw(service.origin, '/api/jobs', 'POST', json, JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }))).body).job.id;

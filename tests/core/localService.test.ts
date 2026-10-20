@@ -116,11 +116,13 @@ describe('Lingotorte loopback local service', () => {
       privacyLabel: 'synthetic',
     });
     snapshot.mediaAssets[media.id] = media;
+    // lt-584.5 (C4): /api/state carries learner state only; transcript keys are refused.
+    const { cues: _cues, transcriptWordTimings: _timings, ...learnerState } = snapshot;
 
     const saveResponse = await pairedFetch(`${service.origin}/api/state`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ snapshot, expectedRevision: (await pairedFetch(`${service.origin}/api/state`).then(r => r.json())).revision }),
+      body: JSON.stringify({ snapshot: learnerState, expectedRevision: (await pairedFetch(`${service.origin}/api/state`).then(r => r.json())).revision }),
     });
     expect(saveResponse.status).toBe(200);
     await service.close();
@@ -586,13 +588,16 @@ describe('Lingotorte loopback local service', () => {
       return { service, media, other, target, otherTrack, cue, timing, state, putBundle };
     }
 
-    it('GET /api/state (transitional, D-R8) carries the table-assembled transcripts and the revision; status reports it too', async () => {
-      const { service, target, cue, timing, state, putBundle } = await seeded();
+    it('GET /api/state (strict, C4) carries learner state without transcript keys and the revision; status reports it too', async () => {
+      const { service, media, target, cue, timing, state, putBundle } = await seeded();
       expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: (await state()).revision })).status).toBe(200);
       const body = await state();
       expect(body).toMatchObject({ ok: true, revision: expect.stringMatching(/^rev:\d+$/), restoreCapability: 'active-audit-restore-v1' });
-      expect(body.snapshot.cues).toEqual({ [cue.id]: cue });
-      expect(body.snapshot.transcriptWordTimings).toEqual({ [timing.id]: timing });
+      expect(Object.hasOwn(body.snapshot, 'cues')).toBe(false);
+      expect(Object.hasOwn(body.snapshot, 'transcriptWordTimings')).toBe(false);
+      expect(body.snapshot.subtitleTracks[target.id]).toEqual(target);
+      const transcripts = await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`).then(r => r.json());
+      expect(transcripts.tracks[target.id]).toEqual({ cues: [cue], wordTimings: [timing] });
       const status = await pairedFetch(`${service.origin}/api/status`).then(r => r.json());
       expect(status.persistence.revision).toBe(body.revision);
     });
@@ -637,32 +642,56 @@ describe('Lingotorte loopback local service', () => {
       expect((await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(405);
     });
 
-    it('PUT /api/state (transitional, D-R8): legacy body bundles are write-once/exact-match', async () => {
-      const { service, target, cue, timing, state, putBundle } = await seeded();
+    it('PUT /api/state (strict, C4): 400 on transcript keys and on a non-candidate track without a stored bundle; bundle first, then 200', async () => {
+      const { service, media, target, cue, timing, state, putBundle } = await seeded();
       const put = (snapshot: unknown, expectedRevision: string) => pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot, expectedRevision }) });
+      const transcripts = async () => (await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`).then(r => r.json())).tracks[target.id];
       const before = await state();
-      const approved = { ...before.snapshot, subtitleTracks: { ...before.snapshot.subtitleTracks, [target.id]: { ...target, transcriptStatus: 'approved' } } };
-      const { cues: _c, transcriptWordTimings: _w, ...learnerOnly } = before.snapshot;
-      const saved = await put(learnerOnly, before.revision);
+      // A learner-state body is saved (candidate tracks may be bundle-less).
+      const saved = await put(before.snapshot, before.revision);
       expect(saved.status).toBe(200);
       expect(await saved.json()).toMatchObject({ ok: true, revision: expect.stringMatching(/^rev:\d+$/), savedAt: expect.any(String), persistence: expect.any(Object) });
-      // A bundle supplied in the same legacy body is written once.
-      const withBundle = { ...approved, cues: { [cue.id]: cue }, transcriptWordTimings: { [timing.id]: timing } };
-      const first = await put(withBundle, (await state()).revision);
-      expect(first.status).toBe(200);
+      const current = await state();
+      const approved = { ...current.snapshot, subtitleTracks: { ...current.snapshot.subtitleTracks, [target.id]: { ...target, transcriptStatus: 'approved' } } };
+      // D-R7: a stale client that still sends transcript keys is refused, even with empty collections.
+      for (const extra of [{ cues: {} }, { transcriptWordTimings: {} }, { cues: { [cue.id]: cue }, transcriptWordTimings: { [timing.id]: timing } }]) {
+        const refused = await put({ ...current.snapshot, ...extra }, current.revision);
+        expect(refused.status).toBe(400);
+        expect((await refused.json()).error).toMatch(/cues or transcriptWordTimings/);
+      }
+      // Plan 2.4: a non-candidate track without a stored bundle is refused.
+      const unbundled = await put(approved, current.revision);
+      expect(unbundled.status).toBe(400);
+      expect((await unbundled.json()).error).toMatch(/no stored transcript/);
+      expect(await state()).toEqual(current);
+      expect(await transcripts()).toEqual({ cues: [], wordTimings: [] });
+      // Bundle first, then the same learner state is accepted; the bundle stays as written.
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: current.revision })).status).toBe(200);
+      const afterBundle = await state();
+      expect((await put(approved, afterBundle.revision)).status).toBe(200);
       const after = await state();
       expect(after.snapshot.subtitleTracks[target.id].transcriptStatus).toBe('approved');
-      expect(after.snapshot.cues).toEqual({ [cue.id]: cue });
-      // Exact-equal bundle is accepted; a differing one is refused (never rewritten); omitting cues leaves bundles untouched.
-      expect((await put(after.snapshot, after.revision)).status).toBe(200);
-      const current = await state();
-      expect((await put({ ...current.snapshot, cues: { [cue.id]: { ...cue, text: 'Changed' } } }, current.revision)).status).toBe(400);
-      expect(await state()).toEqual(current);
-      const { cues: _c2, transcriptWordTimings: _w2, ...omitted } = current.snapshot;
-      expect((await put(omitted, current.revision)).status).toBe(200);
-      expect((await state()).snapshot.cues).toEqual({ [cue.id]: cue });
-      expect((await put(omitted, current.revision)).status).toBe(409);
-      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: (await state()).revision })).status).toBe(409);
+      expect(await transcripts()).toEqual({ cues: [cue], wordTimings: [timing] });
+      expect((await put(approved, afterBundle.revision)).status).toBe(409);
+      const exists = await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: after.revision });
+      expect(exists.status).toBe(409);
+      expect(await exists.json()).toMatchObject({ ok: false, code: 'transcript-bundle-exists' });
+    });
+
+    it('PUT /api/state (strict, C4) still accepts a non-candidate track that was stored without a bundle before the flip', async () => {
+      const { config, root } = await makeTempConfig();
+      const media = makeMediaAsset({ title: 'legacy', originalPath: 'fixtures/media/synthetic-polish-dialogue.webm', contentSha256: fingerprint, durationMs: 2000, container: 'webm', sizeBytes: 1024, privacyLabel: 'synthetic' });
+      const legacyTrack = makeSubtitleTrack({ mediaId: media.id, language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: 'fixtures/legacy.srt', contentSha256: fingerprint, isActive: true, transcriptStatus: 'approved' });
+      const seed = SqliteLocalPersistence.open(config.databasePath);
+      try {
+        const { cues: _c, transcriptWordTimings: _w, ...learner } = { ...createEmptyLocalStoreSnapshot(), mediaAssets: { [media.id]: media }, subtitleTracks: { [legacyTrack.id]: legacyTrack } };
+        seed.saveLearnerState(learner, seed.loadLearnerState().revision);
+      } finally { seed.close(); }
+      const service = await startPairedService(config);
+      cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
+      const current = await pairedFetch(`${service.origin}/api/state`).then(r => r.json());
+      const renamed = { ...current.snapshot, mediaAssets: { [media.id]: { ...media, title: 'legacy renamed' } } };
+      expect((await pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: renamed, expectedRevision: current.revision }) })).status).toBe(200);
     });
 
     it('bundle first (D-R9): PUT a bundle for a new track id, then PUT /api/state referencing it as approved, then GET transcripts returns it', async () => {

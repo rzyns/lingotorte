@@ -1984,6 +1984,18 @@ export class SqliteLocalPersistence {
     return this.write(expectedRevision, updatedAt, () => this.writeLearnerCandidate(this.learnerCandidate(normalizeLocalStoreSnapshot(state)))).revision;
   }
 
+  /** lt-584.5 (plan 2.4): ids of the given learner-state tracks that are not `candidate`, have no stored bundle, and
+   *  are not already stored as a non-candidate track (rows saved before the strict contract stay accepted, so an
+   *  existing database never becomes unsavable). Read in one transaction. */
+  tracksMissingTranscriptBundle(tracks: Readonly<Record<string, unknown>>): string[] {
+    return this.read(() => Object.entries(tracks).filter(([trackId, track]) => {
+      if (track && typeof track === 'object' && (track as { transcriptStatus?: unknown }).transcriptStatus === 'candidate') return false;
+      if (this.trackHasCues(trackId)) return false;
+      const stored = this.db.prepare('SELECT transcript_status FROM subtitle_track WHERE id = ? LIMIT 1').get(trackId) as { transcript_status: string } | undefined;
+      return !stored || stored.transcript_status === 'candidate';
+    }).map(([trackId]) => trackId));
+  }
+
   /** Write one track's transcript bundle once (write-once per track) under CAS; returns the new revision. */
   saveTrackTranscript(trackId: string, bundle: TrackTranscriptBundle, expectedRevision: string, updatedAt = new Date().toISOString()): string {
     if (typeof expectedRevision !== 'string') throw new TypeError('Invalid durable state revision');

@@ -75,6 +75,19 @@ describe('lt-0zc browser snapshot cache', () => {
     expect(reloaded.localService.lastMessage).toBe(RESTORED_FROM_CACHE_MESSAGE);
   });
 
+  it('lt-584.5: drops a v1 (full-snapshot) record on upgrade to v2 and starts from an empty model', async () => {
+    const source = createAppModel();
+    await loadFixture(source);
+    const backend = new MemoryBackend();
+    backend.data.set(SNAPSHOT_CACHE_KEY, { schemaVersion: 1, savedAt: 'x', snapshot: source.store.snapshot(), currentMediaId: source.currentMedia!.id, targetTrackId: source.targetTrackId, nativeTrackId: source.nativeTrackId, localService: { baseUrl: 'http://127.0.0.1:5174', autosaveEnabled: true }, lastAcked: null });
+    expect(SNAPSHOT_CACHE_SCHEMA_VERSION).toBe(2);
+    const model = createAppModel();
+    expect(await bootSnapshotCache(model, backend)).toBe(false);
+    expect(backend.data.has(SNAPSHOT_CACHE_KEY)).toBe(false);
+    expect(model.currentMedia).toBeNull();
+    expect(model.store.snapshot().cues).toEqual({});
+  });
+
   it('ignores a record with a mismatched schemaVersion', async () => {
     const backend = new MemoryBackend();
     backend.data.set(SNAPSHOT_CACHE_KEY, { schemaVersion: 999, snapshot: {}, localService: {} });

@@ -11,6 +11,7 @@ import {
   STUDY_ESTIMATE_MS_PER_ACTION,
   currentTargetTrack,
   mediaAssetById,
+  openMediaAsset,
 } from '../model';
 import { rerenderApp } from '../appShell.ts';
 
@@ -130,6 +131,34 @@ export function renderUnresolvedSource(mediaPath: string): HTMLElement {
   note.setAttribute('role', 'status');
   note.dataset.testid = 'source-unresolved';
   appendSourceDisclosure(note, `Source line/media not available in this app; playback unresolved. Captured reference: ${compactPathLabel(mediaPath)}`, mediaPath.startsWith('blob:') ? '' : mediaPath);
+  return note;
+}
+
+/**
+ * lt-584.5: a saved occurrence whose media is stored but whose transcripts have not been loaded from the
+ * service yet. The button opens that media (openMediaAsset loads its transcripts) and re-renders the view.
+ */
+export function renderTranscriptNotLoaded(model: AppModel, mediaId: string): HTMLElement {
+  const note = document.createElement('p');
+  note.className = 'status-banner warning transcript-not-loaded';
+  note.setAttribute('role', 'status');
+  note.dataset.testid = 'transcript-not-loaded';
+  const text = document.createElement('span');
+  text.textContent = model.transcriptLoading?.mediaId === mediaId ? 'Loading transcript…' : 'Open media to load transcript';
+  note.appendChild(text);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn-secondary';
+  button.textContent = 'Open media';
+  button.dataset.action = 'open-media-transcript';
+  button.dataset.mediaId = mediaId;
+  button.disabled = model.transcriptLoading?.mediaId === mediaId;
+  button.addEventListener('click', () => {
+    const opened = openMediaAsset(model, mediaId);
+    rerenderApp(model);
+    void opened.then(() => rerenderApp(model));
+  });
+  note.appendChild(button);
   return note;
 }
 

@@ -13,7 +13,8 @@
  * pairing record (lt-cfh).
  *
  * Contract A28: the record holds only the LocalStoreSnapshot, track ids, base
- * URL, autosave preference and the last acknowledged serialized snapshot. It
+ * URL, autosave preference and the last acknowledged serialized snapshot (v2,
+ * lt-584.5: minus acknowledged transcript bundles, plus the pending track ids). It
  * never contains the pairing capability, pendingCueEdits, or anything from the
  * paired transport. Every backend call is wrapped; failures log once and the
  * app continues without the cache.
@@ -23,6 +24,7 @@ import type { AppModel } from './uiTypes';
 import {
   lastAckedSnapshotBaseline,
   observeSnapshotCacheChanges,
+  pendingTranscriptTrackIds,
   projectHydratedSnapshotIntoModel,
   seedCachedAckBaseline,
 } from './model';
@@ -30,7 +32,13 @@ import {
 export const SNAPSHOT_CACHE_DB_NAME = 'lingotorte-snapshot-cache';
 export const SNAPSHOT_CACHE_STORE_NAME = 'snapshots';
 export const SNAPSHOT_CACHE_KEY = 'current';
-export const SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
+/**
+ * lt-584.5 (relational-authority C4, Janusz option A 2026-10-20): v2 records keep the learner state WITHOUT the
+ * transcript bundles the current service has acknowledged (they come back through per-media loading), but WITH the
+ * cues and word timings of every pending (unacknowledged) track, all of them when unpaired, plus the pending track
+ * ids. v1 records (full snapshots) are dropped on read.
+ */
+export const SNAPSHOT_CACHE_SCHEMA_VERSION = 2;
 export const SNAPSHOT_CACHE_DEBOUNCE_MS = 500;
 export const SNAPSHOT_CACHE_READ_TIMEOUT_MS = 1500;
 export const RESTORED_FROM_CACHE_MESSAGE = "Restored from this browser's cache; not yet confirmed by the local service.";
@@ -39,6 +47,8 @@ export type SnapshotCacheRecord = {
   schemaVersion: number;
   savedAt: string;
   snapshot: LocalStoreSnapshot;
+  /** lt-584.5: tracks whose bundles are in `snapshot` because no service has acknowledged them yet. */
+  pendingTranscriptTrackIds: string[];
   currentMediaId: string | null;
   targetTrackId: string | null;
   nativeTrackId: string | null;
@@ -97,10 +107,12 @@ function backendOrDefault(backend?: SnapshotCacheBackend | null): SnapshotCacheB
 /** Build the cache record from model state. Allow-list only (A28). Structured clone, no JSON round trip. */
 export function buildSnapshotCacheRecord(model: AppModel): SnapshotCacheRecord {
   const lastAcked = lastAckedSnapshotBaseline(model);
+  const pending = pendingTranscriptTrackIds(model);
   return {
     schemaVersion: SNAPSHOT_CACHE_SCHEMA_VERSION,
     savedAt: model.clock().toISOString(),
-    snapshot: structuredClone(model.store.snapshot()),
+    snapshot: pendingOnlySnapshot(model.store.snapshot(), new Set(pending)),
+    pendingTranscriptTrackIds: pending,
     currentMediaId: model.currentMedia?.id ?? null,
     targetTrackId: model.targetTrackId,
     nativeTrackId: model.nativeTrackId,
@@ -109,11 +121,26 @@ export function buildSnapshotCacheRecord(model: AppModel): SnapshotCacheRecord {
   };
 }
 
+/** lt-584.5: the snapshot with only pending tracks' cues and word timings (acknowledged bundles stripped). */
+function pendingOnlySnapshot(snapshot: LocalStoreSnapshot, pending: ReadonlySet<string>): LocalStoreSnapshot {
+  const keep = <T extends { trackId: string }>(rows: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(rows).filter(([, row]) => pending.has(row.trackId)));
+  return structuredClone({ ...snapshot, cues: keep(snapshot.cues), transcriptWordTimings: keep(snapshot.transcriptWordTimings) });
+}
+
 function isRecord(value: unknown): value is SnapshotCacheRecord {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Partial<SnapshotCacheRecord>;
   return v.schemaVersion === SNAPSHOT_CACHE_SCHEMA_VERSION && typeof v.snapshot === 'object' && v.snapshot !== null
-    && typeof v.localService === 'object' && v.localService !== null;
+    && typeof v.localService === 'object' && v.localService !== null
+    && (v.pendingTranscriptTrackIds === undefined || (Array.isArray(v.pendingTranscriptTrackIds) && v.pendingTranscriptTrackIds.every((id) => typeof id === 'string')));
+}
+
+/** lt-584.5: a record from an older cache schema (v1 held full snapshots); dropped on upgrade. */
+function isOutdatedRecord(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const version = (value as { schemaVersion?: unknown }).schemaVersion;
+  return typeof version === 'number' && version < SNAPSHOT_CACHE_SCHEMA_VERSION;
 }
 
 /**
@@ -153,6 +180,10 @@ export async function readSnapshotCacheResult(backend?: SnapshotCacheBackend | n
       new Promise<typeof timedOut>((resolve) => { timer = setTimeout(() => resolve(timedOut), timeoutMs); }),
     ]);
     if (value === timedOut) { warnOnce(new Error('Snapshot cache read timed out.')); return { status: 'unknown' }; }
+    if (isOutdatedRecord(value)) {
+      try { await target.delete(SNAPSHOT_CACHE_KEY); } catch (error) { warnOnce(error); }
+      return { status: 'miss' };
+    }
     return isRecord(value) ? { status: 'hit', record: value } : { status: 'miss' };
   } catch (error) { warnOnce(error); return { status: 'unknown' }; }
   finally { if (timer !== undefined) clearTimeout(timer); }
@@ -177,7 +208,9 @@ export async function clearSnapshotCache(backend?: SnapshotCacheBackend | null):
 /** Project a cached record into a freshly created model (before first render). */
 export function hydrateModelFromSnapshotCache(model: AppModel, record: SnapshotCacheRecord): boolean {
   try {
-    projectHydratedSnapshotIntoModel(model, structuredClone(record.snapshot));
+    // lt-584.5: restore exactly the pending bundles; anything else was acknowledged and loads per media when paired.
+    // A v2 record without the list holds no pending bundle.
+    projectHydratedSnapshotIntoModel(model, pendingOnlySnapshot(record.snapshot, new Set(record.pendingTranscriptTrackIds ?? [])));
     const tracks = model.store.snapshot().subtitleTracks;
     // Media selection follows projectHydratedSnapshotIntoModel (newest media); cached track ids apply only if they belong to it.
     const ownTrack = (id: string | null) => (id && tracks[id] && tracks[id].mediaId === model.currentMedia?.id ? id : null);
