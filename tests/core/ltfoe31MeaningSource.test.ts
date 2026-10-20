@@ -31,10 +31,10 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     const store = storeWith(...items);
     const file = dbPath();
     const first = SqliteLocalPersistence.open(file);
-    try { first.saveStore(store); } finally { first.close(); }
+    try { first.saveSnapshot(store.snapshot()); } finally { first.close(); }
     const reopened = SqliteLocalPersistence.open(file);
     try {
-      expect(reopened.status().schemaVersion).toBe(11);
+      expect(reopened.status().schemaVersion).toBe(12);
       const byId = new Map(reopened.listSavedItems().map((i) => [i.id, i]));
       expect(byId.get(items[0]!.id)?.meaningSource).toEqual({ kind: 'learner' });
       expect(byId.get(items[1]!.id)?.meaningSource).toEqual(suggested);
@@ -48,18 +48,20 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     const store = storeWith(...items);
     const file = dbPath();
     const v10 = SqliteLocalPersistence.open(file);
-    try { v10.saveStore(store); } finally { v10.close(); }
+    try { v10.saveSnapshot(store.snapshot()); } finally { v10.close(); }
     // Rewind to an exact v9 shape: drop the v10 column, ledger row and versions.
     const raw = new DatabaseSync(file);
-    raw.exec("DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; UPDATE lingotorte_schema SET schema_version=9; UPDATE lingotorte_snapshots SET schema_version=9;");
+    // lt-584.4: undo v12 too, and put back the blob row a v9 binary always kept (C3 no longer writes one).
+    raw.exec("ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; UPDATE lingotorte_schema SET schema_version=9;");
+    raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 9, JSON.stringify(store.snapshot()), '2026-10-03T00:00:00.000Z');
     expect((raw.prepare('PRAGMA table_info(saved_item)').all() as { name: string }[]).map((c) => c.name)).not.toContain('meaning_source_json');
     raw.close();
     for (let pass = 0; pass < 2; pass += 1) {
       const db = SqliteLocalPersistence.open(file);
       try {
-        expect(db.listMigrations().map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        expect(db.listMigrations().map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
         expect(db.listMigrations()[9]).toMatchObject({ name: 'saved_item_meaning_source', result: 'applied' });
-        expect(db.status().schemaVersion).toBe(11);
+        expect(db.status().schemaVersion).toBe(12);
         const listed = db.listSavedItems();
         expect(listed.find((i) => i.id === items[0]!.id)).toMatchObject({ meaning: 'dog' });
         expect(listed.every((i) => !('meaningSource' in i))).toBe(true);
@@ -68,7 +70,7 @@ describe('lt-foe.3.1 SQLite meaningSource', () => {
     }
     const check = new DatabaseSync(file);
     try {
-      expect(check.prepare('SELECT schema_version FROM lingotorte_snapshots').get()).toEqual({ schema_version: 11 });
+      expect(check.prepare('SELECT schema_version FROM legacy_snapshot_json').get()).toEqual({ schema_version: 11 });
       expect(check.prepare('SELECT COUNT(*) AS n FROM saved_item WHERE meaning_source_json IS NOT NULL').get()).toEqual({ n: 0 });
     } finally { check.close(); }
   });
@@ -83,7 +85,7 @@ describe('lt-foe.3.1 SQLite meaningSource fail-closed', () => {
     const item = learnerItem();
     const file = dbPath();
     const db = SqliteLocalPersistence.open(file);
-    try { db.saveStore(storeWith(item)); } finally { db.close(); }
+    try { db.saveSnapshot(storeWith(item).snapshot()); } finally { db.close(); }
     const sql = new DatabaseSync(file);
     try { sql.prepare('UPDATE saved_item SET meaning_source_json = ? WHERE id = ?').run(raw, item.id); } finally { sql.close(); }
     const reopened = SqliteLocalPersistence.open(file);

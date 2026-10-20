@@ -9,10 +9,7 @@ import { DatabaseSync, backup } from 'node:sqlite';
 import { ExportService, LocalStore, RestoreService } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import type { PracticeAttempt, PracticeMode, ReviewEvent, ImportJobEvent } from '../../packages/domain/src';
-import { expectShadowPendingBackfill, openShadowed } from '../helpers/shadow.ts';
-// lt-584.3: projection tables these legacy builders never fill; empty after migration alone until the C3 v12 backfill.
-const PENDING_V7 = ['mediaObservations', 'subtitleTracks', 'cues', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'exportJobs', 'importJobs'];
-const PENDING_PRE_V5 = [...PENDING_V7, 'providerPolicies'];
+import { expectShadowEqual, openShadowed } from '../helpers/shadow.ts';
 
 // File-backed SQLite migrations do real disk I/O (~0.3-0.5 s per test alone); under full-suite parallel load
 // they occasionally exceeded vitest's default 5 s (observed on main 8d82a99, 2/3 runs). Raise the budget only.
@@ -135,7 +132,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     for (let i = 0; i < 3; i++) {
       const db = openShadowed(file);
       try {
-        expectShadowPendingBackfill(db, PENDING_PRE_V5);
+        expectShadowEqual(db);
         const s = db.loadVersionedSnapshot();
         expect(sortById(s.snapshot.reviewEvents)).toEqual(sortById(h.reviewEvents));
         expect(sortById(s.snapshot.practiceAttempts)).toEqual(sortById(h.practiceAttempts));
@@ -145,7 +142,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-typed-input')?.eventLink).toEqual({ reviewEventId: 'r-a' });
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-multiple-choice')?.eventLink).toEqual({});
         expect(db.status().learnerAuditRecovery).toMatchObject({ snapshotOnlyReviews: 2, tableOnlyReviews: 0, snapshotOnlyAttempts: 5, tableOnlyAttempts: 0, orphanReviews: 0, orphanAttempts: 0, unresolvedAttemptLinks: 0 });
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
         if (i === 0) revision = s.revision; else expect(s.revision).toBe(revision);
       } finally { db.close(); }
       const state = tableState(file);
@@ -166,7 +163,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     for (let i = 0; i < 3; i++) {
       const db = openShadowed(file);
       try {
-        expectShadowPendingBackfill(db, PENDING_V7);
+        expectShadowEqual(db);
         const s = db.loadSnapshot();
         expect(sortById(s.reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(s.practiceAttempts)).toEqual(sortById(f.union.attempts));
@@ -208,6 +205,43 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
         expect(sortById(s.snapshot.importJobEvents)).toEqual(sortById(f.union.jobEvents));
       } finally { db.close(); }
     }
+  });
+});
+
+describe('lt-584.4 v12 — tables become authoritative', () => {
+  it('a populated v10 database (blob authoritative, entity tables stale) migrates through v11 and v12 to tables equal to its blob, at rev:1', () => {
+    const file = tempFile(); const h = preV5();
+    const blob = { ...legacySnapshot(h), transcriptWordTimings: { 'wt-1': { id: 'wt-1', trackId: 'track-1', cueId: 'cue-1', wordIndex: 0, charStart: 0, charEnd: 9, text: 'synthetic', normalizedText: 'synthetic', startMs: 0, endMs: 400,
+      confidence: 0.5, sourceKind: 'provider-word-timing', engine: 'synthetic', modelName: 'synthetic', createdAt: AT } } } as Record<string, unknown>;
+    // Current build writes the history tables; then rewind the file to what a v10 binary left on disk.
+    const seed = SqliteLocalPersistence.open(file); seed.saveSnapshot(new LocalStore(blob as never).snapshot(), AT); const full = seed.loadSnapshot(); seed.close();
+    const v10Blob = { ...full };
+    const raw = new DatabaseSync(file);
+    raw.exec('ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; UPDATE lingotorte_schema SET schema_version=10;');
+    raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 10, JSON.stringify(v10Blob), AT);
+    // A v10 binary rewrote these from the blob on every save; leave them stale/empty so only the v12 backfill can fill them.
+    for (const table of ['media_asset', 'media_file_observation', 'subtitle_track', 'cue', 'transcript_word_timing', 'saved_item', 'saved_occurrence', 'review_card', 'review_card_state', 'export_job', 'provider_policy', 'import_job']) raw.exec(`DELETE FROM ${table}`);
+    raw.close();
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (let i = 0; i < 2; i++) {
+      const db = openShadowed(file);
+      try {
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        expect(db.status()).toMatchObject({ schemaVersion: 12, revision: 'rev:1' });
+        expectShadowEqual(db);
+        const loaded = db.loadSnapshot();
+        for (const name of ['reviewEvents', 'practiceAttempts', 'importJobEvents', 'mediaObservations'] as const) expect(sortById(loaded[name] as { id: string }[]), name).toEqual(sortById(v10Blob[name] as { id: string }[]));
+        for (const name of UNRELATED) if (name !== 'mediaObservations') expect(loaded[name], name).toEqual(v10Blob[name]);
+        expect(sortById(loaded.learnerAudit!.reviewEvents)).toEqual(sortById(v10Blob.learnerAudit!.reviewEvents));
+        expect(sortById(loaded.learnerAudit!.practiceAttempts)).toEqual(sortById(v10Blob.learnerAudit!.practiceAttempts));
+        expect(Object.keys(loaded.transcriptWordTimings)).toEqual(['wt-1']);
+        expect(db.loadTranscripts('media-1').tracks['track-1']!.cues.map(c => c.id)).toEqual(['cue-1']);
+      } finally { db.close(); }
+    }
+    // The blob is kept (renamed) as rollback evidence and never rewritten.
+    const after = tableState(file);
+    expect(after.objects).toContain('legacy_snapshot_json'); expect(after.objects).not.toContain('lingotorte_snapshots');
+    expect(after.rows.legacy_snapshot_json).toEqual([{ snapshot_key: 'default', schema_version: 11, snapshot_json: JSON.stringify(v10Blob), updated_at: AT }]);
   });
 });
 
@@ -262,8 +296,8 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   });
 
   it.each([
-    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (12, 'future_migration', ?, 'f', 'applied')").run(AT)],
-    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=12').run()],
+    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (13, 'future_migration', ?, 'f', 'applied')").run(AT)],
+    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=13').run()],
   ])('upgraded populated DB with %s is refused at open without mutation (no in-place downgrade)', (_, mutate) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     openShadowed(file).close();
@@ -272,22 +306,25 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(tableState(file)).toEqual(pre);
   });
 
-  it('future snapshot schema row is refused on load and on save without mutation', () => {
+  // lt-584.4: the blob is retired at v12 and no longer read on load/save; a future-schema blob row is refused by the
+  // migration that still reads it, before any forward step mutates the file.
+  it('future snapshot schema row is refused at migration without mutation', () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
-    openShadowed(file).close();
-    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=12').run(); raw.close(); const pre = tableState(file);
-    const db = openShadowed(file);
-    try {
-      expect(refusal(() => db.loadSnapshot())).toMatch(/unsupported/i);
-      expect(refusal(() => db.saveSnapshot(legacySnapshot(f.snapshot) as never))).toMatch(/unsupported/i);
-    } finally { db.close(); }
-    expect(tableState(file)).toEqual(pre);
+    const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=13').run(); raw.close(); const pre = tableState(file);
+    // v8 commits before v9 reads the blob; everything from v9 on rolls back.
+    expect(refusal(() => openShadowed(file))).toMatch(/unsupported|future/i);
+    const after = tableState(file);
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(after.rows.lingotorte_snapshots).toEqual(pre.rows.lingotorte_snapshots);
+    expect(after.objects).not.toContain('learner_audit_format');
+    refusal(() => openShadowed(file)); expect(tableState(file)).toEqual(after);
   });
 
   it.each([
     ['after audit backfill (review_event insert)', 'CREATE TRIGGER inject BEFORE INSERT ON review_event BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END'],
     ['after import-job backfill', 'CREATE TRIGGER inject BEFORE INSERT ON import_job_event BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END'],
-    ['after marker, at snapshot rewrite (before ledger success)', 'CREATE TRIGGER inject BEFORE UPDATE ON lingotorte_snapshots BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END'],
+    // lt-584.4: v9 no longer rewrites the blob; the last v9 step before ledger success is the marker insert.
+    ['after marker insert (before ledger success)', 'CREATE TRIGGER inject AFTER INSERT ON schema_migration WHEN NEW.version = 9 BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END'],
   ])('injected v9 failure %s leaves no partial marker/membership/backfill; forward retry backfills once', (_, trigger) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     // Bring the fixture to v8 first so the injected failure isolates v9.
@@ -305,8 +342,8 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     for (let i = 0; i < 2; i++) {
       const db = openShadowed(file);
       try {
-        expectShadowPendingBackfill(db, PENDING_V7);
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        expectShadowEqual(db);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
         expect(sortById(db.loadSnapshot().reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(f.union.attempts));
         expect(sortById(db.loadSnapshot().importJobEvents)).toEqual(sortById(f.union.jobEvents));
@@ -324,7 +361,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(tableState(file)).toEqual(pre);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
     const db = openShadowed(file);
-    try { expectShadowPendingBackfill(db, PENDING_V7); expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(11); } finally { db.close(); }
+    try { expectShadowEqual(db); expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(12); } finally { db.close(); }
   });
 });
 
@@ -373,7 +410,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
     expect(tableState(file)).toEqual(upgraded);
     // No in-place downgrade: the upgraded file presented as a "newer" schema to this binary is refused (simulated by future marker above);
     // here, the upgraded file must not be readable as a v7 database: its ledger already records v8/v9.
-    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 });
 
@@ -383,7 +420,7 @@ describe('lt-3f1 T14 — practice modes and privacy across retained-audit migrat
     const file = tempFile(); const h = preV5(); const legacy = legacySnapshot(h); buildLegacy(file, 4, legacy);
     let db = openShadowed(file);
     try {
-      expectShadowPendingBackfill(db, PENDING_PRE_V5);
+      expectShadowEqual(db);
       const migrated = db.loadSnapshot();
       expect(new Set(migrated.practiceAttempts.map(a => a.mode))).toEqual(new Set(ALL_MODES));
       const manifest = RestoreService.validateManifest(JSON.parse(JSON.stringify(new ExportService(new LocalStore(withoutAudit(migrated)), 'test').buildManifest())));

@@ -32,14 +32,16 @@ function submit(f: ReturnType<typeof fixture>, mode: PracticeMode) {
   return new PracticeService(f.store).submitAttempt({ cardId: f.card.id, mode, result: 'pass', givenAnswer: 'Ala ma kota', expectedAnswer: 'Ala ma kota', responseMs: 1200, sourceContext: f.sourceContext, reviewedAt: '2026-10-11T12:00:00.000Z' });
 }
 function rows(db: DatabaseSync) {
-  return Object.fromEntries(['lingotorte_snapshots', 'saved_item', 'saved_occurrence', 'review_card', 'review_card_state', 'review_event', 'practice_attempt'].map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()]));
+  // lt-584.4: v12 renames the retired blob table; read whichever name this file has, under one key.
+  const blob = ['lingotorte_snapshots', 'legacy_snapshot_json'].find(name => db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+  return Object.fromEntries([...(blob ? [['snapshot', db.prepare(`SELECT * FROM ${blob} ORDER BY 1`).all()]] : []), ...['saved_item', 'saved_occurrence', 'review_card', 'review_card_state', 'review_event', 'practice_attempt'].map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()])]);
 }
 describe('SQLite practice mode forward migration', () => {
   it.each(modes)('submits %s through PracticeService and survives close/reopen', mode => {
     expect(Object.keys(exhaustive).sort()).toEqual([...modes].sort());
     const f = fixture(); const result = submit(f, mode); const file = path();
     const first = openShadowed(file);
-    try { first.saveStore(f.store); } finally { first.close(); }
+    try { first.saveSnapshot(f.store.snapshot()); } finally { first.close(); }
     const reopened = openShadowed(file);
     try {
       expect(reopened.loadSnapshot()).toEqual(f.store.snapshot());
@@ -61,13 +63,13 @@ describe('SQLite practice mode forward migration', () => {
     db.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 7, JSON.stringify(new LocalStore().snapshot()), 'unchanged');
     const before = rows(db); const ledger = db.prepare('SELECT * FROM schema_migration ORDER BY version').all(); db.close();
     const migrated = openShadowed(file);
-    try { expectShadowEqual(migrated); expect(migrated.status().schemaVersion).toBe(11); expect(migrated.listMigrations()).toHaveLength(11); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
+    try { expectShadowEqual(migrated); expect(migrated.status().schemaVersion).toBe(12); expect(migrated.listMigrations()).toHaveLength(12); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
     const check = new DatabaseSync(file);
     try {
       const after = rows(check);
-      for (const name of Object.keys(before).filter(name => name !== 'lingotorte_snapshots')) expect(after[name]).toEqual(before[name]);
-      const normalized = JSON.parse((check.prepare('SELECT snapshot_json FROM lingotorte_snapshots').get() as { snapshot_json: string }).snapshot_json);
-      expect(normalized.learnerAudit.version).toBe(1); expect(normalized.learnerAudit.practiceAttempts).toHaveLength(4);
+      for (const name of Object.keys(before).filter(name => name !== 'snapshot')) expect(after[name]).toEqual(before[name]);
+      // lt-584.4: the legacy blob is retired (renamed), never rewritten; the audit lives in the tables.
+      expect(after.snapshot).toEqual(before.snapshot);
       expect(check.prepare('SELECT * FROM schema_migration WHERE version <= 7 ORDER BY version').all()).toEqual(ledger);
       expect(check.prepare('PRAGMA integrity_check').get()).toMatchObject({ integrity_check: 'ok' });
       expect(check.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_practice_attempt_card_time'").get()).toBeDefined();
@@ -76,13 +78,13 @@ describe('SQLite practice mode forward migration', () => {
       invalidMode.run('new-sentence-builder', 'sentence-builder');
       expect(check.prepare("SELECT mode FROM practice_attempt WHERE id = 'new-sentence-builder'").get()).toMatchObject({ mode: 'sentence-builder' });
     } finally { check.close(); }
-    const reopened = openShadowed(file); try { expect(reopened.listMigrations()).toHaveLength(11); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
+    const reopened = openShadowed(file); try { expect(reopened.listMigrations()).toHaveLength(12); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
   });
   it.each(['mode', 'result', 'responseMs'] as const)('rolls back the entire snapshot and projections for invalid %s', field => {
     const f = fixture(); submit(f, 'typed-input'); const file = path(); const persistence = openShadowed(file);
     const baseline = f.store.snapshot();
     try {
-      persistence.saveStore(f.store); const reader = new DatabaseSync(file); const before = rows(reader);
+      persistence.saveSnapshot(f.store.snapshot()); const reader = new DatabaseSync(file); const before = rows(reader);
       try {
         submit(f, 'sentence-builder'); const snapshot = f.store.snapshot();
         const invalid = { ...snapshot.practiceAttempts[1]!, [field]: field === 'responseMs' ? -1 : 'invalid' };

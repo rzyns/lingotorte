@@ -73,6 +73,8 @@ export function routeMethods(path: string): readonly string[] | undefined {
   if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
   if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];
   if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];
+  if (new RegExp(`^/api/media/${uuid}/transcripts$`).test(path)) return ['GET'];
+  if (new RegExp(`^/api/tracks/${uuid}/transcript$`).test(path)) return ['PUT'];
   return undefined;
 }
 export type AdmittedRequest = Readonly<{ path: string; body?: Record<string, unknown>; preflight: boolean }>;

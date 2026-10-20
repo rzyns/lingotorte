@@ -44,14 +44,21 @@ function request(db: SqliteLocalPersistence, manifest: unknown, mode: 'merge' | 
   return { manifest, mode, expectedRevision, confirmation: { confirmedAt: '2026-06-21T12:00:00.000Z', confirmReplace: mode === 'replace-active', confirmOverwrite: mode === 'merge', acknowledgedWarnings: preview.preview.warnings.map(w => w.kind) } };
 }
 describe('lt-04i durable active/audit boundary', () => {
-  it.each(['missing-audit', 'future-audit', 'corrupt-json'])('fails closed on upgraded snapshot %s', async fault => {
+  // lt-584.4: load no longer reads the blob; its only remaining reader is the one-time v12 backfill, which must fail closed
+  // (and leave the file at v11) on a corrupt legacy blob. 'missing-audit' is no longer a fault: since v9 the history is
+  // relational and overlaid, so a blob without learnerAudit is accepted (pre-v9 blobs never had one).
+  it.each(['future-audit', 'corrupt-json'])('fails closed on upgraded snapshot %s', async fault => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-corrupt-')); const file = join(root, 'state.db'); const db = openShadowed(file);
     try {
-      db.saveStore(fixture()); const raw = new DatabaseSync(file);
-      const value = db.loadSnapshot(); const changed = fault === 'missing-audit' ? { ...value, learnerAudit: undefined } : { ...value, learnerAudit: { ...value.learnerAudit, version: 2 } };
-      raw.prepare('UPDATE lingotorte_snapshots SET snapshot_json=?').run(fault === 'corrupt-json' ? '{bad-json' : JSON.stringify(changed)); raw.close();
-      expect(() => db.loadSnapshot()).toThrow(/audit|snapshot/i);
-    } finally { db.close(); await rm(root, { recursive: true, force: true }); }
+      db.saveSnapshot(fixture().snapshot()); const value = db.loadSnapshot(); db.close();
+      const changed = { ...value, learnerAudit: { ...value.learnerAudit, version: 2 } };
+      const raw = new DatabaseSync(file);
+      raw.exec('ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; UPDATE lingotorte_schema SET schema_version=11;');
+      raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 11, fault === 'corrupt-json' ? '{bad-json' : JSON.stringify(changed), '2026-06-21T12:00:00.000Z'); raw.close();
+      expect(() => openShadowed(file)).toThrow(/audit|snapshot/i);
+      const check = new DatabaseSync(file);
+      try { expect((check.prepare('SELECT version FROM schema_migration ORDER BY version DESC LIMIT 1').get() as { version: number }).version).toBe(11); } finally { check.close(); }
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
   it.each(['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'] as const)('serialized %s replacement/reactivation survives file-backed reopen with exact provenance/link', async mode => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-mode-')); const file = join(root, 'state.db'); let db = openShadowed(file);
@@ -74,11 +81,11 @@ describe('lt-04i durable active/audit boundary', () => {
   });
   it('v8 forward membership migration recovers valid snapshot-only history and import-job events once', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-v8-')); const file = join(root, 'state.db');
-    const store = fixture(); const original = store.snapshot(); const first = openShadowed(file); first.saveStore(store); first.close();
+    const store = fixture(); const original = store.snapshot(); const first = openShadowed(file); first.saveSnapshot(store.snapshot()); first.close();
     const raw = new DatabaseSync(file);
     const legacy = { ...original, learnerAudit: undefined, importJobEvents: [...original.importJobEvents, { id: 'synthetic-job-event', jobId: 'synthetic-job', level: 'info', message: 'synthetic', createdAt: '2026-06-21T12:00:00.000Z' }] };
-    raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
-    raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
+    raw.exec('ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
+    raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 8, JSON.stringify(legacy), '2026-06-21T12:00:00.000Z'); raw.close();
     try {
       for (let i = 0; i < 2; i++) {
         const db = openShadowed(file);
@@ -88,18 +95,18 @@ describe('lt-04i durable active/audit boundary', () => {
           expect(snapshot.reviewEvents).toEqual(original.reviewEvents); expect(snapshot.practiceAttempts).toEqual(original.practiceAttempts);
           expect(snapshot.importJobEvents).toEqual(legacy.importJobEvents);
           expect(snapshot.subtitleTracks).toEqual(original.subtitleTracks);
-          expect(db.listMigrations()).toHaveLength(11); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
+          expect(db.listMigrations()).toHaveLength(12); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
         } finally { db.close(); }
       }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('rejects conflicting legacy audit before v9 membership/ledger initialization, permitting corrected forward retry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-bad-v8-')); const file = join(root, 'state.db'); const store = fixture();
-    const original = store.snapshot(); const first = openShadowed(file); first.saveStore(store); first.close();
+    const original = store.snapshot(); const first = openShadowed(file); first.saveSnapshot(store.snapshot()); first.close();
     let raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
+    raw.exec('ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
     const legacy = { ...original, learnerAudit: undefined, reviewEvents: original.reviewEvents.map(e => ({ ...e, rating: 'again' })) };
-    raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
+    raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 8, JSON.stringify(legacy), '2026-06-21T12:00:00.000Z'); raw.close();
     try {
       expect(() => openShadowed(file)).toThrow(/conflict/i);
       raw = new DatabaseSync(file);
@@ -114,9 +121,9 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-ledger-')); const file = join(root, 'state.db');
     const first = openShadowed(file); first.close();
     try {
-      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (12, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
+      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (13, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
       expect(() => openShadowed(file)).toThrow(/ledger|future/);
-      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=12'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
+      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=13'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
       expect(() => openShadowed(file)).toThrow(/ledger/);
       raw = new DatabaseSync(file); raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run(checksum); raw.exec('DELETE FROM learner_audit_format'); raw.close();
       const opened = openShadowed(file); try { expect(() => opened.loadSnapshot()).toThrow(/initialized/); } finally { opened.close(); }
@@ -125,7 +132,7 @@ describe('lt-04i durable active/audit boundary', () => {
   it.each(['merge', 'replace-active'] as const)('rejects audit-only practice/review conflicts and stale revisions atomically (%s)', mode => {
     const db = openShadowed(':memory:');
     try {
-      const store = fixture(); const original = new ExportService(store, 'test').buildManifest(); db.saveStore(store);
+      const store = fixture(); const original = new ExportService(store, 'test').buildManifest(); db.saveSnapshot(store.snapshot());
       const stale = request(db, original, mode); db.commitRestore(request(db, empty()));
       const before = db.loadVersionedSnapshot();
       expect(() => db.commitRestore(stale)).toThrow(/changed/);
@@ -141,7 +148,7 @@ describe('lt-04i durable active/audit boundary', () => {
   it('nonempty replacement selects only manifest history; repeats idempotently and preserves unrelated state', () => {
     const db = openShadowed(':memory:');
     try {
-      const old = fixture(); const incoming = fixture(); const before = old.snapshot(); db.saveStore(old);
+      const old = fixture(); const incoming = fixture(); const before = old.snapshot(); db.saveSnapshot(old.snapshot());
       const manifest = new ExportService(incoming, 'test').buildManifest();
       const result = db.commitRestore(request(db, manifest));
       expect(result.snapshot.savedItems).toEqual(incoming.snapshot().savedItems);
@@ -157,13 +164,14 @@ describe('lt-04i durable active/audit boundary', () => {
       expect(again.receipt.auditEffects.reviewEvents.appended).toBe(0);
     } finally { db.close(); }
   });
-  it.each(['review_event', 'active_review_event', 'saved_item', 'lingotorte_snapshots'])('rolls back complete file-backed state on injected %s failure', async table => {
+  // lt-584.4: the blob is no longer written; the last write of a restore is the durable_state revision bump.
+  it.each(['review_event', 'active_review_event', 'saved_item', 'durable_state'])('rolls back complete file-backed state on injected %s failure', async table => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-rollback-')); const file = join(root, 'state.db'); let db = openShadowed(file);
     try {
-      db.saveStore(fixture()); const before = db.loadVersionedSnapshot(); const input = request(db, new ExportService(fixture(), 'test').buildManifest());
+      db.saveSnapshot(fixture().snapshot()); const before = db.loadVersionedSnapshot(); const input = request(db, new ExportService(fixture(), 'test').buildManifest());
       const beforeTables = tableState(file);
       const raw = new DatabaseSync(file);
-      raw.exec(`CREATE TRIGGER fail_restore ${table === 'lingotorte_snapshots' ? 'AFTER UPDATE' : 'BEFORE INSERT'} ON ${table} BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`); raw.close();
+      raw.exec(`CREATE TRIGGER fail_restore ${table === 'durable_state' ? 'AFTER UPDATE' : 'BEFORE INSERT'} ON ${table} BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`); raw.close();
       expect(() => db.commitRestore(input)).toThrow(/synthetic failure/);
       expect(db.loadVersionedSnapshot()).toEqual(before);
       expect(tableState(file)).toEqual(beforeTables);
@@ -223,7 +231,7 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-')); const file = join(root, 'state.db');
     let db = openShadowed(file);
     try {
-      const store = fixture(); const before = store.snapshot(); db.saveStore(store);
+      const store = fixture(); const before = store.snapshot(); db.saveSnapshot(store.snapshot());
       const result = db.commitRestore(request(db, empty()));
       expect(result.receipt.effects.reviewEvents.removedFromActive).toBe(before.reviewEvents.length);
       expect(result.receipt.auditEffects.practiceAttempts.inactiveAfter).toBe(before.practiceAttempts.length);
@@ -242,7 +250,7 @@ describe('lt-04i durable active/audit boundary', () => {
   it('ordinary omission preserves both active histories; inactive IDs require explicit restore', () => {
     const db = openShadowed(':memory:');
     try {
-      const store = fixture(); const original = store.snapshot(); const manifest = new ExportService(store, 'test').buildManifest(); db.saveStore(store);
+      const store = fixture(); const original = store.snapshot(); const manifest = new ExportService(store, 'test').buildManifest(); db.saveSnapshot(store.snapshot());
       db.saveSnapshot({ ...original, reviewEvents: [], practiceAttempts: [] });
       expect(db.loadSnapshot().reviewEvents).toEqual(original.reviewEvents); expect(db.loadSnapshot().practiceAttempts).toEqual(original.practiceAttempts);
       const result = db.commitRestore(request(db, empty())); const before = db.loadVersionedSnapshot();

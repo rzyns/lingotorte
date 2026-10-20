@@ -57,7 +57,7 @@ function syntheticStore() {
  return store;
 }
 function service(seed = syntheticStore()) {
- const db = SqliteLocalPersistence.open(':memory:'); databases.push(db); db.saveStore(seed);
+ const db = SqliteLocalPersistence.open(':memory:'); databases.push(db); db.saveSnapshot(seed.snapshot());
  const calls: { path: string; body?: Record<string, unknown>; method: string }[] = [];
  const handle = async (url: string, init?: RequestInit) => {
   const path = new URL(url).pathname; const method = init?.method ?? 'GET'; const body = init?.body ? JSON.parse(String(init.body)) : undefined;

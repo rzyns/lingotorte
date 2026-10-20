@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { makeMediaAsset } from '../../packages/domain/src';
+import { makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming } from '../../packages/domain/src';
 import { createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
+import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence.ts';
 import {
   ALLOWED_ASR_MODEL_NAMES,
   resolveDefaultAsrModelName,
@@ -560,5 +561,122 @@ describe('Lingotorte loopback local service', () => {
     expect(result.deletedFiles).toBeGreaterThanOrEqual(1);
     await expect(stat(scratchFile)).rejects.toThrow();
     await expect(stat(outsideFile)).resolves.toBeTruthy();
+  });
+
+  // lt-584.4 (C3): learner state and per-track transcript bundles travel separately.
+  describe('transcript bundle routes and the learner-state contract', () => {
+    async function seeded() {
+      const { root, config } = await makeTempConfig();
+      const media = makeMediaAsset({ title: 'synthetic', originalPath: 'fixtures/media/synthetic-polish-dialogue.webm', contentSha256: fingerprint, durationMs: 2000, container: 'webm', sizeBytes: 1024, privacyLabel: 'synthetic' });
+      const other = makeMediaAsset({ title: 'other', originalPath: 'fixtures/media/other.webm', contentSha256: fingerprint, durationMs: 2000, container: 'webm', sizeBytes: 1024, privacyLabel: 'synthetic' });
+      const track = (mediaId: string, transcriptStatus: 'approved' | 'candidate') => makeSubtitleTrack({ mediaId, language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: 'fixtures/t.srt', contentSha256: fingerprint, isActive: true, transcriptStatus });
+      const target = track(media.id, 'candidate'); const otherTrack = track(other.id, 'candidate');
+      // Seed learner state directly (tracks are candidates, so they may be bundle-less).
+      const seed = SqliteLocalPersistence.open(config.databasePath);
+      try {
+        const { cues: _c, transcriptWordTimings: _w, ...state } = { ...createEmptyLocalStoreSnapshot(), mediaAssets: { [media.id]: media, [other.id]: other }, subtitleTracks: { [target.id]: target, [otherTrack.id]: otherTrack } };
+        seed.saveLearnerState(state, seed.loadLearnerState().revision);
+      } finally { seed.close(); }
+      const service = await startPairedService(config);
+      cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
+      const cue = makeCue({ trackId: target.id, cueIndex: 0, startMs: 0, endMs: 900, text: 'Dzień dobry', normalizedText: 'dzień dobry', textSha256: fingerprint });
+      const timing = makeTranscriptWordTiming({ trackId: target.id, cueId: cue.id, wordIndex: 0, charStart: 0, charEnd: 5, text: 'Dzień', normalizedText: 'dzień', startMs: 0, endMs: 400, sourceKind: 'provider-word-timing', engine: 'synthetic', modelName: 'synthetic', confidence: 0.5 });
+      const state = async () => pairedFetch(`${service.origin}/api/state`).then(r => r.json());
+      const putBundle = (trackId: string, body: unknown) => pairedFetch(`${service.origin}/api/tracks/${trackId}/transcript`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      return { service, media, other, target, otherTrack, cue, timing, state, putBundle };
+    }
+
+    it('GET /api/state (transitional, D-R8) carries the table-assembled transcripts and the revision; status reports it too', async () => {
+      const { service, target, cue, timing, state, putBundle } = await seeded();
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: (await state()).revision })).status).toBe(200);
+      const body = await state();
+      expect(body).toMatchObject({ ok: true, revision: expect.stringMatching(/^rev:\d+$/), restoreCapability: 'active-audit-restore-v1' });
+      expect(body.snapshot.cues).toEqual({ [cue.id]: cue });
+      expect(body.snapshot.transcriptWordTimings).toEqual({ [timing.id]: timing });
+      const status = await pairedFetch(`${service.origin}/api/status`).then(r => r.json());
+      expect(status.persistence.revision).toBe(body.revision);
+    });
+
+    it('PUT /api/tracks/{id}/transcript writes once (200, then 409), 409 on a stale revision, 400 for a malformed bundle', async () => {
+      const { target, cue, timing, state, putBundle } = await seeded();
+      const before = await state();
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: 'rev:999' })).status).toBe(409);
+      expect((await putBundle(target.id, { cues: [{ ...cue, trackId: '00000000-0000-4000-8000-000000000000' }], wordTimings: [], expectedRevision: before.revision })).status).toBe(400);
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: before.revision, extra: 1 })).status).toBe(400);
+      expect((await putBundle(target.id, { cues: [{ ...cue, startMs: -1 }], wordTimings: [], expectedRevision: before.revision })).status).toBe(400);
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing] })).status).toBe(428);
+      expect((await state()).revision).toBe(before.revision);
+      const ok = await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: before.revision });
+      expect(ok.status).toBe(200);
+      const written = await ok.json();
+      expect(written).toMatchObject({ ok: true, trackId: target.id, revision: expect.stringMatching(/^rev:\d+$/) });
+      expect(written.revision).not.toBe(before.revision);
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: written.revision })).status).toBe(409);
+      expect((await state()).revision).toBe(written.revision);
+    });
+
+    it('GET /api/media/{id}/transcripts returns that media\'s tracks only, 404 for an unknown media', async () => {
+      const { service, media, other, target, otherTrack, cue, timing, state, putBundle } = await seeded();
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: (await state()).revision })).status).toBe(200);
+      const body = await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`).then(r => r.json());
+      expect(body).toEqual({ ok: true, mediaId: media.id, revision: (await state()).revision, tracks: { [target.id]: { cues: [cue], wordTimings: [timing] } } });
+      const otherBody = await pairedFetch(`${service.origin}/api/media/${other.id}/transcripts`).then(r => r.json());
+      expect(otherBody.tracks).toEqual({ [otherTrack.id]: { cues: [], wordTimings: [] } });
+      expect((await pairedFetch(`${service.origin}/api/media/00000000-0000-4000-8000-000000000000/transcripts`)).status).toBe(404);
+      expect((await pairedFetch(`${service.origin}/api/media/not-a-uuid/transcripts`)).status).toBe(404);
+    });
+
+    it('new routes require pairing (401) and an allowed origin (403) like /api/state', async () => {
+      const { service, media, target, cue } = await seeded();
+      const unpaired = await fetch(`${service.origin}/api/media/${media.id}/transcripts`);
+      expect(unpaired.status).toBe(401);
+      const unpairedPut = await fetch(`${service.origin}/api/tracks/${target.id}/transcript`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cues: [cue], wordTimings: [], expectedRevision: 'rev:1' }) });
+      expect(unpairedPut.status).toBe(401);
+      const evil = await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`, { headers: { origin: 'http://evil.invalid' } });
+      expect(evil.status).toBe(403);
+      expect((await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(405);
+    });
+
+    it('PUT /api/state (transitional, D-R8): legacy body bundles are write-once/exact-match', async () => {
+      const { service, target, cue, timing, state, putBundle } = await seeded();
+      const put = (snapshot: unknown, expectedRevision: string) => pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot, expectedRevision }) });
+      const before = await state();
+      const approved = { ...before.snapshot, subtitleTracks: { ...before.snapshot.subtitleTracks, [target.id]: { ...target, transcriptStatus: 'approved' } } };
+      const { cues: _c, transcriptWordTimings: _w, ...learnerOnly } = before.snapshot;
+      const saved = await put(learnerOnly, before.revision);
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ ok: true, revision: expect.stringMatching(/^rev:\d+$/), savedAt: expect.any(String), persistence: expect.any(Object) });
+      // A bundle supplied in the same legacy body is written once.
+      const withBundle = { ...approved, cues: { [cue.id]: cue }, transcriptWordTimings: { [timing.id]: timing } };
+      const first = await put(withBundle, (await state()).revision);
+      expect(first.status).toBe(200);
+      const after = await state();
+      expect(after.snapshot.subtitleTracks[target.id].transcriptStatus).toBe('approved');
+      expect(after.snapshot.cues).toEqual({ [cue.id]: cue });
+      // Exact-equal bundle is accepted; a differing one is refused (never rewritten); omitting cues leaves bundles untouched.
+      expect((await put(after.snapshot, after.revision)).status).toBe(200);
+      const current = await state();
+      expect((await put({ ...current.snapshot, cues: { [cue.id]: { ...cue, text: 'Changed' } } }, current.revision)).status).toBe(400);
+      expect(await state()).toEqual(current);
+      const { cues: _c2, transcriptWordTimings: _w2, ...omitted } = current.snapshot;
+      expect((await put(omitted, current.revision)).status).toBe(200);
+      expect((await state()).snapshot.cues).toEqual({ [cue.id]: cue });
+      expect((await put(omitted, current.revision)).status).toBe(409);
+      expect((await putBundle(target.id, { cues: [cue], wordTimings: [timing], expectedRevision: (await state()).revision })).status).toBe(409);
+    });
+
+    it('bundle first (D-R9): PUT a bundle for a new track id, then PUT /api/state referencing it as approved, then GET transcripts returns it', async () => {
+      const { service, media, state, putBundle } = await seeded();
+      const fresh = makeSubtitleTrack({ mediaId: media.id, language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: 'fixtures/new.srt', contentSha256: fingerprint, isActive: false, transcriptStatus: 'approved' });
+      const cue = makeCue({ trackId: fresh.id, cueIndex: 0, startMs: 0, endMs: 900, text: 'Cześć', normalizedText: 'cześć', textSha256: fingerprint });
+      const bundled = await putBundle(fresh.id, { cues: [cue], wordTimings: [], expectedRevision: (await state()).revision });
+      expect(bundled.status).toBe(200);
+      const current = await state();
+      const { cues: _c, transcriptWordTimings: _w, ...learner } = current.snapshot;
+      const saved = await pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: { ...learner, subtitleTracks: { ...learner.subtitleTracks, [fresh.id]: fresh } }, expectedRevision: current.revision }) });
+      expect(saved.status).toBe(200);
+      const body = await pairedFetch(`${service.origin}/api/media/${media.id}/transcripts`).then(r => r.json());
+      expect(body.tracks[fresh.id]).toEqual({ cues: [cue], wordTimings: [] });
+    });
   });
 });
