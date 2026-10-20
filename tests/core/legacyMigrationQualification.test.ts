@@ -9,6 +9,10 @@ import { DatabaseSync, backup } from 'node:sqlite';
 import { ExportService, LocalStore, RestoreService } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import type { PracticeAttempt, PracticeMode, ReviewEvent, ImportJobEvent } from '../../packages/domain/src';
+import { expectShadowPendingBackfill, openShadowed } from '../helpers/shadow.ts';
+// lt-584.3: projection tables these legacy builders never fill; empty after migration alone until the C3 v12 backfill.
+const PENDING_V7 = ['mediaObservations', 'subtitleTracks', 'cues', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'exportJobs', 'importJobs'];
+const PENDING_PRE_V5 = [...PENDING_V7, 'providerPolicies'];
 
 // File-backed SQLite migrations do real disk I/O (~0.3-0.5 s per test alone); under full-suite parallel load
 // they occasionally exceeded vitest's default 5 s (observed on main 8d82a99, 2/3 runs). Raise the budget only.
@@ -129,8 +133,9 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     buildLegacy(file, 4, legacy); const pre = tableState(file);
     let afterFirst: ReturnType<typeof tableState> | undefined; let revision = '';
     for (let i = 0; i < 3; i++) {
-      const db = SqliteLocalPersistence.open(file);
+      const db = openShadowed(file);
       try {
+        expectShadowPendingBackfill(db, PENDING_PRE_V5);
         const s = db.loadVersionedSnapshot();
         expect(sortById(s.snapshot.reviewEvents)).toEqual(sortById(h.reviewEvents));
         expect(sortById(s.snapshot.practiceAttempts)).toEqual(sortById(h.practiceAttempts));
@@ -159,8 +164,9 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
     buildLegacy(file, 7, legacy, f.tables); const pre = tableState(file);
     const opened: ReturnType<typeof tableState>[] = [];
     for (let i = 0; i < 3; i++) {
-      const db = SqliteLocalPersistence.open(file);
+      const db = openShadowed(file);
       try {
+        expectShadowPendingBackfill(db, PENDING_V7);
         const s = db.loadSnapshot();
         expect(sortById(s.reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(s.practiceAttempts)).toEqual(sortById(f.union.attempts));
@@ -182,7 +188,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
 
   it('reopening twice does not reactivate intentionally inactive (replaced) legacy audit', () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
-    let db = SqliteLocalPersistence.open(file);
+    let db = openShadowed(file);
     let committed: string;
     try {
       const result = db.commitRestore(restoreRequest(db, new ExportService(new LocalStore(), 'test').buildManifest()));
@@ -191,7 +197,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
       db.saveSnapshot(result.snapshot, undefined, result.revision); // ordinary save after replace
     } finally { db.close(); }
     for (let i = 0; i < 2; i++) {
-      db = SqliteLocalPersistence.open(file);
+      db = openShadowed(file);
       try {
         const s = db.loadVersionedSnapshot();
         expect(s.revision).toBe(`rev:${Number(committed.slice(4)) + 1}`);
@@ -213,7 +219,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     if (name === 'practiceAttempts') snapshot.practiceAttempts = [attempt('p-table', 'speaking', 'r-table', { givenAnswer: `${SECRET}-changed` }), ...f.snapshot.practiceAttempts];
     if (name === 'importJobEvents') snapshot.importJobEvents = [{ ...jobEvent('e-table'), message: 'changed' }, ...f.snapshot.importJobEvents];
     buildLegacy(file, 7, legacySnapshot(snapshot), f.tables); const pre = tableState(file);
-    const message = refusal(() => SqliteLocalPersistence.open(file));
+    const message = refusal(() => openShadowed(file));
     expect(message).toMatch(/conflict/i);
     expect(message).toMatch(name === 'reviewEvents' ? /review/i : name === 'practiceAttempts' ? /practice/i : /import-job/i);
     // Contract §5.2: redacted collection/ID diagnostic — the conflicting record ID is named, its payload is not.
@@ -223,7 +229,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     for (const table of ['lingotorte_snapshots', 'review_event', 'practice_attempt', 'import_job_event', 'media_asset', 'saved_item', 'provider_policy']) expect(after.rows[table], table).toEqual(pre.rows[table]);
     // Second attempt refuses identically (no partial state accumulated).
-    refusal(() => SqliteLocalPersistence.open(file));
+    refusal(() => openShadowed(file));
     expect(tableState(file)).toEqual(after);
   });
 
@@ -235,7 +241,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   ])('corrupt legacy snapshot (%s) refuses without normalizing to an empty successful database', (_, json) => {
     const file = tempFile(); buildLegacy(file, 4, legacySnapshot(preV5()));
     const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET snapshot_json=?').run(json); raw.close();
-    refusal(() => SqliteLocalPersistence.open(file));
+    refusal(() => openShadowed(file));
     const after = tableState(file);
     expect(after.objects).not.toContain('learner_audit_format');
     expect(ledgerVersions(file)).not.toContain(9);
@@ -251,7 +257,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   ])('pre-v5 fixture with %s refuses before any forward migration', (_, mutate) => {
     const file = tempFile(); buildLegacy(file, 4, legacySnapshot(preV5()));
     const raw = new DatabaseSync(file); mutate(raw); raw.close(); const pre = tableState(file);
-    expect(refusal(() => SqliteLocalPersistence.open(file))).toMatch(/ledger|schema/i);
+    expect(refusal(() => openShadowed(file))).toMatch(/ledger|schema/i);
     expect(tableState(file)).toEqual(pre);
   });
 
@@ -260,17 +266,17 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=12').run()],
   ])('upgraded populated DB with %s is refused at open without mutation (no in-place downgrade)', (_, mutate) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
-    SqliteLocalPersistence.open(file).close();
+    openShadowed(file).close();
     const raw = new DatabaseSync(file); mutate(raw); raw.close(); const pre = tableState(file);
-    expect(refusal(() => SqliteLocalPersistence.open(file))).toMatch(/future|ledger|unsupported/i);
+    expect(refusal(() => openShadowed(file))).toMatch(/future|ledger|unsupported/i);
     expect(tableState(file)).toEqual(pre);
   });
 
   it('future snapshot schema row is refused on load and on save without mutation', () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
-    SqliteLocalPersistence.open(file).close();
+    openShadowed(file).close();
     const raw = new DatabaseSync(file); raw.prepare('UPDATE lingotorte_snapshots SET schema_version=12').run(); raw.close(); const pre = tableState(file);
-    const db = SqliteLocalPersistence.open(file);
+    const db = openShadowed(file);
     try {
       expect(refusal(() => db.loadSnapshot())).toMatch(/unsupported/i);
       expect(refusal(() => db.saveSnapshot(legacySnapshot(f.snapshot) as never))).toMatch(/unsupported/i);
@@ -286,19 +292,20 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     // Bring the fixture to v8 first so the injected failure isolates v9.
     let raw = new DatabaseSync(file); raw.exec(trigger.replace('inject', 'inject_probe').replace(/BEFORE (INSERT|UPDATE) ON \w+/, 'BEFORE INSERT ON schema_migration WHEN NEW.version = 9')); raw.close();
-    expect(() => SqliteLocalPersistence.open(file)).toThrow(/synthetic failure/);
+    expect(() => openShadowed(file)).toThrow(/synthetic failure/);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject_probe'); raw.exec(trigger); raw.close();
     expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const pre = tableState(file);
-    expect(() => SqliteLocalPersistence.open(file)).toThrow(/synthetic failure/);
+    expect(() => openShadowed(file)).toThrow(/synthetic failure/);
     const failed = tableState(file);
     expect(failed).toEqual(pre);
     expect(failed.objects).not.toContain('learner_audit_format');
     expect(failed.objects).not.toContain('active_practice_attempt');
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
     for (let i = 0; i < 2; i++) {
-      const db = SqliteLocalPersistence.open(file);
+      const db = openShadowed(file);
       try {
+        expectShadowPendingBackfill(db, PENDING_V7);
         expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         expect(sortById(db.loadSnapshot().reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(f.union.attempts));
@@ -313,18 +320,18 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     let raw = new DatabaseSync(file); raw.exec("CREATE TRIGGER inject BEFORE UPDATE ON lingotorte_schema WHEN NEW.schema_version = 8 BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END"); raw.close();
     const pre = tableState(file);
-    expect(() => SqliteLocalPersistence.open(file)).toThrow(/synthetic failure/);
+    expect(() => openShadowed(file)).toThrow(/synthetic failure/);
     expect(tableState(file)).toEqual(pre);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
-    const db = SqliteLocalPersistence.open(file);
-    try { expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(11); } finally { db.close(); }
+    const db = openShadowed(file);
+    try { expectShadowPendingBackfill(db, PENDING_V7); expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(11); } finally { db.close(); }
   });
 });
 
 describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
   it('consistent SQLite backup of a populated upgraded DB (with uncheckpointed WAL writes) opens independently with equal active/audit/metadata/unrelated', async () => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
-    const db = SqliteLocalPersistence.open(file);
+    const db = openShadowed(file);
     const copy = tempFile('backup.sqlite');
     try {
       // Make active ≠ audit and leave writes in the WAL before taking the backup.
@@ -334,7 +341,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
       const source = new DatabaseSync(file);
       try { await backup(source, copy); } finally { source.close(); }
       const original = { versioned: db.loadVersionedSnapshot(), auditR: db.listAuditReviewEvents(), auditP: db.listAuditPracticeAttempts(), migrations: db.listMigrations(), status: db.status(), jobs: db.listImportJobEvents(), media: db.listMediaAssets() };
-      const restored = SqliteLocalPersistence.open(copy);
+      const restored = openShadowed(copy);
       try {
         expect(restored.loadVersionedSnapshot()).toEqual(original.versioned);
         expect(restored.listAuditReviewEvents()).toEqual(original.auditR);
@@ -355,7 +362,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
     const preCopy = tempFile('pre-upgrade.sqlite');
     const src = new DatabaseSync(file); try { await backup(src, preCopy); } finally { src.close(); }
     const legacyState = tableState(file);
-    const db = SqliteLocalPersistence.open(file);
+    const db = openShadowed(file);
     try { db.commitRestore(restoreRequest(db, new ExportService(new LocalStore(), 'test').buildManifest())); } finally { db.close(); }
     const upgraded = tableState(file);
     expect(tableState(preCopy)).toEqual(legacyState);
@@ -374,8 +381,9 @@ describe('lt-3f1 T14 — practice modes and privacy across retained-audit migrat
   it('all supported modes survive pre-v5 migration, empty replace, explicit restore/reactivation and reopen, with no network or policy change', () => {
     const fetchSpy = vi.fn(() => { throw new Error('network forbidden in lt-3f1'); }); vi.stubGlobal('fetch', fetchSpy);
     const file = tempFile(); const h = preV5(); const legacy = legacySnapshot(h); buildLegacy(file, 4, legacy);
-    let db = SqliteLocalPersistence.open(file);
+    let db = openShadowed(file);
     try {
+      expectShadowPendingBackfill(db, PENDING_PRE_V5);
       const migrated = db.loadSnapshot();
       expect(new Set(migrated.practiceAttempts.map(a => a.mode))).toEqual(new Set(ALL_MODES));
       const manifest = RestoreService.validateManifest(JSON.parse(JSON.stringify(new ExportService(new LocalStore(withoutAudit(migrated)), 'test').buildManifest())));
@@ -385,7 +393,7 @@ describe('lt-3f1 T14 — practice modes and privacy across retained-audit migrat
       expect(restored.receipt.effects.practiceAttempts.reactivated).toBe(ALL_MODES.length);
       expect(restored.receipt.auditEffects.practiceAttempts.appended).toBe(0);
     } finally { db.close(); }
-    db = SqliteLocalPersistence.open(file);
+    db = openShadowed(file);
     try {
       expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(h.practiceAttempts));
       expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(h.practiceAttempts));

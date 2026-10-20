@@ -8,6 +8,7 @@ import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPe
 import { makeSubtitleTrack, computeExportIntegrity } from '../../packages/domain/src';
 import { DatabaseSync } from 'node:sqlite';
 import { startLingotorteLocalService } from '../../apps/local-service/src/server.ts';
+import { expectShadowEqual, openShadowed } from '../helpers/shadow.ts';
 
 let sequence = 0;
 function fixture() {
@@ -44,7 +45,7 @@ function request(db: SqliteLocalPersistence, manifest: unknown, mode: 'merge' | 
 }
 describe('lt-04i durable active/audit boundary', () => {
   it.each(['missing-audit', 'future-audit', 'corrupt-json'])('fails closed on upgraded snapshot %s', async fault => {
-    const root = await mkdtemp(join(tmpdir(), 'lt-04i-corrupt-')); const file = join(root, 'state.db'); const db = SqliteLocalPersistence.open(file);
+    const root = await mkdtemp(join(tmpdir(), 'lt-04i-corrupt-')); const file = join(root, 'state.db'); const db = openShadowed(file);
     try {
       db.saveStore(fixture()); const raw = new DatabaseSync(file);
       const value = db.loadSnapshot(); const changed = fault === 'missing-audit' ? { ...value, learnerAudit: undefined } : { ...value, learnerAudit: { ...value.learnerAudit, version: 2 } };
@@ -53,7 +54,7 @@ describe('lt-04i durable active/audit boundary', () => {
     } finally { db.close(); await rm(root, { recursive: true, force: true }); }
   });
   it.each(['typed-input', 'multiple-choice', 'audio-recall', 'speaking', 'sentence-builder'] as const)('serialized %s replacement/reactivation survives file-backed reopen with exact provenance/link', async mode => {
-    const root = await mkdtemp(join(tmpdir(), 'lt-04i-mode-')); const file = join(root, 'state.db'); let db = SqliteLocalPersistence.open(file);
+    const root = await mkdtemp(join(tmpdir(), 'lt-04i-mode-')); const file = join(root, 'state.db'); let db = openShadowed(file);
     const seed = { ...fixture().snapshot() };
     delete seed.learnerAudit;
     const source = new LocalStore({ ...seed, practiceAttempts: seed.practiceAttempts.map(a => ({ ...a, mode })) });
@@ -65,7 +66,7 @@ describe('lt-04i durable active/audit boundary', () => {
       const restored = db.commitRestore(request(db, manifest));
       expect(restored.receipt.effects.practiceAttempts.reactivated).toBe(1);
       db.saveSnapshot(restored.snapshot, undefined, restored.revision);
-      db.close(); db = SqliteLocalPersistence.open(file);
+      db.close(); db = openShadowed(file);
       expect(db.loadSnapshot().practiceAttempts).toEqual(source.snapshot().practiceAttempts);
       expect(db.listAuditPracticeAttempts()).toEqual(source.snapshot().practiceAttempts);
       expect(db.loadVersionedSnapshot().revision).toBe(`rev:${Number(restored.revision.slice(4)) + 1}`);
@@ -73,15 +74,16 @@ describe('lt-04i durable active/audit boundary', () => {
   });
   it('v8 forward membership migration recovers valid snapshot-only history and import-job events once', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-v8-')); const file = join(root, 'state.db');
-    const store = fixture(); const original = store.snapshot(); const first = SqliteLocalPersistence.open(file); first.saveStore(store); first.close();
+    const store = fixture(); const original = store.snapshot(); const first = openShadowed(file); first.saveStore(store); first.close();
     const raw = new DatabaseSync(file);
     const legacy = { ...original, learnerAudit: undefined, importJobEvents: [...original.importJobEvents, { id: 'synthetic-job-event', jobId: 'synthetic-job', level: 'info', message: 'synthetic', createdAt: '2026-06-21T12:00:00.000Z' }] };
     raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
     raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
     try {
       for (let i = 0; i < 2; i++) {
-        const db = SqliteLocalPersistence.open(file);
+        const db = openShadowed(file);
         try {
+          expectShadowEqual(db);
           const snapshot = db.loadSnapshot();
           expect(snapshot.reviewEvents).toEqual(original.reviewEvents); expect(snapshot.practiceAttempts).toEqual(original.practiceAttempts);
           expect(snapshot.importJobEvents).toEqual(legacy.importJobEvents);
@@ -93,35 +95,35 @@ describe('lt-04i durable active/audit boundary', () => {
   });
   it('rejects conflicting legacy audit before v9 membership/ledger initialization, permitting corrected forward retry', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-bad-v8-')); const file = join(root, 'state.db'); const store = fixture();
-    const original = store.snapshot(); const first = SqliteLocalPersistence.open(file); first.saveStore(store); first.close();
+    const original = store.snapshot(); const first = openShadowed(file); first.saveStore(store); first.close();
     let raw = new DatabaseSync(file);
     raw.exec('DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
     const legacy = { ...original, learnerAudit: undefined, reviewEvents: original.reviewEvents.map(e => ({ ...e, rating: 'again' })) };
     raw.prepare('UPDATE lingotorte_snapshots SET schema_version=8, snapshot_json=?').run(JSON.stringify(legacy)); raw.close();
     try {
-      expect(() => SqliteLocalPersistence.open(file)).toThrow(/conflict/i);
+      expect(() => openShadowed(file)).toThrow(/conflict/i);
       raw = new DatabaseSync(file);
       expect(raw.prepare("SELECT name FROM sqlite_master WHERE name='active_review_event'").get()).toBeUndefined();
       expect(raw.prepare('SELECT version FROM schema_migration WHERE version=9').get()).toBeUndefined();
       expect(raw.prepare('SELECT snapshot_json FROM lingotorte_snapshots').get()).toEqual({ snapshot_json: JSON.stringify(legacy) });
       raw.prepare('UPDATE lingotorte_snapshots SET snapshot_json=?').run(JSON.stringify({ ...original, learnerAudit: undefined })); raw.close();
-      const retried = SqliteLocalPersistence.open(file); try { expect(retried.loadSnapshot().reviewEvents).toEqual(original.reviewEvents); } finally { retried.close(); }
+      const retried = openShadowed(file); try { expectShadowEqual(retried); expect(retried.loadSnapshot().reviewEvents).toEqual(original.reviewEvents); } finally { retried.close(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('refuses future, checksum-corrupt, and missing initialized marker instead of repopulating membership', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-ledger-')); const file = join(root, 'state.db');
-    const first = SqliteLocalPersistence.open(file); first.close();
+    const first = openShadowed(file); first.close();
     try {
       let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (12, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
-      expect(() => SqliteLocalPersistence.open(file)).toThrow(/ledger|future/);
+      expect(() => openShadowed(file)).toThrow(/ledger|future/);
       raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=12'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
-      expect(() => SqliteLocalPersistence.open(file)).toThrow(/ledger/);
+      expect(() => openShadowed(file)).toThrow(/ledger/);
       raw = new DatabaseSync(file); raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run(checksum); raw.exec('DELETE FROM learner_audit_format'); raw.close();
-      const opened = SqliteLocalPersistence.open(file); try { expect(() => opened.loadSnapshot()).toThrow(/initialized/); } finally { opened.close(); }
+      const opened = openShadowed(file); try { expect(() => opened.loadSnapshot()).toThrow(/initialized/); } finally { opened.close(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it.each(['merge', 'replace-active'] as const)('rejects audit-only practice/review conflicts and stale revisions atomically (%s)', mode => {
-    const db = SqliteLocalPersistence.open(':memory:');
+    const db = openShadowed(':memory:');
     try {
       const store = fixture(); const original = new ExportService(store, 'test').buildManifest(); db.saveStore(store);
       const stale = request(db, original, mode); db.commitRestore(request(db, empty()));
@@ -137,7 +139,7 @@ describe('lt-04i durable active/audit boundary', () => {
     } finally { db.close(); }
   });
   it('nonempty replacement selects only manifest history; repeats idempotently and preserves unrelated state', () => {
-    const db = SqliteLocalPersistence.open(':memory:');
+    const db = openShadowed(':memory:');
     try {
       const old = fixture(); const incoming = fixture(); const before = old.snapshot(); db.saveStore(old);
       const manifest = new ExportService(incoming, 'test').buildManifest();
@@ -156,7 +158,7 @@ describe('lt-04i durable active/audit boundary', () => {
     } finally { db.close(); }
   });
   it.each(['review_event', 'active_review_event', 'saved_item', 'lingotorte_snapshots'])('rolls back complete file-backed state on injected %s failure', async table => {
-    const root = await mkdtemp(join(tmpdir(), 'lt-04i-rollback-')); const file = join(root, 'state.db'); let db = SqliteLocalPersistence.open(file);
+    const root = await mkdtemp(join(tmpdir(), 'lt-04i-rollback-')); const file = join(root, 'state.db'); let db = openShadowed(file);
     try {
       db.saveStore(fixture()); const before = db.loadVersionedSnapshot(); const input = request(db, new ExportService(fixture(), 'test').buildManifest());
       const beforeTables = tableState(file);
@@ -165,7 +167,7 @@ describe('lt-04i durable active/audit boundary', () => {
       expect(() => db.commitRestore(input)).toThrow(/synthetic failure/);
       expect(db.loadVersionedSnapshot()).toEqual(before);
       expect(tableState(file)).toEqual(beforeTables);
-      db.close(); db = SqliteLocalPersistence.open(file);
+      db.close(); db = openShadowed(file);
       expect(db.loadVersionedSnapshot()).toEqual(before);
       expect(tableState(file)).toEqual(beforeTables);
     } finally { db.close(); await rm(root, { recursive: true, force: true }); }
@@ -173,7 +175,7 @@ describe('lt-04i durable active/audit boundary', () => {
   it('stages session-only retained audit on later explicit durable restore', () => {
     const session = fixture(); const before = session.snapshot(); const manifest = empty(); const service = new RestoreService(session);
     service.restore(manifest, { confirmedAt: '2026-06-21T12:00:00.000Z', confirmReplace: true, confirmOverwrite: false, acknowledgedWarnings: service.preview(manifest, 'replace-active').warnings.map(w => w.kind) });
-    const db = SqliteLocalPersistence.open(':memory:');
+    const db = openShadowed(':memory:');
     try {
       const input = request(db, manifest); const learnerAudit = session.snapshot().learnerAudit!;
       const preview = db.previewRestore(manifest, input.mode, input.expectedRevision, learnerAudit);
@@ -219,7 +221,7 @@ describe('lt-04i durable active/audit boundary', () => {
   });
   it('empty replacement -> ordinary save -> file-backed close/reopen retains exact audit and empty active membership', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-')); const file = join(root, 'state.db');
-    let db = SqliteLocalPersistence.open(file);
+    let db = openShadowed(file);
     try {
       const store = fixture(); const before = store.snapshot(); db.saveStore(store);
       const result = db.commitRestore(request(db, empty()));
@@ -227,7 +229,7 @@ describe('lt-04i durable active/audit boundary', () => {
       expect(result.receipt.auditEffects.practiceAttempts.inactiveAfter).toBe(before.practiceAttempts.length);
       expect(result.snapshot.reviewEvents).toEqual([]); expect(result.snapshot.practiceAttempts).toEqual([]);
       db.saveSnapshot(result.snapshot, undefined, result.revision);
-      db.close(); db = SqliteLocalPersistence.open(file);
+      db.close(); db = openShadowed(file);
       const actual = db.loadVersionedSnapshot();
       for (const name of ['mediaAssets', 'subtitleTracks', 'cues', 'transcriptWordTimings', 'mediaObservations', 'importJobs', 'importJobEvents', 'exportJobs', 'providerPolicies'] as const) expect(actual.snapshot[name]).toEqual(before[name]);
       expect(actual.snapshot.reviewEvents).toEqual([]); expect(actual.snapshot.practiceAttempts).toEqual([]);
@@ -238,7 +240,7 @@ describe('lt-04i durable active/audit boundary', () => {
     } finally { db.close(); await rm(root, { recursive: true, force: true }); }
   });
   it('ordinary omission preserves both active histories; inactive IDs require explicit restore', () => {
-    const db = SqliteLocalPersistence.open(':memory:');
+    const db = openShadowed(':memory:');
     try {
       const store = fixture(); const original = store.snapshot(); const manifest = new ExportService(store, 'test').buildManifest(); db.saveStore(store);
       db.saveSnapshot({ ...original, reviewEvents: [], practiceAttempts: [] });

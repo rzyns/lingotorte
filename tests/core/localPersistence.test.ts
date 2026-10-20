@@ -14,7 +14,7 @@ import {
   validateSavedOccurrenceSourceContext,
 } from '../../packages/domain/src';
 import { LocalStore, createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
-import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
+import { openShadowed } from '../helpers/shadow.ts';
 
 const fingerprint = 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const;
 
@@ -80,7 +80,7 @@ describe('durable local persistence', () => {
 
   it('round-trips a LocalStoreSnapshot through SQLite-backed persistence', () => {
     const store = populatedStore();
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot());
     const loaded = persistence.loadSnapshot();
@@ -91,14 +91,14 @@ describe('durable local persistence', () => {
   });
 
   it('returns an empty typed snapshot from a new SQLite database', () => {
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     expect(persistence.loadSnapshot()).toEqual(createEmptyLocalStoreSnapshot());
     persistence.close();
   });
 
   it('applies an auditable forward-only migration ledger to an empty SQLite database', () => {
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     expect(persistence.status()).toMatchObject({
       schemaVersion: 11,
@@ -216,7 +216,7 @@ describe('durable local persistence', () => {
   it('maintains a typed media asset projection from the latest saved snapshot', () => {
     const store = populatedStore();
     const media = Object.values(store.snapshot().mediaAssets)[0]!;
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T02:40:00.000Z');
 
@@ -305,7 +305,7 @@ describe('durable local persistence', () => {
     store.putSubtitleTrack(track);
     store.putCue(cue);
     store.putTranscriptWordTiming(timing);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T03:11:00.000Z');
 
@@ -335,7 +335,7 @@ describe('durable local persistence', () => {
       contentSha256: media.contentSha256,
       exists: false,
     });
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(
       {
@@ -420,7 +420,7 @@ describe('durable local persistence', () => {
     store.addPracticeAttempt(attempt);
     store.putImportJob(importJob);
     store.addImportJobEvent(importJobEvent);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T03:33:00.000Z');
 
@@ -447,7 +447,7 @@ describe('durable local persistence', () => {
       contentSummaryJson: '{"schemaVersion":"lingotorte.export-job-summary.v1","recordCount":6,"warningCount":3}',
     };
     store.putExportJob(exportJob);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T05:01:00.000Z');
 
@@ -474,7 +474,7 @@ describe('durable local persistence', () => {
       updatedAt: '2026-07-04T06:01:00.000Z',
     };
     store.putProviderPolicy(policy);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T06:02:00.000Z');
 
@@ -508,7 +508,7 @@ describe('durable local persistence', () => {
     });
     store.putReviewCard(card);
     store.addReviewEvent(event);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:01:00.000Z');
     persistence.saveSnapshot({ ...store.snapshot(), reviewEvents: [] }, '2026-07-04T04:02:00.000Z');
@@ -538,7 +538,7 @@ describe('durable local persistence', () => {
     });
     store.putReviewCard(card);
     store.addReviewEvent(event);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:11:00.000Z');
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:12:00.000Z');
@@ -567,7 +567,7 @@ describe('durable local persistence', () => {
     });
     store.putReviewCard(card);
     store.addReviewEvent(event);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:21:00.000Z');
 
@@ -604,7 +604,7 @@ describe('durable local persistence', () => {
     };
     store.putImportJob(importJob);
     store.addImportJobEvent(importJobEvent);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:32:00.000Z');
     persistence.saveSnapshot({ ...store.snapshot(), importJobEvents: [] }, '2026-07-04T04:33:00.000Z');
@@ -634,7 +634,7 @@ describe('durable local persistence', () => {
     };
     store.putImportJob(importJob);
     store.addImportJobEvent(importJobEvent);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:42:00.000Z');
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:43:00.000Z');
@@ -663,7 +663,7 @@ describe('durable local persistence', () => {
     };
     store.putImportJob(importJob);
     store.addImportJobEvent(importJobEvent);
-    const persistence = SqliteLocalPersistence.open(':memory:');
+    const persistence = openShadowed(':memory:');
 
     persistence.saveSnapshot(store.snapshot(), '2026-07-04T04:52:00.000Z');
 
