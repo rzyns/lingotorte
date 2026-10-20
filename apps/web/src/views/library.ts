@@ -26,6 +26,8 @@ import {
   activeTargetTrackForMedia,
   listMediaAssetsNewestFirst,
   mediaAssetNeedsRelink,
+  mediaAssetById,
+  mediaTranscriptsNeedLoading,
   openMediaAsset,
   restoreOpenedMediaHandle,
   currentTargetTrack,
@@ -707,12 +709,13 @@ function renderMediaList(model: AppModel): HTMLElement {
     openBtn.textContent = 'Open';
     openBtn.setAttribute('aria-label', `Open ${asset.title}`);
     openBtn.addEventListener('click', () => {
-      if (!openMediaAsset(model, asset.id)) return;
-      model.importError = null;
-      setView(model, 'player');
-      rerenderApp(model);
-      // lt-ddy.2: reconnect this asset's own stored handle (query-only); 'prompt' keeps the Reconnect placeholder.
-      if (!isCurrent) void restoreOpenedMediaHandle(model).then((result) => { if (result !== 'stale') rerenderApp(model); });
+      openFromLibrary(model, asset.id, () => {
+        model.importError = null;
+        setView(model, 'player');
+        rerenderApp(model);
+        // lt-ddy.2: reconnect this asset's own stored handle (query-only); 'prompt' keeps the Reconnect placeholder.
+        if (!isCurrent) void restoreOpenedMediaHandle(model).then((result) => { if (result !== 'stale') rerenderApp(model); });
+      });
     });
     const needsRelink = mediaAssetNeedsRelink(model, asset);
     if (!(isCurrent && needsRelink)) actions.appendChild(openBtn);
@@ -729,15 +732,16 @@ function renderMediaList(model: AppModel): HTMLElement {
       relinkBtn.textContent = 'Relink';
       relinkBtn.setAttribute('aria-label', `Relink ${asset.title}`);
       relinkBtn.addEventListener('click', () => {
-        if (!openMediaAsset(model, asset.id)) return;
-        model.importError = null;
-        setView(model, 'player');
-        rerenderApp(model);
-        if (!isCurrent) {
-          void restoreOpenedMediaHandle(model).then((result) => {
-            if (result !== 'stale') rerenderApp(model);
-          });
-        }
+        openFromLibrary(model, asset.id, () => {
+          model.importError = null;
+          setView(model, 'player');
+          rerenderApp(model);
+          if (!isCurrent) {
+            void restoreOpenedMediaHandle(model).then((result) => {
+              if (result !== 'stale') rerenderApp(model);
+            });
+          }
+        });
       });
       actions.appendChild(relinkBtn);
     }
@@ -1040,4 +1044,21 @@ export function renderLibraryView(model: AppModel): HTMLElement {
 
   section.appendChild(form);
   return section;
+}
+
+/**
+ * lt-584.5: open a media from the Library. When its transcripts must be loaded first, re-render (loading state),
+ * await openMediaAsset and then continue; otherwise openMediaAsset has already projected synchronously and the
+ * continuation runs in the same click, as before.
+ */
+function openFromLibrary(model: AppModel, mediaId: string, opened: () => void): void {
+  if (mediaTranscriptsNeedLoading(model, mediaId)) {
+    const pending = openMediaAsset(model, mediaId);
+    rerenderApp(model);
+    void pending.then((ok) => { if (ok) opened(); else rerenderApp(model); });
+    return;
+  }
+  if (!mediaAssetById(model, mediaId)) return;
+  void openMediaAsset(model, mediaId);
+  opened();
 }

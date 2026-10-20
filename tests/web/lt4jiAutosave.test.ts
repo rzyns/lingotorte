@@ -26,6 +26,7 @@ function stubService(remote: () => unknown) {
   const puts: unknown[] = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/api/status')) return response({ ok: true, config: {} });
+    if (init?.method === 'PUT' && /\/api\/tracks\/[^/]+\/transcript$/.test(url)) return response({ ok: true, revision, savedAt: '2026-10-14T00:00:00.000Z' });
     if (init?.method === 'PUT') { puts.push(init.body); return response({ ok: true, revision, savedAt: '2026-10-14T00:00:00.000Z' }); }
     return response({ ok: true, snapshot: remote(), revision });
   }));

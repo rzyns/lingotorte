@@ -15,6 +15,8 @@ const snapshot = (title: string) => {
   value.mediaAssets[media.id] = media;
   return value;
 };
+// lt-584.5 (C4): /api/state carries learner state only (no cues/transcriptWordTimings keys).
+const learnerState = (value: ReturnType<typeof snapshot>) => { const { cues: _cues, transcriptWordTimings: _timings, ...learner } = value; return learner; };
 
 it('rejects two stale HTTP writers and missing revisions without replacing durable state; reopens SQLite', async () => {
   const root = await mkdtemp(join(tmpdir(), 'lt-save-safety-'));
@@ -22,7 +24,7 @@ it('rejects two stale HTTP writers and missing revisions without replacing durab
   let service = await startPairedService(config);
   cleanups.push(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
   const get = () => pairedFetch(`${service.origin}/api/state`).then(r => r.json());
-  const put = (value: unknown, expectedRevision?: unknown) => pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: value, expectedRevision }) });
+  const put = (value: unknown, expectedRevision?: unknown) => pairedFetch(`${service.origin}/api/state`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: learnerState(value as ReturnType<typeof snapshot>), expectedRevision }) });
   const a = await get(); const b = await get();
   const first = snapshot('first'); const stale = snapshot('stale');
   expect((await put(first, a.revision)).status).toBe(200);
@@ -80,7 +82,7 @@ it('accepts exactly one competing HTTP snapshot from the same durable revision',
   const a = await startPairedService(config); const b = await startPairedService(config);
   cleanups.push(async () => { await a.close(); await b.close(); await rm(root, { recursive: true, force: true }); });
   const state = await pairedFetch(`${a.origin}/api/state`).then(r => r.json());
-  const candidates = [snapshot('a'), snapshot('b')];
+  const candidates = [learnerState(snapshot('a')), learnerState(snapshot('b'))];
   const replies = await Promise.all([a, b].map((service, index) => pairedFetch(`${service.origin}/api/state`, {
     method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot: candidates[index], expectedRevision: state.revision }),
   })));

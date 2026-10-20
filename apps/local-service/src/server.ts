@@ -13,7 +13,7 @@ import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROU
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SqliteLocalPersistence, SnapshotRevisionConflictError, TranscriptBundleConflictError, DurableEntityNotFoundError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
-import type { LocalStoreSnapshot, TrackTranscriptBundle } from '../../../packages/storage/src/localStore.ts';
+import type { LearnerStateSnapshot, TrackTranscriptBundle } from '../../../packages/storage/src/localStore.ts';
 import {
   alignWordsWithWhisperX,
   extractAudioWithFfmpeg,
@@ -1096,9 +1096,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/state') {
-        // lt-584.4 (D-R8): transitional in C3 — the full snapshot, transcripts assembled from the tables; C4 flips to learner state only.
-        const { snapshot, revision } = persistence.loadVersionedSnapshot();
-        sendJson(response, 200, { ok: true, snapshot, revision, restoreCapability: 'active-audit-restore-v1' });
+        // lt-584.5 (C4, plan 2.3): learner state only; transcripts load per media through GET /api/media/{id}/transcripts.
+        const { state, revision } = persistence.loadLearnerState();
+        sendJson(response, 200, { ok: true, snapshot: state, revision, restoreCapability: 'active-audit-restore-v1' });
         return;
       }
 
@@ -1127,7 +1127,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
           const revision = persistence.saveTrackTranscript(trackId, bundle, body.expectedRevision, savedAt);
           sendJson(response, 200, { ok: true, trackId, revision, savedAt });
         } catch (error) {
-          if (error instanceof SnapshotRevisionConflictError || error instanceof TranscriptBundleConflictError) sendError(response, 409, error.message);
+          if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
+          // lt-584.5: a machine-readable code lets the browser tell "already stored" from a CAS conflict and verify it.
+          else if (error instanceof TranscriptBundleConflictError) sendJson(response, 409, { ok: false, error: error.message, code: 'transcript-bundle-exists' });
           else throw error;
         }
         return;
@@ -1166,23 +1168,23 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         }
         const snapshot = body.snapshot;
         if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) { sendError(response, 400, 'Invalid learner state.'); return; }
-        // lt-584.4 (D-R8): transitional legacy body — cues/transcriptWordTimings are optional; a supplied bundle is written once
-        // for a track without one and must equal the stored bundle exactly otherwise (never rewritten).
-        const bodyCues = (snapshot as { cues?: unknown }).cues;
-        if (bodyCues !== undefined && (!bodyCues || typeof bodyCues !== 'object' || Array.isArray(bodyCues))) { sendError(response, 400, 'Invalid learner state.'); return; }
-        const bodyTimings = (snapshot as { transcriptWordTimings?: unknown }).transcriptWordTimings;
-        if (bodyTimings !== undefined && (!bodyTimings || typeof bodyTimings !== 'object' || Array.isArray(bodyTimings))) { sendError(response, 400, 'Invalid learner state.'); return; }
+        // lt-584.5 (C4, plan 2.3, D-R7): strict learner-state body. Transcript bundles travel only through
+        // PUT /api/tracks/{trackId}/transcript; a body that still carries them is a stale client and is refused.
+        if (Object.hasOwn(snapshot, 'cues') || Object.hasOwn(snapshot, 'transcriptWordTimings')) {
+          sendError(response, 400, 'Learner state must not carry cues or transcriptWordTimings; save transcripts per track first.'); return;
+        }
         const tracks = (snapshot as { subtitleTracks?: unknown }).subtitleTracks;
         if (tracks !== undefined && (!tracks || typeof tracks !== 'object' || Array.isArray(tracks))) { sendError(response, 400, 'Invalid learner state.'); return; }
-        // lt-584.4 (D-R8): the non-candidate-track-needs-a-bundle check (plan 2.4) is NOT applied on the transitional route;
-        // existing legacy fixtures save approved tracks without cues. C4 enables it with the strict contract.
+        // lt-584.5 (plan 2.4): a non-candidate track must reference a stored bundle (bundle first, D-R9).
+        if (tracks !== undefined && persistence.tracksMissingTranscriptBundle(tracks as Record<string, unknown>).length > 0) {
+          sendError(response, 400, 'A non-candidate subtitle track has no stored transcript; PUT /api/tracks/{trackId}/transcript first.'); return;
+        }
         const savedAt = new Date().toISOString();
         try {
-          const revision = persistence.saveSnapshot(snapshot as LocalStoreSnapshot, savedAt, body.expectedRevision);
+          const revision = persistence.saveLearnerState(snapshot as LearnerStateSnapshot, body.expectedRevision, savedAt);
           sendJson(response, 200, { ok: true, revision, savedAt, persistence: persistence.status() });
         } catch (error) {
           if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
-          else if (error instanceof TranscriptBundleConflictError) sendError(response, 400, 'A supplied transcript bundle differs from the stored bundle; stored transcripts are write-once.');
           else throw error;
         }
         return;

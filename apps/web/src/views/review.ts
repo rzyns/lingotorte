@@ -10,7 +10,7 @@ import {
   toggleReviewReveal,
 } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, mediaDisplayName, renderUnresolvedSource } from '../ui/common.ts';
+import { appendSourceDisclosure, mediaDisplayName, renderTranscriptNotLoaded, renderUnresolvedSource } from '../ui/common.ts';
 import { renderAddMeaning, renderMeaningLine } from './saved.ts';
 
 const REVIEW_RATINGS = ['again', 'hard', 'good', 'easy'] as const;
@@ -92,8 +92,9 @@ export function renderReviewView(model: AppModel): HTMLElement {
   // lt-0g9: a reveal belongs to the card it was made on, never to the next presented card.
   if (model.review.currentCardId !== card.id) { model.review.currentCardId = card.id; model.review.revealed = false; }
   const occurrenceInContext = occurrenceContext(model, occurrence);
-  const currentCue = occurrenceInContext?.cue;
-  const nativeText = occurrenceInContext?.nativeText;
+  const resolved = occurrenceInContext?.status === 'ok' ? occurrenceInContext : null;
+  const currentCue = resolved?.cue;
+  const nativeText = resolved?.nativeText;
 
   const prompt = document.createElement('div');
   prompt.className = 'review-prompt';
@@ -140,6 +141,8 @@ export function renderReviewView(model: AppModel): HTMLElement {
       appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath.startsWith('blob:') ? '' : occurrence.sourceContext.mediaPath);
       context.appendChild(sourceNote);
       reveal.appendChild(context);
+    } else if (occurrenceInContext?.status === 'not-loaded') {
+      reveal.appendChild(renderTranscriptNotLoaded(model, occurrenceInContext.mediaId));
     } else {
       reveal.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));
     }

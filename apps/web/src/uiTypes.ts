@@ -85,6 +85,8 @@ export type AppModel = {
   targetTrackId: string | null;
   nativeTrackId: string | null;
   cues: Cue[];
+  /** lt-584.5: set while openMediaAsset fetches this media's transcript bundles from the paired service. */
+  transcriptLoading: { mediaId: string } | null;
   selection: Selection;
   importError: string | null;
   /** lt-ddy.5: non-blocking import warning (e.g. a subtitle file that could not be read); shown on every view until dismissed. */

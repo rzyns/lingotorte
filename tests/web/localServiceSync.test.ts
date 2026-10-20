@@ -63,6 +63,8 @@ describe('web model local-service sync', () => {
     await connectLocalService(model, service.origin);
     const realFetch = globalThis.fetch;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // lt-584.5 (C4): transcript bundles are PUT first and acknowledged; only the learner-state acknowledgement is lost.
+      if (!(String(input).endsWith('/api/state') && init?.method === 'PUT')) return realFetch(input, init);
       const reply = await realFetch(input, init);
       expect(reply.status).toBe(200);
       await reply.json(); // actual server commit; only delivery to the caller is lost

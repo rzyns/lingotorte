@@ -1,9 +1,9 @@
 import type { AppModel } from '../uiTypes';
 import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
-import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, cueById, cuesForTrack, listAllSavedItems, mediaAssetById, occurrenceContext, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
+import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, cueById, cuesForTrack, listAllSavedItems, mediaAssetById, mediaTranscriptsNeedLoading, occurrenceContext, openMediaAsset, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, mediaDisplayName } from '../ui/common.ts';
+import { appendSourceDisclosure, mediaDisplayName, renderTranscriptNotLoaded } from '../ui/common.ts';
 
 export function renderSavedView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -90,7 +90,7 @@ export function renderSavedView(model: AppModel): HTMLElement {
     card.appendChild(meta);
     if (item.meaning) {
       card.appendChild(renderMeaningLine(model, item, 'div', 'meta meaning'));
-    } else if (!savedItemNativeLine(model, occurrences[0]?.cueId)) {
+    } else if (!savedItemNativeLine(model, occurrences[0])) {
       card.appendChild(renderAddMeaning(model, item.id));
     }
 
@@ -106,6 +106,16 @@ export function renderSavedView(model: AppModel): HTMLElement {
       link.setAttribute('aria-label', `Jump to ${formatTimeMs(occurrence.startMs)} in ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`);
       link.addEventListener('click', (e) => {
         e.preventDefault();
+        // lt-584.5: a media whose transcripts are not loaded is opened (and loaded) first, then the jump seeks.
+        if (mediaTranscriptsNeedLoading(model, occurrence.sourceContext.mediaId)) {
+          const opened = openMediaAsset(model, occurrence.sourceContext.mediaId);
+          rerenderApp(model);
+          void opened.then((ok) => { if (ok) jumpToOccurrence(true); else rerenderApp(model); });
+          return;
+        }
+        jumpToOccurrence();
+      });
+      const jumpToOccurrence = (openedNow = false) => {
         setView(model, 'player');
         model.player.currentTimeMs = occurrence.startMs;
         model.player.activeCueId = occurrence.cueId;
@@ -117,13 +127,15 @@ export function renderSavedView(model: AppModel): HTMLElement {
             model.currentMedia = asset;
             model.cues = cuesForTrack(model, occurrence.sourceContext.subtitleTrackId);
           }
+        } else if (openedNow) {
+          model.cues = cuesForTrack(model, occurrence.sourceContext.subtitleTrackId);
         }
         const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
         if (video) {
           video.currentTime = occurrence.startMs / 1000;
         }
         rerenderApp(model);
-      });
+      };
       occurrenceGroup.appendChild(link);
 
       const contextLine = document.createElement('div');
@@ -141,6 +153,8 @@ export function renderSavedView(model: AppModel): HTMLElement {
         detailParts.join(' • '),
       );
       occurrenceGroup.appendChild(contextLine);
+      const inContext = occurrenceContext(model, occurrence);
+      if (inContext?.status === 'not-loaded') occurrenceGroup.appendChild(renderTranscriptNotLoaded(model, inContext.mediaId));
     }
     card.appendChild(occurrenceGroup);
 
@@ -164,9 +178,10 @@ export function renderSavedView(model: AppModel): HTMLElement {
   return section;
 }
 
-function savedItemNativeLine(model: AppModel, cueId: string | undefined): string | undefined {
-  if (!cueId || !model.nativeTrackId) return undefined;
-  return occurrenceContext(model, { cueId })?.nativeText;
+function savedItemNativeLine(model: AppModel, occurrence: { cueId: string; sourceContext: { mediaId: string } } | undefined): string | undefined {
+  if (!occurrence?.cueId || !model.nativeTrackId) return undefined;
+  const inContext = occurrenceContext(model, { cueId: occurrence.cueId, sourceContext: { mediaId: occurrence.sourceContext.mediaId } });
+  return inContext?.status === 'ok' ? inContext.nativeText : undefined;
 }
 
 /** lt-uzo: inline 'Add meaning' for items with neither a meaning nor a native cue line (shared with Review reveal). */

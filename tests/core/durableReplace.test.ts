@@ -200,7 +200,12 @@ describe('lt-04i durable active/audit boundary', () => {
     const state = async () => (await (await fetch(`${service.origin}/api/state`, { headers: { authorization: headers.authorization } })).json());
     try {
       const initial = await state(); expect(initial.restoreCapability).toBe('active-audit-restore-v1');
-      const put = await fetch(`${service.origin}/api/state`, { method: 'PUT', headers, body: JSON.stringify({ snapshot: fixture().snapshot(), expectedRevision: initial.revision }) }); expect(put.status).toBe(200);
+      // lt-584.5 (C4): /api/state takes learner state only; the fixture's bundle-less synthetic track is a candidate here.
+      const { cues: _cues, transcriptWordTimings: _timings, ...learner } = fixture().snapshot();
+      const seeded = { ...learner, subtitleTracks: { track: { ...learner.subtitleTracks.track!, transcriptStatus: 'candidate' as const } } };
+      const put = await fetch(`${service.origin}/api/state`, { method: 'PUT', headers, body: JSON.stringify({ snapshot: seeded, expectedRevision: initial.revision }) }); expect(put.status).toBe(200);
+      const shadow = SqliteLocalPersistence.open(join(root, 'state.db'));
+      try { expectShadowEqual(shadow, { ...seeded, cues: {}, transcriptWordTimings: {} }, { learnerOnly: true }); } finally { shadow.close(); }
       const before = await state(); const body = { manifest: empty(), mode: 'replace-active', expectedRevision: before.revision };
       for (const route of ['preview', 'commit']) {
         const denied = await fetch(`${service.origin}/api/restore/${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); expect(denied.status).toBe(401);
@@ -212,7 +217,9 @@ describe('lt-04i durable active/audit boundary', () => {
       const commitBody = { ...body, confirmation: { confirmedAt: '2026-06-21T12:00:00.000Z', confirmReplace: true, confirmOverwrite: false, acknowledgedWarnings: preview.preview.warnings.map((w: { kind: string }) => w.kind) } };
       const committedResponse = await fetch(`${service.origin}/api/restore/commit`, { method: 'POST', headers, body: JSON.stringify(commitBody) }); expect(committedResponse.status).toBe(200);
       const committed = await committedResponse.json(); const after = await state();
-      expect(after.revision).toBe(committed.revision); expect(after.snapshot).toEqual(committed.snapshot);
+      // lt-584.5 (C4): GET /api/state omits the transcript keys that the commit acknowledgement still carries.
+      const { cues: _committedCues, transcriptWordTimings: _committedTimings, ...committedLearner } = committed.snapshot;
+      expect(after.revision).toBe(committed.revision); expect(after.snapshot).toEqual(committedLearner);
       expect(after.snapshot.reviewEvents).toEqual([]); expect(after.snapshot.learnerAudit.reviewEvents).toEqual(before.snapshot.reviewEvents);
       const stale = await fetch(`${service.origin}/api/state`, { method: 'PUT', headers, body: JSON.stringify({ snapshot: before.snapshot, expectedRevision: before.revision }) }); expect(stale.status).toBe(409);
       const retry = await fetch(`${service.origin}/api/restore/commit`, { method: 'POST', headers, body: JSON.stringify(commitBody) }); expect(retry.status).toBe(409);

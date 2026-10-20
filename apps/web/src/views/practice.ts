@@ -26,7 +26,7 @@ import {
   captureLocalServiceTransport,
 } from '../model';
 import { PRACTICE_SUCCESSORS, captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderUnresolvedSource, uiOwnerCurrent } from '../ui/common.ts';
+import { appendSourceDisclosure, captureUiServiceOwner, mediaDisplayName, renderTranscriptNotLoaded, renderUnresolvedSource, uiOwnerCurrent } from '../ui/common.ts';
 import { hasNativeInputPath, invalidatePracticeSnippet, practiceSnippetContextKey, practiceSnippetStates, synchronizePracticeSnippet } from '../ui/snippets.ts';
 
 export function renderPracticeView(model: AppModel): HTMLElement {
@@ -67,8 +67,9 @@ export function renderPracticeView(model: AppModel): HTMLElement {
   const { occurrence, state, card } = active;
   const contract = practiceContractFor(model, active);
   const occurrenceInContext = occurrenceContext(model, occurrence);
-  const currentCue = occurrenceInContext?.cue;
-  const nativeText = occurrenceInContext?.nativeText;
+  const resolved = occurrenceInContext?.status === 'ok' ? occurrenceInContext : null;
+  const currentCue = resolved?.cue;
+  const nativeText = resolved?.nativeText;
 
   const prompt = document.createElement('div');
   prompt.className = 'practice-prompt';
@@ -439,6 +440,8 @@ export function renderPracticeView(model: AppModel): HTMLElement {
     sourceNote.className = 'meta';
     appendSourceDisclosure(sourceNote, `Video: ${mediaDisplayName(model, occurrence.sourceContext.mediaId, occurrence.sourceContext.mediaPath)}`, occurrence.sourceContext.mediaPath.startsWith('blob:') ? '' : occurrence.sourceContext.mediaPath);
     context.appendChild(sourceNote);
+  } else if (occurrenceInContext?.status === 'not-loaded') {
+    context.appendChild(renderTranscriptNotLoaded(model, occurrenceInContext.mediaId));
   } else {
     context.appendChild(renderUnresolvedSource(occurrence.sourceContext.mediaPath));
   }

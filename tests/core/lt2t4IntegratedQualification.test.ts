@@ -28,6 +28,12 @@ function fixture(mode: PracticeMode = 'typed-input', suffix = 'a') {
   store.putProviderPolicy({ id: 'lt2t4-policy', providerId: 'elevenlabs-scribe', enabled: false, requiresConfirmation: true, allowedDataClasses: [], createdAt: at, updatedAt: at });
   return store;
 }
+// lt-584.5 (C4): /api/state carries learner state only. The fixture's synthetic track has no transcript bundle (its id is
+// not a UUID, so it cannot get one over HTTP), so it is saved as a candidate, which may be bundle-less.
+function learnerState(store: LocalStore) {
+  const { cues: _cues, transcriptWordTimings: _timings, ...learner } = store.snapshot();
+  return { ...learner, subtitleTracks: Object.fromEntries(Object.entries(learner.subtitleTracks).map(([id, track]) => [id, { ...track, transcriptStatus: 'candidate' as const }])) };
+}
 const wire = (store: LocalStore) => JSON.parse(JSON.stringify(new ExportService(store, 'test').buildManifest()));
 const emptyWire = () => wire(new LocalStore());
 
@@ -76,7 +82,7 @@ describe('lt-2t4 integrated request/restore qualification', () => {
     const h = await harness(root);
     try {
       const initial = await h.state();
-      expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: fixture().snapshot(), expectedRevision: initial.revision } })).status).toBe(200);
+      expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: learnerState(fixture()), expectedRevision: initial.revision } })).status).toBe(200);
       expect((await h.call('/api/jobs', { method: 'POST', body: { kind: 'waiting' } })).status).toBe(201); // pending job is part of the oracle
       const seeded = await h.state(); const host = new URL(h.service.origin).host; const token = h.token();
       const body = (route: string) => JSON.stringify({ manifest: emptyWire(), mode: 'replace-active', expectedRevision: seeded.revision,
@@ -172,7 +178,7 @@ describe('lt-2t4 integrated request/restore qualification', () => {
     try {
       const a = fixture('typed-input', 'a'); const b = fixture('speaking', 'b');
       const both = new LocalStore({ ...a.snapshot(), ...Object.fromEntries(Object.entries(b.snapshot()).map(([k, v]) => [k, Array.isArray(v) ? [...(a.snapshot() as any)[k], ...v] : { ...(a.snapshot() as any)[k], ...(v as object) }])) } as any);
-      const s0 = await h.state(); expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: both.snapshot(), expectedRevision: s0.revision } })).status).toBe(200);
+      const s0 = await h.state(); expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: learnerState(both), expectedRevision: s0.revision } })).status).toBe(200);
       const seeded = await h.state();
       const empty = await h.restore(emptyWire(), 'replace-active'); expect(empty.commit.status).toBe(200);
       let cur = await h.state(); expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: cur.snapshot, expectedRevision: cur.revision } })).status).toBe(200);
@@ -210,7 +216,7 @@ describe('lt-2t4 integrated request/restore qualification', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-2t4-t09-'));
     let h = await harness(root);
     try {
-      const s0 = await h.state(); expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: fixture().snapshot(), expectedRevision: s0.revision } })).status).toBe(200);
+      const s0 = await h.state(); expect((await h.call('/api/state', { method: 'PUT', body: { snapshot: learnerState(fixture()), expectedRevision: s0.revision } })).status).toBe(200);
       const seeded = await h.state();
       const lost = await h.restore(emptyWire(), 'replace-active'); // response treated as lost by the client
       expect(lost.commit.status).toBe(200);
@@ -255,7 +261,7 @@ describe('lt-2t4 integrated request/restore qualification', () => {
     const poll = async (id: string) => { for (let i = 0; i < 200; i++) { const job = JSON.parse((await raw(service.origin, `/api/jobs/${id}`, 'GET', auth)).body).job; if (['completed', 'failed'].includes(job.status)) return job; await new Promise(r => setTimeout(r, 10)); } throw new Error('job did not settle'); };
     try {
       const s0 = JSON.parse((await raw(service.origin, '/api/state', 'GET', auth)).body);
-      expect((await raw(service.origin, '/api/state', 'PUT', json, JSON.stringify({ snapshot: fixture().snapshot(), expectedRevision: s0.revision }))).status).toBe(200);
+      expect((await raw(service.origin, '/api/state', 'PUT', json, JSON.stringify({ snapshot: learnerState(fixture()), expectedRevision: s0.revision }))).status).toBe(200);
       const seeded = JSON.parse((await raw(service.origin, '/api/state', 'GET', auth)).body);
       pause = true;
       const submitted = await raw(service.origin, '/api/jobs', 'POST', json, JSON.stringify({ kind: 'source-audio-snippet', payload: { mediaPath, startMs: 0, endMs: 1 } }));

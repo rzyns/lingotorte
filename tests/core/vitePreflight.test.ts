@@ -53,7 +53,8 @@ for (const mode of ['dev', 'preview'] as const) it(`actual Vite ${mode} delegate
     const port = (vite.httpServer!.address() as { port: number }).port;
     const call = (path: string, method: string, headers: string[], body?: string) => send(port, path, method, headers, body);
     const state = JSON.parse((await call('/api/state', 'GET', auth)).body);
-    const snapshot = createEmptyLocalStoreSnapshot();
+    // lt-584.5 (C4): /api/state carries learner state only (no cues/transcriptWordTimings keys).
+    const { cues: _cues, transcriptWordTimings: _timings, ...snapshot } = createEmptyLocalStoreSnapshot();
     const media = makeMediaAsset({ title: 'Private synthetic state sentinel', originalPath: 'synthetic.webm', contentSha256: `sha256:${'1'.repeat(64)}`, durationMs: 1, container: 'webm', sizeBytes: 1, privacyLabel: 'synthetic' });
     snapshot.mediaAssets[media.id] = media;
     expect((await call('/api/state', 'PUT', [...auth, 'Content-Type', 'application/json'], JSON.stringify({ expectedRevision: state.revision, snapshot }))).status).toBe(200);
