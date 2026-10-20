@@ -139,4 +139,31 @@ describe('lt-584.4 transcript bundles', () => {
       expect(db.loadTranscripts(a1.mediaId).tracks[a1.id]).toEqual(bundle);
     } finally { db.close(); }
   });
+
+  it('review follow-up: a legacy saveSnapshot with word timings but no cues for a track is refused, not inserted (no 500 on the next save)', () => {
+    const { store, a1 } = seed();
+    const db = SqliteLocalPersistence.open(':memory:');
+    try {
+      for (const timing of bundleFor(a1, ['Dzień']).wordTimings) store.putTranscriptWordTiming(timing);
+      const before = db.loadLearnerState().revision;
+      expect(() => db.saveSnapshot(store.snapshot(), AT, before)).toThrow(TypeError);
+      expect(db.loadLearnerState().revision).toBe(before);
+      expect(db.loadSnapshot().transcriptWordTimings).toEqual({});
+    } finally { db.close(); }
+  });
+
+  it('review follow-up: status().hasSnapshot is true for a DB holding only non-media learner rows at revision 1', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'lt-584-4-has-'));
+    const file = join(dir, 'state.sqlite');
+    try {
+      const fresh = SqliteLocalPersistence.open(file);
+      expect(fresh.status().hasSnapshot).toBe(false);
+      fresh.close();
+      const raw = new DatabaseSync(file);
+      raw.prepare("INSERT INTO provider_policy (id, provider_id, enabled, allowed_data_classes_json, requires_confirmation, created_at, updated_at) VALUES ('p', 'youtube-caption', 0, '[]', 1, ?, ?)").run(AT, AT);
+      raw.close();
+      const reopened = SqliteLocalPersistence.open(file);
+      try { expect(reopened.status().hasSnapshot).toBe(true); } finally { reopened.close(); }
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
 });

@@ -1715,6 +1715,8 @@ export class SqliteLocalPersistence {
       || this.db.prepare('SELECT 1 FROM subtitle_track LIMIT 1').get() !== undefined
       || this.db.prepare('SELECT 1 FROM saved_item LIMIT 1').get() !== undefined
       || this.db.prepare('SELECT 1 FROM review_card LIMIT 1').get() !== undefined
+      || ['saved_occurrence', 'review_event', 'practice_attempt', 'import_job', 'export_job', 'provider_policy', 'media_file_observation']
+        .some(table => this.db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get() !== undefined)
       || this.db.prepare('SELECT revision FROM durable_state WHERE id=1 AND revision > 1').get() !== undefined;
     const schemaRow = this.db
       .prepare('SELECT MAX(version) AS schema_version FROM schema_migration WHERE result = ?')
@@ -1733,7 +1735,7 @@ export class SqliteLocalPersistence {
     return this.loadSnapshotFromTables(true);
   }
 
-  /** @internal Test support: the full snapshot and its revision, read in one transaction. */
+  /** The full snapshot and its revision, read in one transaction. Serves the transitional GET /api/state (D-R8) and tests. */
   loadVersionedSnapshot(): { snapshot: LocalStoreSnapshot; revision: string } {
     return this.read(() => ({ snapshot: this.loadSnapshot(), revision: this.currentRevision() }));
   }
@@ -1876,7 +1878,7 @@ export class SqliteLocalPersistence {
   // historical name. It no longer rewrites the blob: v12 backfills the tables from it and overlays this relational history.
   private initializeActiveAudit(): void {
     const row = this.db.prepare('SELECT snapshot_json, schema_version FROM lingotorte_snapshots WHERE snapshot_key=?').get(SNAPSHOT_KEY) as SnapshotRow | undefined;
-    if (row && (row.schema_version ?? 0) > CURRENT_SCHEMA_VERSION) throw new Error('Unsupported future snapshot schema');
+    if (row && (row.schema_version ?? 0) > 11) throw new Error('Unsupported future snapshot schema');
     let raw: unknown;
     try { raw = row ? JSON.parse(row.snapshot_json) : undefined; } catch { throw new Error('Corrupt legacy snapshot'); }
     if (row && (!raw || typeof raw !== 'object' || Array.isArray(raw))) throw new Error('Corrupt legacy snapshot');
@@ -2001,6 +2003,7 @@ export class SqliteLocalPersistence {
     const normalized = normalizeLocalStoreSnapshot(snapshot);
     return this.write(expectedRevision, updatedAt, () => {
       for (const [trackId, bundle] of groupByTrack(normalized)) {
+        if (bundle.cues.length === 0) throw new TypeError('Invalid transcript bundle: word timings without cues');
         if (!this.trackHasCues(trackId)) { this.insertTrackBundle(trackId, bundle); continue; }
         if (!sameBundle(this.bundleForTrack(trackId), bundle)) throw new TranscriptBundleConflictError(trackId);
       }
