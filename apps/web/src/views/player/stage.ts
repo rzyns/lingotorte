@@ -8,7 +8,7 @@ import {
   importBrowserLocalFileHandles,
   relinkCurrentMediaFromFile,
   nativeOnlyCues,
-  nativeTextForCue,
+  nativeTextForCurrentTrack,
   setView,
   toggleLoopRange,
   mediaPlaybackUrl,
@@ -16,6 +16,10 @@ import {
   handleNameFromMedia,
   restoreBrowserMediaHandle,
   persistIfLocalServiceAutosaveEnabled,
+  currentTargetTrack,
+  mediaAssetById,
+  putStoredMediaAsset,
+  wordTimingsForCue,
 } from '../../model';
 import { rerenderApp, scrollCueIntoView } from '../../appShell.ts';
 import { mutedByModel, syncPlayButton, syncPlayerTransport, syncTranscriptCurrentWord } from './controls.ts';
@@ -293,10 +297,10 @@ function createVideoStage(model: AppModel): HTMLElement {
     // lt-dlf.3: correct a stored duration guess once the element knows the real one (only on >250 ms drift).
     if (isCurrentVideo() && Number.isFinite(video.duration) && video.duration > 0) {
       const actualMs = Math.round(video.duration * 1000);
-      const stored = model.store.getMediaAsset(mediaId);
+      const stored = mediaAssetById(model, mediaId);
       if (stored && Math.abs(stored.durationMs - actualMs) > 250) {
         const corrected = { ...stored, durationMs: actualMs };
-        model.store.putMediaAsset(corrected);
+        putStoredMediaAsset(model, corrected);
         if (model.currentMedia?.id === mediaId) model.currentMedia = corrected;
         persistIfLocalServiceAutosaveEnabled(model);
       }
@@ -588,8 +592,7 @@ const SUBTITLE_WINDOW_MAX_CHARS = 84;
 const subtitleWordPattern = /[\p{L}\p{M}]+(?:[-’'][\p{L}\p{M}]+)*|\d+(?:[,.]\d+)?/gu;
 
 function subtitleWordsForCue(model: AppModel, cue: Cue): SubtitleWord[] {
-  const timedWords = model.store
-    .listTranscriptWordTimingsForCue(cue.id)
+  const timedWords = wordTimingsForCue(model, cue.id)
     .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
     .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
   if (timedWords.length > 0) {
@@ -692,7 +695,7 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
     return;
   }
 
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const canSaveFromTargetTrack = targetTrack?.transcriptStatus === 'approved';
   const firstWord = windowWords[0]!;
   const lastWord = windowWords[windowWords.length - 1]!;
@@ -786,9 +789,7 @@ function updateOverlay(stage: HTMLElement, model: AppModel, cue: Cue | null): vo
   appendSubtitleTargetWindow(target, model, cue);
   overlay.appendChild(target);
 
-  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
-  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
-  const nativeText = nativeTextForCue(cue, nativeTrack, nativeCues);
+  const nativeText = nativeTextForCurrentTrack(model, cue);
   if (nativeText) {
     const native = document.createElement('div');
     native.className = 'subtitle-native';

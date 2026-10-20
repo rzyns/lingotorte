@@ -229,3 +229,15 @@ The `analysis_run_id` belongs in the key because tokenizer/model changes can leg
 - Export local JSON/SQLite/Anki packages through an `export_job` and `export_manifest_item` manifest listing included text/media/review data and checksums.
 - Default backups are metadata-only; generated clips/media copies are opt-in.
 - Anki export is local/export-only by default; AnkiConnect or sync is a separate mutation/privacy gate.
+
+## View store boundary
+
+Views and UI helpers (`apps/web/src/views`, `apps/web/src/ui`) read and write learner/media state only through named functions in `apps/web/src/model.ts`, never through `model.store` directly (lt-5lb.9; architecture-deepening plan §3 candidate 4). A saved occurrence is resolved for display by `occurrenceContext(model, occurrence)`, which returns `{ status: 'ok', cue, targetTrack, nativeText, media }` or `null` when the cue is not in the store; the `status` discriminant is where the relational-authority C4 `not-loaded` variant will go. Other reads use small named helpers (`currentTargetTrack`, `nativeTextForCurrentTrack`, `cuesForTrack`, `wordTimingsForCue`, `listAllSavedItems`, ...), and the one view-side write is `putStoredMediaAsset`.
+
+The rule is checkable with one grep, which must print nothing:
+
+```sh
+rg "model\.store\." apps/web/src/views apps/web/src/ui   # 0 matches
+```
+
+`tests/web/viewsStoreBoundary.test.ts` enforces it (it also rejects a `model.store` reference split across lines).

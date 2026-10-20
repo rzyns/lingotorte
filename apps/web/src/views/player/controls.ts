@@ -28,6 +28,7 @@ import {
   toggleLoopRange,
   togglePlay,
   captureLocalServiceTransport,
+  wordTimingsForCue,
 } from '../../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { renderShortcutHelpButton } from '../../ui/shortcutHelp.ts';
@@ -587,8 +588,7 @@ export function renderCueTargetText(model: AppModel, cue: Cue): HTMLElement {
   // Clicks/keys are handled by one delegated listener on the transcript panel (views/player/transcript.ts).
   const target = document.createElement('div');
   target.className = 'cue-target';
-  const wordTimings = model.store
-    .listTranscriptWordTimingsForCue(cue.id)
+  const wordTimings = wordTimingsForCue(model, cue.id)
     .filter((word) => word.charStart >= 0 && word.charEnd > word.charStart && word.charStart < cue.text.length)
     .sort((a, b) => a.charStart - b.charStart || a.wordIndex - b.wordIndex);
   const selection = model.selection && model.selection.cueId === cue.id && model.selection.kind !== 'sentence' ? model.selection : null;

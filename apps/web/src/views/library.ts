@@ -28,6 +28,9 @@ import {
   mediaAssetNeedsRelink,
   openMediaAsset,
   restoreOpenedMediaHandle,
+  currentTargetTrack,
+  subtitleTrackById,
+  wordTimingsForCue,
 } from '../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServiceOwner, renderStatusToken, renderTranscriptWorkbenchOverview, uiOwnerCurrent } from '../ui/common.ts';
@@ -266,7 +269,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
     panel.appendChild(status);
   }
 
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   if (!targetTrack) return panel;
 
   const trackMeta = document.createElement('div');
@@ -405,7 +408,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       endLabel.appendChild(endInput);
       timingRow.append(startLabel, endLabel);
 
-      const wordTimings = model.store.listTranscriptWordTimingsForCue(cue.id);
+      const wordTimings = wordTimingsForCue(model, cue.id);
       const wordTimingPanel = document.createElement('div');
       wordTimingPanel.className = 'word-timing-edit-list';
       if (wordTimings.length > 0) {
@@ -533,7 +536,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
       const edits = model.cues
         .map((cue) => {
           const timing = model.transcriptLifecycle.pendingCueTimingEdits[cue.id] ?? { startMs: cue.startMs, endMs: cue.endMs };
-          const wordTimings = model.store.listTranscriptWordTimingsForCue(cue.id).map((word) => {
+          const wordTimings = wordTimingsForCue(model, cue.id).map((word) => {
             const wordEdit = model.transcriptLifecycle.pendingWordTimingEdits[word.id] ?? {
               text: word.text,
               startMs: word.startMs,
@@ -559,7 +562,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           };
         });
       const parentCues = model.cues.slice();
-      const parentWords = parentCues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+      const parentWords = parentCues.flatMap((cue) => wordTimingsForCue(model, cue.id));
       const applying = createCorrectedTranscriptVersion(model, targetTrack.id, edits);
       refreshApprovalGate();
       requestFocusAfterRender(model, 'transcript-lifecycle-status'); rerenderApp(model);
@@ -574,7 +577,7 @@ function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
           const lifecycle = model.transcriptLifecycle;
           const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
           const cueIdMap = new Map(parentCues.map((cue, index) => [cue.id, corrected.cues[index]?.id]));
-          const childWords = corrected.cues.flatMap((cue) => model.store.listTranscriptWordTimingsForCue(cue.id));
+          const childWords = corrected.cues.flatMap((cue) => wordTimingsForCue(model, cue.id));
           const wordIdMap = new Map(parentWords.map((word) => {
             const childCueId = cueIdMap.get(word.cueId);
             return [word.id, childWords.find((child) => child.cueId === childCueId && child.wordIndex === word.wordIndex)?.id];
@@ -653,7 +656,7 @@ function lifecycleDisclosureDefaultOpen(model: AppModel): boolean {
   // lt-dlf.7 (N9): an empty Library leads with Add media; transcript tools stay closed.
   if (!model.currentMedia) return false;
   if (!model.targetTrackId) return true;
-  const status = model.store.getSubtitleTrack(model.targetTrackId)?.transcriptStatus;
+  const status = subtitleTrackById(model, model.targetTrackId)?.transcriptStatus;
   return status === undefined || status === 'draft' || status === 'correcting';
 }
 

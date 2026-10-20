@@ -781,6 +781,117 @@ export function nativeTextForCue(cue: Cue, nativeTrack: SubtitleTrack | null | u
   return best?.text;
 }
 
+/*
+ * lt-5lb.9: named read helpers so views/ and ui/ never reach through `model.store` (see
+ * docs/architecture/data-model-and-storage.md, "View store boundary"). Each returns exactly what the
+ * former inline store call returned, so rendered DOM is unchanged.
+ */
+
+/**
+ * lt-5lb.9: a saved occurrence resolved against the loaded store: its cue, that cue's target track,
+ * the aligned native line (current native track) and the media. `null` when the cue is not in the
+ * store. The `status` discriminant leaves room for the relational-authority C4 `not-loaded` variant
+ * (`{ status: 'not-loaded'; mediaId }`), which is not implemented here.
+ */
+export type OccurrenceContext = Readonly<{
+  status: 'ok';
+  cue: Cue;
+  targetTrack: SubtitleTrack | null;
+  nativeText: string | undefined;
+  media: MediaAsset | null;
+}>;
+
+export function occurrenceContext(
+  model: AppModel,
+  occurrence: Readonly<{ cueId: string; sourceContext?: Readonly<{ mediaId?: string }> }>,
+): OccurrenceContext | null {
+  const cue = model.store.getCue(occurrence.cueId);
+  if (!cue) return null;
+  const targetTrack = model.store.getSubtitleTrack(cue.trackId) ?? null;
+  const mediaId = occurrence.sourceContext?.mediaId ?? targetTrack?.mediaId;
+  return {
+    status: 'ok',
+    cue,
+    targetTrack,
+    nativeText: nativeTextForCue(cue, currentNativeTrack(model), currentNativeCues(model)),
+    media: mediaId ? model.store.getMediaAsset(mediaId) ?? null : null,
+  };
+}
+
+/** lt-5lb.9: the selected target track, or null when none is selected (undefined if the id is unknown). */
+export function currentTargetTrack(model: AppModel): SubtitleTrack | null | undefined {
+  return model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+}
+
+/** lt-5lb.9: the selected native track, or null when none is selected (undefined if the id is unknown). */
+export function currentNativeTrack(model: AppModel): SubtitleTrack | null | undefined {
+  return model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
+}
+
+/** lt-5lb.9: cues of the selected native track ([] when none is selected). */
+export function currentNativeCues(model: AppModel): Cue[] {
+  return model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
+}
+
+/** lt-5lb.9: native line aligned with a target cue on the selected native track. */
+export function nativeTextForCurrentTrack(model: AppModel, cue: Cue): string | undefined {
+  return nativeTextForCue(cue, currentNativeTrack(model), currentNativeCues(model));
+}
+
+export function subtitleTrackById(model: AppModel, trackId: string): SubtitleTrack | undefined {
+  return model.store.getSubtitleTrack(trackId);
+}
+
+export function subtitleTracksForMedia(model: AppModel, mediaId: string): SubtitleTrack[] {
+  return model.store.listSubtitleTracksForMedia(mediaId);
+}
+
+export function cuesForTrack(model: AppModel, trackId: string): Cue[] {
+  return model.store.listCuesForTrack(trackId);
+}
+
+export function cueById(model: AppModel, cueId: string): Cue | undefined {
+  return model.store.getCue(cueId);
+}
+
+export function mediaAssetById(model: AppModel, mediaId: string): MediaAsset | undefined {
+  return model.store.getMediaAsset(mediaId);
+}
+
+/** lt-5lb.9: the single store write the player stage needs (lt-dlf.3 duration correction). */
+export function putStoredMediaAsset(model: AppModel, asset: MediaAsset): void {
+  model.store.putMediaAsset(asset);
+}
+
+export function wordTimingsForCue(model: AppModel, cueId: string): TranscriptWordTiming[] {
+  return model.store.listTranscriptWordTimingsForCue(cueId);
+}
+
+export function practiceAttemptCountForCard(model: AppModel, cardId: string): number {
+  return model.store.listPracticeAttemptsForCard(cardId).length;
+}
+
+export function hasPendingRestoreIntent(model: AppModel): boolean {
+  return Boolean(model.store.snapshotPendingRestoreIntent());
+}
+
+/** lt-5lb.9: every saved item in the store, including archived ones (callers filter). */
+export function listAllSavedItems(model: AppModel): SavedItem[] {
+  return Object.values(model.store.snapshot().savedItems) as SavedItem[];
+}
+
+/** lt-5lb.9: saved items and occurrences from one snapshot (Anki export plan input). */
+export function listAllSavedItemsAndOccurrences(model: AppModel): { savedItems: SavedItem[]; savedOccurrences: SavedOccurrence[] } {
+  const snapshot = model.store.snapshot();
+  return { savedItems: Object.values(snapshot.savedItems), savedOccurrences: Object.values(snapshot.savedOccurrences) };
+}
+
+/** lt-5lb.9: review cards not deleted (archived/suspended ones included) and the state record by card id. */
+export function listLiveReviewCardsWithStates(model: AppModel): { cards: ReviewCard[]; states: Readonly<Record<string, ReviewCardState | undefined>> } {
+  const snapshot = model.store.snapshot();
+  return { cards: Object.values(snapshot.reviewCards).filter((card) => !card.deletedAt), states: snapshot.reviewCardStates };
+}
+
 export function projectPlayerState(
   player: PlayerState,
   cues: readonly Cue[],

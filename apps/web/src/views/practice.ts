@@ -8,7 +8,8 @@ import {
   type SourceAudioSnippetLifecycle,
 } from '../sourceAudioSnippet.ts';
 import {
-  nativeTextForCue,
+  occurrenceContext,
+  practiceAttemptCountForCard,
   setView,
   resolveActiveDueCard,
   setPracticeMode,
@@ -65,10 +66,9 @@ export function renderPracticeView(model: AppModel): HTMLElement {
 
   const { occurrence, state, card } = active;
   const contract = practiceContractFor(model, active);
-  const currentCue = model.store.getCue(occurrence.cueId);
-  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
-  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
-  const nativeText = currentCue ? nativeTextForCue(currentCue, nativeTrack, nativeCues) : undefined;
+  const occurrenceInContext = occurrenceContext(model, occurrence);
+  const currentCue = occurrenceInContext?.cue;
+  const nativeText = occurrenceInContext?.nativeText;
 
   const prompt = document.createElement('div');
   prompt.className = 'practice-prompt';
@@ -446,7 +446,7 @@ export function renderPracticeView(model: AppModel): HTMLElement {
 
   const stats = document.createElement('p');
   stats.className = 'meta';
-  const attemptCount = model.store.listPracticeAttemptsForCard(card.id).length;
+  const attemptCount = practiceAttemptCountForCard(model, card.id);
   stats.textContent = `${attemptCount} attempt${attemptCount === 1 ? '' : 's'} recorded • state: ${state.state} • due: ${formatDueAt(state.dueAt)}`;
   section.appendChild(stats);
 

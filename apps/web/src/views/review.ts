@@ -2,7 +2,8 @@ import type { AppModel } from '../uiTypes';
 import { formatDueAt, formatRelativeDue, formatTimeMs } from '../uiTypes';
 import {
   listReviewBuckets,
-  nativeTextForCue,
+  listLiveReviewCardsWithStates,
+  occurrenceContext,
   setView,
   submitReviewRating,
   resolveActiveDueCard,
@@ -90,10 +91,9 @@ export function renderReviewView(model: AppModel): HTMLElement {
   const { card, savedItem, occurrence, state } = active;
   // lt-0g9: a reveal belongs to the card it was made on, never to the next presented card.
   if (model.review.currentCardId !== card.id) { model.review.currentCardId = card.id; model.review.revealed = false; }
-  const currentCue = model.store.getCue(occurrence.cueId);
-  const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
-  const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
-  const nativeText = currentCue ? nativeTextForCue(currentCue, nativeTrack, nativeCues) : undefined;
+  const occurrenceInContext = occurrenceContext(model, occurrence);
+  const currentCue = occurrenceInContext?.cue;
+  const nativeText = occurrenceInContext?.nativeText;
 
   const prompt = document.createElement('div');
   prompt.className = 'review-prompt';
@@ -206,11 +206,10 @@ export function renderReviewView(model: AppModel): HTMLElement {
   const stats = document.createElement('p');
   stats.className = 'meta';
   // lt-uzo review: count only cards in review; archived (suspended) ones are reported separately.
-  const allCards = Object.values(model.store.snapshot().reviewCards).filter((card) => !card.deletedAt);
+  const { cards: allCards, states: reviewStates } = listLiveReviewCardsWithStates(model);
   const totalCards = allCards.filter((card) => !card.suspendedAt).length;
   const archivedCards = allCards.length - totalCards;
   // lt-unl: "next due" is the earliest due instant across cards in review, not the displayed card's.
-  const reviewStates = model.store.snapshot().reviewCardStates;
   const nextDueMs = allCards
     .filter((c) => !c.suspendedAt)
     .map((c) => (reviewStates[c.id] ? new Date(reviewStates[c.id]!.dueAt).valueOf() : Number.NaN))

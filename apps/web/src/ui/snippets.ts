@@ -1,7 +1,7 @@
 import { isNativePath } from '../../../../packages/domain/src/nativePaths.ts';
 import type { AppModel } from '../uiTypes';
 import { releaseSourceAudioSnippet, type SourceAudioSnippetLifecycle } from '../sourceAudioSnippet.ts';
-import { clearVisualSourceRange } from '../model';
+import { clearVisualSourceRange, practiceAttemptCountForCard } from '../model';
 
 type PracticeSnippetUiState = SourceAudioSnippetLifecycle & {
   mediaPath: string;
@@ -110,7 +110,7 @@ export function practiceSnippetContextKey(model: AppModel, state: PracticeSnippe
   return JSON.stringify([
     model.view, model.practice.mode, model.practice.cardId ?? '',
     // A submit/skip that re-presents the same card is still a new presentation.
-    model.practice.cardId ? model.store.listPracticeAttemptsForCard(model.practice.cardId).length : 0,
+    model.practice.cardId ? practiceAttemptCountForCard(model, model.practice.cardId) : 0,
     state.mediaPath.trim(), model.localService.baseUrl, model.localService.status, model.localService.pathPolicy ?? null,
   ]);
 }

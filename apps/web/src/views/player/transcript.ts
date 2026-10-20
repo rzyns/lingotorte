@@ -6,7 +6,7 @@ import {
   activeCueAtTime,
   clearSelection,
   nativeOnlyCues,
-  nativeTextForCue,
+  nativeTextForCurrentTrack,
   saveSelectionWithReceipt,
   seekToCue,
   setPendingMeaning,
@@ -14,6 +14,7 @@ import {
   setTranscriptQuery,
   cueWordTokens,
   tokenizeCueText,
+  currentTargetTrack,
 } from '../../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
@@ -56,7 +57,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     return panel;
   }
 
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const canSaveFromTargetTrack = targetTrack?.transcriptStatus === 'approved';
   if (targetTrack && !canSaveFromTargetTrack) {
     const draftBanner = document.createElement('div');
@@ -95,9 +96,7 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     const target = renderCueTargetText(model, cue);
     row.appendChild(target);
 
-    const nativeTrack = model.nativeTrackId ? model.store.getSubtitleTrack(model.nativeTrackId) : null;
-    const nativeCues = model.nativeTrackId ? model.store.listCuesForTrack(model.nativeTrackId) : [];
-    const nativeText = nativeTextForCue(cue, nativeTrack, nativeCues);
+    const nativeText = nativeTextForCurrentTrack(model, cue);
     if (nativeText) {
       const native = document.createElement('div');
       native.className = 'cue-native';
@@ -439,7 +438,7 @@ function selectionOffsetInCueText(row: HTMLElement, sel: globalThis.Selection | 
 function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
   const cue = currentKeyboardCue(model);
   if (!cue) return null;
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const summary = document.createElement('div');
   summary.className = 'selection-source-summary';
   summary.append(
@@ -569,7 +568,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   saveBtn.textContent = 'Save';
   // lt-dlf.13: stable hook for tests and browser scripts (several buttons read 'Save').
   saveBtn.dataset.action = 'save-occurrence';
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   const canSave = targetTrack?.transcriptStatus === 'approved';
   saveBtn.disabled = !canSave;
   if (!canSave) saveBtn.title = 'Approve this transcript before saving learner study items.';

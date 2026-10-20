@@ -1,6 +1,6 @@
 import type { AppModel, Selection } from '../uiTypes';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { undoSave, type SaveReceipt } from '../model';
+import { currentTargetTrack, undoSave, type SaveReceipt } from '../model';
 import { showToast } from './toast.ts';
 import { suggestMeaningForSelection } from '../morphologyPanel.ts';
 
@@ -12,7 +12,7 @@ export const CAPTURE_REQUIRES_APPROVAL_MESSAGE = 'Approve the transcript before 
  * nothing is persisted until Save / Enter in Meaning.
  */
 export function openCapture(model: AppModel, selection: NonNullable<Selection>, draft?: { meaning: string; notes: string }): boolean {
-  const targetTrack = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : null;
+  const targetTrack = currentTargetTrack(model);
   if (targetTrack?.transcriptStatus !== 'approved') {
     model.importError = CAPTURE_REQUIRES_APPROVAL_MESSAGE;
     window.getSelection()?.removeAllRanges();
