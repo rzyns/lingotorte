@@ -447,7 +447,7 @@ async function loadMediaTranscriptsNow(model: AppModel, transport: PairedTranspo
   let reply: Record<string, unknown>;
   try { reply = await fetchLocalServiceJson(transport, `/api/media/${mediaId}/transcripts`); }
   catch (error) {
-    if (error instanceof LocalServiceRequestError && error.status === 404) { loadedMediaSet(model).add(mediaId); return; }
+    if (error instanceof LocalServiceRequestError && error.status === 404) { if (currentServiceUrl(model) === url) loadedMediaSet(model).add(mediaId); return; }
     throw error;
   }
   if (currentServiceUrl(model) !== url) return;
