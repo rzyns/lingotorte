@@ -370,6 +370,8 @@ const ACTIVE_AUDIT_SQL = `
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
+export type ShadowCollectionDiff = Readonly<{ blob: number; tables: number; missing: number; extra: number; changed: number; equal: boolean }>;
+
 export type DurableRestoreRequest = { manifest: unknown; mode: RestoreMode; expectedRevision: string; confirmation: RestoreConfirmation; learnerAudit?: LearnerAudit };
 
 type SnapshotRow = Readonly<{
@@ -1647,6 +1649,64 @@ export class SqliteLocalPersistence {
       const result = { snapshot, revision: this.currentRevision() };
       this.db.exec('COMMIT');
       return result;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  // lt-584.3 (C2, shadow mode): the same snapshot assembled from the entity tables. Not authoritative yet;
+  // keyed readers are driven by the DISTINCT keys present in their own table, because cue, word-timing and
+  // observation rows carry no foreign key and may legally reference absent parents.
+  private loadSnapshotFromTables(): LocalStoreSnapshot {
+    const byId = <T extends { readonly id: string }>(rows: readonly T[]): Record<string, T> => Object.fromEntries(rows.map(row => [row.id, row]));
+    const keys = (sql: string): string[] => (this.db.prepare(sql).all() as { key: string }[]).map(row => row.key);
+    const cues = keys('SELECT DISTINCT track_id AS key FROM cue ORDER BY key').flatMap(trackId => this.listCuesForTrack(trackId));
+    const timings = keys('SELECT DISTINCT cue_id AS key FROM transcript_word_timing ORDER BY key').flatMap(cueId => this.listTranscriptWordTimingsForCue(cueId));
+    const observations = keys('SELECT DISTINCT media_id AS key FROM media_file_observation ORDER BY key').flatMap(mediaId => this.listMediaFileObservations(mediaId));
+    return {
+      mediaAssets: byId(this.listMediaAssets()),
+      mediaObservations: observations,
+      subtitleTracks: byId(this.listSubtitleTracks()),
+      cues: byId(cues),
+      transcriptWordTimings: byId(timings),
+      savedItems: byId(this.listSavedItems()),
+      savedOccurrences: byId(this.listSavedOccurrences()),
+      reviewCards: byId(this.listReviewCards()),
+      reviewCardStates: Object.fromEntries(this.listReviewCardStates().map(state => [state.cardId, state])),
+      reviewEvents: [...this.listReviewEvents()],
+      practiceAttempts: [...this.listPracticeAttempts()],
+      learnerAudit: { version: 1, reviewEvents: [...this.listAuditReviewEvents()], practiceAttempts: [...this.listAuditPracticeAttempts()] },
+      exportJobs: byId(this.listExportJobs()),
+      providerPolicies: byId(this.listProviderPolicies()),
+      importJobs: byId(this.listImportJobs()),
+      importJobEvents: [...this.listImportJobEvents()],
+    };
+  }
+
+  /** Test support (lt-584.3 shadow mode): compares the blob-backed loadSnapshot() with the table-assembled snapshot,
+   *  per collection and per entity identity (record key, or `id` for arrays; table readers impose their own order).
+   *  `missing` = in the blob only, `extra` = in the tables only, `changed` = same identity, different payload. */
+  loadSnapshotShadowDiff(): { equal: boolean; collections: Record<string, ShadowCollectionDiff> } {
+    this.db.exec('BEGIN');
+    try {
+      const blob = this.loadSnapshot(); const tables = this.loadSnapshotFromTables();
+      const entries = (value: unknown): Map<string, unknown> => Array.isArray(value)
+        ? new Map(value.map(entry => [String((entry as { id?: unknown }).id), entry]))
+        : new Map(Object.entries((value ?? {}) as Record<string, unknown>));
+      const audit = (value: LocalStoreSnapshot['learnerAudit']): Map<string, unknown> => new Map([
+        ['version', value?.version],
+        ...[...entries(value?.reviewEvents)].map(([id, e]) => [`reviewEvents:${id}`, e] as const),
+        ...[...entries(value?.practiceAttempts)].map(([id, a]) => [`practiceAttempts:${id}`, a] as const),
+      ]);
+      const collections: Record<string, ShadowCollectionDiff> = {};
+      for (const name of Object.keys(createEmptyLocalStoreSnapshot()) as (keyof LocalStoreSnapshot)[]) {
+        const a = name === 'learnerAudit' ? audit(blob.learnerAudit) : entries(blob[name]);
+        const b = name === 'learnerAudit' ? audit(tables.learnerAudit) : entries(tables[name]);
+        const missing = [...a.keys()].filter(key => !b.has(key)).length;
+        const extra = [...b.keys()].filter(key => !a.has(key)).length;
+        const changed = [...a.keys()].filter(key => b.has(key) && !sameHistoryPayload(a.get(key), b.get(key))).length;
+        collections[name] = { blob: a.size, tables: b.size, missing, extra, changed, equal: missing === 0 && extra === 0 && changed === 0 };
+      }
+      this.db.exec('COMMIT');
+      return { equal: Object.values(collections).every(c => c.equal), collections };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { LocalStore, PracticeService } from '../../packages/storage/src';
-import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { makeSavedItem, makeSavedOccurrence, makeReviewCard, makeReviewCardState, validateSavedOccurrenceSourceContext, type PracticeMode } from '../../packages/domain/src';
+import { expectShadowEqual, openShadowed } from '../helpers/shadow.ts';
 
 // File-backed SQLite migrations do real disk I/O (~0.3-0.5 s per test alone); under full-suite parallel load
 // they occasionally exceeded vitest's default 5 s (observed on main 8d82a99, 2/3 runs). Raise the budget only.
@@ -38,9 +38,9 @@ describe('SQLite practice mode forward migration', () => {
   it.each(modes)('submits %s through PracticeService and survives close/reopen', mode => {
     expect(Object.keys(exhaustive).sort()).toEqual([...modes].sort());
     const f = fixture(); const result = submit(f, mode); const file = path();
-    const first = SqliteLocalPersistence.open(file);
+    const first = openShadowed(file);
     try { first.saveStore(f.store); } finally { first.close(); }
-    const reopened = SqliteLocalPersistence.open(file);
+    const reopened = openShadowed(file);
     try {
       expect(reopened.loadSnapshot()).toEqual(f.store.snapshot());
       expect(reopened.listPracticeAttempts()).toEqual([result.attempt]);
@@ -60,8 +60,8 @@ describe('SQLite practice mode forward migration', () => {
     for (const [i, mode] of modes.slice(0, 4).entries()) insert.run(`legacy-${i}`, 'card', mode, 'pass-with-hesitation', i === 0 ? null : 'answer', 'expected', i === 0 ? null : 12, JSON.stringify(sourceContext), 'reviewed', 'created', '{"reviewEventId":"legacy-event"}');
     db.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 7, JSON.stringify(new LocalStore().snapshot()), 'unchanged');
     const before = rows(db); const ledger = db.prepare('SELECT * FROM schema_migration ORDER BY version').all(); db.close();
-    const migrated = SqliteLocalPersistence.open(file);
-    try { expect(migrated.status().schemaVersion).toBe(11); expect(migrated.listMigrations()).toHaveLength(11); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
+    const migrated = openShadowed(file);
+    try { expectShadowEqual(migrated); expect(migrated.status().schemaVersion).toBe(11); expect(migrated.listMigrations()).toHaveLength(11); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
     const check = new DatabaseSync(file);
     try {
       const after = rows(check);
@@ -76,10 +76,10 @@ describe('SQLite practice mode forward migration', () => {
       invalidMode.run('new-sentence-builder', 'sentence-builder');
       expect(check.prepare("SELECT mode FROM practice_attempt WHERE id = 'new-sentence-builder'").get()).toMatchObject({ mode: 'sentence-builder' });
     } finally { check.close(); }
-    const reopened = SqliteLocalPersistence.open(file); try { expect(reopened.listMigrations()).toHaveLength(11); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
+    const reopened = openShadowed(file); try { expect(reopened.listMigrations()).toHaveLength(11); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
   });
   it.each(['mode', 'result', 'responseMs'] as const)('rolls back the entire snapshot and projections for invalid %s', field => {
-    const f = fixture(); submit(f, 'typed-input'); const file = path(); const persistence = SqliteLocalPersistence.open(file);
+    const f = fixture(); submit(f, 'typed-input'); const file = path(); const persistence = openShadowed(file);
     const baseline = f.store.snapshot();
     try {
       persistence.saveStore(f.store); const reader = new DatabaseSync(file); const before = rows(reader);
@@ -90,6 +90,6 @@ describe('SQLite practice mode forward migration', () => {
         expect(persistence.loadSnapshot()).toEqual(baseline); expect(rows(reader)).toEqual(before);
       } finally { reader.close(); }
     } finally { persistence.close(); }
-    const reopened = SqliteLocalPersistence.open(file); try { expect(reopened.loadSnapshot()).toEqual(baseline); expect(reopened.loadSnapshot().practiceAttempts).toHaveLength(1); } finally { reopened.close(); }
+    const reopened = openShadowed(file); try { expect(reopened.loadSnapshot()).toEqual(baseline); expect(reopened.loadSnapshot().practiceAttempts).toHaveLength(1); } finally { reopened.close(); }
   });
 });
