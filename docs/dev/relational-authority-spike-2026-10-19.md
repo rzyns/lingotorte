@@ -95,3 +95,38 @@ Result: yes for all 15 collections; `learnerAudit` is derived. Seventeen `list*`
 ## 6. Retention
 
 The spike script stays in `scripts/spike/` so C5 can re-measure the same synthetic sets against the new loaders (plan §3 C5 step 2). It is not imported by product code or tests (`grep -rln scripts/spike tests apps packages` → 0).
+
+## 7. C5 re-measurement (lt-584.6) — 2026-10-21
+
+Source base: `main` `c6abad0` (post-C4). Same host (Windows 11, i7-12700KF, 128 GB RAM, Node v24.21.0), same synthetic sets and learner set as §1; single run per case, wall-clock, order-of-magnitude (**measured**).
+
+- Script updated to the post-C4 API (still not in vitest, `tsconfig` or any import): seeding is one `saveTrackTranscript` per track (bundle first) followed by `saveLearnerState`; **load** is `loadLearnerState()`; **study save** is `saveLearnerState` with one extra review event and the `rev:<n>` token from the load; **GET /api/state** is `JSON.stringify({ ok, snapshot: state, revision, restoreCapability })` as `server.ts` builds it; **per-media GET** is `JSON.stringify({ ok, ...loadTranscripts(mediaId) })` for the first media (one track of `C` cues). `revisionOf` and `putCue` are gone (no content hash exists; the browser no longer holds the library).
+- Command, from the repo root: `node --max-old-space-size=16384 scripts/spike/relational-authority-measure.ts <N> <C> <W> <memory|file> </dev/null`
+
+| N × C × W | DB | C0 study save | **C5 study save** | C0 load | **C5 learner load** | C0 GET /api/state | **C5 GET /api/state** | **C5 per-media GET** | **C5 loadTranscripts** | C0 first save | **C5 seeding** | C0 DB file | **C5 DB file** | C5 peak RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 × 500 × 8 | memory | 4.0 s | **151 ms** | 0.90 s | **12 ms** | 21.3 MB | **1.50 MB** | 1.81 MB | 14 ms | 2.6 s | 0.44 s | — | — | 0.2 GB |
+| 10 × 500 × 8 | file | 4.7 s | **147 ms** | 1.03 s | **11 ms** | 21.3 MB | **1.50 MB** | 1.81 MB | 14 ms | 3.3 s | 0.74 s | 63 MB | 20 MB | 0.2 GB |
+| 100 × 500 × 8 | memory | 45.2 s | **291 ms** | 9.9 s | **22 ms** | 200.0 MB | **1.59 MB** | 1.81 MB | 30 ms | 31.5 s | 7.7 s | — | — | 0.7 GB |
+| 100 × 500 × 8 | file | 53.5 s | **350 ms** | 12.5 s | **20 ms** | 200.0 MB | **1.59 MB** | 1.81 MB | 28 ms | 37.8 s | 49.2 s | 591 MB | 191 MB | 0.4 GB |
+| 300 × 1000 × 8 | memory | fails | **326 ms** | — | **30 ms** | — | **1.78 MB** | 3.62 MB | 69 ms | fails | 50.8 s | — | — | 2.6 GB |
+| 300 × 1000 × 8 | file | fails | **325 ms** | — | **24 ms** | — | **1.78 MB** | 3.62 MB | 59 ms | fails | 404.9 s | — | 1.14 GB | 1.6 GB |
+
+Raw JSON lines (C5):
+
+```text
+{"N":10,"C":500,"W":8,"mode":"memory","cues":5000,"wordTimings":40000,"buildMs":154.9,"seedMs":435.9,"seedTracks":10,"loadLearnerStateMs":12.4,"studySaveMs":150.7,"revisionBefore":"rev:12","revisionAfter":"rev:13","getStateBytes":1501673,"loadTranscriptsMs":13.7,"getMediaTranscriptsBytes":1808821,"ok":true,"peakRssMB":225}
+{"N":10,"C":500,"W":8,"mode":"file","cues":5000,"wordTimings":40000,"buildMs":162.6,"seedMs":738.8,"seedTracks":10,"loadLearnerStateMs":10.5,"studySaveMs":147.2,"revisionBefore":"rev:12","revisionAfter":"rev:13","getStateBytes":1501673,"loadTranscriptsMs":14.2,"getMediaTranscriptsBytes":1808821,"dbFileBytes":20410368,"ok":true,"peakRssMB":203}
+{"N":100,"C":500,"W":8,"mode":"memory","cues":50000,"wordTimings":400000,"buildMs":1459.2,"seedMs":7652.8,"seedTracks":100,"loadLearnerStateMs":21.5,"studySaveMs":290.8,"revisionBefore":"rev:102","revisionAfter":"rev:103","getStateBytes":1588524,"loadTranscriptsMs":29.9,"getMediaTranscriptsBytes":1808822,"ok":true,"peakRssMB":688}
+{"N":100,"C":500,"W":8,"mode":"file","cues":50000,"wordTimings":400000,"buildMs":1563.6,"seedMs":49150.7,"seedTracks":100,"loadLearnerStateMs":20.2,"studySaveMs":350.4,"revisionBefore":"rev:102","revisionAfter":"rev:103","getStateBytes":1588524,"loadTranscriptsMs":27.6,"getMediaTranscriptsBytes":1808822,"dbFileBytes":190902272,"ok":true,"peakRssMB":440}
+{"N":300,"C":1000,"W":8,"mode":"memory","cues":300000,"wordTimings":2400000,"buildMs":15940.9,"seedMs":50815.4,"seedTracks":300,"loadLearnerStateMs":30.3,"studySaveMs":326.3,"revisionBefore":"rev:302","revisionAfter":"rev:303","getStateBytes":1782124,"loadTranscriptsMs":68.6,"getMediaTranscriptsBytes":3624273,"ok":true,"peakRssMB":2635}
+{"N":300,"C":1000,"W":8,"mode":"file","cues":300000,"wordTimings":2400000,"buildMs":16427.7,"seedMs":404907.8,"seedTracks":300,"loadLearnerStateMs":24.4,"studySaveMs":324.7,"revisionBefore":"rev:302","revisionAfter":"rev:303","getStateBytes":1782124,"loadTranscriptsMs":58.6,"getMediaTranscriptsBytes":3624273,"dbFileBytes":1137963008,"ok":true,"peakRssMB":1553}
+```
+
+Reading (inference):
+
+- The steady-state cost is now bounded by learner data. One rating costs 0.15–0.35 s at every size (C0: 4–54 s), learner-state load is 11–30 ms (C0: 0.9–12.5 s), and the `GET /api/state` body is the learner-only size predicted in §2 (1.50–1.78 MB). The remaining growth (150 → 330 ms; 1.50 → 1.78 MB) is the catalog: `media_asset`/`subtitle_track` rows are rewritten with the learner document.
+- The 300 × 1000 × 8 case that hit V8's string limit in C0 now succeeds in both modes; no whole-state string is built.
+- Opening a media costs one GET proportional to that media only (1.8 MB / 14–30 ms at 500 cues; 3.6 MB / 59–69 ms at 1,000 cues), independent of library size.
+- The DB file is about a third of C0's at 100 media (191 MB vs 591 MB): transcripts are stored once.
+- Seeding (informational; a one-time import, one transaction and revision bump per track) is not linear in file mode: 0.74 s → 49 s → 405 s for 10 → 100 → 300 tracks (6× the rows from 100 to 300 cost 8.2×), while `:memory:` scales near-linearly (0.44 → 7.7 → 51 s). Per-track import in the app pays this per track as it is added, not as a batch; not investigated further here.

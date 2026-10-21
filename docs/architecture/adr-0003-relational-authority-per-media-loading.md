@@ -1,6 +1,6 @@
 # ADR-0003 — SQLite tables are the durable authority; transcripts load per media
 
-Status: **Proposed** (decision taken by Janusz in chat, 2026-10-19; recorded on `lt-5lb.10`; implementation not yet authorized)
+Status: **Accepted** 2026-10-20 (decision taken by Janusz in chat, 2026-10-19; recorded on `lt-5lb.10`; implemented by `lt-584.1`–`lt-584.5`, gate `lt-584.6`)
 Date: 2026-10-19 · Author: Code Architect · Beads: `lt-584` (children `lt-584.1`–`lt-584.6`; decision on `lt-5lb.10`; prerequisite `lt-5lb.9`)
 Plan: `docs/plan/relational-authority-plan.md`
 Source base for every `path:line`: `main` `34051cd` (runtime bytes identical to `e9b5586`).
@@ -55,4 +55,39 @@ Also an abstraction-quality finding (`docs/review/abstraction-review-2026-10-19.
 
 ## Outcome
 
-_To be filled at the gate child: merge hashes, before/after measurements from the spike, Docker receipts._
+Implemented as decided, with the deviations listed below. Gate: `lt-584.6` on `main` `c6abad0`.
+
+**Merges** (each verified with `git log --oneline -1 <sha>`):
+
+| Child | Issue | Merge |
+| --- | --- | --- |
+| C0 spike | `lt-584.1` | `d6815f7` (spike), `1908c03` (review follow-ups), `6660c40` (close) |
+| C1 revision token, v11 `durable_state` | `lt-584.2` | `774b6b6` |
+| C2 table loaders, shadow diff | `lt-584.3` | `d3168d6` |
+| C3 tables authoritative, v12 retires the blob, per-media routes, transitional `/api/state` | `lt-584.4` | `c2a3372` |
+| Prerequisite: occurrence read model | `lt-5lb.9` | `5366f6a` |
+| C4 browser per-media loading, cache v2, strict `/api/state` | `lt-584.5` | `fefb7e7` |
+
+**Measurements** (synthetic, same host and sets; `docs/dev/relational-authority-spike-2026-10-19.md` §2 vs §7, file-backed DB):
+
+| N × C × W | study save C0 → C5 | load C0 → C5 (learner state) | `GET /api/state` C0 → C5 | per-media GET (C5) | DB file C0 → C5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 10 × 500 × 8 | 4.7 s → 0.15 s | 1.03 s → 11 ms | 21.3 MB → 1.50 MB | 1.81 MB | 63 MB → 20 MB |
+| 100 × 500 × 8 | 53.5 s → 0.35 s | 12.5 s → 20 ms | 200.0 MB → 1.59 MB | 1.81 MB | 591 MB → 191 MB |
+| 300 × 1000 × 8 | fails (`RangeError: Invalid string length`) → 0.32 s | — → 24 ms | — → 1.78 MB | 3.62 MB | — → 1.14 GB |
+
+One-time seeding (one `saveTrackTranscript` per track) is not linear in file mode (49 s for 100 tracks, 405 s for 300); recorded in the spike doc §7 for information.
+
+**Docker gate** (contributor image, `--network none`, `c6abad0`): full vitest 129 files passed | 1 skipped, 2017 tests passed | 1 skipped; `tsc --noEmit` exit 0; vite build OK; privacy scan `ok: true` (113 files); no-network 3 files / 6 tests passed. Receipts on `lt-584.6`.
+
+**Deviations recorded during the epic:**
+
+1. **v12, not v11, retires the blob.** C1 had already shipped v11 (`durable_state`); a shipped migration is checksummed in existing ledgers, so C3 added v12 (`retire_snapshot_blob`: rename to `legacy_snapshot_json` plus a one-time table backfill with equality assertion) instead of extending v11. Decision item 6 therefore reads "v12 renames"; the later drop becomes v13.
+2. **D-R8 transitional contract.** C3 kept a full `GET /api/state` and accepted the legacy whole-snapshot `PUT` when its bundles were write-once or exactly equal to the stored ones, so the unchanged C3 browser could still save. C4 flipped to the strict contract (learner state only; `400` on transcript keys).
+3. **D-R9 bundle-first.** `PUT /api/tracks/{id}/transcript` accepts a track not yet in learner state; the browser writes bundles before the learner state that references them (one round trip per track instead of three).
+4. **D-R10 cache option A.** Cache v2 keeps the bundles of unacknowledged tracks plus a pending-track list (all bundles when unpaired) and flushes them before the learner state on the first paired save, rather than always stripping transcripts.
+5. **Pre-flip non-candidate tracks stay saveable.** The strict non-candidate-track bundle check (`tracksMissingTranscriptBundle`) exempts tracks already stored as non-candidate, so an existing database never becomes unsavable.
+6. **Write-once assembly (C0 F-C0-1, option a).** Drafts and corrections assemble cues, word timings and the final `trackVersion` before the first put, keeping the per-track write-once contract.
+7. **Manual check run by an agent.** The C4 DevTools-network recipe (only the opened media's transcript is fetched) was run by the agent under Janusz's 2026-10-20 authority, paired against a disposable Docker stack, and recorded on `lt-584.5`, not by Janusz.
+
+Open: dropping `legacy_snapshot_json` (D-R5) is a separate decision issue for Janusz.
