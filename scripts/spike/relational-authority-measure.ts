@@ -1,4 +1,5 @@
-// lt-584.1 (C0) throwaway spike: measure blob-authority cost on synthetic libraries.
+// lt-584.1 (C0) throwaway spike, updated in lt-584.6 (C5) to the post-C4 API (saveTrackTranscript per track +
+// saveLearnerState, loadLearnerState, loadTranscripts(mediaId), rev:<n> tokens); same synthetic sets as C0.
 // Synthetic data only (domain factories); databases are :memory: or a temp file deleted afterwards.
 // Usage: node scripts/spike/relational-authority-measure.ts <N> <C> <W> <memory|file>
 // Prints one JSON line. Not product code; not part of the vitest suite.
@@ -19,22 +20,13 @@ import {
   makeTranscriptWordTiming,
   validateSavedOccurrenceSourceContext,
 } from '../../packages/domain/src/factories.ts';
-import { LocalStore, createEmptyLocalStoreSnapshot, type LocalStoreSnapshot } from '../../packages/storage/src/localStore.ts';
+import { createEmptyLocalStoreSnapshot, type LocalStoreSnapshot } from '../../packages/storage/src/localStore.ts';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence.ts';
 
 const [nArg, cArg, wArg, modeArg] = process.argv.slice(2);
 const N = Number(nArg); const C = Number(cArg); const W = Number(wArg);
 const mode = modeArg === 'file' ? 'file' : 'memory';
 const digest = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}` as const;
-
-// Same algorithm as the private revisionOf in packages/storage/src/sqliteLocalPersistence.ts (main 6082901).
-function revisionOf(snapshot: unknown): string {
-  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
-    : value !== null && typeof value === 'object'
-      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]))
-      : value;
-  return `sha256:${createHash('sha256').update(JSON.stringify(canonical(snapshot))).digest('hex')}`;
-}
 
 const WORDS = ['dzień', 'dobry', 'proszę', 'bardzo', 'dziękuję', 'kawa', 'herbata', 'jutro', 'wczoraj', 'dom'];
 
@@ -133,28 +125,35 @@ try {
   dir = mode === 'file' ? mkdtempSync(join(tmpdir(), 'lt-584-spike-')) : null;
   const dbPath = dir ? join(dir, 'spike.sqlite') : ':memory:';
   persistence = SqliteLocalPersistence.open(dbPath);
-  // First save: empty DB -> full library (import-like). Second save: one extra review event (study-like autosave).
-  const first = time(() => persistence!.saveSnapshot(snapshot, '2026-10-19T00:00:00.000Z'));
-  result.firstSaveMs = first.ms;
-  const loaded = time(() => persistence!.loadVersionedSnapshot());
-  result.loadVersionedMs = loaded.ms;
-  const card = Object.values(loaded.value.snapshot.reviewCards)[0]!;
-  const studied = { ...loaded.value.snapshot, reviewEvents: [...loaded.value.snapshot.reviewEvents, makeReviewEvent({
+  // Initial seeding, the import path: one saveTrackTranscript per track (bundle first, D-R9), then saveLearnerState.
+  const { cues: _sc, transcriptWordTimings: _sw, ...seedLearner } = snapshot;
+  const bundles = new Map<string, { cues: any[]; wordTimings: any[] }>();
+  for (const cue of Object.values(snapshot.cues)) { const b = bundles.get(cue.trackId) ?? { cues: [], wordTimings: [] }; b.cues.push(cue); bundles.set(cue.trackId, b); }
+  for (const timing of Object.values(snapshot.transcriptWordTimings)) bundles.get(timing.trackId)!.wordTimings.push(timing);
+  const seeded = time(() => {
+    let revision = persistence!.loadLearnerState().revision;
+    for (const [trackId, bundle] of bundles) revision = persistence!.saveTrackTranscript(trackId, bundle, revision, '2026-10-19T00:00:00.000Z');
+    return persistence!.saveLearnerState(seedLearner, revision, '2026-10-19T00:00:00.000Z');
+  });
+  result.seedMs = seeded.ms;
+  result.seedTracks = bundles.size;
+  const loaded = time(() => persistence!.loadLearnerState());
+  result.loadLearnerStateMs = loaded.ms;
+  // Steady state: one rating = one extra review event under the CAS revision token. Transcript tables are untouched.
+  const card = Object.values(loaded.value.state.reviewCards)[0]!;
+  const studied = { ...loaded.value.state, reviewEvents: [...loaded.value.state.reviewEvents, makeReviewEvent({
     cardId: card.id, reviewedAt: '2026-10-19T01:00:00.000Z', rating: 'good', previousStateJson: '{}', nextStateJson: '{}',
   })] };
-  const second = time(() => persistence!.saveSnapshot(studied, '2026-10-19T01:00:00.000Z', loaded.value.revision));
+  const second = time(() => persistence!.saveLearnerState(studied, loaded.value.revision, '2026-10-19T01:00:00.000Z'));
   result.studySaveMs = second.ms;
-  const reloaded = persistence.loadVersionedSnapshot();
-  const rev = time(() => revisionOf(reloaded.snapshot));
-  result.revisionOfMs = rev.ms;
-  const body = JSON.stringify({ ok: true, ...reloaded, restoreCapability: 'active-audit-restore-v1' });
-  result.getStateBytes = Buffer.byteLength(body);
-  const { cues: _c, transcriptWordTimings: _w, ...learner } = reloaded.snapshot;
-  result.learnerOnlyBytes = Buffer.byteLength(JSON.stringify({ ok: true, snapshot: learner, revision: reloaded.revision, restoreCapability: 'active-audit-restore-v1' }));
-  // Browser-side cost of one LocalStore.putCue at this library size (each put returns a whole-snapshot clone).
-  const browserStore = new LocalStore(reloaded.snapshot);
-  const anyCue = Object.values(reloaded.snapshot.cues)[0]!;
-  result.localStorePutCueMs = time(() => browserStore.putCue({ ...anyCue })).ms;
+  result.revisionBefore = loaded.value.revision; result.revisionAfter = second.value;
+  const reloaded = persistence.loadLearnerState();
+  // GET /api/state body exactly as server.ts builds it (sendJson -> JSON.stringify).
+  result.getStateBytes = Buffer.byteLength(JSON.stringify({ ok: true, snapshot: reloaded.state, revision: reloaded.revision, restoreCapability: 'active-audit-restore-v1' }));
+  const mediaId = Object.keys(reloaded.state.mediaAssets)[0]!;
+  const transcripts = time(() => persistence!.loadTranscripts(mediaId));
+  result.loadTranscriptsMs = transcripts.ms;
+  result.getMediaTranscriptsBytes = Buffer.byteLength(JSON.stringify({ ok: true, ...transcripts.value }));
   if (dir) { persistence.close(); persistence = null; result.dbFileBytes = statSync(join(dir, 'spike.sqlite')).size; }
   result.ok = true;
 } catch (error) {

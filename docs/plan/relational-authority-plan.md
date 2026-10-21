@@ -201,6 +201,8 @@ Done when: recorded; merged; epic acceptance re-checked by the operator.
 
 Filed 2026-10-19 by `hermes-codearchitect`; live status in Beads.
 
+Status: implemented — C0–C4 and `lt-5lb.9` merged (hashes in ADR-0003 Outcome); C5 gate recorded 2026-10-21. The v12 drop of `legacy_snapshot_json` is a separate decision issue.
+
 | Child | Issue | Priority | Depends on |
 | --- | --- | --- | --- |
 | Epic | `lt-584` | P2 | discovered from `lt-5lb.10` |
