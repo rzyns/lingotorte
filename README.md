@@ -6,7 +6,7 @@ Local/private language-learning video app for owned media and subtitles.
 
 Lingotorte plays your own Polish videos with their subtitles, lets you save words and phrases from the line you heard, and reviews them with spaced repetition. Everything stays on your machine: no cloud account, no uploads, and online providers are off unless you turn them on.
 
-Status: daily-driver candidate, not released software (see Beads epic `lt-foe`).
+Recorded milestone: the daily-driver program `lt-foe` was accepted by Janusz on 2026-10-16. The subsequent relational-storage/per-media-loading work reached its gate on 2026-10-21; `lt-584` remains open for qualification-script follow-up `lt-584.7`. This is not a public release, persistent deployment approval, or fresh qualification of an existing personal installation. Query Beads for current work.
 
 Run it with Docker (Windows PowerShell, from the checkout; [docs/dev/docker-runbook.md](docs/dev/docker-runbook.md) has the Linux shell version and LAN setup):
 
@@ -32,7 +32,7 @@ The [reviewed planning amendments](docs/review/planning-amendments-2026-10-10.md
 
 ## Purpose
 
-This workspace captures preliminary grounding research for a planned `hermes-war-room` exploration and planning mission around a Lingopie-like local app. The product goal is to use **Janusz’s own local videos/subtitles**, not Lingopie proprietary content.
+This workspace contains the local learning app and its research, design and verification history. The product goal is to study **Janusz’s own local videos/subtitles**, save contextual occurrences and review them—not to copy Lingopie proprietary content. The original `hermes-war-room` planning bundle is retained as historical rationale, not an unimplemented roadmap.
 
 ## Docker-primary runtime and contributions
 
@@ -79,18 +79,18 @@ The same transcript lifecycle panel also has an explicit **Import public YouTube
 ## Recommended reading order
 
 1. `AGENTS.md` — automatically loaded project context and operating boundaries for future agents.
-2. `docs/dev/local-runbook.md` — how to run and smoke-test the local fixture-backed app.
-3. `docs/dev/v1-local-acceptance.md` — V1 local acceptance scope, cleanup decisions, and verification matrix.
+2. `BEADS.md`, the relevant live issue, `DECISIONS.md`, and `docs/review/safety-privacy-boundary-review.md` — current scope, decisions and boundaries.
+3. `docs/dev/docker-runbook.md` and `docs/plan/docker-primary-runtime.md` — primary runtime and contributor path. `docs/dev/local-runbook.md` retains feature recipes/export limits; `docs/dev/v1-local-acceptance.md` is historical acceptance, not today's runtime receipt.
    - `docs/workflows/README.md` — as-is user workflow catalog (YAML + JSON Schema, generated Mermaid/friction projections) for UX review with an LLM; `npm run workflows:validate` keeps it in step with the code.
 4. `docs/mission/hermes-war-room-mission-statement.md` — pasteable mission statement for the `hermes-war-room` orchestrator.
 5. `docs/mission/lingopie-war-room-brief.md` — lane-oriented mission brief for a fleet of agents.
 6. `docs/research/preliminary-grounding-research.md` — consolidated preliminary research and architecture direction.
 7. `docs/research/live-ui-inventory.md` — sanitized live Lingopie UI observations from CDP/MCP inspection.
-8. `docs/plan/architecture-deepening-plan.md` — sequential subtitle-parser seam and Capture-module refactor plan, ADRs, scope boundaries, and verification gates.
+8. `docs/plan/architecture-deepening-plan.md` and `docs/architecture/adr-0003-relational-authority-per-media-loading.md` — refactor rationale and accepted storage outcome. Query Beads rather than restarting completed plan steps.
 
 ## Final planning bundle
 
-The canonical implementation-planning bundle now lives in mission-requested split paths as well as the retained `docs/planning/` parent artifacts.
+The original implementation-planning bundle lives in mission-requested split paths as well as the retained `docs/planning/` parent artifacts. It supplies historical rationale; current Beads issues, accepted decisions and explicitly implemented contract sections take precedence over its future-tense work lists.
 
 Recommended final-bundle reading order:
 

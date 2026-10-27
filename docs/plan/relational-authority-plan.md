@@ -1,8 +1,8 @@
 # Relational authority plan — tables become the truth, transcripts load per media
 
-Status: plan of record for the epic created from ADR-0003 (IDs in §0.8). Written by Code Architect on 2026-10-19 against `main` `34051cd` (runtime bytes identical to `e9b5586`). Decision B taken by Janusz in chat the same day (recorded on `lt-5lb.10`): whole epic, ahead of `lt-5lb.8`/`.9`.
+Status (reconciled 2026-10-27): implemented C0–C5 plan, with accepted ADR-0003 and gate evidence. Beads remains authoritative: `lt-584` stays open for the qualification-script follow-up `lt-584.7`, not a repeat of C0–C5. `lt-fls` separately holds the unapproved legacy-table retirement decision. Originally written by Code Architect on 2026-10-19 against `main` `34051cd` (runtime bytes identical to `e9b5586`); Janusz selected Option B, recorded on `lt-5lb.10`.
 
-Written for an implementing agent that has not seen the review. Every child names files, symbols, exact commands, what "done" looks like, and when to stop and report. Read it once top to bottom before the first child. Follow the same working method as `docs/plan/architecture-deepening-plan.md` §0 (branch per child, atomic verified commits, independent review, operator closes).
+Sections 0–1 and the C0–C5 instructions in §3 preserve the original execution contract and its amendments; they are not a new assignment. Historical baselines, source line numbers and migration proposals there must not override the shipped contract: **v11 adds revision state; v12 renames/backfills the legacy blob; a future drop is proposed as v13** (subject to the next available version). Cache v2 retains unacknowledged bundles (D-R10). Consult ADR-0003 Outcome and the current issue before any follow-up; new implementation requires its own scope.
 
 Related: `docs/architecture/adr-0003-relational-authority-per-media-loading.md`, `docs/review/abstraction-review-2026-10-19.md` (F2, F3), `docs/dev/restore-audit-semantics-contract.md`, `docs/architecture/data-model-and-storage.md`, `BEADS.md`, `GIT-POLICY.md`, `DECISIONS.md`.
 
@@ -41,11 +41,11 @@ Related: `docs/architecture/adr-0003-relational-authority-per-media-loading.md`,
 
 ## 2. Target design
 
-### 2.1 Durable schema (v11)
+### 2.1 Shipped durable schema (v11 revision state, v12 blob retirement)
 
 ```
 durable_state(id INTEGER PRIMARY KEY CHECK (id=1), revision INTEGER NOT NULL, updated_at TEXT NOT NULL)
-legacy_snapshot_json   -- renamed from lingotorte_snapshots; read by nothing; dropped by v12 later
+legacy_snapshot_json   -- renamed/backfilled by v12; historical migration/test support only; future drop decision lt-fls
 -- all existing entity, history and membership tables unchanged
 ```
 
@@ -82,9 +82,9 @@ close()
 
 - `LocalStore` interface unchanged. `cues`/`transcriptWordTimings` contain only loaded media. New: `loadedTranscriptMedia: Set<UUID>` tracked in `model.ts` (WeakMap, like `syncOwner`), not in the snapshot.
 - `openMediaAsset(model, mediaId): Promise<boolean>`; sets `model.transcriptLoading = { mediaId } | null`; fetches `/api/media/{id}/transcripts` when paired and not loaded; projects as today.
-- Import paths (`importBrowserLocalFiles`, transcript generation, correction versions) still `putCue`/`putTranscriptWordTiming` into the store **and**, when paired and autosave is on, `PUT /api/tracks/{trackId}/transcript` before the learner-state save that references the new track. Order matters: track metadata (in learner state) must not reference a bundle the service does not have — the service's `PUT /api/state` validates that every `subtitleTracks[*]` with `transcriptStatus !== 'candidate'` has a bundle, else `400` (decide in C3 whether `candidate` tracks may be bundle-less; default yes).
+- Import paths (`importBrowserLocalFiles`, transcript generation, correction versions) still `putCue`/`putTranscriptWordTiming` into the store **and**, when paired and autosave is on, `PUT /api/tracks/{trackId}/transcript` before the learner-state save that references the new track. The shipped strict `PUT /api/state` rejects a non-candidate track without a stored bundle unless that track is already stored as non-candidate (the compatibility exception recorded in ADR-0003 Outcome 5). Candidate tracks may be bundle-less. These decisions shipped in C4; no C3 decision remains open.
 - `saveModelToLocalService` strips `cues`/`transcriptWordTimings` before PUT. Dirty detection compares the stripped serialization.
-- `browserSnapshotCache` stores the stripped snapshot; `SNAPSHOT_CACHE_SCHEMA_VERSION` → 2 with an upgrade that drops old records.
+- `browserSnapshotCache` uses `SNAPSHOT_CACHE_SCHEMA_VERSION = 2`, with v1 records dropped on read; the shipped pending-bundle exception below supersedes the original always-stripped-cache proposal.
   **Option A (Janusz, 2026-10-20, `lt-584.5`; D-R10):** the v2 record strips only the bundles the current service has acknowledged (loaded from it, a successful track PUT, or a `409 transcript-bundle-exists` verified by `GET /api/media/{id}/transcripts` at the same revision with an identical bundle). It keeps the cues/word timings of every unacknowledged track (all of them when unpaired) plus `pendingTranscriptTrackIds`; reload restores them, and the first paired save flushes them per track before the learner state. Acknowledgements are bound to the service URL: after a URL change every bundle in the store is pending again. "Load service state" discards pending bundles with the other browser edits.
 - Occurrence-in-context (from `lt-5lb.9`) returns `{ status: 'not-loaded', mediaId }` when the cue's media is not loaded; Saved/Review/Practice views render "Open media to load transcript" and call `openMediaAsset`.
 
@@ -94,7 +94,9 @@ C2 makes the table loaders complete and runs them beside the blob: `loadSnapshot
 
 ---
 
-## 3. Children
+## 3. Completed children — historical execution instructions
+
+Do not reapply these steps. In particular, C3's original proposal to extend v11 was superseded by a separate v12 migration, and C5's originally named “v12 drop” is now the proposed v13 decision `lt-fls`. Existing migration SQL/checksums must remain unchanged. Current qualification-script work is specified in Beads `lt-584.7`, not this historical child list.
 
 ### C0 — Spike: measure the baseline and verify the write-once hypothesis
 
@@ -190,7 +192,7 @@ Done when: recorded; merged; epic acceptance re-checked by the operator.
 | D-R2 | Learner-state document keeps whole-document CAS; only transcripts split out | per-aggregate command API | smallest change that removes the growth-axis cost; command API can follow behind the same tables |
 | D-R3 | GET per media, PUT per track | per-track GET | player needs target + native together; write unit is the track |
 | D-R4 | Shadow mode (C2) before flip (C3) | flip directly | bug-magnet file; the comparison is cheap and catches mapping gaps before they are authoritative |
-| D-R5 | Keep `legacy_snapshot_json` until a separate v12 decision | drop in v11 | rollback evidence for real data; Janusz decides the period |
+| D-R5 | Keep `legacy_snapshot_json` until the separate drop decision `lt-fls` (originally called v12; now proposed v13 after shipped v12 rename/backfill) | immediate drop with authority flip | rollback evidence for real data; Janusz decides the period |
 | D-R6 | `lt-5lb.9` precedes C4 | do both in C4 | the `not-loaded` state must live in one read model, not in three views |
 | D-R7 | Stale browser gets `400`, not silent acceptance | accept old whole-snapshot PUT | single image ships both; silent drop of transcript keys would look like data loss |
 | D-R8 | Transitional `/api/state` in C3 (full GET; legacy PUT with write-once/exact-match bundles); strict in C4 (Janusz, 2026-10-20) | strict in C3 | the unchanged C3 browser could not save |
@@ -201,7 +203,7 @@ Done when: recorded; merged; epic acceptance re-checked by the operator.
 
 Filed 2026-10-19 by `hermes-codearchitect`; live status in Beads.
 
-Status: implemented — C0–C4 and `lt-5lb.9` merged (hashes in ADR-0003 Outcome); C5 gate recorded 2026-10-21. The v12 drop of `legacy_snapshot_json` is a separate decision issue.
+Recorded milestone: C0–C5 and `lt-5lb.9` completed (hashes in ADR-0003 Outcome); C5 gate recorded 2026-10-21. The proposed v13 drop of `legacy_snapshot_json` remains the separate unapproved decision `lt-fls`. `lt-584.7` remains the epic's qualification-script follow-up; query Beads for its live state.
 
 | Child | Issue | Priority | Depends on |
 | --- | --- | --- | --- |

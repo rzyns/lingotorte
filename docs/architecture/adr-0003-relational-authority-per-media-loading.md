@@ -5,7 +5,7 @@ Date: 2026-10-19 · Author: Code Architect · Beads: `lt-584` (children `lt-584.
 Plan: `docs/plan/relational-authority-plan.md`
 Source base for every `path:line`: `main` `34051cd` (runtime bytes identical to `e9b5586`).
 
-## Context
+## Historical context (before the implementation)
 
 `SqliteLocalPersistence` (`packages/storage/src/sqliteLocalPersistence.ts`) stores learner state twice:
 
@@ -29,9 +29,9 @@ Also an abstraction-quality finding (`docs/review/abstraction-review-2026-10-19.
 3. **State is split in two along the growth axis.**
    - *Learner state + media catalog* (`mediaAssets`, `mediaObservations`, `subtitleTracks` metadata, `savedItems`, `savedOccurrences`, `reviewCards`, `reviewCardStates`, `reviewEvents`, `practiceAttempts`, `learnerAudit`, `exportJobs`, `providerPolicies`, `importJobs`, `importJobEvents`) keeps whole-document semantics: `GET/PUT /api/state` with CAS revision, exactly as today minus two keys.
    - *Transcript bundles* (`cues`, `transcriptWordTimings`) are addressed per media: `GET /api/media/{mediaId}/transcripts` returns every track's cues and word timings for one media; `PUT /api/tracks/{trackId}/transcript` writes one track's bundle. A track's bundle is written once at import/correction time (tracks are versioned; corrections create a new `trackVersion`, `model.ts createCorrectedTranscriptVersion`), so an ordinary learner-state save never touches `cue` or `transcript_word_timing`.
-4. **The browser loads transcripts on demand.** `LocalStore` keeps its interface; `cues`/`transcriptWordTimings` hold only the media opened in this session. `openMediaAsset` becomes asynchronous with an explicit loading state. The browser snapshot cache (`browserSnapshotCache.ts`, lt-0zc) caches learner state + catalog only. Unpaired browser-only mode is unchanged: everything imported in the session stays in memory.
+4. **The paired browser loads transcripts on demand.** `LocalStore` keeps its interface; fetched bundles accumulate for media opened in the session (no eviction policy is implied). `openMediaAsset` is asynchronous with an explicit loading state. As amended by D-R10, cache v2 stores learner state + catalog **and unacknowledged bundles**, with `pendingTranscriptTrackIds`; this includes all bundles when unpaired. Pending bundles survive reload and flush before the next paired learner-state save. Acknowledged bundles reload per media from the service.
 5. **Restore keeps its contract.** `planLearnerRestore` is already pure over the six learner collections (`restorePlanner.ts:14`); the export manifest contains no transcripts (`exportRestoreService.ts:39-46`). `previewRestore`/`commitRestore` read the current learner state from tables and write the candidate through the same table writers; readback verification (`:1725`, `:1781`) becomes read-after-write over tables.
-6. **Migration v11** adds `durable_state`, verifies the entity tables reproduce the blob (they are rewritten on every save, so they must), rewrites them from the blob once as a backfill, sets `revision = 1`, and renames `lingotorte_snapshots` to `legacy_snapshot_json`. The legacy table is dropped by a later v12 after Janusz has used the app on real data for a period he chooses.
+6. **Migration v11** adds `durable_state`. **Migration v12** renames `lingotorte_snapshots` to `legacy_snapshot_json` and backfills the entity tables with equality verification. This supersedes the original combined-v11 proposal, as explained in Outcome deviation 1; shipped checksums stay unchanged. A future drop is proposed as v13 under `lt-fls`, subject to the next available version and Janusz's explicit retirement decision. No period of use or deletion date is approved by this ADR.
 
 ## Alternatives considered
 
@@ -42,7 +42,7 @@ Also an abstraction-quality finding (`docs/review/abstraction-review-2026-10-19.
 | **Content-hash revision computed over the tables** | Requires reading and canonicalizing the whole state on every write to produce the token — the exact O(n) cost being removed. |
 | **Per-aggregate command API (`POST /api/saved-items`, …) instead of a learner-state document** | Closer to a "real" service, but changes every write path in `model.ts` and the restore protocol at once; the learner-state document is small and CAS already works. Can follow later behind the same tables. |
 | **Per-track GET instead of per-media GET** | Player needs target + native tracks together; one round trip per media open is the natural unit. PUT stays per track because that is the write unit. |
-| **Keep cues in the browser snapshot cache** | Cache would grow with the library and the cache is explicitly "not a source of truth" (`browserSnapshotCache.ts:4-6`); transcripts reload from the service. |
+| **Keep every acknowledged transcript in the browser snapshot cache** | Cache would grow with the library; acknowledged transcripts reload from the service. D-R10 deliberately retains unacknowledged bundles so unsent imports survive reload. |
 
 ## Consequences
 
@@ -90,4 +90,4 @@ One-time seeding (one `saveTrackTranscript` per track) is not linear in file mod
 6. **Write-once assembly (C0 F-C0-1, option a).** Drafts and corrections assemble cues, word timings and the final `trackVersion` before the first put, keeping the per-track write-once contract.
 7. **Manual check run by an agent.** The C4 DevTools-network recipe (only the opened media's transcript is fetched) was run by the agent under Janusz's 2026-10-20 authority, paired against a disposable Docker stack, and recorded on `lt-584.5`, not by Janusz.
 
-Open: dropping `legacy_snapshot_json` (D-R5) is a separate decision issue for Janusz.
+Follow-ups: `lt-584.7` tracks qualification-script compatibility with the strict API; the epic remains open for it. Dropping `legacy_snapshot_json` (D-R5) is the separate unapproved decision `lt-fls`. Learner export/restore preview is not full-state recovery evidence; see its consistent-database-backup and upgrade-test criteria before any retirement proposal is implemented.

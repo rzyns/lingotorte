@@ -1,6 +1,6 @@
 # Data Model and Storage
 
-Status: split-out data model deliverable. Planning only.
+Status: original model/schema recommendations plus implemented-contract sections below. The **Authority** and **View store boundary** sections describe the shipped relational/per-media design; the broader recommendation tables are not a claim that every listed entity or projection exists. Current work/status is in Beads.
 
 ## Typed model overview
 
@@ -246,7 +246,7 @@ Implemented by the relational-authority epic `lt-584` (ADR-0003, accepted 2026-1
 
 ## View store boundary
 
-Views and UI helpers (`apps/web/src/views`, `apps/web/src/ui`) read and write learner/media state only through named functions in `apps/web/src/model.ts`, never through `model.store` directly (lt-5lb.9; architecture-deepening plan §3 candidate 4). A saved occurrence is resolved for display by `occurrenceContext(model, occurrence)`, which returns `{ status: 'ok', cue, targetTrack, nativeText, media }` or `null` when the cue is not in the store; the `status` discriminant is where the relational-authority C4 `not-loaded` variant will go. Other reads use small named helpers (`currentTargetTrack`, `nativeTextForCurrentTrack`, `cuesForTrack`, `wordTimingsForCue`, `listAllSavedItems`, ...), and the one view-side write is `putStoredMediaAsset`.
+Views and UI helpers (`apps/web/src/views`, `apps/web/src/ui`) read and write learner/media state only through named functions in `apps/web/src/model.ts`, never through `model.store` directly (lt-5lb.9; architecture-deepening plan §3 candidate 4). A saved occurrence is resolved for display by `occurrenceContext(model, occurrence)`, which returns `{ status: 'ok', cue, targetTrack, nativeText, media }`, `{ status: 'not-loaded', mediaId }` when its cue is absent and its known media has not loaded transcripts, or `null` when context is unavailable. C4 implemented this distinction; it is not future work. Other reads use small named helpers (`currentTargetTrack`, `nativeTextForCurrentTrack`, `cuesForTrack`, `wordTimingsForCue`, `listAllSavedItems`, ...), and the view-side media write is `putStoredMediaAsset`.
 
 The rule is checkable with one grep, which must print nothing:
 
