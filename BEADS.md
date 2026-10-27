@@ -17,8 +17,11 @@
 | Authorization to start application work | `lt-dy6` |
 | Migration/reconciliation evidence | `lt-e9g` |
 | Captured historical/takeover evidence | `lt-4jg` |
+| Relational-authority implementation and qualification follow-up | `lt-584` / `lt-584.7` |
+| Separate legacy-table retirement decision | `lt-fls` |
+| Remaining-plan reconciliation and evidence ledger | `lt-3fi` |
 
-These IDs are stable navigation, **not a status snapshot**. Ask Beads for current state.
+These IDs are stable navigation, **not a status snapshot**. Ask Beads for current state. Recorded milestones: Janusz accepted `lt-foe` on 2026-10-16; the C0–C5 storage gate is recorded on `lt-584.6`. Neither milestone authorizes optional work, persistent deployment, real-state transfer or legacy-table deletion.
 
 The [historical work index](docs/plan/archive/historical-work-index.md) locates the verified external Git/source archive and summarizes retired local Windows diagnostic work. It preserves recovery and useful conclusions without adding obsolete tooling to the active application or reviving stopped execution.
 
@@ -36,7 +39,7 @@ The [Docker-primary replacement scope](docs/plan/docker-primary-runtime.md) reco
 
 No molecules, formulas, recurring patrols, custom statuses or hosted boards are needed for this finite recovery plan. Native issues and dependencies are sufficient. Technical decisions (path policy, request model, retention design) are separate from the human scope/authority gate: agents should resolve technical questions with evidence and independent review, not make Janusz arbitrate every implementation detail.
 
-The dependency graph is intentionally not a single serial chain. Once authorized, platform and safety design can proceed independently; runtime repairs/qualification precede integrated service work, independent fixes can run in separate worktrees, and B5 depends on safety and learning qualification. Optional ASR, transfer, deployment, export extensions and B8 lanes do not block the root program.
+The dependency graph is intentionally not a single serial chain. The original recovery program sequenced runtime/safety work before integrated qualification; use live edges rather than replaying that historical sequence. Optional ASR, transfer, deployment and export extensions do not block the accepted root program. Anki file export was explicitly promoted from B8 to `lt-foe.3` and completed as `lt-dxo`; AnkiConnect remains separately gated.
 
 ## Canonical store and commands
 
@@ -93,7 +96,7 @@ Report the actual scope of each verification command: `scan:privacy` checks refe
 - `docs/plan/autonomous-batches/`: historical acceptance/deployment receipts, not renewed authority.
 - `.beads/migrations/2026-10-10-plan.graph.json` and `2026-10-10-ids.json`: **one-time migration inputs/ID map**, not live status. Do not reapply to an initialized store or edit them to change current issues.
 
-All review findings map to issues. B1 storage/audit maps to safety plus deferred event streams; B2 to paths/relink; B3 to restore/export correctness plus deferred broader recovery; B4 to historical evidence and optional ASR repairs; B5 to morphology plus deferred dictionary; B6 to learning and deferred snippet reuse; B7 to accepted extraction evidence and deferred alignment/OCR; B8 remains deferred. Previously accepted features were not expanded into a fabricated completed-task history.
+The takeover review findings map to issues. B1 storage/audit maps to safety plus deferred event streams; B2 to paths/relink; B3 to restore/export correctness plus deferred broader recovery; B4 to historical evidence and optional ASR repairs; B5 to morphology and the implemented Wiktionary meanings lane, with secondary-source evaluation in `lt-5lb.3`; B6 to learning and deferred snippet reuse; B7 to accepted extraction evidence and deferred alignment/OCR; B8 file export was promoted/completed as `lt-dxo`, while AnkiConnect remains gated. Historical acceptance is not a fresh runtime qualification.
 
 ## Local durability, export and sync
 

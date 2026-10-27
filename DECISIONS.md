@@ -2,7 +2,7 @@
 
 Status: durable human-decision record for Lingotorte development with minimal human intervention. Current work/status is the native Beads graph described in `BEADS.md`; the former `PLAN.md` backlog is archived. These policy decisions remain binding, but historical implementation premises below are not live task status.
 
-Use this file alongside `BEADS.md`, the relevant native issue, `docs/review/safety-privacy-boundary-review.md`, and `docs/dev/local-runbook.md`. It resolves product/authority choices that older planning docs leave open. It does **not** supersede the safety/privacy boundary review or grant the actions excluded by the current issue and work contract.
+Use this file alongside `BEADS.md`, the relevant native issue, `docs/review/safety-privacy-boundary-review.md`, and the primary runtime guide `docs/dev/docker-runbook.md` (`docs/dev/local-runbook.md` retains feature recipes and export limits). It resolves product/authority choices that older planning docs leave open. It does **not** supersede the safety/privacy boundary review or grant the actions excluded by the current issue and work contract.
 
 ## Worker authority and escalation rule
 
@@ -50,13 +50,15 @@ Decision: use a split model:
 - If the current browser media reference is a `blob:` URL or `browser-file-handle:<name>` label, keep requiring an explicit absolute owned local media path before local-service jobs can read the file.
 - Redact/private-path handling remains required in status, logs, screenshots, exports, and committed artifacts.
 
-Possible future enhancement: Tauri/desktop bridge, if browser + loopback service remains too awkward after B2/B3/B6/B7 polish.
+Possible future enhancement: Tauri/desktop bridge, only if the current browser + Docker local-service workflow proves insufficient in use; packaging remains deferred (§13). Docker/private-LAN operation supersedes the historical loopback-only runtime premise, not these media-identity or privacy rules.
 
 ---
 
 ### 3. Backup/export product semantics
 
 Decision: define B3 as **metadata backup v1** first: JSON manifest + integrity + dry-run/readback restore + merge/replace semantics + no media copy.
+
+**Implemented-scope clarification (2026-10-27, `lt-3fi`, based on accepted `lt-7lq` export limits and deferred `lt-42c`):** the shipped file is **learner-state export v1**, not full metadata backup. It includes active learner records and captured source-context references; it excludes the media/transcript library and inactive audit. The broad metadata intent below is not a current inclusion list. `docs/dev/local-runbook.md` documents exact limits. Consistent database backup/reopen is the operational full-state recovery mechanism; a portable full-library metadata export remains optional `lt-42c`. No real-state backup, transfer or restore is authorized by this clarification.
 
 Implementation semantics:
 
@@ -74,7 +76,7 @@ Caveat: backup is not a high-priority feature at this time.
 
 Decision: yes, eventually store raw exported-file hash/readback hash separately, but not now.
 
-Current B3 semantics:
+Integrity policy (the shipped learner-state export is narrower than the original B3 backup intent):
 
 - Keep `manifest_sha256` as semantic manifest integrity.
 - If B3 becomes a file/bundle product, add a separate field/table for physical artifact hash/readback hash.
@@ -208,9 +210,9 @@ Implementation semantics:
 
 ---
 
-### 10. Future Anki path
+### 10. Anki file-export policy
 
-Anki remains B8/future.
+Anki file export moved into the daily-driver program under §16 and shipped in `lt-dxo` (merge `8a70271`, 2026-10-16): local-service `.apkg` export plus optional text import file. AnkiConnect mutation remains future/gated. This implementation milestone does not claim real Anki desktop import or live paired `.apkg` download qualification; those were explicitly unqualified in the closure receipt.
 
 Known current posture:
 
@@ -263,11 +265,11 @@ Implementation semantics:
 
 Future lane.
 
-Decision: do not package yet. Let B2/B3/B6/B7 reveal whether browser+loopback is enough.
+Decision: do not package yet. The Docker-primary amendment supersedes the historical browser+loopback-only target; use actual local-file/daily-driver friction to decide whether desktop packaging is needed.
 
 Implementation semantics:
 
-- Browser + loopback local service remains the current target.
+- Browser + Docker local service is the current primary target; loopback or explicitly configured trusted-private-LAN access follows the runtime amendment and §14. Native packaging is not a prerequisite.
 - Tauri/Electron/native packaging is deferred unless the local-file/daily-driver story requires it.
 - Do not add auto-update, public distribution, installer signing, or cross-platform packaging work in the current autonomous lane.
 
