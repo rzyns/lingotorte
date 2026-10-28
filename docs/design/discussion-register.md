@@ -25,6 +25,19 @@ Scope of this first edition: the shared discussion through the user's request fo
 | D-02 | Pairing/security ceremony may be disproportionate for a casual personal learning tool. The user has not selected a particular replacement or authorised removing safeguards. |
 | D-03 | Keep the discussion organised around a common goal, capture agreements and unresolved questions, and reduce unsolicited specialist chatter. |
 
+## Owner evidence: watch-session needs (Q-01)
+
+The user described unfamiliar words within an utterance as the main watching difficulty. Fixed-time seeking and mobile controls that require reveal/animation make recovering the sentence cumbersome. Their reported useful reference behaviours are:
+
+- Previous/next subtitle-unit navigation and a hideable transcript whose lines seek to their timestamps.
+- Direct click on the video to pause/resume, without a controls-reveal delay.
+- Hover on a word or phrase for a quick translation and supporting information without necessarily interrupting playback.
+- Click a word or phrase to collect it into the video's vocabulary list with no additional form, and pause playback.
+
+Evidence grade: owner-reported experience and preference, not independent inspection of the reference product. These are promising behaviours, explicitly not a definitive interaction specification. The owner values both casual inspection and very low-friction intentional collection; an extra Keep button must not be presumed necessary on pointer devices.
+
+Q-01 now has a concrete use case: recover the utterance, understand unfamiliar language, optionally collect it, then continue watching with minimal disruption. The broader vision statement remains provisional. Next focused question: adapt that distinction to touch/keyboard without hover, and clarify what collecting into a video vocabulary list implies for scheduled study. No deployment or standalone-mode decision follows from this answer.
+
 ## 2. Emerging vision and working agreements
 
 **Candidate vision, not yet endorsed:** “Lingotorte helps me turn material I want to understand into language I can remember—without making me manage the learning system.”
@@ -93,7 +106,7 @@ Priority is discussion order, not implementation authorisation. “Lead” names
 
 | ID | Priority | Question / decision needed | Lead and closure evidence |
 | --- | --- | --- | --- |
-| Q-01 | Now | What concrete experience should Lingotorte serve first? What should it help with, and leave alone, during an actual Polish-video session? | User; a concrete session example and an endorsed short product statement. |
+| Q-01 | Partly answered | Owner supplied the watching use case above. How should fast inspect/collect work across pointer, touch and keyboard, and does collection imply scheduled study? | @experiencedesigner next; owner confirms remaining intent. Broader product statement is still provisional. |
 | Q-02 | Next | Which device/access story is wanted: one machine, trusted LAN/phone, multiple devices? Is deliberate service-free study wanted? | User, then @codearchitect; explicit needs before architectural selection. Do not conflate interruptions with standalone use. |
 | Q-03 | Next | Which administrative concepts can disappear, and which protections must remain at the actual deployment boundary? | @codearchitect; options with exposure, threat assumptions, recovery/migration and total complexity. |
 | Q-04 | Next | Is Keep from an unapproved machine transcript allowed with provenance/marker? | User with @experiencedesigner; explicit policy disposition. Inspect already works. |
@@ -103,6 +116,19 @@ Priority is discussion order, not implementation authorisation. “Lead” names
 | Q-08 | Later | Which navigation, watch/study priority and exercise-intention choices serve the vision? | @experiencedesigner with user; proposed experience reviewed against Q-01 rather than inherited screens. |
 | Q-09 | Evidence | Does the traced offline-review/reconnect flow behave live as reported? | Future scoped qualification; event and schedule checks, actual fork/copy, browser vs service differences. Usage frequency needs separate evidence. |
 | Q-10 | Deliverable | When should source-labelled as-is journeys, proposed to-be journeys and sketches be authored? | Coordinator after Q-01/Q-02 framing; location is existing `docs/workflows/`, not a parallel UX catalog. This register does not authorise application changes. |
+
+## Focused round: fast lookup and collection
+
+Status: proposed interaction map, not an approved implementation. Owner's collect-versus-schedule answer remains pending.
+
+- Pointer: hover to inspect without pausing; click to collect and pause. Touch: tap to inspect, explicit Keep in the popover. Keyboard: focused inspection and explicit collection. Exact gestures, timing, phrase selection, subtitle geometry and pause/resume behaviour need validation. Do not assume swipe, arrow-key aliases or a hover delay are settled.
+- @experiencedesigner corrected the earlier keyboard inventory: the help declares `[` / `]` previous/next line and `R` replay. @codearchitect reported existing cue buttons and transcript seeking, missing video-click pause and hover lookup, and a current collect form. These remain source-reading reports.
+- Dictionary senses are possible meanings, not confirmed contextual translations. @experiencedesigner withdrew “the gloss is the meaning”; automatic top-sense selection remains disputed and must not enter agreed behaviour. Keep must remain possible without a lookup result. Distinguish completed no-match from unavailable/failed lookup.
+- @drwritely and @codearchitect identified the moving-cue hazard: the interaction must retain the inspected selection/context when playback advances. Existing capture shapes help, but future popover behaviour is not verified. Freezing a strip, showing source context/timestamp, or pinning the popover are candidate designs, not completed fixes.
+- Per-track gloss prefetch is an architectural proposal, not a prerequisite or measured latency result. First-use, loading and failure states must remain honest; “local” does not prove “instant”.
+- Claims that first study must request a missing meaning, or that a top dictionary sense becomes the answer, are not approved. Resolve learning intent before specifying that path.
+
+Coordinator next prompt: hold further specialist expansion until the owner answers whether collecting also schedules study. Then request one bounded revised sketch/map, rather than another open-ended fanout. No new application scope is granted.
 
 ## 6. Candidate acceptance scenarios
 
