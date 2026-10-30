@@ -4,6 +4,8 @@
 
 Owner adopted the [product brief](product-brief.md) and authorised planning, canonical Beads reconciliation and recording this handoff. **No application implementation, live access/config changes, real-state discovery/transfer, provider calls, live Anki writes or deployment has started or is authorised by these documents.** Janusz will launch the coding agent separately. That agent must record the named scope of its launch instruction on `lt-192`/`lt-192.1` before implementation. Do not use historical `lt-dy6` as authority for this program.
 
+**Update (2026-10-30, `lt-192.1`):** the planning package has been deliberately integrated. After an independent review PASS, `main` was fast-forwarded to `6a1135e`. The `SCOPE` comment on `lt-192` records Janusz's chat approval; it was written by the parent agent, and its scope list is the parent's recorded interpretation. As recorded, it authorises A and B only: decision/source reconciliation, and a synthetic recovery rehearsal. C–H runtime implementation, access/network configuration, providers, real state, actual iPad/Anki operation and deployment remain excluded. See [core-loop source reconciliation](core-loop-source-reconciliation.md) §1. The historical sentence below describes the pre-merge state.
+
 Use branch `docs/design-discussion-register`, not old primary `main`, for this planning package until it is deliberately integrated. It includes all three immutable design-reference copies; no dependency on an uncommitted specialist worktree remains. Keep canonical Beads at the primary checkout, never initialise a competing store.
 
 **Instruction-file note:** `AGENTS.md:29` still names historical `lt-dy6`; a protected-file approval timed out, so that file was left untouched. Updated `BEADS.md` and live scope records explicitly distinguish successor `lt-192`/`lt-192.1`; do not treat the old ID as authority for new coding. Any AGENTS.md edit needs its own successful approval, not a workaround.
@@ -11,7 +13,7 @@ Use branch `docs/design-discussion-register`, not old primary `main`, for this p
 ## Read before acting
 
 1. Repository `AGENTS.md`, `BEADS.md`, `GIT-POLICY.md`, amended `DECISIONS.md` and safety/privacy boundary review.
-2. [Adopted product brief](product-brief.md), [reviewed delivery scope](delivery-scope.md), [applied Beads mapping](beads-mapping.md).
+2. [Adopted product brief](product-brief.md), [reviewed delivery scope](delivery-scope.md), [applied Beads mapping](beads-mapping.md), [core-loop source reconciliation](core-loop-source-reconciliation.md) (A draft under review: source inventory, recommended transcript paths, decisions needed before G, recommended B proof).
 3. Live canonical `lt-192`, `lt-192.1`, ready/frontier and the exact issue/blockers being considered. Issue status/edges override historical snapshots. The [discussion register](discussion-register.md) retains debate; current owner decisions override parked proposals.
 
 ## Reference simulations
@@ -45,3 +47,10 @@ Start with `lt-192.1`: finish decision/source reconciliation, explicitly invento
 ## Current checkpoint
 
 Planning artifacts and tracker mapping are recorded; application source and real learner state were not changed. `lt-192.1` remains open pending named coding-agent authority and its own final source/decision reconciliation. This handoff does not mark that acceptance complete. No task is claimed on behalf of the future agent.
+
+**Update (`lt-192.1`):**
+- A+B scope is recorded on `lt-192` (parent-recorded interpretation of Janusz's chat approval).
+- A's [source reconciliation](core-loop-source-reconciliation.md) is a **draft under independent review**, revised after a FAIL checkpoint. It inventories current import, correction, capture, CAS/bundle and export sources. Nothing in it is policy until review and any needed owner decision.
+- The draft *recommends* (it does not decide) local subtitle files selected with the video as the new loop's transcript path, with capture still approval-gated, no draft collection, no provider calls and correction re-anchoring parked. Subtitle-only attachment is future E work.
+- Note identity, source pinning, source change/deletion and Anki-side edit handling remain owner decisions before G.
+- Closure of `lt-192.1` belongs to the parent/operator after review.
