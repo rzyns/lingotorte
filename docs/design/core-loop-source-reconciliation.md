@@ -1,6 +1,6 @@
 # Core-loop source and decision reconciliation (`lt-192.1`, A)
 
-Status: **A draft, revised after the independent review checkpoint on `lt-192.1`; parent review pending, not complete**, based on `main` `6a1135eb07ba8d761aa953a6e4c0f265c97bbbbc`, worktree branch `work/lt-192-a-b-foundation`. It reconciles the adopted [product brief](product-brief.md), [delivery scope](delivery-scope.md), [applied Beads mapping](beads-mapping.md), `DECISIONS.md` §2/§6/§9/§10/§14/§14a/§15 and `docs/review/safety-privacy-boundary-review.md` with the current source. Closing `lt-192.1` is up to the parent/operator after independent review.
+Status: **A accepted checkpoint.** It was revised after the independent review checkpoint on `lt-192.1`, and the parent has closed `lt-192.1`. The text below is unchanged from that revision except for this status line and the B evidence pointer in §6. B's accepted rehearsal result is in [lt-192.2 recovery rehearsal result](../dev/lt-192.2-recovery-rehearsal-result.md); independent SPEC and QUALITY review passed. Originally based on `main` `6a1135eb07ba8d761aa953a6e4c0f265c97bbbbc`, worktree branch `work/lt-192-a-b-foundation`. It reconciles the adopted [product brief](product-brief.md), [delivery scope](delivery-scope.md), [applied Beads mapping](beads-mapping.md), `DECISIONS.md` §2/§6/§9/§10/§14/§14a/§15 and `docs/review/safety-privacy-boundary-review.md` with the current source. The parent/operator closed `lt-192.1` after independent review.
 
 Evidence labels: **[src]** = read from source at the base commit, at the cited `path:line`. **[test]** = an existing test that names the behaviour. Its pass/fail status was **not** run for this document. **[decision]** = recorded owner decision (cited). **[current]** = current source behaviour, not a decision. **[rec]** = recommendation or inference, not decided. No application code, tests, configuration, Beads, real learner state or media were changed or executed while preparing this document.
 
@@ -163,7 +163,9 @@ All new tracks go through `putTranscriptSegments` (`model.ts:2742`) or the subti
 
 ## 6. Recommended B (`lt-192.2`) recovery proof: synthetic only, reusing existing mechanisms
 
-[rec] **Not run.** This section is based on reading the source only. No test was written or executed, and nothing here is runtime proof.
+[rec] **Not run when written.** This section is based on reading the source only. No test was written or executed for it, and nothing here is runtime proof.
+
+**B evidence (added later, not part of A):** `tests/web/lt1922RecoveryRehearsal.test.ts` implements items 1–4 and 6–10 synthetically; the optional item 5 was not needed. Results and limits are in the [B result](../dev/lt-192.2-recovery-rehearsal-result.md). One source-read expectation needs a correction: after a lost learner-state acknowledgement, reconnect does **not** silently adopt the committed state. Its comparison is order-sensitive, so it raises the Keep/Load choice even for identical content. The rehearsal resolves this by readback.
 
 1. **Isolation.**
    - Use temporary SQLite files and in-memory/fake IndexedDB backends only.

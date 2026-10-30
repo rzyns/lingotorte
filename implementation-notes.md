@@ -38,6 +38,22 @@ Docker replaces the native-Windows critical path under fresh user authority; his
 - Read `docs/dev/lt-8hh-save-safety-result.md` first for candidate identity and exact results.
 - No commits, pushes, Beads writes, real-state or provider actions in this delegated lane.
 
+## lt-192.2 synthetic recovery rehearsal (B)
+
+Pointer: `docs/dev/lt-192.2-recovery-rehearsal-result.md`. Test only; no product change.
+
+### Deviations
+- §6.4 expected reconnect readback to settle a lost ack. Instead, current reconnect raises the Keep/Load choice: its comparison is order-sensitive, so identical content is not recognised. The test asserts content identity by readback, with no pending bundles, then chooses Load service state; it does not retry. Revisit when C changes acknowledgement or retry.
+- §6.2 practice attempts update FSRS, so each also records a review event. The removed item therefore leaves two audit-only review events, not one.
+
+### Discovered edge cases
+- The service and the browser serialize the same learner state in different record orders. Fixture comparisons need key-order-independent equality.
+- The candidate revision after the first bundle (`rev:n+1`) is reissued by the rolled-back store for a different state, as §2.5 predicted.
+- The first browser PUT after a stale choice is a bundle PUT, and it already gets 409. No learner state is sent.
+
+### Questions for review
+- Should C make lost-ack readback recognise identical committed state, or is an explicit Load service state after readback the intended UX?
+
 ## Completed product evidence
 
 Final-image parent rerun passed 1,017 tests / 36 files, types, build, no-network 5 and privacy scan 49. Real Windows Chromium import/play/save plus nonempty SQLite exact-snapshot restart/integrity and private-address same-origin hydration passed; API exit 0, web SIGTERM exit 143, stop under one second. See `docs/dev/docker-qualification-result.md` for limitations and identity. Only isolated QA containers/volumes/networks were removed; readback showed none remaining. Reviews/publication remain tracked in canonical `lt-foe.2`, not this notes file.
