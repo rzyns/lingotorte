@@ -87,6 +87,8 @@ Provider classes:
 
 Default role: local export only.
 
+**Adopted core-loop planning amendment (`lt-192`):** Anki handles deliberate study for this delivery; Lingotorte owns saved vocabulary/context and preserves existing study history without adding automatic in-app enrolment. This supersedes the default SRS product priority below for the new delivery, not privacy warnings, provider consent or the gate on live Anki mutation. Current baseline export is text-only. No media export, real-state operation or deployed-control change follows from planning approval.
+
 - Lingotorte should own canonical SRS state unless Janusz chooses otherwise.
 - `.apkg` exports may contain cue text, translations, media snippets, images, and source references.
 - If the user imports an export into Anki and enables AnkiWeb sync, that data may leave the local machine.

@@ -1,0 +1,224 @@
+{
+  "results": [
+    {
+      "name": "desktop initially disabled",
+      "pass": true
+    },
+    {
+      "name": "desktop empty answer visible",
+      "pass": true
+    },
+    {
+      "name": "desktop missing meaning does not block",
+      "pass": true
+    },
+    {
+      "name": "desktop partial selection only",
+      "pass": true
+    },
+    {
+      "name": "desktop cross-video item has one preview",
+      "pass": true
+    },
+    {
+      "name": "desktop editing scope explicitly unresolved",
+      "pass": true
+    },
+    {
+      "name": "desktop reverse summary labels omissions",
+      "pass": true
+    },
+    {
+      "name": "desktop recognition answer section labelled",
+      "pass": true
+    },
+    {
+      "name": "desktop note-only warning and export available",
+      "pass": true
+    },
+    {
+      "name": "desktop note distinct from meaning",
+      "pass": true
+    },
+    {
+      "name": "desktop preview updates optional meaning",
+      "pass": true
+    },
+    {
+      "name": "desktop deselect keeps original row",
+      "pass": true
+    },
+    {
+      "name": "desktop replay demonstration visible",
+      "pass": true
+    },
+    {
+      "name": "desktop simulated playback advances",
+      "pass": true
+    },
+    {
+      "name": "desktop no false export success",
+      "pass": true
+    },
+    {
+      "name": "desktop no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "desktop no network requests",
+      "pass": true
+    },
+    {
+      "name": "desktop no JS errors",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait initially disabled",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait empty answer visible",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait missing meaning does not block",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait partial selection only",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait cross-video item has one preview",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait editing scope explicitly unresolved",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait reverse summary labels omissions",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait recognition answer section labelled",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait note-only warning and export available",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait note distinct from meaning",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait preview updates optional meaning",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait deselect keeps original row",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait replay demonstration visible",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait simulated playback advances",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait no false export success",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait no network requests",
+      "pass": true
+    },
+    {
+      "name": "ipad-portrait no JS errors",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape initially disabled",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape empty answer visible",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape missing meaning does not block",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape partial selection only",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape cross-video item has one preview",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape editing scope explicitly unresolved",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape reverse summary labels omissions",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape recognition answer section labelled",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape note-only warning and export available",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape note distinct from meaning",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape preview updates optional meaning",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape deselect keeps original row",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape replay demonstration visible",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape simulated playback advances",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape no false export success",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape no network requests",
+      "pass": true
+    },
+    {
+      "name": "ipad-landscape no JS errors",
+      "pass": true
+    },
+    {
+      "name": "watch artifact unchanged during verification",
+      "pass": true
+    }
+  ]
+}

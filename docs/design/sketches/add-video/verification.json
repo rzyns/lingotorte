@@ -1,0 +1,400 @@
+{
+  "results": [
+    {
+      "name": "desktop start disabled without video",
+      "pass": true
+    },
+    {
+      "name": "desktop single picker selects video and subtitles",
+      "pass": true
+    },
+    {
+      "name": "desktop native standard file input",
+      "pass": true
+    },
+    {
+      "name": "desktop same subtitle role rejected",
+      "pass": true
+    },
+    {
+      "name": "desktop progress moves",
+      "pass": true
+    },
+    {
+      "name": "desktop cancel confirmed",
+      "pass": true
+    },
+    {
+      "name": "desktop cancel stays cancelled",
+      "pass": true
+    },
+    {
+      "name": "desktop selections retained after cancel",
+      "pass": true
+    },
+    {
+      "name": "desktop interruption retry says restart",
+      "pass": true
+    },
+    {
+      "name": "desktop retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "desktop unknown has no upload retry",
+      "pass": true
+    },
+    {
+      "name": "desktop failed status check remains unknown",
+      "pass": true
+    },
+    {
+      "name": "desktop storage confirmation distinct from readiness",
+      "pass": true
+    },
+    {
+      "name": "desktop known complete finishes without reupload",
+      "pass": true
+    },
+    {
+      "name": "desktop confirmed incomplete permits retry",
+      "pass": true
+    },
+    {
+      "name": "desktop duplicate is content based",
+      "pass": true
+    },
+    {
+      "name": "desktop duplicate keeps subtitles unchanged",
+      "pass": true
+    },
+    {
+      "name": "desktop stored video survives subtitle error",
+      "pass": true
+    },
+    {
+      "name": "desktop replacement required for subtitle retry",
+      "pass": true
+    },
+    {
+      "name": "desktop retry subtitle only",
+      "pass": true
+    },
+    {
+      "name": "desktop subtitle retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "desktop unplayable keeps storage",
+      "pass": true
+    },
+    {
+      "name": "desktop no automatic conversion",
+      "pass": true
+    },
+    {
+      "name": "desktop no selected target disables failure scenario",
+      "pass": true
+    },
+    {
+      "name": "desktop no subtitles does not promise collection",
+      "pass": true
+    },
+    {
+      "name": "desktop result heading receives focus",
+      "pass": true
+    },
+    {
+      "name": "desktop no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "desktop no network requests",
+      "pass": true
+    },
+    {
+      "name": "desktop no JS errors",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait start disabled without video",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait single picker selects video and subtitles",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait native standard file input",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait same subtitle role rejected",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait progress moves",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait cancel confirmed",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait cancel stays cancelled",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait selections retained after cancel",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait interruption retry says restart",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait unknown has no upload retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait failed status check remains unknown",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait storage confirmation distinct from readiness",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait known complete finishes without reupload",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait confirmed incomplete permits retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait duplicate is content based",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait duplicate keeps subtitles unchanged",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait stored video survives subtitle error",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait replacement required for subtitle retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait retry subtitle only",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait subtitle retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait unplayable keeps storage",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no automatic conversion",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no selected target disables failure scenario",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no subtitles does not promise collection",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait result heading receives focus",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no network requests",
+      "pass": true
+    },
+    {
+      "name": "tablet-portrait no JS errors",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape start disabled without video",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape single picker selects video and subtitles",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape native standard file input",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape same subtitle role rejected",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape progress moves",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape cancel confirmed",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape cancel stays cancelled",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape selections retained after cancel",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape interruption retry says restart",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape unknown has no upload retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape failed status check remains unknown",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape storage confirmation distinct from readiness",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape known complete finishes without reupload",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape confirmed incomplete permits retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape duplicate is content based",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape duplicate keeps subtitles unchanged",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape stored video survives subtitle error",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape replacement required for subtitle retry",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape retry subtitle only",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape subtitle retry reaches ready",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape unplayable keeps storage",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no automatic conversion",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no selected target disables failure scenario",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no subtitles does not promise collection",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape result heading receives focus",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no horizontal overflow",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no network requests",
+      "pass": true
+    },
+    {
+      "name": "tablet-landscape no JS errors",
+      "pass": true
+    },
+    {
+      "name": "r2 stored confirmation preserves failed playback",
+      "pass": true
+    },
+    {
+      "name": "r2 stored confirmation may report subtitle failure",
+      "pass": true
+    },
+    {
+      "name": "r2 subtitle success preserves failed playback",
+      "pass": true
+    },
+    {
+      "name": "r2 obsolete pending status callback cannot overwrite new attempt",
+      "pass": true
+    },
+    {
+      "name": "r2 obsolete status does not write message pending",
+      "pass": true
+    },
+    {
+      "name": "r2 obsolete stored status callback cannot overwrite new attempt",
+      "pass": true
+    },
+    {
+      "name": "r2 obsolete status does not write message stored",
+      "pass": true
+    },
+    {
+      "name": "r2 obsolete subtitle retry cannot overwrite new attempt",
+      "pass": true
+    },
+    {
+      "name": "r2 unassign target disables failure scenario",
+      "pass": true
+    },
+    {
+      "name": "r2 unassign target removes selected failure mode",
+      "pass": true
+    },
+    {
+      "name": "r2 location wording says server",
+      "pass": true
+    },
+    {
+      "name": "earlier sketches byte-identical",
+      "pass": true
+    }
+  ]
+}

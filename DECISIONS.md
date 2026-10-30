@@ -41,9 +41,11 @@ Implementation semantics:
 
 ---
 
-### 2. Browser File System Access vs. native/Tauri/local-service path model
+### 2. Browser media addition and server-owned playback
 
-Decision: use a split model:
+**Adopted core-loop planning amendment (`lt-192`):** desktop-browser addition using standard file inputs is the initial path. The target is durable server-managed media, available to computer and iPad browsers through media IDs and bounded seeking-capable playback, not recurring browser-file-handle or absolute-path entry. iPad upload tuning can follow later. Keep the existing source-media mount read-only; managed uploads require a separate explicitly writable location. No native iOS app, automatic transcoding, online download or provider expansion is authorised. `lt-zt0` owns the design; `lt-192.4/.5` own future implementation after exact-scope authority. Existing-media identity, privacy and migration protections remain. This amends the planned product direction, not current deployed media behaviour.
+
+**Historical split model (retained for existing-source/processing compatibility; not a mandatory UX for the new loop):**
 
 - **Browser File System Access handles** are the preferred browser-side path for local playback/relink identity when supported.
 - **Local-service absolute paths** are the preferred durable execution path for service-side work: ASR, ffmpeg/ffprobe, embedded subtitle extraction, source-media snippet extraction, and future heavyweight local processing.
@@ -212,6 +214,10 @@ Implementation semantics:
 
 ### 10. Anki file-export policy
 
+**Adopted core-loop planning amendment (`lt-192`):** Anki handles deliberate study for this delivery; focus Lingotorte on add/watch/lookup/collection/selected export. New collection must not automatically enrol into in-app study. In-app scheduling/practice/readiness and an automatic-study toggle are deferred; do not delete existing cards/history. Meaning and note edits persist on the saved item across video occurrences. Text-only export preview must disclose empty/note-only answers and applicable attribution; no silent dictionary-sense assignment. Stable note identity/source-context policy is a recommendation still to resolve before `lt-192.7` implementation, not evidence of safe two-way sync. Source change/deletion and Anki-side edits require explicit treatment.
+
+**Evidence correction:** later canonical `lt-foe.3.5` records report Janusz observed successful .apkg/.txt imports and nonduplicating re-import. Preserve this qualification; new selection/context/editing behaviour needs delta checks, including history/scheduling and Anki-side edits. The historical closure limitation below describes `lt-dxo` at closure, not current whole-program qualification.
+
 Anki file export moved into the daily-driver program under §16 and shipped in `lt-dxo` (merge `8a70271`, 2026-10-16): local-service `.apkg` export plus optional text import file. AnkiConnect mutation remains future/gated. This implementation milestone does not claim real Anki desktop import or live paired `.apkg` download qualification; those were explicitly unqualified in the closure receipt.
 
 Known current posture:
@@ -223,7 +229,7 @@ Decision: `.apkg`/file export first, AnkiConnect later if needed.
 
 Implementation semantics:
 
-- Lingotorte remains the source of truth for learner/review state unless Janusz later chooses otherwise.
+- Historical in-app SRS ownership remains for existing review data/history. For the adopted core-loop delivery, Lingotorte owns saved vocabulary/context; Anki handles study, and file export is not two-way review-state synchronisation.
 - `.apkg` or file export should include privacy warnings for cue text, notes, review history, and optional media snippets.
 - Do not mutate a live Anki collection through AnkiConnect without fresh approval.
 
@@ -275,7 +281,11 @@ Implementation semantics:
 
 ---
 
-### 14. Threat model: single trusted operator, single trusted machine
+### 14. Threat model and planned computer/iPad access
+
+**Core-loop boundary (`lt-192`):** one owner uses computer and iPad browsers against the computer-hosted server. No public/hosted/multi-user product is added. Tailscale is available; Tailscale-only ingress is a recommendation, not an inspected configuration or approved runtime change. Review actual device/access rules and bypass paths in `lt-zt0`; preserve Host/Origin validation, request protections and provider/media/privacy safeguards. Replacing recurring capability pairing is the desired experience but may occur only under a reviewed access contract and separately authorised implementation/configuration scope. Current pairing controls below remain deployed policy until then; same-origin/CORS alone do not prevent unwanted writes.
+
+**Historical threat-model decision (retained except for the explicit two-browser target above):**
 
 Decided by Janusz on 2026-10-13 (`lt-2k9`, option A).
 
@@ -294,7 +304,11 @@ Decided by Janusz on 2026-10-13. After an explicit opt-in ("Remember this pairin
 
 ---
 
-### 15. Supported browser: Chrome only (for now)
+### 15. Browser qualification: desktop Chrome plus planned iPad browser use
+
+**Adopted core-loop target (`lt-192`):** desktop Chrome addition first, with actual iPad-browser playback and collection included in acceptance. Standard web controls preferred; iPad upload is desirable but tuning can follow. Tablet-sized Chrome emulation is not iPad Safari qualification. No native iOS or Firefox work is introduced. This extends the planned target, not a claim the current app is iPad-ready.
+
+**Historical shipped qualification baseline:**
 
 Decided by Janusz on 2026-10-16.
 
