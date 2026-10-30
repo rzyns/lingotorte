@@ -39,7 +39,7 @@ export function pairTransport(owner: object, selected: string, capability: strin
     onInvalidate(callback: () => void) { assertCurrent(); invalidations.add(callback); return () => invalidations.delete(callback); },
     async request(path: string, init: RequestInit = {}, fetchImpl: typeof fetch = fetch) {
       assertCurrent();
-      if (!/^\/api\/(?:status|state|restore\/(?:preview|commit)|jobs(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|snippets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcripts|tracks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcript|artifacts\/cleanup|language\/(?:morphology|gloss)|export\/anki)$/.test(path)) throw new TypeError('Invalid local service API path.');
+      if (!/^\/api\/(?:status|state|learner\/operations|restore\/(?:preview|commit)|jobs(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|snippets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcripts|tracks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcript|artifacts\/cleanup|language\/(?:morphology|gloss)|export\/anki)$/.test(path)) throw new TypeError('Invalid local service API path.');
       const headers = new Headers(init.headers);
       headers.set('authorization', `Bearer ${secret}`);
       if (init.body !== undefined && init.body !== null) headers.set('content-type', 'application/json');

@@ -38,7 +38,10 @@ it('rejects two stale HTTP writers and missing revisions without replacing durab
   expect(failed.status).toBe(400); expect(await failed.json()).toMatchObject({ ok: false });
   expect(await get()).toEqual(acknowledged);
   await service.close(); service = await startPairedService(config);
-  expect(await get()).toEqual(acknowledged);
+  // lt-192.3: the operation identity's process incarnation changes on restart by design; everything else is durable.
+  const restarted = await get();
+  expect(restarted.operations.incarnation).not.toBe(acknowledged.operations.incarnation);
+  expect({ ...restarted, operations: { ...restarted.operations, incarnation: 'x' } }).toEqual({ ...acknowledged, operations: { ...acknowledged.operations, incarnation: 'x' } });
   expect((await put(stale, b.revision)).status).toBe(409);
 });
 

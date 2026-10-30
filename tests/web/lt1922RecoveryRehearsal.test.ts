@@ -11,6 +11,7 @@
 //    FIXTURE PRECONDITION refuses before Keep browser (the product has no such safeguard; see docs/design §6.4);
 //  - cache + database rollback to the isolated immutable checkpoint, with revisions compared within one lineage only.
 import { captureLexeme, capturePhrase, captureSentence } from '../helpers/capture';
+import { createMemoryOutboxBackend } from '../../apps/web/src/operationOutbox';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -20,7 +21,7 @@ import { backup, DatabaseSync } from 'node:sqlite';
 import {
   activateReviewCard, approveTranscriptTrack, archiveReviewCardsForSavedItem, connectLocalService, createAppModel,
   createCorrectedTranscriptVersion, importFixtureMediaAndSubtitles, learnerStateOf, mediaTranscriptsLoaded, openMediaAsset,
-  pairLocalService, pendingTranscriptTrackIds, resolveLocalServiceConnection, saveModelToLocalService, setLocalServiceAutosave,
+  pairLocalService, pendingTranscriptTrackIds, resolveLocalServiceConnection, saveModelToLocalService, setLocalServiceAutosave, useLearnerOperationOutbox,
   setPracticeMode, setSavedItemMeaning, submitPracticeAttempt, submitReviewRating,
 } from '../../apps/web/src/model';
 import { bootSnapshotCache, buildSnapshotCacheRecord, SNAPSHOT_CACHE_KEY, type SnapshotCacheBackend, type SnapshotCacheRecord } from '../../apps/web/src/browserSnapshotCache';
@@ -251,8 +252,10 @@ beforeAll(async () => {
   const p0 = await startService(fx.originalDb);
 
   // --- Seed through the real save paths (not hand-written rows). ---
+  // lt-192.3 (changed check): the seed builds its vocabulary in local (unpaired) mode and then saves it through the
+  // whole-document path, which a service accepts until its first operation. A paired browser's vocabulary writes are
+  // server operations now (qualified in lt1923 suites); this rehearsal keeps seeding the document path it rehearses.
   const seed = createAppModel(); p0.pair(seed); setLocalServiceAutosave(seed, false);
-  expect((await connectLocalService(seed, p0.origin)).ok).toBe(true);
   await importFixtureMediaAndSubtitles(seed, MEDIA, TARGET, NATIVE);
   const m1 = seed.currentMedia!.id; const t1 = seed.targetTrackId!;
   const [c1, c2] = seed.cues as [Cue, Cue];
@@ -298,6 +301,7 @@ beforeAll(async () => {
   // UI archive case: the Saved-view toggle only suspends the card.
   archiveReviewCardsForSavedItem(seed, phrase.id);
   expect(cardFor(seed, phrase).suspendedAt).toBeDefined();
+  expect((await connectLocalService(seed, p0.origin)).ok).toBe(true); // empty service: browser work kept, unsaved
   expect((await saveModelToLocalService(seed)).ok).toBe(true);
 
   // --- Store/restore archive case + inactive audit: an existing Replace-all restore of a learner-state manifest that
@@ -347,6 +351,11 @@ beforeAll(async () => {
   expect(fx.checkpointCache.snapshot.cues).toEqual({}); expect(fx.checkpointCache.pendingTranscriptTrackIds).toEqual([]);
   expect(fx.checkpointCache.lastAcked?.baseUrl).toBe(p0.origin);
   await p0.close(); // offline from here on
+  // lt-192.3 (changed check): offline vocabulary of a browser that holds this service's operation identity is queued as
+  // operations bound to that service lineage, which a transfer to a different service cannot carry. This rehearsal's
+  // offline additions are document rows of a browser without an operation identity (as before C, e.g. its outbox could
+  // not persist), so its cross-service transfer exercises the whole-document path it was written for.
+  useLearnerOperationOutbox(browser, createMemoryOutboxBackend());
 
   // --- Offline browser-only additions over the baseline (new ids only). ---
   await importFixtureMediaAndSubtitles(browser, MEDIA, TARGET, NATIVE);
@@ -481,19 +490,15 @@ describe('lt-192.2 synthetic recovery rehearsal', () => {
       expect(events).toEqual([...m3Tracks.map((id) => `browser PUT /api/tracks/${id}/transcript 200`), 'browser PUT /api/state lost']);
       // Resolve the lost ack by reconnect readback; the client does NOT retry the PUT.
       events.length = 0;
-      // Current behaviour (characterized, owned by C): the reconnect comparison is an exact JSON serialization, and the
-      // service returns the same content in a different record order, so the committed state is not recognised and the
-      // Keep/Load choice is raised. Nothing is written by the reconnect.
-      const reconnect = await connectLocalService(browser, p1.origin);
-      expect(reconnect.ok).toBe(false);
-      expect(browser.localService.syncState).toBe('choice');
       const readback = await p1.api('/api/state');
       const browserLearner = learnerStateOf(browser.store.snapshot());
       const serviceLearner = learnerStateOf(new LocalStore(readback.json.snapshot).snapshot());
       expect(stable(serviceLearner)).toBe(stable(browserLearner)); // readback: the lost write DID commit, content-identical
       expect(pendingTranscriptTrackIds(browser)).toEqual([]); // both bundles were acknowledged; nothing would be discarded
-      // Resolution by readback: adopt the service copy of the identical content. No blind retry of the PUT.
-      expect(resolveLocalServiceConnection(browser, 'service').ok).toBe(true);
+      // lt-192.3 (changed check, the lt-192.2 finding): the reconnect comparison is key-order independent, so the
+      // committed, content-identical state is recognised and adopted without a false Keep/Load choice. No PUT is retried.
+      const reconnect = await connectLocalService(browser, p1.origin);
+      expect(reconnect.ok).toBe(true);
       expect(events.filter((line) => line.includes(' PUT '))).toEqual([]);
       expect(browser.localService.syncState).toBe('idle');
       expect(browser.localService.revision).toBe(readback.json.revision);
@@ -571,22 +576,27 @@ describe('lt-192.2 synthetic recovery rehearsal', () => {
       actor = 'second';
       const second = createAppModel(); p2.pair(second); setLocalServiceAutosave(second, false);
       expect((await connectLocalService(second, p2.origin)).ok).toBe(true);
+      // lt-192.3 (changed check): the sentinel meaning edit is a server OPERATION now, so it does not make the browser's
+      // document basis stale; the operation fence protects it instead: the browser's save is refused at PUT /api/state
+      // (409 operation-owned-rows) because it would add vocabulary rows outside operations. Its two write-once m3
+      // bundles are accepted first (only an operation intervened) and stay unreferenced: m3's media is not stored.
       expect(setSavedItemMeaning(second, fx.ids.sentence, 'SENTINEL (second client)')).not.toBeNull();
       expect((await saveModelToLocalService(second)).ok).toBe(true);
-      const sentinelRev = second.localService.revision!;
+      const sentinelRev = (await p2.api('/api/state')).json.revision as string;
       events.push(`sentinel written at ${sentinelRev}`);
       actor = 'browser';
       expect(resolveLocalServiceConnection(browser, 'browser').ok).toBe(true);
       const prior = browser.store.snapshot();
       expect((await saveModelToLocalService(browser)).ok).toBe(false);
       expect(browser.localService.syncState).toBe('conflict');
+      expect(browser.localService.lastMessage).toMatch(/Restore \(merge\)/);
       expect(browser.store.snapshot()).toEqual(prior); // browser work kept
       const order = events.filter((line) => line.startsWith('choice') || line.startsWith('sentinel') || line.startsWith('browser PUT'));
-      expect(order).toEqual([`choice captured at ${fx.checkpoint.revision}`, `sentinel written at ${sentinelRev}`, `browser PUT /api/tracks/${fx.added.subtitleTracks![0]}/transcript 409`]);
-      expect(events.some((line) => line.startsWith('browser PUT /api/state'))).toBe(false);
+      expect(order).toEqual([`choice captured at ${fx.checkpoint.revision}`, `sentinel written at ${sentinelRev}`,
+        ...fx.added.subtitleTracks!.map((id) => `browser PUT /api/tracks/${id}/transcript 200`), 'browser PUT /api/state 409']);
       vi.unstubAllGlobals();
       const state = await p2.api('/api/state');
-      expect(state.json.revision).toBe(sentinelRev);
+      expect(state.json.revision).toBe(`rev:${revisionNumber(sentinelRev) + 2}`);
       expect(state.json.snapshot.savedItems[fx.ids.sentence].meaning).toBe('SENTINEL (second client)');
       expect(state.json.snapshot.mediaAssets[fx.ids.m3]).toBeUndefined();
       expect((await p2.api(`/api/media/${fx.ids.m3}/transcripts`)).status).toBe(404);

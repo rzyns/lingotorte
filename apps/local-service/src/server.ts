@@ -12,7 +12,9 @@ import { ANKI_EXPORT_ROUTE, AnkiValidationError, buildApkg, validateAnkiExportRe
 import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROUTE, type GlossRuntimeOptions, type GlossService } from './gloss.ts';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { SqliteLocalPersistence, SnapshotRevisionConflictError, TranscriptBundleConflictError, DurableEntityNotFoundError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
+import { SqliteLocalPersistence, SnapshotRevisionConflictError, TranscriptBundleConflictError, DurableEntityNotFoundError, OperationIdReusedError, OperationIneligibleError } from '../../../packages/storage/src/sqliteLocalPersistence.ts';
+import { LearnerOperationValidationError, OperationDependencyConflictError, OperationOwnedConflictError, parseLearnerOperationRequest } from '../../../packages/storage/src/learnerOperations.ts';
+import { learnerOperationApplier, OperationSourceError } from './learnerOperations.ts';
 import type { LearnerStateSnapshot, TrackTranscriptBundle } from '../../../packages/storage/src/localStore.ts';
 import {
   alignWordsWithWhisperX,
@@ -134,6 +136,7 @@ function objectBody(value: unknown): Record<string, unknown> {
 
 const REVISION_TOKEN = /^[A-Za-z0-9:_-]{1,128}$/;
 const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const LEARNER_OPERATIONS_ROUTE = '/api/learner/operations';
 const MEDIA_TRANSCRIPTS_ROUTE = new RegExp(`^/api/media/(${UUID_SEGMENT})/transcripts$`);
 const TRACK_TRANSCRIPT_ROUTE = new RegExp(`^/api/tracks/(${UUID_SEGMENT})/transcript$`);
 
@@ -1097,8 +1100,27 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
 
       if (request.method === 'GET' && path === '/api/state') {
         // lt-584.5 (C4, plan 2.3): learner state only; transcripts load per media through GET /api/media/{id}/transcripts.
-        const { state, revision } = persistence.loadLearnerState();
-        sendJson(response, 200, { ok: true, snapshot: state, revision, restoreCapability: 'active-audit-restore-v1' });
+        // lt-192.3: plus the operation identity (lineage generation, process incarnation, receipt boundary).
+        const { state, revision, operations } = persistence.loadLearnerStateWithOperations();
+        sendJson(response, 200, { ok: true, snapshot: state, revision, restoreCapability: 'active-audit-restore-v1', operations });
+        return;
+      }
+
+      if (request.method === 'POST' && path === LEARNER_OPERATIONS_ROUTE) {
+        // lt-192.3 (ADR-0004): one server-owned vocabulary operation, applied at most once per operation id.
+        let input;
+        try { input = parseLearnerOperationRequest(admittedBody); }
+        catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'Invalid operation.', code: 'invalid-operation' }); return; }
+        try {
+          const { receipt, replayed, operations } = persistence.applyLearnerOperation(input, learnerOperationApplier(input));
+          sendJson(response, 200, { ok: true, receipt, replayed, operations });
+        } catch (error) {
+          if (error instanceof OperationIdReusedError) sendJson(response, 409, { ok: false, error: error.message, code: 'operation-id-reused' });
+          else if (error instanceof OperationIneligibleError) sendJson(response, 409, { ok: false, error: error.message, code: error.code });
+          else if (error instanceof OperationSourceError) sendJson(response, 409, { ok: false, error: error.message, code: error.code });
+          else if (error instanceof LearnerOperationValidationError) sendJson(response, 400, { ok: false, error: error.message, code: 'invalid-operation' });
+          else sendJson(response, 500, { ok: false, error: 'The change could not be confirmed; retry it to read back its outcome.', code: 'operation-outcome-unknown' });
+        }
         return;
       }
 
@@ -1181,10 +1203,14 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         }
         const savedAt = new Date().toISOString();
         try {
-          const revision = persistence.saveLearnerState(snapshot as LearnerStateSnapshot, body.expectedRevision, savedAt);
-          sendJson(response, 200, { ok: true, revision, savedAt, persistence: persistence.status() });
+          const fence: { reconciled?: boolean; operationOwned?: unknown } = {};
+          const revision = persistence.saveLearnerState(snapshot as LearnerStateSnapshot, body.expectedRevision, savedAt, fence);
+          // lt-192.3: a reconciled stale view of operation-owned rows returns the authoritative rows now stored.
+          sendJson(response, 200, { ok: true, revision, savedAt, persistence: persistence.status(), ...(fence.reconciled ? { operationOwned: fence.operationOwned } : {}) });
         } catch (error) {
           if (error instanceof SnapshotRevisionConflictError) sendError(response, 409, error.message);
+          else if (error instanceof OperationOwnedConflictError) sendJson(response, 409, { ok: false, error: error.message, code: 'operation-owned-rows', conflicts: error.conflicts.slice(0, 50) });
+          else if (error instanceof OperationDependencyConflictError) sendJson(response, 409, { ok: false, error: error.message, code: 'operation-dependency', cardIds: error.cardIds.slice(0, 50) });
           else throw error;
         }
         return;

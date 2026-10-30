@@ -178,6 +178,15 @@ export type AppModel = {
     /** lt-foe.3.4: language.gloss from the last /api/status on connect (strictly parsed). */
     glossCapability?: { state: 'available' | 'not-installed' | 'disabled' | 'invalid-dictionary'; source: { id: string; dumpDate: string; attribution: string } | null } | null;
   };
+  /** lt-192.3: durable outbox view of vocabulary operations for the paired service (unresolved records only). */
+  learnerOperations: {
+    records: readonly import('./operationOutbox.ts').OutboxRecord[];
+    /** False when the outbox could not use IndexedDB: pending changes do not survive a reload. */
+    durable: boolean;
+    message: string | null;
+    /** Acknowledged captures whose meaning/notes draft was not applied (joined an existing item); open until resolved. */
+    unappliedDrafts: readonly import('./operationOutbox.ts').OutboxRecord[];
+  };
 };
 
 /** lt-e0j: one point-of-action toast; `expiresAt` is epoch ms on model.clock(). */

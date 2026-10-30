@@ -1,5 +1,6 @@
 import type { AppModel } from '../../uiTypes';
 import type { Cue } from '@lingotorte/domain';
+import { captureTokenSpan } from '@lingotorte/language';
 import {
   activeCueAtTime,
   activeLoopRangeForSelection,
@@ -729,12 +730,15 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
       event.stopPropagation();
       if (!canSaveFromTargetTrack) return;
       // lt-cms: route through the shared capture form; nothing persists until Save.
+      // lt-192.3: token indices come from the capture segmentation (cueWordTokens), not this overlay's word list
+      // (which skips punctuation or follows word timings), so every capture path yields the same anchor.
+      const span = captureTokenSpan(cue.text, word.charStart, word.charEnd) ?? { startToken: word.tokenIndex, endToken: word.tokenIndex + 1 };
       openCapture(model, {
         kind: 'lexeme',
         text: button.textContent ?? word.text,
         cueId: cue.id,
-        tokenStart: word.tokenIndex,
-        tokenEnd: word.tokenIndex + 1,
+        tokenStart: span.startToken,
+        tokenEnd: span.endToken,
         charStart: word.charStart,
         charEnd: word.charEnd,
       });

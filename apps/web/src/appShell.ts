@@ -94,7 +94,9 @@ function renderImportWarning(model: AppModel): HTMLElement | null {
 function renderSyncBannerContent(model: AppModel, node: HTMLElement): void {
   const retryable = model.localService.syncState === 'error' && model.localService.status === 'connected';
   if (model.localService.syncState !== 'unsaved' && !retryable) {
-    node.textContent = model.localService.lastMessage;
+    // lt-192.3: unconfirmed vocabulary changes stay visible whatever the document state.
+    const ops = model.learnerOperations.message;
+    node.textContent = ops && ops !== model.localService.lastMessage ? `${model.localService.lastMessage ?? ''} ${ops}`.trim() : model.localService.lastMessage;
     return;
   }
   node.replaceChildren();

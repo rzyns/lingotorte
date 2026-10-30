@@ -63,7 +63,7 @@ describe('SQLite practice mode forward migration', () => {
     db.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 7, JSON.stringify(new LocalStore().snapshot()), 'unchanged');
     const before = rows(db); const ledger = db.prepare('SELECT * FROM schema_migration ORDER BY version').all(); db.close();
     const migrated = openShadowed(file);
-    try { expectShadowEqual(migrated); expect(migrated.status().schemaVersion).toBe(12); expect(migrated.listMigrations()).toHaveLength(12); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
+    try { expectShadowEqual(migrated); expect(migrated.status().schemaVersion).toBe(13); expect(migrated.listMigrations()).toHaveLength(13); expect(migrated.listPracticeAttempts()).toHaveLength(4); } finally { migrated.close(); }
     const check = new DatabaseSync(file);
     try {
       const after = rows(check);
@@ -78,7 +78,7 @@ describe('SQLite practice mode forward migration', () => {
       invalidMode.run('new-sentence-builder', 'sentence-builder');
       expect(check.prepare("SELECT mode FROM practice_attempt WHERE id = 'new-sentence-builder'").get()).toMatchObject({ mode: 'sentence-builder' });
     } finally { check.close(); }
-    const reopened = openShadowed(file); try { expect(reopened.listMigrations()).toHaveLength(12); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
+    const reopened = openShadowed(file); try { expect(reopened.listMigrations()).toHaveLength(13); expect(reopened.listPracticeAttempts()).toHaveLength(4); expect(reopened.listAuditPracticeAttempts()).toHaveLength(5); } finally { reopened.close(); }
   });
   it.each(['mode', 'result', 'responseMs'] as const)('rolls back the entire snapshot and projections for invalid %s', field => {
     const f = fixture(); submit(f, 'typed-input'); const file = path(); const persistence = openShadowed(file);

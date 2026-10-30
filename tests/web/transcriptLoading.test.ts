@@ -201,8 +201,12 @@ describe('lt-584.5 per-media transcript loading', () => {
       return model;
     };
     const reloaded = await keepBrowserWork();
-    const allTracks = Object.keys(env.seed.store.snapshot().subtitleTracks).sort();
-    expect(pendingTranscriptTrackIds(reloaded)).toEqual(allTracks);
+    // lt-192.3 (changed check): the comparison is key-order independent now, so this content-identical cache is
+    // recognised as the service state (no false Keep/Load choice, the lt-192.2 finding) and the current media's
+    // bundles are loaded and acknowledged; the bundles of the other media stay pending, as before.
+    const otherMedia = Object.values(env.seed.store.snapshot().subtitleTracks).filter((track) => track.mediaId !== reloaded.currentMedia?.id).map((track) => track.id).sort();
+    expect(reloaded.localService.syncState).not.toBe('choice');
+    expect(pendingTranscriptTrackIds(reloaded)).toEqual(otherMedia);
     // A different local copy of one bundle is refused, nothing is overwritten and the learner state is not sent.
     const m1Track = Object.values(reloaded.store.snapshot().subtitleTracks).find((track) => track.mediaId === env.m1.id)!.id;
     const changed = reloaded.store.listCuesForTrack(m1Track)[0]!;
@@ -222,7 +226,10 @@ describe('lt-584.5 per-media transcript loading', () => {
     expect((await saveModelToLocalService(again)).ok).toBe(true);
     expect(log).toContain(`PUT /api/tracks/${m1Track}/transcript 409`);
     expect(log).toContain(`GET /api/media/${env.m1.id}/transcripts 200`);
-    expect(log.at(-1)).toBe('PUT /api/state 200');
+    // lt-192.3 (changed check): the learner document equals the acknowledged service state, so no redundant
+    // PUT /api/state follows the verified bundles; the save still reports success only after the bundle acknowledgement.
+    expect(log.some((line) => line.startsWith('PUT /api/state'))).toBe(false);
+    expect(log.at(-1)).toBe(`GET /api/media/${env.m1.id}/transcripts 200`);
     expect(pendingTranscriptTrackIds(again)).toEqual([]);
   });
 });

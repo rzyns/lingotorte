@@ -1,7 +1,7 @@
 import './style.css';
 import { installBrowserHandleStore } from './browserHandleStore';
 import { bootSnapshotCache } from './browserSnapshotCache';
-import { createAppModel, restoreMediaAtBoot } from './model';
+import { bootLearnerOperations, createAppModel, observeLearnerOperationChanges, restoreMediaAtBoot } from './model';
 import { rerenderApp } from './app';
 import { bootRememberedPairing } from './rememberedPairing';
 
@@ -20,7 +20,16 @@ document.addEventListener('DOMContentLoaded', () => {
     .catch(() => false)
     .then(() => restoreMediaAtBoot(model))
     .catch(() => false)
+    // lt-192.3: pending vocabulary intents (durable outbox) are visible after a reload, before any connection.
+    .then(() => bootLearnerOperations(model))
+    .catch(() => undefined)
     .finally(() => {
+      // Rerender when the outbox changes (ack, other tab), unless the learner is typing.
+      observeLearnerOperationChanges(model, () => {
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || (active instanceof HTMLElement && active.isContentEditable)) return;
+        rerenderApp(model);
+      });
       rerenderApp(model);
       // lt-cfh: an opted-in remembered pairing auto-connects without blocking render.
       void bootRememberedPairing(model, undefined, () => rerenderApp(model))

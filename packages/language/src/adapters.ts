@@ -80,6 +80,17 @@ export function tokenizeWhitespaceText(text: string, language: string): Tokenize
   return tokens;
 }
 
+/**
+ * lt-192.3: the token span a capture's character span covers under the capture segmentation (the synchronous
+ * tokenizer above, which cueWordTokens uses for every browser selection path): first to last token overlapping
+ * [charStart, charEnd), or null when it overlaps none. The local service checks captures against the same rule.
+ */
+export function captureTokenSpan(text: string, charStart: number, charEnd: number, language = 'pl'): { startToken: number; endToken: number } | null {
+  const overlapping = tokenizeWhitespaceText(text, language).filter((t) => t.charStart < charEnd && t.charEnd > charStart);
+  if (overlapping.length === 0) return null;
+  return { startToken: overlapping[0]!.tokenIndex, endToken: overlapping[overlapping.length - 1]!.tokenIndex + 1 };
+}
+
 export function makeWhitespaceTokenizer(language: string): TokenizerAdapter {
   const adapterId = 'lingotorte.whitespace-tokenizer';
   const adapterVersion = '0.0.0-p3';

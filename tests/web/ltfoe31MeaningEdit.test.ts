@@ -119,9 +119,9 @@ describe('lt-foe.3.1 meaning source at model level', () => {
     select(model, cues[0]!, 'dom');
     model.pendingMeaning = 'house';
     const receipt = (await saveSelectionWithReceipt(model))!;
-    expect(item(model, receipt.item.id).meaningSource).toEqual({ kind: 'learner' });
+    expect(item(model, receipt.item!.id).meaningSource).toEqual({ kind: 'learner' });
     expect(undoSave(model, receipt)).toBe(true);
-    expect(model.store.getSavedItem(receipt.item.id)).toBeUndefined();
+    expect(model.store.getSavedItem(receipt.item!.id)).toBeUndefined();
   });
 });
 

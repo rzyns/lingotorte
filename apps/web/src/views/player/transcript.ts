@@ -17,7 +17,7 @@ import {
   currentTargetTrack,
 } from '../../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
-import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveToast } from '../../ui/capture.ts';
+import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveFailureToast, showSaveToast } from '../../ui/capture.ts';
 import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
@@ -588,6 +588,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
       })
       .catch((err: unknown) => {
         model.importError = err instanceof Error ? err.message : String(err);
+        showSaveFailureToast(model, err); // the selection stays open; the Player shows no import banner
         focusError(); rerenderApp(model);
       });
   };
