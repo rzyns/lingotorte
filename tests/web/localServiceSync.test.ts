@@ -46,6 +46,9 @@ describe('web model local-service sync', () => {
     const first = createAppModel(); const stale = createAppModel(); service.pair(first); service.pair(stale);
     await connectLocalService(first, service.origin); await connectLocalService(stale, service.origin);
     await captureSentence(first, first.cues[0]!);
+    // lt-192.3 (changed check): the capture is a server operation now, and an operation alone no longer makes another
+    // browser's document stale (independent edits both survive). A DOCUMENT write by `first` still must.
+    first.store.putMediaAsset({ ...first.currentMedia!, title: 'first document edit' });
     expect((await saveModelToLocalService(first)).ok).toBe(true);
     stale.store.putMediaAsset({ ...stale.currentMedia!, title: 'unsaved stale edit' }); const prior = stale.store.snapshot();
     expect((await saveModelToLocalService(stale)).ok).toBe(false);

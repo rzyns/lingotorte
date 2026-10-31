@@ -78,7 +78,7 @@ controls:
       - click
     source:
       path: apps/web/src/appShell.ts
-      line: 105
+      line: 107
       snippet: const save = document.createElement('button');
   - id: shell.settings
     scope: shell
@@ -92,7 +92,7 @@ controls:
       - click
     source:
       path: apps/web/src/appShell.ts
-      line: 123
+      line: 125
       snippet: const settings = document.createElement('button');
   - id: shell.btn
     scope: shell
@@ -104,7 +104,7 @@ controls:
       - click
     source:
       path: apps/web/src/appShell.ts
-      line: 243
+      line: 245
       snippet: const btn = document.createElement('button');
   - id: shared.open-media
     scope: shared
@@ -1220,7 +1220,7 @@ controls:
       - toggle
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 86
+      line: 87
       snippet: const details = document.createElement('details');
   - id: player.import-local-files
     scope: player
@@ -1234,7 +1234,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 387
+      line: 388
       snippet: const libraryBtn = document.createElement('button');
   - id: player.load-synthetic-fixture
     scope: player
@@ -1248,7 +1248,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 395
+      line: 396
       snippet: const fixtureBtn = document.createElement('button');
   - id: player.input-2
     scope: player
@@ -1262,7 +1262,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 432
+      line: 433
       snippet: const input = document.createElement('input');
   - id: player.boundarydetails
     scope: player
@@ -1273,7 +1273,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 521
+      line: 522
       snippet: const boundaryDetails = document.createElement('details');
   - id: player.relinkbtn
     scope: player
@@ -1288,7 +1288,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 530
+      line: 531
       snippet: const relinkBtn = document.createElement('button');
   - id: player.choose-media-again
     scope: player
@@ -1302,7 +1302,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 554
+      line: 555
       snippet: const chooseAgainBtn = document.createElement('button');
   - id: player.go-to-library
     scope: player
@@ -1316,7 +1316,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 559
+      line: 560
       snippet: const libraryBtn = document.createElement('button');
   - id: player.button-2
     scope: player
@@ -1338,7 +1338,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/stage.ts
-      line: 715
+      line: 716
       snippet: const button = document.createElement('button');
   - id: player.transcript-search
     scope: player
@@ -1471,7 +1471,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/transcript.ts
-      line: 600
+      line: 601
       snippet: const cancelBtn = document.createElement('button');
   - id: practice.practice-mode
     scope: practice
@@ -1751,7 +1751,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 23
+      line: 24
       snippet: const btn = document.createElement('button');
   - id: saved.addall
     scope: saved
@@ -1764,7 +1764,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 51
+      line: 56
       snippet: const addAll = document.createElement('button');
   - id: saved.link
     scope: saved
@@ -1778,22 +1778,21 @@ controls:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 100
+      line: 115
       snippet: const link = document.createElement('a');
-  - id: saved.in-review
+  - id: saved.reviewbtn
     scope: saved
     tag: button
     variable: reviewBtn
-    labels:
-      - In review ✓
-      - Add to review
+    labels: []
+    labelExpr: "`${inReview ? 'In review ✓' : 'Add to review'}${pendingEnrolment === null ? '' …"
     className: btn-secondary saved-review-toggle
     guarded: "!inReview && occurrences.length === 0"
     events:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 163
+      line: 179
       snippet: const reviewBtn = document.createElement('button');
   - id: saved.input
     scope: saved
@@ -1807,7 +1806,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/saved.ts
-      line: 191
+      line: 207
       snippet: const input = document.createElement('input');
   - id: saved.save-meaning
     scope: saved
@@ -1820,7 +1819,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/saved.ts
-      line: 197
+      line: 213
       snippet: const save = document.createElement('button');
   - id: saved.input-2
     scope: saved
@@ -1835,7 +1834,7 @@ controls:
       - keydown
     source:
       path: apps/web/src/views/saved.ts
-      line: 228
+      line: 244
       snippet: const input = document.createElement('input');
   - id: saved.save-meaning-2
     scope: saved
@@ -1848,7 +1847,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/saved.ts
-      line: 234
+      line: 250
       snippet: const save = document.createElement('button');
   - id: saved.cancel
     scope: saved
@@ -1862,7 +1861,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 238
+      line: 254
       snippet: const cancel = document.createElement('button');
   - id: saved.edit-meaning
     scope: saved
@@ -1878,8 +1877,37 @@ controls:
       - click
     source:
       path: apps/web/src/views/saved.ts
-      line: 267
+      line: 283
       snippet: const edit = document.createElement('button');
+  - id: saved.button
+    scope: saved
+    tag: button
+    variable: button
+    labels: []
+    labelExpr: label
+    type: button
+    className: btn-link
+    events:
+      - click
+    source:
+      path: apps/web/src/views/saved.ts
+      line: 334
+      snippet: const button = document.createElement('button');
+  - id: saved.button-2
+    scope: saved
+    tag: button
+    variable: button
+    labels: []
+    labelExpr: label
+    type: button
+    className: btn-link
+    guarded: "true"
+    events:
+      - click
+    source:
+      path: apps/web/src/views/saved.ts
+      line: 380
+      snippet: const button = document.createElement('button');
   - id: settings.yes-clear-it
     scope: settings
     tag: button
@@ -2092,55 +2120,55 @@ keyboard:
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 148
+        line: 150
         snippet: if (event.key === '?') {
     - key: " "
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 163
+        line: 165
         snippet: if (event.key === ' ' || event.key === 'Spacebar') {
     - key: Spacebar
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 163
+        line: 165
         snippet: if (event.key === ' ' || event.key === 'Spacebar') {
     - key: r
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 175
+        line: 177
         snippet: "} else if (event.key === 'r' || event.key === 'R') {"
     - key: R
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 175
+        line: 177
         snippet: "} else if (event.key === 'r' || event.key === 'R') {"
     - key: "["
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 181
+        line: 183
         snippet: "} else if (event.key === '[') {"
     - key: "]"
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 188
+        line: 190
         snippet: "} else if (event.key === ']') {"
     - key: ","
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 195
+        line: 197
         snippet: "} else if (event.key === ',') {"
     - key: .
       scope: shell
       source:
         path: apps/web/src/appShell.ts
-        line: 200
+        line: 202
         snippet: "} else if (event.key === '.') {"
     - key: Escape
       scope: shared
@@ -2206,13 +2234,13 @@ keyboard:
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 605
+        line: 606
         snippet: if (e.key === 'Enter' && !e.isComposing) {
     - key: Escape
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 611
+        line: 612
         snippet: if (e.key === 'Escape') {
     - key: " "
       scope: review
@@ -2230,13 +2258,13 @@ keyboard:
       scope: saved
       source:
         path: apps/web/src/views/saved.ts
-        line: 249
+        line: 265
         snippet: if (e.key === 'Enter') { e.preventDefault(); commit(); }
     - key: Escape
       scope: saved
       source:
         path: apps/web/src/views/saved.ts
-        line: 250
+        line: 266
         snippet: else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close()…
 api:
   routes:
@@ -2276,19 +2304,26 @@ api:
         path: apps/local-service/src/requestAdmission.ts
         line: 70
         snippet: if (path === '/api/restore/preview' || path === '/api/restore/commit') return […
-    - path: /api/jobs
+    - path: /api/learner/operations
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
         line: 71
+        snippet: if (path === '/api/learner/operations') return ['POST'];
+    - path: /api/jobs
+      methods:
+        - POST
+      source:
+        path: apps/local-service/src/requestAdmission.ts
+        line: 72
         snippet: if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
     - path: /api/artifacts/cleanup
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 71
+        line: 72
         snippet: if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
     - path: /api/language/morphology
       methods:
@@ -2296,7 +2331,7 @@ api:
       bodyLimitBytes: 16384
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 72
+        line: 73
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/language/gloss
       methods:
@@ -2304,7 +2339,7 @@ api:
       bodyLimitBytes: 16384
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 72
+        line: 73
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/export/anki
       methods:
@@ -2312,21 +2347,21 @@ api:
       bodyLimitBytes: 4194304
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 72
+        line: 73
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/jobs/{uuid}
       methods:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 73
+        line: 74
         snippet: if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
     - path: /api/jobs/{uuid}/cancel
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 74
+        line: 75
         snippet: if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];
     - path: /api/snippets/{uuid}
       methods:
@@ -2334,21 +2369,21 @@ api:
         - DELETE
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 75
+        line: 76
         snippet: if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];
     - path: /api/media/{uuid}/transcripts
       methods:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 76
+        line: 77
         snippet: if (new RegExp(`^/api/media/${uuid}/transcripts$`).test(path)) return ['GET'];
     - path: /api/tracks/{uuid}/transcript
       methods:
         - PUT
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 77
+        line: 78
         snippet: if (new RegExp(`^/api/tracks/${uuid}/transcript$`).test(path)) return ['PUT'];
   callers:
     - route: /api/export/anki
@@ -2364,62 +2399,67 @@ api:
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 545
+        line: 557
         snippet: "const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT…"
     - route: /api/status
       source:
         path: apps/web/src/model.ts
-        line: 631
+        line: 660
         snippet: const status = await fetchLocalServiceJson(transport, '/api/status');
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 636
+        line: 665
         snippet: const state = await fetchLocalServiceJson(transport, '/api/state');
+    - route: /api/learner/operations
+      source:
+        path: apps/web/src/model.ts
+        line: 1091
+        snippet: "response = await transport.request('/api/learner/operations', { method: 'POST',…"
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2358
+        line: 2967
         snippet: const created = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2453
+        line: 3062
         snippet: const created = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2546
+        line: 3155
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2595
+        line: 3204
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/jobs
       source:
         path: apps/web/src/model.ts
-        line: 2649
+        line: 3258
         snippet: const createResponse = await fetchLocalServiceJson(transport, '/api/jobs', {
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4119
+        line: 4840
         snippet: const state = await fetchLocalServiceJson(transport, '/api/state'); current();
     - route: /api/restore/preview
       source:
         path: apps/web/src/model.ts
-        line: 4126
+        line: 4854
         snippet: const reply = await fetchLocalServiceJson(transport, '/api/restore/preview', { …
     - route: /api/restore/commit
       source:
         path: apps/web/src/model.ts
-        line: 4169
+        line: 4897
         snippet: const ack = await fetchLocalServiceJson(binding.transport, '/api/restore/commit…
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4175
+        line: 4903
         snippet: const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); …
     - route: /api/language/morphology
       source:
@@ -2436,86 +2476,91 @@ persistence:
     - symbol: createOffsetCorrectedTranscriptVersion
       source:
         path: apps/web/src/model.ts
-        line: 1232
+        line: 1841
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: relinkExistingBrowserMedia
       source:
         path: apps/web/src/model.ts
-        line: 1553
+        line: 2162
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importBrowserLocalFiles
       source:
         path: apps/web/src/model.ts
-        line: 1668
+        line: 2277
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: putTranscriptSegments
       source:
         path: apps/web/src/model.ts
-        line: 2808
+        line: 3417
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: approveTranscriptTrack
       source:
         path: apps/web/src/model.ts
-        line: 3273
+        line: 3882
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importTargetOnlyFixture
       source:
         path: apps/web/src/model.ts
-        line: 3349
+        line: 3958
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: importFixtureMediaAndSubtitles
       source:
         path: apps/web/src/model.ts
-        line: 3397
+        line: 4006
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: undoSave
       source:
         path: apps/web/src/model.ts
-        line: 3425
+        line: 4051
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveSelectionWithReceipt
       source:
         path: apps/web/src/model.ts
-        line: 3473
+        line: 4124
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: archiveReviewCardsForSavedItem
       source:
         path: apps/web/src/model.ts
-        line: 3488
+        line: 4182
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemToReview
       source:
         path: apps/web/src/model.ts
-        line: 3494
+        line: 4195
         snippet: if (persist) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemsToReview
       source:
         path: apps/web/src/model.ts
-        line: 3505
+        line: 4215
         snippet: if (added > 0) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: setSavedItemMeaning
       source:
         path: apps/web/src/model.ts
-        line: 3512
+        line: 4233
         snippet: if (updated && updated !== before) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: submitReviewRating
       source:
         path: apps/web/src/model.ts
-        line: 3622
+        line: 4343
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: recordPracticeAttempt
       source:
         path: apps/web/src/model.ts
-        line: 3756
+        line: 4477
         snippet: persistIfLocalServiceAutosaveEnabled(model);
   unsavedMarkers:
     - symbol: persistIfLocalServiceAutosaveEnabled
       source:
         path: apps/web/src/model.ts
-        line: 773
+        line: 813
         snippet: markUnsavedBrowserEdits(model);
+    - symbol: storeLearnerOperation
+      source:
+        path: apps/web/src/model.ts
+        line: 1037
+        snippet: if (record) markUnsavedBrowserEdits(model);
     - symbol: confirmRestore
       source:
         path: apps/web/src/model.ts
-        line: 4153
+        line: 4881
         snippet: markUnsavedBrowserEdits(model); return;

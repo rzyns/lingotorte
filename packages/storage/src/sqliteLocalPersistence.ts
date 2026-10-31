@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { assertNativeOutput } from '../../domain/src/nativePathsNode.ts';
 import type {
@@ -36,9 +36,14 @@ import type {
 import { createEmptyLocalStoreSnapshot, normalizeLocalStoreSnapshot, type LearnerStateSnapshot, type LocalStoreSnapshot, type TrackTranscriptBundle, type TranscriptBundle } from './localStore.ts';
 import { sameHistoryPayload, unionHistory, normalizeLearnerAudit, type LearnerAudit } from './learnerAudit.ts';
 import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
-import { requireRestoreConfirmation, validateMeaningSource, type RestoreConfirmation } from '@lingotorte/domain';
+import { canonicalJson, requireRestoreConfirmation, validateMeaningSource, type RestoreConfirmation } from '@lingotorte/domain';
+import { LocalStore } from './localStore.ts';
+import {
+  LEARNER_OPERATION_RECEIPT_CAP, LEARNER_OPERATION_RECEIPT_TTL_MS, OPERATION_OWNED_COLLECTIONS, diffOperationOwned, learnerOperationRequestDigestInput,
+  reconcileOperationOwned, type LearnerOperationIdentity, type LearnerOperationReceipt, type LearnerOperationRequest, type OperationOwnedCollection,
+} from './learnerOperations.ts';
 
-const CURRENT_SCHEMA_VERSION = 12;
+const CURRENT_SCHEMA_VERSION = 13;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
@@ -46,6 +51,15 @@ export class SnapshotRevisionConflictError extends Error {
 }
 
 /** lt-584.4: a track's transcript bundle is write-once; a second write is a conflict (HTTP 409). */
+/** lt-192.3: the operation id was already used for a different request (HTTP 409 `operation-id-reused`). */
+export class OperationIdReusedError extends Error {
+  constructor() { super('This operation id was already used for a different request; nothing was applied.'); }
+}
+/** lt-192.3: an unknown operation outside the service's eligibility boundary (HTTP 409 with `code`); nothing was applied. */
+export class OperationIneligibleError extends Error {
+  constructor(readonly code: 'generation-changed' | 'incarnation-changed' | 'operation-expired' | 'invalid-basis', message: string) { super(message); }
+}
+
 export class TranscriptBundleConflictError extends Error {
   constructor(trackId: string) { super(`Transcript bundle for track ${trackId} already exists and is write-once.`); }
 }
@@ -56,6 +70,19 @@ export class DurableEntityNotFoundError extends Error {
 }
 
 const TRANSCRIPT_KEYS = ['cues', 'transcriptWordTimings'] as const;
+
+type OperationStateRow = Readonly<{ generation: string; last_non_operation_revision: number; next_receipt_seq: number; pruned_through_seq: number; protection_active: number }>;
+function revisionNumber(token: string): number { return Number(token.slice('rev:'.length)); }
+type RowHistoryEntry = { revision: number; before: string | null; after: string | null };
+// Strict: an unreadable history proves nothing, so the fence then treats the row as ambiguous (refused).
+function parseRowHistory(json: string): RowHistoryEntry[] {
+  let value: unknown;
+  try { value = JSON.parse(json); } catch { return []; }
+  if (!Array.isArray(value)) return [];
+  const image = (v: unknown) => v === null || typeof v === 'string';
+  if (!value.every(e => e && typeof e === 'object' && Number.isSafeInteger(e.revision) && image(e.before) && image(e.after))) return [];
+  return (value as RowHistoryEntry[]).slice().sort((a, b) => a.revision - b.revision);
+}
 
 const CREATE_SNAPSHOT_STORE_SQL = `
   CREATE TABLE IF NOT EXISTS lingotorte_schema (
@@ -379,6 +406,44 @@ const DURABLE_STATE_SQL = `
 const RETIRE_SNAPSHOT_BLOB_SQL = `
   ALTER TABLE lingotorte_snapshots RENAME TO legacy_snapshot_json;
   INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 12)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
+// lt-192.3 (ADR-0004): additive operation receipts, lineage generation, document-writer fence and per-row operation
+// ownership. Historical migrations 1-12 and every existing table stay unchanged.
+const LEARNER_OPERATIONS_SQL = `
+  CREATE TABLE learner_operation_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    generation TEXT NOT NULL,
+    last_non_operation_revision INTEGER NOT NULL CHECK (last_non_operation_revision >= 1),
+    next_receipt_seq INTEGER NOT NULL CHECK (next_receipt_seq >= 1),
+    pruned_through_seq INTEGER NOT NULL CHECK (pruned_through_seq >= 0),
+    protection_active INTEGER NOT NULL CHECK (protection_active IN (0, 1))
+  );
+  INSERT INTO learner_operation_state (id, generation, last_non_operation_revision, next_receipt_seq, pruned_through_seq, protection_active)
+    VALUES (1, lower(hex(randomblob(16))), (SELECT revision FROM durable_state WHERE id = 1), 1, 0, 0);
+  CREATE TABLE learner_operation_receipt (
+    operation_id TEXT PRIMARY KEY,
+    seq INTEGER NOT NULL UNIQUE CHECK (seq >= 1),
+    kind TEXT NOT NULL CHECK (kind IN ('capture', 'set-meaning', 'undo-capture', 'set-review-enrolment')),
+    request_sha256 TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('applied', 'conflict')),
+    revision INTEGER NOT NULL,
+    generation TEXT NOT NULL,
+    incarnation TEXT NOT NULL,
+    committed_at TEXT NOT NULL,
+    receipt_json TEXT NOT NULL
+  );
+  CREATE INDEX idx_learner_operation_receipt_committed ON learner_operation_receipt(committed_at);
+  CREATE TABLE operation_owned_row (
+    collection TEXT NOT NULL CHECK (collection IN ('savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates')),
+    row_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    -- Authoritative images since the last non-operation write: [{revision, before, after}] (canonical JSON or null).
+    history_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (collection, row_id)
+  );
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 13)
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
@@ -837,10 +902,28 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
   { version: 10, name: 'saved_item_meaning_source', sql: SAVED_ITEM_MEANING_SOURCE_SQL, checksum: migrationChecksum(SAVED_ITEM_MEANING_SOURCE_SQL) },
   { version: 11, name: 'durable_state_revision', sql: DURABLE_STATE_SQL, checksum: migrationChecksum(DURABLE_STATE_SQL) },
   { version: 12, name: 'retire_snapshot_blob', sql: RETIRE_SNAPSHOT_BLOB_SQL, checksum: migrationChecksum(RETIRE_SNAPSHOT_BLOB_SQL) },
+  { version: 13, name: 'learner_operations', sql: LEARNER_OPERATIONS_SQL, checksum: migrationChecksum(LEARNER_OPERATIONS_SQL) },
 ];
+
+/** lt-192.3: the transaction context handed to an operation's apply callback. */
+export type LearnerOperationContext = Readonly<{
+  /** Authoritative learner state (no transcripts) plus the transcript bundles the callback asked for. Mutate freely. */
+  store: LocalStore;
+  /** Server clock for this operation. */
+  now: Date;
+  /** Load one track's stored transcript bundle into `store` (cues and word timings); false when none is stored. */
+  loadTrackBundle(trackId: string): boolean;
+  /** A retained receipt of this lineage, if any. */
+  receipt(operationId: string): LearnerOperationReceipt | undefined;
+}>;
+export type LearnerOperationOutcome =
+  | Readonly<{ status: 'applied'; result: Record<string, unknown> }>
+  | Readonly<{ status: 'conflict'; result: Record<string, unknown> }>;
 
 export class SqliteLocalPersistence {
   private readonly db: DatabaseSync;
+  /** lt-192.3: one opaque id per open (process incarnation); never persisted except inside receipts. */
+  readonly incarnation = randomBytes(16).toString('hex');
 
   private constructor(db: DatabaseSync) {
     this.db = db;
@@ -1968,20 +2051,74 @@ export class SqliteLocalPersistence {
   private write<T>(expectedRevision: string | undefined, updatedAt: string, body: () => T): { result: T; revision: string } {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      if (expectedRevision !== undefined && expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
+      if (expectedRevision !== undefined) this.assertDocumentBasis(expectedRevision);
       const result = body();
       const revision = this.bumpRevision(updatedAt);
+      this.markNonOperationWrite(revision);
       this.db.exec('COMMIT'); return { result, revision };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
+  // lt-192.3 (ADR-0004 §3): a document writer's basis is current when no NON-operation write happened after it. Only
+  // operations may have committed in between; they own disjoint rows, which the document fence reconciles. Inside a
+  // write transaction.
+  private assertDocumentBasis(expectedRevision: string): void {
+    const current = this.currentRevision();
+    if (expectedRevision === current) return;
+    const expected = /^rev:(\d{1,15})$/.exec(expectedRevision);
+    const n = expected ? Number(expected[1]) : NaN;
+    if (!Number.isSafeInteger(n) || n > revisionNumber(current) || n < this.operationState().last_non_operation_revision) throw new SnapshotRevisionConflictError();
+  }
+
+  // Every non-operation writer (learner state, transcript bundle, fixture snapshot, restore) records its revision.
+  private markNonOperationWrite(revision: string): void {
+    if (this.db.prepare('UPDATE learner_operation_state SET last_non_operation_revision = ? WHERE id = 1').run(revisionNumber(revision)).changes !== 1) throw new Error('Missing learner operation state');
+  }
+
+  private operationState(): OperationStateRow {
+    const row = this.db.prepare('SELECT generation, last_non_operation_revision, next_receipt_seq, pruned_through_seq, protection_active FROM learner_operation_state WHERE id = 1').get() as OperationStateRow | undefined;
+    if (!row) throw new Error('Missing learner operation state');
+    return row;
+  }
+
   /** Save learner state (everything except transcript bundles) under whole-document CAS; returns the new revision.
    *  Transcript bundles are written per track through saveTrackTranscript and are never touched here. */
-  saveLearnerState(state: LearnerStateSnapshot, expectedRevision: string, updatedAt = new Date().toISOString()): string {
+  /**
+   * lt-192.3: `fence`, when given, receives whether the operation fence reconciled a stale view of operation-owned rows
+   * and, if so, the authoritative operation-owned rows now stored (so the client can install them).
+   */
+  saveLearnerState(state: LearnerStateSnapshot, expectedRevision: string, updatedAt = new Date().toISOString(), fence?: { reconciled?: boolean | undefined; operationOwned?: Pick<LearnerStateSnapshot, OperationOwnedCollection> | unknown }): string {
     if (!state || typeof state !== 'object' || Array.isArray(state)) throw new TypeError('Invalid learner state');
     if (TRANSCRIPT_KEYS.some(key => Object.hasOwn(state, key))) throw new TypeError('Learner state must not carry cues or transcriptWordTimings');
     if (typeof expectedRevision !== 'string') throw new TypeError('Invalid durable state revision');
-    return this.write(expectedRevision, updatedAt, () => this.writeLearnerCandidate(this.learnerCandidate(normalizeLocalStoreSnapshot(state)))).revision;
+    const { result, revision } = this.write(expectedRevision, updatedAt, () => {
+      const fenced = this.fenceOperationOwned(withoutTranscripts(normalizeLocalStoreSnapshot(state)), expectedRevision);
+      const stored = this.writeLearnerCandidate(this.learnerCandidate(normalizeLocalStoreSnapshot(fenced.candidate)));
+      return { reconciled: fenced.reconciled, stored };
+    });
+    if (fence) {
+      fence.reconciled = result.reconciled;
+      if (result.reconciled) {
+        const { savedItems, savedOccurrences, reviewCards, reviewCardStates } = result.stored;
+        fence.operationOwned = { savedItems, savedOccurrences, reviewCards, reviewCardStates };
+      }
+    }
+    return revision;
+  }
+
+  // lt-192.3 (ADR-0004 §3): inside the write transaction. Before any operation was applied the document path keeps its
+  // historical whole-document semantics; afterwards operation-owned rows are fenced (see reconcileOperationOwned).
+  private fenceOperationOwned(body: LearnerStateSnapshot, expectedRevision: string): { candidate: LearnerStateSnapshot; reconciled: boolean } {
+    if (this.operationState().protection_active !== 1) return { candidate: body, reconciled: false };
+    const basis = revisionNumber(expectedRevision);
+    const touched = this.db.prepare('SELECT revision, history_json FROM operation_owned_row WHERE collection = ? AND row_id = ?');
+    return reconcileOperationOwned(body, withoutTranscripts(this.loadSnapshotFromTables(false)), (collection, id) => {
+      const row = touched.get(collection, id) as { revision: number; history_json: string } | undefined;
+      if (!row || row.revision <= basis) return undefined;
+      // History since the basis: the first later touch's before-image is the row AT the basis; then each after-image.
+      const since = parseRowHistory(row.history_json).filter(entry => entry.revision > basis);
+      return since.length ? [since[0]!.before, ...since.map(entry => entry.after)] : [];
+    });
   }
 
   /** lt-584.5 (plan 2.4): ids of the given learner-state tracks that are not `candidate`, have no stored bundle, and
@@ -2010,7 +2147,7 @@ export class SqliteLocalPersistence {
 
   /** @internal Composition kept for fixtures: one transaction, one bump. Each track's bundle in the snapshot is written
    *  once when the track has no stored cues, must equal the stored bundle exactly otherwise (never rewritten), and then
-   *  the learner state is saved. */
+   *  the learner state is saved under the same operation-ownership fence as saveLearnerState. */
   saveSnapshot(snapshot: LocalStoreSnapshot, updatedAt = new Date().toISOString(), expectedRevision?: string): string {
     const normalized = normalizeLocalStoreSnapshot(snapshot);
     return this.write(expectedRevision, updatedAt, () => {
@@ -2019,13 +2156,18 @@ export class SqliteLocalPersistence {
         if (!this.trackHasCues(trackId)) { this.insertTrackBundle(trackId, bundle); continue; }
         if (!sameBundle(this.bundleForTrack(trackId), bundle)) throw new TranscriptBundleConflictError(trackId);
       }
-      this.writeLearnerCandidate(this.learnerCandidate(normalized));
+      // lt-192.3: the fixture writer is fenced exactly like saveLearnerState (no undeclared bypass); without an expected
+      // revision its basis is the current revision, so it may not change any operation-owned row.
+      const fenced = this.fenceOperationOwned(withoutTranscripts(normalized), expectedRevision ?? this.currentRevision());
+      this.writeLearnerCandidate(this.learnerCandidate(normalizeLocalStoreSnapshot(fenced.candidate)));
     }).revision;
   }
 
   private restorePlan(manifest: unknown, mode: RestoreMode, expectedRevision: string, stagedAudit?: LearnerAudit) {
     if (typeof expectedRevision !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(expectedRevision)) throw new TypeError('Invalid durable state revision');
     const current = normalizeLocalStoreSnapshot(withoutTranscripts(this.loadSnapshotFromTables(false)));
+    // lt-192.3: restore preview AND confirmation stay bound to the exact revision previewed (strict CAS). Unlike document
+    // saves, a restore is never rebased over intervening operations: their effects were not in the learner's preview.
     if (expectedRevision !== this.currentRevision()) throw new SnapshotRevisionConflictError();
     const audit = normalizeLearnerAudit(current.learnerAudit, current);
     const staged = stagedAudit === undefined ? audit : normalizeLearnerAudit(stagedAudit, { reviewEvents: [], practiceAttempts: [] });
@@ -2055,10 +2197,142 @@ export class SqliteLocalPersistence {
       if (!diffSnapshots(normalizeLocalStoreSnapshot({ ...candidate, importJobEvents: state.importJobEvents }), normalizeLocalStoreSnapshot(state), LEARNER_COLLECTIONS).equal) throw new Error('Restore result reconciliation mismatch');
       const snapshot = this.loadSnapshot();
       const revision = this.bumpRevision(updatedAt);
+      this.markNonOperationWrite(revision);
+      // lt-192.3: a restore starts a new operation lineage; unknown intents of the old lineage are refused, not applied.
+      this.db.prepare('UPDATE learner_operation_state SET generation = ? WHERE id = 1').run(randomBytes(16).toString('hex'));
       const receipt = { mode: plan.mode, effects: plan.effects, auditEffects: plan.auditEffects, coalesced: plan.coalesced,
         integrity: plan.integrity, durability: 'durable-committed/readback-verified' as const, durablySaved: true as const };
       this.db.exec('COMMIT'); return { snapshot, revision, receipt, capability: 'active-audit-restore-v1' as const };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  /** lt-192.3: the operation identity a client needs to build eligible requests, read with the learner state. */
+  loadLearnerStateWithOperations(): { state: LearnerStateSnapshot; revision: string; operations: LearnerOperationIdentity } {
+    return this.read(() => ({ state: withoutTranscripts(this.loadSnapshotFromTables(false)), revision: this.currentRevision(), operations: this.operationIdentity() }));
+  }
+
+  private operationIdentity(): LearnerOperationIdentity {
+    const state = this.operationState();
+    return { generation: state.generation, incarnation: this.incarnation, receiptSeq: state.next_receipt_seq - 1, prunedThroughSeq: state.pruned_through_seq, protectionActive: state.protection_active === 1 };
+  }
+
+  private storedReceipt(operationId: string): { receipt: LearnerOperationReceipt; requestSha256: string } | undefined {
+    const row = this.db.prepare('SELECT request_sha256, receipt_json FROM learner_operation_receipt WHERE operation_id = ?').get(operationId) as { request_sha256: string; receipt_json: string } | undefined;
+    return row ? { receipt: JSON.parse(row.receipt_json) as LearnerOperationReceipt, requestSha256: row.request_sha256 } : undefined;
+  }
+
+  /**
+   * lt-192.3 (ADR-0004 §2): apply one learner operation exactly once. In ONE `BEGIN IMMEDIATE` transaction: look up the
+   * receipt; a retained receipt for the same request is returned as is (no second effect), for a different request it
+   * is refused. An unknown id must be eligible (same lineage generation and process incarnation, basis not older than
+   * the pruned boundary). Then `apply` runs against the authoritative rows; only operation-owned collections may change.
+   * Changed rows are written, ownership stamps, revision, terminal receipt and pruning commit together or not at all.
+   */
+  applyLearnerOperation(request: LearnerOperationRequest, apply: (context: LearnerOperationContext) => LearnerOperationOutcome, now = new Date()): { receipt: LearnerOperationReceipt; replayed: boolean; operations: LearnerOperationIdentity } {
+    const requestSha256 = createHash('sha256').update(learnerOperationRequestDigestInput(request)).digest('hex');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const prior = this.storedReceipt(request.operationId);
+      if (prior) {
+        if (prior.requestSha256 !== requestSha256) throw new OperationIdReusedError();
+        const operations = this.operationIdentity();
+        this.db.exec('COMMIT');
+        return { receipt: prior.receipt, replayed: true, operations };
+      }
+      const state = this.operationState();
+      if (request.basis.generation !== state.generation) throw new OperationIneligibleError('generation-changed', 'The service state was restored or replaced since this change was made; it was not applied.');
+      if (request.basis.incarnation !== this.incarnation) throw new OperationIneligibleError('incarnation-changed', 'The service restarted since this change was made and has no record of it; it was not applied.');
+      if (request.basis.receiptSeq < state.pruned_through_seq) throw new OperationIneligibleError('operation-expired', 'This change is older than the service keeps records for; it was not applied.');
+      if (request.basis.receiptSeq > state.next_receipt_seq - 1) throw new OperationIneligibleError('invalid-basis', 'This change names service state that does not exist; it was not applied.');
+      const before = withoutTranscripts(this.loadSnapshotFromTables(false));
+      const store = new LocalStore({ ...before, cues: {}, transcriptWordTimings: {} });
+      const context: LearnerOperationContext = {
+        store, now,
+        loadTrackBundle: (trackId) => {
+          const bundle = this.bundleForTrack(trackId);
+          for (const cue of bundle.cues) store.putCue(cue);
+          for (const timing of bundle.wordTimings) store.putTranscriptWordTiming(timing);
+          return bundle.cues.length > 0;
+        },
+        receipt: (operationId) => {
+          const stored = this.storedReceipt(operationId)?.receipt;
+          return stored && stored.generation === state.generation ? stored : undefined;
+        },
+      };
+      const outcome = apply(context);
+      const after = withoutTranscripts(store.snapshot());
+      for (const name of LEARNER_COLLECTIONS) {
+        if ((OPERATION_OWNED_COLLECTIONS as readonly string[]).includes(name)) continue;
+        if (JSON.stringify(normalizeLocalStoreSnapshot(before)[name]) !== JSON.stringify(normalizeLocalStoreSnapshot(after)[name])) throw new Error(`Learner operation changed a document-owned collection: ${name}`);
+      }
+      const diff = diffOperationOwned(before, after);
+      const changedIds = Object.fromEntries(OPERATION_OWNED_COLLECTIONS.map(name => [name, Object.keys(diff.rows[name])])) as Record<OperationOwnedCollection, string[]>;
+      const changed = OPERATION_OWNED_COLLECTIONS.map(name => changedIds[name].length > 0 || diff.removed[name].length > 0);
+      if (outcome.status === 'applied') {
+        // The receipt also carries the current images of the item/card it names (e.g. a dedup capture's existing item),
+        // so the client can show the canonical rows without a full reload.
+        const named = outcome.result as { savedItemId?: unknown; occurrenceId?: unknown; cardId?: unknown };
+        if (typeof named.savedItemId === 'string' && after.savedItems[named.savedItemId]) diff.rows.savedItems[named.savedItemId] ??= after.savedItems[named.savedItemId];
+        if (typeof named.occurrenceId === 'string' && after.savedOccurrences[named.occurrenceId]) diff.rows.savedOccurrences[named.occurrenceId] ??= after.savedOccurrences[named.occurrenceId];
+        if (typeof named.cardId === 'string' && after.reviewCards[named.cardId]) {
+          diff.rows.reviewCards[named.cardId] ??= after.reviewCards[named.cardId];
+          if (after.reviewCardStates[named.cardId]) diff.rows.reviewCardStates[named.cardId] ??= after.reviewCardStates[named.cardId];
+        }
+      }
+      let revision = this.currentRevision();
+      if (outcome.status === 'applied') {
+        const committedAt = now.toISOString();
+        if (changed.some(Boolean)) {
+          const stored = this.writeLearnerCandidate({ ...before, savedItems: after.savedItems, savedOccurrences: after.savedOccurrences, reviewCards: after.reviewCards, reviewCardStates: after.reviewCardStates });
+          revision = this.bumpRevision(committedAt);
+          // Per-row stamp plus the authoritative before/after images, so a later stale document save can prove that a
+          // differing row is an unmodified historical view (reconcileOperationOwned). Entries at or before the last
+          // non-operation write can never be needed again (no document basis may predate it) and are dropped.
+          const keepAfter = state.last_non_operation_revision;
+          const read = this.db.prepare('SELECT history_json FROM operation_owned_row WHERE collection = ? AND row_id = ?');
+          const stamp = this.db.prepare(`INSERT INTO operation_owned_row (collection, row_id, revision, history_json) VALUES (?, ?, ?, ?)
+            ON CONFLICT(collection, row_id) DO UPDATE SET revision = excluded.revision, history_json = excluded.history_json`);
+          const image = (rows: Record<string, unknown>, id: string) => Object.hasOwn(rows, id) ? canonicalJson(rows[id]) : null;
+          for (const name of OPERATION_OWNED_COLLECTIONS) for (const id of [...changedIds[name], ...diff.removed[name]]) {
+            const prior = (read.get(name, id) as { history_json: string } | undefined)?.history_json;
+            const history = parseRowHistory(prior ?? '[]').filter(entry => entry.revision > keepAfter);
+            history.push({ revision: revisionNumber(revision), before: image(before[name] as Record<string, unknown>, id), after: image(stored[name] as Record<string, unknown>, id) });
+            stamp.run(name, id, revisionNumber(revision), JSON.stringify(history));
+          }
+        }
+        this.db.prepare('UPDATE learner_operation_state SET protection_active = 1 WHERE id = 1').run();
+      }
+      const seq = state.next_receipt_seq;
+      const receipt: LearnerOperationReceipt = {
+        operationId: request.operationId, kind: request.kind, status: outcome.status, seq, revision, generation: state.generation,
+        committedAt: now.toISOString(), result: outcome.result,
+        rows: outcome.status === 'applied' ? diff.rows : { savedItems: {}, savedOccurrences: {}, reviewCards: {}, reviewCardStates: {} },
+        removed: outcome.status === 'applied' ? diff.removed : { savedItems: [], savedOccurrences: [], reviewCards: [], reviewCardStates: [] },
+      };
+      this.db.prepare(`INSERT INTO learner_operation_receipt (operation_id, seq, kind, request_sha256, status, revision, generation, incarnation, committed_at, receipt_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(request.operationId, seq, request.kind, requestSha256, outcome.status, revisionNumber(revision), state.generation, this.incarnation, receipt.committedAt, JSON.stringify(receipt));
+      this.db.prepare('UPDATE learner_operation_state SET next_receipt_seq = ? WHERE id = 1').run(seq + 1);
+      this.pruneOperationReceipts(now);
+      const operations = this.operationIdentity();
+      this.db.exec('COMMIT');
+      return { receipt, replayed: false, operations };
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch { /* the failed statement already ended the transaction */ }
+      throw error;
+    }
+  }
+
+  // Inside the operation transaction: keep at most LEARNER_OPERATION_RECEIPT_CAP receipts, none past the TTL, and move
+  // the eligibility boundary past every pruned sequence so an unknown request from before it is refused, never re-applied.
+  private pruneOperationReceipts(now: Date): void {
+    const cutoff = new Date(now.valueOf() - LEARNER_OPERATION_RECEIPT_TTL_MS).toISOString();
+    const maxSeq = (this.db.prepare('SELECT MAX(seq) AS seq FROM learner_operation_receipt').get() as { seq: number | null }).seq ?? 0;
+    const byCap = maxSeq - LEARNER_OPERATION_RECEIPT_CAP;
+    const doomed = this.db.prepare('SELECT MAX(seq) AS seq FROM learner_operation_receipt WHERE committed_at < ? OR seq <= ?').get(cutoff, byCap) as { seq: number | null };
+    if (doomed.seq === null) return;
+    // Sequences are monotonic, so pruning by age removes a prefix; the boundary is the highest pruned sequence.
+    this.db.prepare('DELETE FROM learner_operation_receipt WHERE seq <= ?').run(doomed.seq);
+    this.db.prepare('UPDATE learner_operation_state SET pruned_through_seq = MAX(pruned_through_seq, ?) WHERE id = 1').run(doomed.seq);
   }
 
   close(): void {

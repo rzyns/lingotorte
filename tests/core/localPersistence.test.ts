@@ -101,7 +101,7 @@ describe('durable local persistence', () => {
     const persistence = openShadowed(':memory:');
 
     expect(persistence.status()).toMatchObject({
-      schemaVersion: 12,
+      schemaVersion: 13,
       hasSnapshot: false,
       appliedMigrations: [
         {
@@ -148,6 +148,7 @@ describe('durable local persistence', () => {
         { version: 10, name: 'saved_item_meaning_source', result: 'applied' },
         { version: 11, name: 'durable_state_revision', result: 'applied' },
         { version: 12, name: 'retire_snapshot_blob', result: 'applied' },
+        { version: 13, name: 'learner_operations', result: 'applied' },
       ],
     });
     expect(persistence.listMigrations()).toEqual([
@@ -211,6 +212,7 @@ describe('durable local persistence', () => {
       expect.objectContaining({ version: 10, name: 'saved_item_meaning_source', result: 'applied', checksum: expect.stringMatching(/^[a-f0-9]{64}$/), appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) }),
       expect.objectContaining({ version: 11, name: 'durable_state_revision', result: 'applied', checksum: expect.stringMatching(/^[a-f0-9]{64}$/), appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) }),
       expect.objectContaining({ version: 12, name: 'retire_snapshot_blob', result: 'applied', checksum: expect.stringMatching(/^[a-f0-9]{64}$/), appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) }),
+      expect.objectContaining({ version: 13, name: 'learner_operations', result: 'applied', checksum: expect.stringMatching(/^[a-f0-9]{64}$/), appliedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) }),
     ]);
     persistence.close();
   });

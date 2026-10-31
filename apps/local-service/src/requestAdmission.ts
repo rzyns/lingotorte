@@ -68,6 +68,7 @@ export function routeMethods(path: string): readonly string[] | undefined {
   if (path === '/api/health' || path === '/api/status') return ['GET'];
   if (path === '/api/state') return ['GET', 'PUT'];
   if (path === '/api/restore/preview' || path === '/api/restore/commit') return ['POST'];
+  if (path === '/api/learner/operations') return ['POST'];
   if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
   if (path === '/api/language/morphology' || path === '/api/language/gloss' || path === '/api/export/anki') return ['POST'];
   if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];

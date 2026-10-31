@@ -5,7 +5,9 @@ import { sameHistoryPayload, unionHistory } from '../../../packages/storage/src/
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
 import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
-import { defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
+import { canonicalJson, defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
+import type { LearnerOperationKind, LearnerOperationReceipt } from '../../../packages/storage/src/learnerOperations.ts';
+import { createIndexedDbOutboxBackend, createMemoryOutboxBackend, OUTBOX_CAP, OUTBOX_DISPATCH_LEASE_MS, UNRESOLVED_STATUSES, type CapturePrerequisites, type DraftResolution, type OutboxBackend, type OutboxRecord } from './operationOutbox.ts';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter, tokenizeWhitespaceText } from '@lingotorte/language';
 import { CaptureService, ReviewService, defaultFsrsConfig, type CaptureReceipt } from '@lingotorte/review';
 import { inferParsedSubtitleFormat, parseSubtitleText, SubtitleParseError, normalizeCueText } from '../../../packages/subtitles/src/parse.ts';
@@ -185,6 +187,7 @@ export function createAppModel(): AppModel {
       lastSavedAt: null,
       autosaveEnabled: true,
     },
+    learnerOperations: { records: [], durable: false, message: null, unappliedDrafts: [] },
   };
   return model;
 }
@@ -337,7 +340,7 @@ function signalSnapshotCache(model: AppModel): void { cacheHook(model).changed?.
 export function lastAckedSnapshotBaseline(model: AppModel): Readonly<{ baseUrl: string; serialized: string }> | null { return cacheHook(model).ack ?? null; }
 /** Boot-time: seed the cached ack baseline; used only while no live baseline exists for the same origin. */
 export function seedCachedAckBaseline(model: AppModel, baseUrl: string, serialized: string): void {
-  const value = { baseUrl: normalizeLocalServiceBaseUrl(baseUrl), serialized };
+  const value = { baseUrl: normalizeLocalServiceBaseUrl(baseUrl), serialized: canonicalSerialized(serialized) };
   cacheHook(model).ack = value; cacheHook(model).seeded = value;
 }
 function recordAckBaseline(model: AppModel, baseUrl: string, serialized: string): void {
@@ -406,7 +409,9 @@ export function learnerStateOf(snapshot: LocalStoreSnapshot | LearnerStateSnapsh
   const { cues: _cues, transcriptWordTimings: _timings, ...learner } = snapshot as LocalStoreSnapshot;
   return learner;
 }
-function learnerSerialization(snapshot: LocalStoreSnapshot | LearnerStateSnapshot): string { return JSON.stringify(learnerStateOf(snapshot)); }
+// lt-192.3: key-order-independent, so content-identical service and browser state compare equal (lt-192.2 finding).
+function learnerSerialization(snapshot: LocalStoreSnapshot | LearnerStateSnapshot): string { return canonicalJson(learnerStateOf(snapshot)); }
+function canonicalSerialized(serialized: string): string { try { return canonicalJson(JSON.parse(serialized)); } catch { return serialized; } }
 /** True when the current service URL has acknowledged this track's bundle. */
 export function transcriptBundleAcknowledged(model: AppModel, trackId: string): boolean {
   const acked = acknowledgedBundles.get(model);
@@ -535,37 +540,61 @@ export async function saveModelToLocalService(model: AppModel, baseUrl = model.l
     model.localService.syncState = 'saving';
     model.localService.lastMessage = 'Saving browser state; waiting for durable SQLite acknowledgement.';
     notifySync(model);
+    // lt-192.3: in operation mode an unchanged document is not re-sent (operation-only sync), and queued operations
+    // are flushed after the document whatever its outcome: they are independent server-validated changes.
+    const operationMode = Boolean(identityFor(model, url));
+    let serialized: string | null = null;
+    let savedAt: string | null = null;
     try {
+      if (operationMode) restoreOperationPrerequisites(model);
       // lt-584.5: bundles first (bundle-first track creation, D-R9), then the learner state that references them.
       await flushPendingTranscriptBundles(model, transport, url, current);
       if (!current()) return supersededSync();
       const snapshot = learnerStateOf(model.store.snapshot());
-      const serialized = JSON.stringify(snapshot);
-      const expectedRevision = stateRevision(model.localService.revision);
-      const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
-      if (!current()) return supersededSync();
-      if (ack.ok !== true) throw new TypeError('Local service did not acknowledge durable save.');
-      const revision = stateRevision(ack.revision);
-      if (typeof ack.savedAt !== 'string' || !Number.isFinite(Date.parse(ack.savedAt))) throw new TypeError('Local service did not acknowledge durable save time.');
-      model.localService.revision = revision;
-      owner.baseline = serialized;
-      recordAckBaseline(model, url, serialized);
-      model.localService.status = 'connected';
-      model.localService.lastSavedAt = ack.savedAt;
-      const dirty = learnerSerialization(model.store.snapshot()) !== serialized || hasPendingTranscriptEdits(model) || pendingTranscriptTrackIds(model).length > 0;
-      model.localService.syncState = dirty ? 'unsaved' : 'saved';
-      model.localService.lastMessage = dirty ? 'Earlier snapshot saved; newer browser edits remain unsaved.' : `Saved local state at ${ack.savedAt}`;
-      notifySync(model);
-      signalSnapshotCache(model);
-      return { ok: !dirty, message: model.localService.lastMessage };
+      const candidate = learnerSerialization(snapshot);
+      if (!operationMode || owner.baseline === null || candidate !== owner.baseline) {
+        const expectedRevision = stateRevision(model.localService.revision);
+        const ack = await fetchLocalServiceJson(transport, '/api/state', { method: 'PUT', body: JSON.stringify({ snapshot, expectedRevision }) });
+        if (!current()) return supersededSync();
+        if (ack.ok !== true) throw new TypeError('Local service did not acknowledge durable save.');
+        const revision = stateRevision(ack.revision);
+        if (typeof ack.savedAt !== 'string' || !Number.isFinite(Date.parse(ack.savedAt))) throw new TypeError('Local service did not acknowledge durable save time.');
+        model.localService.revision = revision;
+        owner.baseline = candidate;
+        recordAckBaseline(model, url, candidate);
+        // A reconciled stale view of vocabulary rows: install the authoritative rows the service now holds.
+        if (isPlainObject(ack.operationOwned)) installAuthoritativeOperationOwned(model, ack.operationOwned as unknown as LearnerStateSnapshot, revision);
+        model.localService.lastSavedAt = ack.savedAt;
+        savedAt = ack.savedAt;
+      }
+      serialized = owner.baseline;
     } catch (error) {
       if (!current()) return supersededSync();
       model.localService.status = 'error';
       model.localService.syncState = error instanceof LocalServiceRequestError && error.status === 409 ? 'conflict' : 'error';
-      model.localService.lastMessage = error instanceof Error ? error.message : 'Local save failed; browser work remains unsaved.';
+      model.localService.lastMessage = error instanceof LocalServiceRequestError && error.code === 'operation-owned-rows'
+        ? 'This browser holds vocabulary changes made while unpaired or by an older version; the service now accepts vocabulary changes only as confirmed operations. Nothing was saved and your browser work is kept. Use Export to keep a copy and Restore (merge) to bring it in, or Load service state.'
+        : error instanceof Error ? error.message : 'Local save failed; browser work remains unsaved.';
       notifySync(model);
+      if (operationMode && error instanceof LocalServiceRequestError) await flushLearnerOperations(model, transport, url, current);
       return { ok: false, message: model.localService.lastMessage };
     }
+    const operations = operationMode ? await flushLearnerOperations(model, transport, url, current) : { unresolved: 0, error: null };
+    if (!current()) return supersededSync();
+    // lt-192.3 (R3): a word saved without the learner's meaning/notes draft is not "all changes saved".
+    const drafts = operationMode ? unappliedDraftOutcomes(model).length : 0;
+    model.localService.status = operations.error ? 'error' : 'connected';
+    // Acknowledged operations rebase the baseline together with the store, so compare with the current baseline.
+    const dirty = learnerSerialization(model.store.snapshot()) !== (operationMode ? owner.baseline : serialized) || hasPendingTranscriptEdits(model) || pendingTranscriptTrackIds(model).length > 0;
+    model.localService.syncState = operations.error ? 'error' : dirty || operations.unresolved > 0 ? 'unsaved' : 'saved';
+    model.localService.lastMessage = operations.error ? (model.learnerOperations.message ?? operations.error)
+      : dirty ? 'Earlier snapshot saved; newer browser edits remain unsaved.'
+      : operations.unresolved > 0 ? (model.learnerOperations.message ?? 'Some vocabulary changes are not saved yet.')
+      : drafts > 0 ? unappliedDraftsMessage(drafts)
+      : savedAt ? `Saved local state at ${savedAt}` : 'All changes saved to the local service.';
+    notifySync(model);
+    signalSnapshotCache(model);
+    return { ok: !dirty && !operations.error && operations.unresolved === 0 && drafts === 0, message: model.localService.lastMessage };
   };
   // One PUT at a time, including autosave. Every queued call uses the latest snapshot
   // and the preceding durable acknowledgement, never a captured stale revision.
@@ -640,9 +669,17 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     if (restoreStates.get(model)?.unknown) return reconcileRestoreState(model, state);
     // lt-584.5: /api/state carries learner state only; compare learner state with learner state.
     const serviceSnapshot = new LocalStore(state.snapshot as LocalStoreSnapshot).snapshot();
+    // lt-192.3: in operation mode the service owns vocabulary rows; adopt them before comparing the document, so only
+    // document-owned differences (schedule, history, media, settings) can raise the Keep/Load choice.
+    // Only when this browser's vocabulary rows are unchanged since its last acknowledgement: rows created outside
+    // operations (unpaired work, an older version) are never replaced silently; they go through the Keep/Load choice.
+    const wasOperationMode = Boolean(identityFor(model, url)) && operationOwnedUnchanged(model, effectiveBaseline(model, url));
+    const identity = await rememberOperationIdentity(model, url, state.operations);
+    if (!current()) return supersededSync();
+    const changedDuringConnect = comparison !== browserComparison(model);
+    if (wasOperationMode && identity && !changedDuringConnect) installAuthoritativeOperationOwned(model, serviceSnapshot, revision);
     const serialized = learnerSerialization(model.store.snapshot());
     const remote = learnerSerialization(serviceSnapshot);
-    const changedDuringConnect = comparison !== browserComparison(model);
     const baseline = effectiveBaseline(model, url);
     const dirty = hasPendingTranscriptEdits(model) || (baseline !== null
       ? baseline !== serialized : snapshotHasDurableContent(learnerStateOf(model.store.snapshot())));
@@ -665,6 +702,7 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
       hydrateServiceLearnerState(model, serviceSnapshot);
       owner.baseline = learnerSerialization(model.store.snapshot());
       recordAckBaseline(model, url, owner.baseline);
+      if (identity) { operationState(model).protectedBase = Number(revision.slice(4)) || 0; operationState(model).rowRevisions.clear(); }
       // lt-584.5: then the current media's transcripts only; other media load when opened.
       if (model.currentMedia) {
         const mediaId = model.currentMedia.id;
@@ -686,6 +724,8 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     if (!pathPolicy) model.localService.lastMessage += ` ${NATIVE_PATH_COMPATIBILITY_MESSAGE}`;
     model.localService.status = 'connected';
     notifySync(model);
+    // lt-192.3: intents queued while disconnected (or before a reload) are sent now when autosave allows.
+    if (identity && unresolvedLearnerOperations(model).length > 0) void scheduleLearnerOperationFlush(model);
     return { ok: true, message: model.localService.lastMessage };
   } catch (error) {
     if (!current()) return supersededSync();
@@ -774,6 +814,575 @@ export function persistIfLocalServiceAutosaveEnabled(model: AppModel): void {
   if (model.localService.revision && !syncOwner(model).choice && model.localService.syncState !== 'conflict') {
     if (model.localService.autosaveEnabled && model.localService.status === 'connected') void saveModelToLocalService(model);
   }
+}
+
+/*
+ * lt-192.3 (ADR-0004): server-owned vocabulary operations for paired browsers.
+ *
+ * Once a service has published an operation identity for the selected origin (GET /api/state `operations`), this
+ * browser is in operation mode for it: captures, meaning edits, Undo and review enrolment become immutable requests in
+ * the durable outbox (operationOutbox.ts) and are applied by the service, never as provisional durable rows here. The
+ * store keeps the last authoritative view of operation-owned rows; pending intents are shown from the outbox. A browser
+ * without an identity (unpaired, or a service without operations) keeps the historical local behaviour.
+ */
+type OperationIdentity = { generation: string; incarnation: string; receiptSeq: number; prunedThroughSeq: number };
+type OperationState = {
+  backend: OutboxBackend;
+  identities: Map<string, OperationIdentity>;
+  tabId: string;
+  tabIdAdopted: boolean;
+  /** Per operation-owned row (`collection:id`), the revision of the newest image installed in this store. */
+  rowRevisions: Map<string, number>;
+  /** Revision of the last full authoritative install of operation-owned rows (GET or reconciled PUT). */
+  protectedBase: number;
+  order: number;
+  enqueueTail: Promise<unknown>;
+  channel: { postMessage(value: unknown): void } | null;
+};
+const operationStates = new WeakMap<AppModel, OperationState>();
+let sharedIndexedDbOutbox: OutboxBackend | null | undefined;
+export const OUTBOX_FULL_MESSAGE = `Too many vocabulary changes are waiting to be saved (${OUTBOX_CAP}). Connect and save before collecting more; nothing was discarded.`;
+const OPERATION_MESSAGES: Record<string, string> = {
+  'generation-changed': 'The service state was restored or replaced after this change was made, so it was not applied. Reapply it or discard it.',
+  'incarnation-changed': 'The service restarted and has no record of this change, so it was not applied. Reapply it or discard it.',
+  'operation-expired': 'This change is older than the service keeps records for, so it was not applied. Reapply it or discard it.',
+  'invalid-basis': 'This change names service state that does not exist, so it was not applied. Reapply it or discard it.',
+  'operation-id-reused': 'The service holds a different change under this id; nothing was applied. Discard it and redo the change.',
+  'source-unavailable': 'The video or transcript for this word is not saved on the service yet; nothing was applied. Save, then retry.',
+  'source-mismatch': 'This selection no longer matches the service transcript; nothing was applied. Discard it and select again.',
+  'invalid-operation': 'The service rejected this change as invalid; nothing was applied. Discard it.',
+  'superseded-by-restore': 'The service state was restored after this change was confirmed; check the item and redo the change if needed.',
+  'depends-on-unresolved': 'This Undo waits for a save that was not confirmed. Resolve that save first.',
+  'meaning-changed': 'Another device changed this meaning first; yours was not applied.',
+  'enrolment-changed': 'Another device changed this review setting first; yours was not applied.',
+  'item-missing': 'This item no longer exists on the service; the change was not applied.',
+  'capture-receipt-unavailable': 'The service no longer has a record of that save, so Undo was not applied.',
+  'changed-since-capture': 'The item changed since it was saved (edited, studied or on screen elsewhere), so Undo was not applied.',
+  'nothing-to-undo': 'That save added nothing new, so there is nothing to undo.',
+  'not-an-applied-capture': 'Undo refers to a change that was not a confirmed save.',
+};
+/** A failed durable outbox write (storage full/unavailable). Browser DOMExceptions may carry an empty message. */
+export function outboxWriteFailureMessage(error: unknown): string {
+  const name = error instanceof Error || (typeof DOMException !== 'undefined' && error instanceof DOMException) ? (error as Error).name : '';
+  return `This browser could not store the vocabulary change${name ? ` (${name})` : ''}. Nothing was saved or sent and your selection is kept; free browser storage, then save again.`;
+}
+export function learnerOperationMessage(code: string | undefined): string { return (code && OPERATION_MESSAGES[code]) ?? 'This change was not applied.'; }
+
+const freshTabId = () => globalThis.crypto?.randomUUID?.() ?? `tab-${Math.random().toString(36).slice(2)}`;
+type TabLocks = { request(name: string, options: { ifAvailable: boolean }, callback: (lock: unknown) => Promise<unknown> | unknown): Promise<unknown> };
+/**
+ * Dispatch-owner id of this page. It starts unique per page; on boot, a page that can prove it is the ONLY holder of
+ * this tab's remembered id (sessionStorage is per tab, and a Web Lock on the id is held for the page's lifetime and
+ * released by the browser on unload) adopts it, so a reloaded tab may immediately re-send its own may-have-sent
+ * operations. A duplicated tab copies sessionStorage but cannot take the lock, so it keeps a fresh id and respects the
+ * other tab's dispatch lease. Without Web Locks the fresh id stays (safe: a reload then waits out the lease).
+ */
+async function adoptTabId(state: OperationState): Promise<void> {
+  if (state.tabIdAdopted) return;
+  state.tabIdAdopted = true;
+  try {
+    const locks = (globalThis as { navigator?: { locks?: TabLocks } }).navigator?.locks;
+    const storage = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    if (!locks || !storage) return;
+    const tryHold = (id: string) => new Promise<boolean>((resolve) => {
+      void locks.request(`lingotorte-operation-tab:${id}`, { ifAvailable: true }, (lock) => {
+        resolve(Boolean(lock));
+        return lock ? new Promise(() => undefined) : undefined; // held until the page goes away
+      }).catch(() => resolve(false));
+    });
+    const remembered = storage.getItem('lingotorte-operation-tab');
+    if (remembered && await tryHold(remembered)) { state.tabId = remembered; return; }
+    if (await tryHold(state.tabId)) storage.setItem('lingotorte-operation-tab', state.tabId);
+  } catch { /* keep the fresh per-page id */ }
+}
+function newOperationState(backend: OutboxBackend): OperationState {
+  return { backend, identities: new Map(), tabId: freshTabId(), tabIdAdopted: false, rowRevisions: new Map(), protectedBase: 0, order: 0, enqueueTail: Promise.resolve(), channel: null };
+}
+function operationState(model: AppModel): OperationState {
+  let state = operationStates.get(model);
+  if (!state) {
+    if (sharedIndexedDbOutbox === undefined) { try { sharedIndexedDbOutbox = createIndexedDbOutboxBackend(); } catch { sharedIndexedDbOutbox = null; } }
+    state = newOperationState(sharedIndexedDbOutbox ?? createMemoryOutboxBackend());
+    operationStates.set(model, state);
+    model.learnerOperations.durable = state.backend.durable;
+  }
+  return state;
+}
+/** Use a specific outbox backend for this model (tests; a second model over the same backend simulates a reload/tab). */
+export function useLearnerOperationOutbox(model: AppModel, backend: OutboxBackend): void {
+  operationStates.set(model, newOperationState(backend));
+  model.learnerOperations.durable = backend.durable;
+}
+function parseOperationIdentity(value: unknown): OperationIdentity | null {
+  if (!isPlainObject(value)) return null;
+  const token = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(v);
+  const seq = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+  if (!token(value.generation) || !token(value.incarnation) || !seq(value.receiptSeq) || !seq(value.prunedThroughSeq)) return null;
+  return { generation: value.generation as string, incarnation: value.incarnation as string, receiptSeq: value.receiptSeq as number, prunedThroughSeq: value.prunedThroughSeq as number };
+}
+function identityFor(model: AppModel, url: string | null): OperationIdentity | undefined {
+  return url ? operationState(model).identities.get(url) : undefined;
+}
+async function rememberOperationIdentity(model: AppModel, url: string, value: unknown): Promise<OperationIdentity | null> {
+  const identity = parseOperationIdentity(value);
+  if (!identity) return null;
+  const state = operationState(model);
+  const known = state.identities.get(url);
+  // Never move the seen-receipt horizon backwards within one lineage and process.
+  const next = known && known.generation === identity.generation && known.incarnation === identity.incarnation
+    ? { ...identity, receiptSeq: Math.max(known.receiptSeq, identity.receiptSeq) } : identity;
+  state.identities.set(url, next);
+  try { await state.backend.putMeta(`identity:${url}`, next); } catch { /* identity stays in memory for this page */ }
+  return next;
+}
+/** True when vocabulary changes for the selected service go through server operations. */
+export function learnerOperationsActive(model: AppModel): boolean { return Boolean(identityFor(model, currentServiceUrl(model))); }
+
+/** Boot: load the remembered identity for the selected service and the durable outbox, so pending intents show after a reload. */
+export async function bootLearnerOperations(model: AppModel): Promise<void> {
+  const state = operationState(model);
+  await adoptTabId(state);
+  const url = currentServiceUrl(model);
+  if (url) {
+    try {
+      const stored = parseOperationIdentity((await state.backend.getMeta(`identity:${url}`)) as unknown);
+      if (stored && !state.identities.has(url)) state.identities.set(url, stored);
+    } catch { /* outbox unavailable: no operation mode until connect */ }
+  }
+  await refreshLearnerOperations(model);
+  try {
+    const Channel = (globalThis as { BroadcastChannel?: new (name: string) => { postMessage(v: unknown): void; onmessage: ((e: unknown) => void) | null } }).BroadcastChannel;
+    if (Channel && state.backend.durable && !state.channel) {
+      const channel = new Channel('lingotorte-learner-operations');
+      channel.onmessage = () => { void refreshLearnerOperations(model, true); };
+      state.channel = channel;
+    }
+  } catch { /* single-tab only */ }
+}
+
+/** Re-read the outbox into the view. With `installAcked`, install receipts other tabs acknowledged (newer rows only). */
+export async function refreshLearnerOperations(model: AppModel, installAcked = false): Promise<void> {
+  const state = operationState(model);
+  let records: OutboxRecord[];
+  try { await state.backend.prune(Date.now()); records = await state.backend.list(); }
+  catch (error) { model.learnerOperations.message = `Pending vocabulary changes could not be read from this browser: ${error instanceof Error ? error.message : 'storage error'}.`; notifySync(model); return; }
+  records.sort((a, b) => a.order - b.order);
+  const url = currentServiceUrl(model);
+  if (installAcked && url && learnerOperationsActive(model)) {
+    for (const record of records) if (record.baseUrl === url && record.status === 'acked' && record.receipt) installOperationReceipt(model, record.receipt);
+  }
+  const visible = records.filter((r) => r.status !== 'acked' && r.status !== 'cancelled');
+  // lt-192.3 (R3): acknowledged captures whose draft was not applied stay visible until explicitly resolved.
+  const drafts = records.filter((r) => r.status === 'acked' && r.draftReview === 'open');
+  const changed = canonicalJson(visible) !== canonicalJson(model.learnerOperations.records) || canonicalJson(drafts) !== canonicalJson(model.learnerOperations.unappliedDrafts) || installAcked;
+  model.learnerOperations.records = visible;
+  model.learnerOperations.unappliedDrafts = drafts;
+  notifySync(model);
+  if (changed) operationObservers.get(model)?.();
+}
+const operationObservers = new WeakMap<AppModel, () => void>();
+/** UI hook: called when the visible outbox (or installed rows from another tab) changed. */
+export function observeLearnerOperationChanges(model: AppModel, changed: () => void): void { operationObservers.set(model, changed); }
+function broadcastOperations(model: AppModel): void { try { operationState(model).channel?.postMessage('changed'); } catch { /* best effort */ } }
+
+/** Resolves once every queued intent is durable and every queued sync job has settled (UI/tests). */
+export async function learnerOperationsIdle(model: AppModel): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    const state = operationState(model); const owner = syncOwner(model);
+    const enqueue = state.enqueueTail; const tail = owner.tail;
+    await enqueue.catch(() => undefined); await tail.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (enqueue === state.enqueueTail && tail === owner.tail) return;
+  }
+}
+
+/** Unresolved operations for the selected service (pending, sending, conflict or blocked). */
+export function unresolvedLearnerOperations(model: AppModel): OutboxRecord[] {
+  const url = currentServiceUrl(model);
+  return model.learnerOperations.records.filter((r) => r.baseUrl === url && UNRESOLVED_STATUSES.includes(r.status));
+}
+const OPERATION_LABEL_TEXT = (text: string) => `\u201c${text.length > 40 ? `${text.slice(0, 39)}\u2026` : text}\u201d`;
+
+type OperationExtras = Pick<OutboxRecord, 'label'> & Partial<Pick<OutboxRecord, 'savedItemId' | 'dependsOn' | 'prerequisites'>>;
+async function enqueueLearnerOperation(model: AppModel, kind: LearnerOperationKind, payload: Record<string, unknown>, extras: OperationExtras): Promise<OutboxRecord> {
+  const record = await storeLearnerOperation(model, kind, payload, extras, (r) => operationState(model).backend.add(r));
+  if (!record) throw new TypeError('The vocabulary change was not stored.'); // unreachable: `add` never refuses
+  return record;
+}
+/** Build a new operation and store it durably with `store` (one transaction), serialized with other enqueues. Null if `store` refused. */
+async function storeLearnerOperation(model: AppModel, kind: LearnerOperationKind, payload: Record<string, unknown>, extras: OperationExtras,
+  store: (record: OutboxRecord) => Promise<'added' | 'full' | 'refused'>): Promise<OutboxRecord | null> {
+  const url = currentServiceUrl(model);
+  const identity = identityFor(model, url);
+  if (!url || !identity) throw new TypeError('No service operation identity; reconnect before changing vocabulary.');
+  const state = operationState(model);
+  const operationId = globalThis.crypto.randomUUID();
+  const run = async () => {
+    const record: OutboxRecord = {
+      operationId, baseUrl: url, order: Date.now() * 1000 + (state.order++ % 1000), createdAt: new Date().toISOString(),
+      request: { operationId, kind, basis: { generation: identity.generation, incarnation: identity.incarnation, receiptSeq: identity.receiptSeq }, payload },
+      status: 'pending', attempts: 0, ...extras,
+    };
+    let added: 'added' | 'full' | 'refused';
+    try { added = await store(record); }
+    catch (error) { throw new TypeError(outboxWriteFailureMessage(error)); } // e.g. QuotaExceededError: nothing stored or sent
+    if (added === 'full') throw new TypeError(OUTBOX_FULL_MESSAGE);
+    return added === 'added' ? record : null;
+  };
+  const added = state.enqueueTail.then(run, run);
+  state.enqueueTail = added.catch(() => undefined);
+  const record = await added; // durable (transaction complete) before it is shown or sent
+  await refreshLearnerOperations(model);
+  broadcastOperations(model);
+  if (record) markUnsavedBrowserEdits(model);
+  return record;
+}
+
+/** Send queued operations now when autosave allows; otherwise they wait for an explicit Save. */
+function scheduleLearnerOperationFlush(model: AppModel): Promise<void> {
+  if (!model.localService.autosaveEnabled || model.localService.status !== 'connected' || !model.localService.revision) return Promise.resolve();
+  return flushLearnerOperationsQueued(model).then(() => undefined, () => undefined);
+}
+/** Flush operations on the sync owner's queue (also usable while a document choice/conflict is open). */
+export function flushLearnerOperationsQueued(model: AppModel): Promise<{ unresolved: number; error: string | null }> {
+  const owner = syncOwner(model);
+  let transport: PairedTransport; let url: string;
+  try { url = normalizeLocalServiceBaseUrl(model.localService.baseUrl); transport = capturedTransport(model, url); }
+  catch { return Promise.resolve({ unresolved: unresolvedLearnerOperations(model).length, error: PAIR_AGAIN }); }
+  const generation = owner.generation;
+  const current = () => owner.generation === generation && normalizeLocalServiceBaseUrl(model.localService.baseUrl) === url;
+  const run = () => flushLearnerOperations(model, transport, url, current);
+  const result = owner.tail.then(run, run); owner.tail = result; return result;
+}
+
+/**
+ * Send every eligible operation for `url` in creation order. Each is claimed (`sending`, durable) before the request;
+ * a network failure leaves it `sending` (may have been sent) and stops the flush, so the next flush re-sends the exact
+ * same request and reads back its receipt. Never throws for operation outcomes.
+ */
+async function flushLearnerOperations(model: AppModel, transport: PairedTransport, url: string, current: () => boolean): Promise<{ unresolved: number; error: string | null }> {
+  const state = operationState(model);
+  if (!identityFor(model, url) || restoreIsBusy(model)) return { unresolved: unresolvedLearnerOperations(model).length, error: null };
+  let error: string | null = null;
+  let records: OutboxRecord[];
+  try { records = (await state.backend.list()).filter((r) => r.baseUrl === url).sort((a, b) => a.order - b.order); }
+  catch (e) { return { unresolved: unresolvedLearnerOperations(model).length, error: e instanceof Error ? e.message : 'Outbox unavailable.' }; }
+  const byId = new Map(records.map((r) => [r.operationId, r]));
+  for (const record of records) {
+    if (!current()) { error = 'Local service operation superseded; browser work was kept.'; break; }
+    if (record.status !== 'pending' && record.status !== 'sending') continue;
+    if (record.prerequisites && !transcriptBundleAcknowledged(model, record.prerequisites.track.id) && !model.store.getSubtitleTrack(record.prerequisites.track.id)) continue;
+    if (record.dependsOn) {
+      const dependency = byId.get(record.dependsOn);
+      if (!dependency || dependency.status !== 'acked') {
+        if (!dependency || ['blocked', 'conflict', 'cancelled'].includes(dependency.status)) {
+          const blocked = await state.backend.transition(record.operationId, ['pending'], { status: 'blocked', error: { code: 'depends-on-unresolved', message: learnerOperationMessage('depends-on-unresolved') } });
+          if (blocked) byId.set(blocked.operationId, blocked);
+        }
+        continue;
+      }
+    }
+    const now = Date.now();
+    const claimed = await state.backend.transition(record.operationId, ['pending', 'sending'], { status: 'sending', dispatch: { owner: state.tabId, at: now }, attempts: record.attempts + 1 },
+      (stored) => stored.status === 'pending' || stored.dispatch?.owner === state.tabId || now - (stored.dispatch?.at ?? 0) > OUTBOX_DISPATCH_LEASE_MS);
+    if (!claimed) continue; // another tab owns it, or it was cancelled meanwhile
+    let response: Response; let value: Record<string, unknown>;
+    try {
+      response = await transport.request('/api/learner/operations', { method: 'POST', body: JSON.stringify(claimed.request) });
+      const parsed: unknown = await response.json();
+      if (!isPlainObject(parsed)) throw new TypeError('Invalid operation response.');
+      value = parsed;
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Local service unreachable.';
+      break; // stays `sending`: the same request is re-sent later and reads back its outcome
+    }
+    if (response.ok && value.ok === true && isPlainObject(value.receipt)) {
+      await rememberOperationIdentity(model, url, value.operations);
+      const receipt = value.receipt as unknown as LearnerOperationReceipt;
+      const identity = identityFor(model, url);
+      let next: OutboxRecord | null;
+      if (receipt.operationId !== claimed.operationId) { error = 'Service returned a receipt for a different change.'; break; }
+      if (identity && receipt.generation !== identity.generation) {
+        next = await state.backend.transition(claimed.operationId, ['sending'], { status: 'blocked', receipt, error: { code: 'superseded-by-restore', message: learnerOperationMessage('superseded-by-restore') } });
+      } else if (receipt.status === 'applied') {
+        // A dedup capture that did not apply the learner's meaning/notes keeps an open, durable disclosure (R3).
+        const draft = receipt.kind === 'capture' && isPlainObject(receipt.result.unappliedDraft);
+        next = await state.backend.transition(claimed.operationId, ['sending'], { status: 'acked', receipt, resolvedAt: Date.now(), ...(draft ? { draftReview: 'open' as const } : {}) });
+        if (next) installOperationReceipt(model, receipt);
+      } else {
+        const code = typeof receipt.result.reason === 'string' ? receipt.result.reason : 'conflict';
+        next = await state.backend.transition(claimed.operationId, ['sending'], { status: 'conflict', receipt, error: { code, message: learnerOperationMessage(code) } });
+      }
+      if (next) byId.set(next.operationId, next);
+      continue;
+    }
+    if (response.status === 409 || response.status === 400) {
+      const code = typeof value.code === 'string' ? value.code : 'invalid-operation';
+      const next = await state.backend.transition(claimed.operationId, ['sending'], { status: 'blocked', error: { code, message: learnerOperationMessage(code) } });
+      if (next) byId.set(next.operationId, next);
+      continue;
+    }
+    error = typeof value.error === 'string' ? value.error : `The change could not be confirmed (HTTP ${response.status}); it will be retried with the same id.`;
+    break;
+  }
+  await refreshLearnerOperations(model);
+  broadcastOperations(model);
+  signalSnapshotCache(model);
+  const unresolved = unresolvedLearnerOperations(model).length;
+  const drafts = unappliedDraftOutcomes(model).length;
+  model.learnerOperations.message = error ? `Vocabulary changes not saved: ${error}` : unresolved ? `${unresolved} vocabulary change${unresolved === 1 ? '' : 's'} not saved yet.`
+    : drafts ? unappliedDraftsMessage(drafts) : null;
+  notifySync(model);
+  return { unresolved, error };
+}
+
+type ProtectedChange = Readonly<{ collection: 'savedItems' | 'savedOccurrences' | 'reviewCards' | 'reviewCardStates'; id: string; row?: unknown }>;
+/** Apply authoritative operation-owned row changes to the store AND to the acknowledged baselines (so they are not
+ *  mistaken for document edits). Card-state values stay document-owned: an existing local state is kept. A removed card
+ *  whose local study history is unsaved is kept and reported as a dependency conflict, never silently dropped. */
+function applyProtectedChanges(model: AppModel, changes: readonly ProtectedChange[]): string[] {
+  const owner = syncOwner(model);
+  const hooks = cacheHook(model);
+  const parse = (value: string | null | undefined) => { try { return value ? JSON.parse(value) as Record<string, Record<string, unknown>> : null; } catch { return null; } };
+  const baselines = [parse(owner.baseline), parse(hooks.ack?.serialized), parse(hooks.seeded?.serialized)];
+  const knownHistory = new Set<string>();
+  for (const base of baselines) for (const name of ['reviewEvents', 'practiceAttempts']) for (const row of ((base?.[name] as unknown as { id: string }[] | undefined) ?? [])) knownHistory.add(row.id);
+  const snapshot = model.store.snapshot();
+  const unsavedHistory = (cardId: string) => [...snapshot.reviewEvents, ...snapshot.practiceAttempts].some((h) => h.cardId === cardId && !knownHistory.has(h.id));
+  const conflicts: string[] = [];
+  for (const change of changes) {
+    const { collection, id, row } = change;
+    if (collection === 'reviewCardStates') {
+      if (row !== undefined) {
+        if (!model.store.getReviewCardState(id)) model.store.putReviewCardState(row as ReviewCardState);
+        for (const base of baselines) if (base && !base.reviewCardStates?.[id]) (base.reviewCardStates ??= {})[id] = row;
+      } else if (unsavedHistory(id)) conflicts.push(id);
+      else {
+        model.store.removeReviewCardState(id);
+        for (const base of baselines) if (base?.reviewCardStates) delete base.reviewCardStates[id];
+      }
+      continue;
+    }
+    if (row !== undefined) {
+      if (collection === 'savedItems') model.store.putSavedItem(row as SavedItem);
+      else if (collection === 'savedOccurrences') model.store.putSavedOccurrence(row as SavedOccurrence);
+      else model.store.putReviewCard(row as ReviewCard);
+    } else if (collection === 'reviewCards' && unsavedHistory(id)) { conflicts.push(id); continue; }
+    else if (collection === 'savedItems') model.store.removeSavedItem(id);
+    else if (collection === 'savedOccurrences') model.store.removeSavedOccurrence(id);
+    else model.store.removeReviewCard(id);
+    for (const base of baselines) {
+      if (!base) continue;
+      if (row !== undefined) (base[collection] ??= {})[id] = row; else if (base[collection]) delete base[collection][id];
+    }
+  }
+  if (owner.baseline !== null && baselines[0]) owner.baseline = canonicalJson(baselines[0]);
+  if (hooks.ack && baselines[1]) hooks.ack = { ...hooks.ack, serialized: canonicalJson(baselines[1]) };
+  if (hooks.seeded && baselines[2]) hooks.seeded = { ...hooks.seeded, serialized: canonicalJson(baselines[2]) };
+  if (conflicts.length) {
+    model.learnerOperations.message = 'Another device removed vocabulary that this browser studied. Your study history is kept in this browser and was not saved; Load service state discards it.';
+  }
+  return conflicts;
+}
+
+function operationOwnedPart(learner: Partial<Record<string, unknown>>): string {
+  return canonicalJson({ savedItems: learner.savedItems ?? {}, savedOccurrences: learner.savedOccurrences ?? {}, reviewCards: learner.reviewCards ?? {}, cardStates: Object.keys((learner.reviewCardStates ?? {}) as object).sort() });
+}
+/** True when the store's operation-owned rows equal those of the acknowledged baseline (no local-only vocabulary rows). */
+function operationOwnedUnchanged(model: AppModel, baseline: string | null): boolean {
+  if (baseline === null) return false;
+  try { return operationOwnedPart(JSON.parse(baseline)) === operationOwnedPart(learnerStateOf(model.store.snapshot()) as unknown as Record<string, unknown>); } catch { return false; }
+}
+
+/** Install one acknowledged receipt: only rows newer than what this store already holds (per-row revision). */
+function installOperationReceipt(model: AppModel, receipt: LearnerOperationReceipt): void {
+  const state = operationState(model);
+  const revision = Number(/^rev:(\d+)$/.exec(receipt.revision)?.[1] ?? NaN);
+  if (!Number.isSafeInteger(revision)) return;
+  const changes: ProtectedChange[] = [];
+  for (const collection of ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates'] as const) {
+    const fresh = (id: string) => {
+      const key = `${collection}:${id}`;
+      if (revision <= Math.max(state.protectedBase, state.rowRevisions.get(key) ?? 0)) return false;
+      state.rowRevisions.set(key, revision); return true;
+    };
+    for (const [id, row] of Object.entries(receipt.rows?.[collection] ?? {})) if (fresh(id)) changes.push({ collection, id, row });
+    for (const id of receipt.removed?.[collection] ?? []) if (fresh(id)) changes.push({ collection, id });
+  }
+  if (changes.length === 0) return;
+  applyProtectedChanges(model, changes);
+  if (model.currentMedia) reprojectCurrentCues(model);
+  signalSnapshotCache(model);
+}
+
+/** Replace this store's operation-owned rows with an authoritative set read at `revision` (store and baselines). */
+function installAuthoritativeOperationOwned(model: AppModel, rows: Pick<LearnerStateSnapshot, 'savedItems' | 'savedOccurrences' | 'reviewCards' | 'reviewCardStates'>, revision: string): string[] {
+  const state = operationState(model);
+  const snapshot = model.store.snapshot();
+  const changes: ProtectedChange[] = [];
+  for (const collection of ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates'] as const) {
+    const local = snapshot[collection] as Record<string, unknown>; const remote = (rows[collection] ?? {}) as Record<string, unknown>;
+    for (const [id, row] of Object.entries(remote)) if (collection === 'reviewCardStates' || canonicalJson(local[id]) !== canonicalJson(row)) changes.push({ collection, id, row });
+    for (const id of Object.keys(local)) if (!Object.hasOwn(remote, id)) changes.push({ collection, id });
+  }
+  const conflicts = applyProtectedChanges(model, changes);
+  state.protectedBase = Number(/^rev:(\d+)$/.exec(revision)?.[1] ?? 0);
+  state.rowRevisions.clear();
+  return conflicts;
+}
+
+/** Cancel an operation that was never sent, or discard a refused/conflicting one. A possibly-sent operation cannot be
+ *  cancelled: its outcome is unknown until the same request is retried and its receipt read back. */
+export async function discardLearnerOperation(model: AppModel, operationId: string): Promise<boolean> {
+  const next = await operationState(model).backend.transition(operationId, ['pending', 'blocked', 'conflict'], { status: 'cancelled', resolvedAt: Date.now() });
+  await refreshLearnerOperations(model); broadcastOperations(model);
+  if (next) notifySync(model);
+  return Boolean(next);
+}
+/** Retry a refused operation unchanged (same id, same request): only for refusals where nothing was applied and the
+ *  basis is still valid (e.g. its source was not saved yet). */
+export async function retryLearnerOperation(model: AppModel, operationId: string): Promise<boolean> {
+  const next = await operationState(model).backend.transition(operationId, ['blocked'], { status: 'pending', error: undefined },
+    (r) => ['source-unavailable', 'depends-on-unresolved'].includes(r.error?.code ?? ''));
+  await refreshLearnerOperations(model); broadcastOperations(model);
+  if (next) void scheduleLearnerOperationFlush(model);
+  return Boolean(next);
+}
+/** Reapply a refused or conflicting change as a NEW operation against the current service state (explicit choice). */
+export async function reapplyLearnerOperation(model: AppModel, operationId: string): Promise<boolean> {
+  const record = model.learnerOperations.records.find((r) => r.operationId === operationId);
+  if (!record || !['blocked', 'conflict'].includes(record.status)) return false;
+  const payload = { ...record.request.payload } as Record<string, unknown>;
+  if (record.request.kind === 'set-meaning') {
+    const item = model.store.getSavedItem(payload.savedItemId as string);
+    if (!item) return false;
+    payload.expected = { meaning: item.meaning ?? null, meaningSource: item.meaningSource ?? null };
+  } else if (record.request.kind === 'set-review-enrolment') {
+    const cards = model.capture.cardsFor(payload.savedItemId as string);
+    payload.expected = { activeCardIds: cards.active.map((c) => c.id).sort(), archivedCardIds: cards.archived.map((c) => c.id).sort() };
+  }
+  await enqueueLearnerOperation(model, record.request.kind, payload, { label: record.label, ...(record.savedItemId ? { savedItemId: record.savedItemId } : {}), ...(record.prerequisites ? { prerequisites: record.prerequisites } : {}), ...(record.dependsOn ? { dependsOn: record.dependsOn } : {}) });
+  await operationState(model).backend.transition(operationId, ['blocked', 'conflict'], { status: 'cancelled', resolvedAt: Date.now() });
+  await refreshLearnerOperations(model);
+  void scheduleLearnerOperationFlush(model);
+  return true;
+}
+
+/** The meaning shown for an item: a pending meaning edit wins over the authoritative one, and is marked pending. */
+export function pendingMeaningFor(model: AppModel, savedItemId: string): { meaning: string | null; pending: boolean } | null {
+  const pending = [...unresolvedLearnerOperations(model)].reverse().find((r) => r.request.kind === 'set-meaning' && r.request.payload.savedItemId === savedItemId && r.status !== 'conflict' && r.status !== 'blocked');
+  return pending ? { meaning: (pending.request.payload.meaning as string | null), pending: true } : null;
+}
+/** The pending enrolment for an item, if any (enrolled true/false). */
+export function pendingEnrolmentFor(model: AppModel, savedItemId: string): boolean | null {
+  const pending = [...unresolvedLearnerOperations(model)].reverse().find((r) => r.request.kind === 'set-review-enrolment' && r.request.payload.savedItemId === savedItemId && (r.status === 'pending' || r.status === 'sending'));
+  return pending ? Boolean(pending.request.payload.enrolled) : null;
+}
+
+const unappliedDraftsMessage = (n: number) => n === 1
+  ? 'Saved, but your meaning or notes for a word that was already saved were not applied. Review it in Saved.'
+  : `Saved, but your meaning or notes for ${n} words that were already saved were not applied. Review them in Saved.`;
+
+/** lt-192.3 (R3): acknowledged captures (selected service) whose meaning/notes draft was not applied and is still open. */
+export function unappliedDraftOutcomes(model: AppModel): OutboxRecord[] {
+  const url = currentServiceUrl(model);
+  return model.learnerOperations.unappliedDrafts.filter((r) => r.baseUrl === url);
+}
+export type DraftField = 'meaning' | 'notes';
+/** The fields of an acknowledged capture's unapplied draft that are present and not yet explicitly resolved. */
+export function openDraftFields(record: OutboxRecord): DraftField[] {
+  const draft = record.receipt?.result.unappliedDraft;
+  if (record.status !== 'acked' || record.draftReview !== 'open' || !isPlainObject(draft)) return [];
+  return (['meaning', 'notes'] as const).filter((field) => draft[field] !== undefined && record.draftResolved?.[field] === undefined);
+}
+/**
+ * The patch resolving `decisions` on the STORED record (evaluated inside the outbox transaction), or null if any of
+ * them is no longer open there (another tab decided first, or it was closed): a stale view can never re-decide or
+ * reopen it. The disclosure stays `open` while any other field is unresolved.
+ */
+function resolveDraft(stored: OutboxRecord, decisions: DraftResolution): Partial<OutboxRecord> | null {
+  const open = openDraftFields(stored);
+  const fields = Object.keys(decisions) as DraftField[];
+  if (fields.length === 0 || fields.some((field) => !open.includes(field))) return null;
+  const draftResolved: DraftResolution = { ...stored.draftResolved, ...decisions };
+  const remaining = open.filter((field) => !fields.includes(field));
+  return { draftResolved, draftReview: remaining.length ? 'open' : draftResolved.meaning === 'applied' ? 'applied' : 'dismissed', resolvedAt: Date.now() };
+}
+async function afterDraftDecision(model: AppModel): Promise<void> {
+  await refreshLearnerOperations(model); broadcastOperations(model);
+  if (model.learnerOperations.message && unresolvedLearnerOperations(model).length === 0) model.learnerOperations.message = unappliedDraftOutcomes(model).length ? unappliedDraftsMessage(unappliedDraftOutcomes(model).length) : null;
+  notifySync(model);
+}
+/**
+ * Keep the saved value for `field` (explicit choice), or for every still-open field when omitted. The other field's
+ * draft stays disclosed. Once nothing is open the record is prunable like any acknowledged one.
+ */
+export async function dismissUnappliedDraft(model: AppModel, operationId: string, field?: DraftField): Promise<boolean> {
+  const next = await operationState(model).backend.transition(operationId, ['acked'], (stored) => {
+    const fields = field ? [field] : openDraftFields(stored);
+    return resolveDraft(stored, Object.fromEntries(fields.map((f) => [f, 'dismissed'])) as DraftResolution);
+  });
+  await afterDraftDecision(model);
+  return Boolean(next);
+}
+/**
+ * Apply the draft meaning as a NEW set-meaning operation expecting the meaning this browser shows (explicit choice;
+ * a meaning changed elsewhere meanwhile becomes a visible conflict, never an overwrite). Resolving the draft's meaning
+ * and storing the replacement are ONE outbox transaction (re-review R3a): a killed page, a full outbox or a failed
+ * write leaves the meaning draft open and no replacement. Exactly one tab can hand it off. The notes draft, if any,
+ * stays open: only "Keep saved notes" resolves it (there is no notes writer).
+ */
+export async function applyUnappliedDraftMeaning(model: AppModel, operationId: string): Promise<boolean> {
+  const record = unappliedDraftOutcomes(model).find((r) => r.operationId === operationId);
+  const draft = record?.receipt?.result.unappliedDraft as UnappliedDraft | null | undefined;
+  const itemId = record?.receipt?.result.savedItemId;
+  const item = typeof itemId === 'string' ? model.store.getSavedItem(itemId) : undefined;
+  if (!record || !draft || draft.meaning === undefined || !item || !openDraftFields(record).includes('meaning')) return false;
+  const backend = operationState(model).backend;
+  const replacement = await storeLearnerOperation(model, 'set-meaning', meaningPayload(model, item, draft.meaning), meaningExtras(item),
+    (r) => backend.handoff(operationId, (stored) => resolveDraft(stored, { meaning: 'applied' }), r));
+  await afterDraftDecision(model);
+  if (!replacement) return false;
+  void scheduleLearnerOperationFlush(model);
+  return true;
+}
+
+function meaningPayload(model: AppModel, item: SavedItem, meaning: string | null): Record<string, unknown> {
+  // Chain behind this item's own pending meaning edit: its result is what this edit expects.
+  const prior = pendingMeaningFor(model, item.id);
+  const expected = prior ? { meaning: prior.meaning, meaningSource: prior.meaning === null ? null : { kind: 'learner' } } : { meaning: item.meaning ?? null, meaningSource: item.meaningSource ?? null };
+  return { savedItemId: item.id, meaning, expected };
+}
+const meaningExtras = (item: SavedItem): OperationExtras => ({ label: `Meaning of ${OPERATION_LABEL_TEXT(item.displayText)}`, savedItemId: item.id });
+async function enqueueMeaning(model: AppModel, item: SavedItem, meaning: string | null): Promise<void> {
+  await enqueueLearnerOperation(model, 'set-meaning', meaningPayload(model, item, meaning), meaningExtras(item));
+}
+async function enqueueEnrolment(model: AppModel, item: SavedItem, enrolled: boolean): Promise<boolean> {
+  const state = operationState(model);
+  const existing = unresolvedLearnerOperations(model).filter((r) => r.request.kind === 'set-review-enrolment' && r.request.payload.savedItemId === item.id && (r.status === 'pending' || r.status === 'sending'));
+  if (existing.some((r) => r.status === 'sending')) { model.learnerOperations.message = 'The previous review change for this item is still being confirmed.'; notifySync(model); return false; }
+  for (const r of existing) await state.backend.transition(r.operationId, ['pending'], { status: 'cancelled', resolvedAt: Date.now() });
+  const cards = model.capture.cardsFor(item.id);
+  if ((cards.active.length > 0) === enrolled) { await refreshLearnerOperations(model); broadcastOperations(model); return true; }
+  await enqueueLearnerOperation(model, 'set-review-enrolment', { savedItemId: item.id, enrolled, expected: { activeCardIds: cards.active.map((c) => c.id).sort(), archivedCardIds: cards.archived.map((c) => c.id).sort() } },
+    { label: `${enrolled ? 'Add' : 'Remove'} ${OPERATION_LABEL_TEXT(item.displayText)} ${enrolled ? 'to' : 'from'} review`, savedItemId: item.id });
+  return true;
+}
+
+/** Put back the media/track/bundle an unresolved capture needs when the store lost them (e.g. Load service state
+ *  before the import was saved), so the next save sends them before the capture. */
+function restoreOperationPrerequisites(model: AppModel): boolean {
+  let changed = false;
+  for (const record of unresolvedLearnerOperations(model)) {
+    const pre = record.prerequisites;
+    if (!pre || record.status === 'conflict' || model.store.getSubtitleTrack(pre.track.id)) continue;
+    if (!model.store.getMediaAsset(pre.media.id)) model.store.putMediaAsset(pre.media);
+    model.store.putSubtitleTrack(pre.track);
+    for (const cue of pre.cues) model.store.putCue(cue);
+    for (const timing of pre.wordTimings) model.store.putTranscriptWordTiming(timing);
+    changed = true;
+  }
+  return changed;
 }
 
 /** Shared active-cue lookup (target cues and lt-ddy.7 native-only lines). */
@@ -3410,20 +4019,61 @@ function selectionTimeRangeForCue(model: AppModel, cue: Cue, charStart: number, 
   };
 }
 
-export type SaveReceipt = CaptureReceipt & Readonly<{
+/** lt-192.3: what a paired save disclosed but did not apply (the item already existed and keeps its own meaning/notes). */
+export type UnappliedDraft = Readonly<{ meaning?: string; notes?: string; existingMeaning: string | null; existingNotes: string | null }>;
+export type SaveReceipt = (CaptureReceipt & Readonly<{
   selection: NonNullable<AppModel['selection']>;
   meaning: string;
   notes: string;
+  /** lt-192.3: set when the service applied this capture as an operation. */
+  operationId?: string;
+  unappliedDraft?: UnappliedDraft | null;
+  pending?: undefined;
+}>) | PendingSaveReceipt;
+/** lt-192.3: a paired capture recorded durably in this browser but not yet confirmed by the service. Not "saved". */
+export type PendingSaveReceipt = Readonly<{
+  pending: true;
+  operationId: string;
+  displayText: string;
+  selection: NonNullable<AppModel['selection']>;
+  meaning: string;
+  notes: string;
+  item?: undefined;
 }>;
 
 export async function saveSelection(model: AppModel): Promise<SavedItem | null> {
   return (await saveSelectionWithReceipt(model))?.item ?? null;
 }
 
-export function undoSave(model: AppModel, receipt: SaveReceipt): boolean {
+export function undoSave(model: AppModel, receipt: SaveReceipt): boolean | Promise<boolean> {
+  if (receipt.pending || receipt.operationId) return undoOperationSave(model, receipt.operationId!);
   if (!model.capture.undo(receipt, { activeCardIds: [model.review.activeCardId, model.review.currentCardId, model.practice.cardId] })) return false;
   persistIfLocalServiceAutosaveEnabled(model);
   return true;
+}
+
+/**
+ * lt-192.3 Undo of a paired capture. A capture never sent is cancelled (atomically; a claim that won the race makes
+ * it a sent capture). A sent or possibly-sent capture is undone by an `undo-capture` operation that the service
+ * resolves from its own stored capture receipt and current guards, after the capture's outcome is read back.
+ */
+async function undoOperationSave(model: AppModel, captureOperationId: string): Promise<boolean> {
+  const state = operationState(model);
+  let record = (await state.backend.list()).find((r) => r.operationId === captureOperationId);
+  if (!record) return false;
+  if (record.status === 'pending' && await discardLearnerOperation(model, captureOperationId)) return true;
+  record = (await state.backend.list()).find((r) => r.operationId === captureOperationId) ?? record;
+  if (record.status === 'blocked' || record.status === 'conflict') {
+    if (record.error?.code === 'superseded-by-restore') return false;
+    return discardLearnerOperation(model, captureOperationId); // nothing was applied
+  }
+  if (record.status === 'cancelled') return true;
+  const cardId = (record.receipt?.result as { cardId?: string } | undefined)?.cardId;
+  if (cardId && [model.review.activeCardId, model.review.currentCardId, model.practice.cardId].includes(cardId)) return false;
+  const undo = await enqueueLearnerOperation(model, 'undo-capture', { captureOperationId }, { label: `Undo ${record.label}`, dependsOn: captureOperationId, ...(record.savedItemId ? { savedItemId: record.savedItemId } : {}) });
+  await scheduleLearnerOperationFlush(model);
+  const settled = (await state.backend.list()).find((r) => r.operationId === undo.operationId);
+  return settled?.status === 'acked';
 }
 
 /** lt-foe.3.1: a pending meaning is dictionary-suggested only when it equals the suggestion exactly. */
@@ -3458,6 +4108,7 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
     isSentence ? undefined : selectionTimeRange,
   );
 
+  if (learnerOperationsActive(model)) return saveSelectionAsOperation(model, { selection, meaning, notes, cue, isSentence, selectionTimeRange, sourceContext });
   const result = model.capture.capture({
     kind: model.selection.kind,
     language: 'pl',
@@ -3474,6 +4125,40 @@ export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveRec
   return { ...result, selection, meaning, notes };
 }
 
+/** lt-192.3: a paired capture becomes a durable `capture` operation; the service validates the source and dedups. */
+async function saveSelectionAsOperation(model: AppModel, input: { selection: NonNullable<AppModel['selection']>; meaning: string; notes: string; cue: Cue; isSentence: boolean; selectionTimeRange: { start: number; end: number }; sourceContext: SavedOccurrence['sourceContext'] }): Promise<SaveReceipt> {
+  const { selection, meaning, notes, cue, isSentence, selectionTimeRange, sourceContext } = input;
+  const track = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : undefined;
+  if (!track) throw new TypeError(`Cannot save learner occurrence: subtitle track ${model.targetTrackId} was not found`);
+  if (track.transcriptStatus !== 'approved') throw new TypeError(`Cannot save learner occurrence from ${track.transcriptStatus} transcript track; approved transcript is required before study use.`);
+  const media = model.currentMedia!;
+  const displayText = isSentence ? cue.text : selection.text;
+  const payload: Record<string, unknown> = {
+    kind: selection.kind, language: 'pl', displayText,
+    ...(meaning.trim() ? { meaning, meaningSource: meaningSourceForPending(model) } : {}),
+    ...(notes.trim() ? { notes } : {}),
+    mediaId: media.id, cueId: cue.id, startMs: selectionTimeRange.start, endMs: selectionTimeRange.end, sourceContext,
+  };
+  const needsDocument = !transcriptBundleAcknowledged(model, track.id);
+  const prerequisites: CapturePrerequisites | undefined = needsDocument
+    ? { media, track, cues: model.store.listCuesForTrack(track.id), wordTimings: model.store.listTranscriptWordTimingsForTrack(track.id) } : undefined;
+  const record = await enqueueLearnerOperation(model, 'capture', payload, { label: `Save ${OPERATION_LABEL_TEXT(displayText)}`, ...(prerequisites ? { prerequisites } : {}) });
+  if (needsDocument) {
+    if (model.localService.autosaveEnabled && model.localService.status === 'connected' && model.localService.revision && !syncOwner(model).choice && model.localService.syncState !== 'conflict') await saveModelToLocalService(model);
+  } else await scheduleLearnerOperationFlush(model);
+  const settled = (await operationState(model).backend.list()).find((r) => r.operationId === record.operationId);
+  const result = settled?.status === 'acked' ? settled.receipt?.result as { savedItemId: string; occurrenceId: string; cardId: string; isNewItem: boolean; isNewOccurrence: boolean; createdCardId: string | null; unappliedDraft: UnappliedDraft | null } | undefined : undefined;
+  const item = result && model.store.getSavedItem(result.savedItemId);
+  const occurrence = result && model.store.getSavedOccurrence(result.occurrenceId);
+  const card = result && model.store.getReviewCard(result.cardId);
+  if (!result || !item || !occurrence || !card) return { pending: true, operationId: record.operationId, displayText, selection, meaning, notes };
+  return {
+    item, occurrence, card, isNewItem: result.isNewItem, isNewOccurrence: result.isNewOccurrence, createdCardId: result.createdCardId,
+    baseline: { itemUpdatedAt: item.updatedAt, itemJson: JSON.stringify(item), occurrenceCount: model.store.listSavedOccurrencesForItem(item.id).length },
+    selection, meaning, notes, operationId: record.operationId, unappliedDraft: result.unappliedDraft ?? null,
+  };
+}
+
 export function reviewCardsForSavedItem(model: AppModel, savedItemId: string): { active: ReviewCard[]; archived: ReviewCard[] } {
   return model.capture.cardsFor(savedItemId);
 }
@@ -3482,13 +4167,29 @@ export function ensureReviewCardForSavedItem(model: AppModel, item: SavedItem, o
   return model.capture.ensureCard(item, occurrence);
 }
 
+function reportOperationFailure(model: AppModel): (error: unknown) => void {
+  return (error) => { model.learnerOperations.message = error instanceof Error ? error.message : 'The change could not be recorded.'; notifySync(model); };
+}
+
 export function archiveReviewCardsForSavedItem(model: AppModel, savedItemId: string): void {
+  if (learnerOperationsActive(model)) {
+    const item = model.store.getSavedItem(savedItemId);
+    if (item) void enqueueEnrolment(model, item, false).then((ok) => ok ? scheduleLearnerOperationFlush(model) : undefined, reportOperationFailure(model));
+    return;
+  }
   if (model.capture.archiveCards(savedItemId).length === 0) return;
   if (model.review.activeCardId && model.store.getReviewCard(model.review.activeCardId)?.suspendedAt !== undefined) model.review.activeCardId = null;
   persistIfLocalServiceAutosaveEnabled(model);
 }
 
 export function addSavedItemToReview(model: AppModel, item: SavedItem, persist = true): ReviewCard | null {
+  if (learnerOperationsActive(model)) {
+    // lt-192.3: queued as a set-review-enrolment operation; the card appears once the service confirms it.
+    const queued = enqueueEnrolment(model, item, true);
+    if (persist) void queued.then((ok) => ok ? scheduleLearnerOperationFlush(model) : undefined, reportOperationFailure(model));
+    else void queued.catch(reportOperationFailure(model));
+    return null;
+  }
   if (model.capture.cardsFor(item.id).active[0]) return model.capture.cardsFor(item.id).active[0]!;
   const result = model.capture.reactivate(item);
   if (persist) persistIfLocalServiceAutosaveEnabled(model);
@@ -3497,6 +4198,15 @@ export function addSavedItemToReview(model: AppModel, item: SavedItem, persist =
 
 /** 'Add all to review (N)': only items lacking an active card; one persist for the batch. */
 export function addSavedItemsToReview(model: AppModel, items: readonly SavedItem[]): number {
+  if (learnerOperationsActive(model)) {
+    // lt-192.3: one set-review-enrolment operation per item lacking an active card; one flush for the batch.
+    const lacking = items.filter((item) => reviewCardsForSavedItem(model, item.id).active.length === 0 && pendingEnrolmentFor(model, item.id) !== true);
+    void (async () => {
+      for (const item of lacking) await enqueueEnrolment(model, item, true);
+      await scheduleLearnerOperationFlush(model);
+    })().catch(reportOperationFailure(model));
+    return lacking.length;
+  }
   let added = 0;
   for (const item of items) {
     if (reviewCardsForSavedItem(model, item.id).active.length > 0) continue;
@@ -3507,6 +4217,17 @@ export function addSavedItemsToReview(model: AppModel, items: readonly SavedItem
 }
 
 export function setSavedItemMeaning(model: AppModel, savedItemId: string, meaning: string, options: { allowClear?: boolean } = {}): SavedItem | null {
+  if (learnerOperationsActive(model)) {
+    // lt-192.3: queued as a set-meaning operation expecting the meaning (and its provenance) this browser shows.
+    const item = model.store.getSavedItem(savedItemId);
+    const trimmed = meaning.trim();
+    if (!item || (!trimmed && !options.allowClear)) return null;
+    const shown = pendingMeaningFor(model, savedItemId)?.meaning ?? item.meaning ?? null;
+    if ((trimmed || null) === shown) return item;
+    void enqueueMeaning(model, item, trimmed || null).then(() => scheduleLearnerOperationFlush(model), reportOperationFailure(model));
+    const { meaning: _m, meaningSource: _s, ...rest } = item;
+    return trimmed ? { ...rest, meaning: trimmed, meaningSource: { kind: 'learner' } } : rest;
+  }
   const before = model.store.getSavedItem(savedItemId);
   const updated = model.capture.setMeaning(savedItemId, meaning, options);
   if (updated && updated !== before) persistIfLocalServiceAutosaveEnabled(model);
@@ -4115,9 +4836,16 @@ export async function previewDurableRestore(model: AppModel): Promise<import('@l
     const pending = model.store.snapshotPendingRestoreIntent();
     if (pending && sessionRestoreBaselines.get(model) !== learnerSerialization(model.store.snapshot())) throw new TypeError('Learner edits changed after session restore. Resolve those edits explicitly before importing pending intent.');
     if (!pending && owner.baseline !== null && owner.baseline !== learnerSerialization(model.store.snapshot())) throw new TypeError('Unsaved browser state: save or explicitly load service state before restore.');
-    const revision = model.localService.revision;
+    let revision = model.localService.revision;
     const state = await fetchLocalServiceJson(transport, '/api/state'); current();
-    if (state.restoreCapability !== RESTORE_CAPABILITY || stateRevision(state.revision) !== revision) throw new TypeError('Service revision/capability changed; reconnect and refresh preview.');
+    if (state.restoreCapability !== RESTORE_CAPABILITY) throw new TypeError('Service revision/capability changed; reconnect and refresh preview.');
+    if (stateRevision(state.revision) !== revision) {
+      // lt-192.3: confirmed vocabulary operations advance the service revision without a document save. The preview
+      // may proceed only when the service holds exactly this browser's learner state.
+      const sameState = learnerOperationsActive(model) && learnerSerialization(authoritativeRestoreSnapshot(state.snapshot)) === learnerSerialization(model.store.snapshot());
+      if (!sameState) throw new TypeError('Service revision/capability changed; reconnect and refresh preview.');
+      revision = stateRevision(state.revision); model.localService.revision = revision;
+    }
     const before = model.store.snapshot(); const remote = authoritativeRestoreSnapshot(state.snapshot);
     const audit = before.learnerAudit!;
     const combined = { reviewEvents: unionHistory('reviewEvents', remote.learnerAudit!.reviewEvents, audit.reviewEvents), practiceAttempts: unionHistory('practiceAttempts', remote.learnerAudit!.practiceAttempts, audit.practiceAttempts) };
@@ -4174,6 +4902,9 @@ export function confirmRestore(model: AppModel): void | Promise<void> {
       binding.acknowledgedRevision = revision;
       const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); current();
       if (readback.ok !== true || readback.restoreCapability !== RESTORE_CAPABILITY || stateRevision(readback.revision) !== revision || !sameHistoryPayload(learnerStateOf(authoritativeRestoreSnapshot(readback.snapshot)), learnerStateOf(snapshot))) throw new TypeError('Restore readback mismatch.');
+      // lt-192.3: a restore starts a new operation lineage; intents queued before it are refused by the service.
+      if (await rememberOperationIdentity(model, binding.transport.origin, readback.operations)) { operationState(model).protectedBase = Number(revision.slice(4)) || 0; operationState(model).rowRevisions.clear(); }
+      current();
       installDurableRestore(model, binding, snapshot, revision);
     } catch (error) {
       binding.committing = false;

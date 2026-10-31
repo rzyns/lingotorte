@@ -1,7 +1,8 @@
 import type { AppModel } from '../uiTypes';
 import type { SavedItem } from '@lingotorte/domain';
 import { formatTimeMs } from '../uiTypes';
-import { addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, cueById, cuesForTrack, listAllSavedItems, mediaAssetById, mediaTranscriptsNeedLoading, occurrenceContext, openMediaAsset, reviewCardsForSavedItem, setSavedItemMeaning, setView } from '../model';
+import { addSavedItemToReview, addSavedItemsToReview, applyUnappliedDraftMeaning, archiveReviewCardsForSavedItem, cueById, cuesForTrack, discardLearnerOperation, dismissUnappliedDraft, learnerOperationMessage, listAllSavedItems, mediaAssetById, mediaTranscriptsNeedLoading, occurrenceContext, openDraftFields, openMediaAsset, pendingEnrolmentFor, pendingMeaningFor, reapplyLearnerOperation, retryLearnerOperation, reviewCardsForSavedItem, setSavedItemMeaning, setView, unappliedDraftOutcomes, unresolvedLearnerOperations, type UnappliedDraft } from '../model';
+import type { OutboxRecord } from '../operationOutbox.ts';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
 import { appendSourceDisclosure, mediaDisplayName, renderTranscriptNotLoaded } from '../ui/common.ts';
 
@@ -44,9 +45,13 @@ export function renderSavedView(model: AppModel): HTMLElement {
   heading.textContent = currentTab === 'vocab' ? 'My Vocab' : 'My Sentences';
   heading.id = 'saved-heading';
   section.appendChild(heading);
+  const pendingPanel = renderPendingOperations(model);
+  if (pendingPanel) section.appendChild(pendingPanel);
+  const draftsPanel = renderUnappliedDrafts(model);
+  if (draftsPanel) section.appendChild(draftsPanel);
 
   // lt-uzo: bulk opt-in for items in this tab lacking an active review card; hidden when there are none.
-  const lacking = items.filter((i) => reviewCardsForSavedItem(model, i.id).active.length === 0);
+  const lacking = items.filter((i) => reviewCardsForSavedItem(model, i.id).active.length === 0 && pendingEnrolmentFor(model, i.id) !== true);
   if (lacking.length > 0) {
     const addAll = document.createElement('button');
     addAll.className = 'btn-secondary saved-add-all';
@@ -88,7 +93,17 @@ export function renderSavedView(model: AppModel): HTMLElement {
     meta.className = 'meta';
     meta.textContent = `${item.kind === 'lexeme' ? 'word' : item.kind} • ${item.language} • saved ${occurrences.length} time${occurrences.length === 1 ? '' : 's'}`;
     card.appendChild(meta);
-    if (item.meaning) {
+    // lt-192.3: a meaning edit the service has not confirmed is shown, marked as not saved yet.
+    const pendingMeaning = pendingMeaningFor(model, item.id);
+    if (pendingMeaning) {
+      const { meaning: _m, meaningSource: _s, ...rest } = item;
+      const shown = pendingMeaning.meaning === null ? rest : { ...rest, meaning: pendingMeaning.meaning, meaningSource: { kind: 'learner' as const } };
+      if (pendingMeaning.meaning !== null) card.appendChild(renderMeaningLine(model, shown, 'div', 'meta meaning'));
+      const note = document.createElement('div');
+      note.className = 'meta pending-change';
+      note.textContent = pendingMeaning.meaning === null ? 'Meaning removal not saved yet' : 'Meaning not saved yet';
+      card.appendChild(note);
+    } else if (item.meaning) {
       card.appendChild(renderMeaningLine(model, item, 'div', 'meta meaning'));
     } else if (!savedItemNativeLine(model, occurrences[0])) {
       card.appendChild(renderAddMeaning(model, item.id));
@@ -159,10 +174,11 @@ export function renderSavedView(model: AppModel): HTMLElement {
     card.appendChild(occurrenceGroup);
 
     // lt-uzo: saving creates the card; this toggles it. Off archives (suspends) it, keeping state and history.
-    const inReview = reviewCardsForSavedItem(model, item.id).active.length > 0;
+    const pendingEnrolment = pendingEnrolmentFor(model, item.id);
+    const inReview = pendingEnrolment ?? reviewCardsForSavedItem(model, item.id).active.length > 0;
     const reviewBtn = document.createElement('button');
     reviewBtn.className = 'btn-secondary saved-review-toggle';
-    reviewBtn.textContent = inReview ? 'In review ✓' : 'Add to review';
+    reviewBtn.textContent = `${inReview ? 'In review ✓' : 'Add to review'}${pendingEnrolment === null ? '' : ' (not saved yet)'}`;
     reviewBtn.setAttribute('aria-pressed', String(inReview));
     reviewBtn.disabled = !inReview && occurrences.length === 0;
     reviewBtn.addEventListener('click', () => {
@@ -277,4 +293,108 @@ export function renderMeaningLine(model: AppModel, item: SavedItem, tag: 'div' |
   });
   line.appendChild(edit);
   return line;
+}
+
+const OPERATION_STATUS_TEXT: Record<OutboxRecord['status'], string> = {
+  pending: 'not saved yet',
+  sending: 'sent, waiting for confirmation (retried with the same change if needed)',
+  blocked: 'not applied',
+  conflict: 'not applied — changed elsewhere',
+  acked: 'saved',
+  cancelled: 'discarded',
+};
+
+/**
+ * lt-192.3: vocabulary changes recorded in this browser but not confirmed by the local service. Each is shown until
+ * it is confirmed or explicitly discarded; nothing here is called saved. Loading service state keeps them.
+ */
+function renderPendingOperations(model: AppModel): HTMLElement | null {
+  const records = unresolvedLearnerOperations(model);
+  if (records.length === 0 && model.learnerOperations.durable) return null;
+  const box = document.createElement('section');
+  box.className = 'pending-operations status-banner warning';
+  box.setAttribute('aria-label', 'Vocabulary changes not saved yet');
+  if (!model.learnerOperations.durable) {
+    const warn = document.createElement('p');
+    warn.textContent = 'This browser cannot store pending vocabulary changes durably; unsaved changes are lost if the page reloads.';
+    box.appendChild(warn);
+    if (records.length === 0) return box;
+  }
+  const title = document.createElement('h3');
+  title.textContent = `Not saved yet (${records.length})`;
+  box.appendChild(title);
+  const list = document.createElement('ul');
+  for (const record of records) {
+    const li = document.createElement('li');
+    li.className = `pending-operation pending-operation-${record.status}`;
+    li.dataset.operationId = record.operationId;
+    li.append(`${record.label}: ${OPERATION_STATUS_TEXT[record.status]}`);
+    if (record.error) li.append(` — ${record.error.message || learnerOperationMessage(record.error.code)}`);
+    const action = (label: string, run: () => Promise<boolean>) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-link';
+      button.textContent = label;
+      button.addEventListener('click', () => { button.disabled = true; void run().finally(() => rerenderApp(model)); });
+      li.append(' ', button);
+    };
+    if (record.status === 'blocked' && ['source-unavailable', 'depends-on-unresolved'].includes(record.error?.code ?? '')) action('Retry', () => retryLearnerOperation(model, record.operationId));
+    const reapplicable = record.status === 'conflict'
+      ? record.request.kind === 'set-meaning' || record.request.kind === 'set-review-enrolment'
+      : record.status === 'blocked' && ['generation-changed', 'incarnation-changed', 'operation-expired', 'invalid-basis'].includes(record.error?.code ?? '');
+    if (reapplicable) action(record.status === 'conflict' ? 'Apply mine anyway' : 'Reapply', () => reapplyLearnerOperation(model, record.operationId));
+    if (record.status !== 'sending') action('Discard', () => discardLearnerOperation(model, record.operationId));
+    list.appendChild(li);
+  }
+  box.appendChild(list);
+  return box;
+}
+
+/**
+ * lt-192.3 (R3): words saved without the learner's meaning/notes because they were already saved (on this or another
+ * device). Shown until explicitly resolved, across reloads and tabs; nothing is applied automatically.
+ */
+function renderUnappliedDrafts(model: AppModel): HTMLElement | null {
+  const records = unappliedDraftOutcomes(model);
+  if (records.length === 0) return null;
+  const box = document.createElement('section');
+  box.className = 'unapplied-drafts status-banner warning';
+  box.setAttribute('aria-label', 'Saved words whose meaning or notes were not applied');
+  const title = document.createElement('h3');
+  title.textContent = `Saved, but your meaning or notes were not applied (${records.length})`;
+  box.appendChild(title);
+  const list = document.createElement('ul');
+  for (const record of records) {
+    const draft = record.receipt?.result.unappliedDraft as UnappliedDraft | undefined;
+    const open = openDraftFields(record);
+    if (!draft || open.length === 0) continue;
+    const li = document.createElement('li');
+    li.className = 'unapplied-draft';
+    li.dataset.operationId = record.operationId;
+    const parts: string[] = [];
+    if (open.includes('meaning')) parts.push(`your meaning \u201c${draft.meaning}\u201d was not applied (kept ${draft.existingMeaning === null ? 'no meaning' : `\u201c${draft.existingMeaning}\u201d`})`);
+    else if (record.draftResolved?.meaning === 'applied') parts.push(`your meaning \u201c${draft.meaning}\u201d was sent as a separate change`);
+    if (open.includes('notes')) parts.push(`your notes \u201c${draft.notes}\u201d were not applied (kept ${draft.existingNotes === null ? 'no notes' : `\u201c${draft.existingNotes}\u201d`})`);
+    li.append(`${record.label.replace(/^Save /, '')} was already saved: ${parts.join('; ')}.`);
+    const action = (label: string, run: () => Promise<boolean>) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-link';
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        void run().catch((error: unknown) => { model.learnerOperations.message = error instanceof Error ? error.message : 'The change was not stored.'; return false; }).finally(() => rerenderApp(model));
+      });
+      li.append(' ', button);
+    };
+    // Meaning and notes are decided separately; applying the meaning never resolves the notes (there is no notes writer).
+    if (open.includes('meaning')) {
+      action('Use my meaning', () => applyUnappliedDraftMeaning(model, record.operationId));
+      action('Keep saved meaning', () => dismissUnappliedDraft(model, record.operationId, 'meaning'));
+    }
+    if (open.includes('notes')) action('Keep saved notes', () => dismissUnappliedDraft(model, record.operationId, 'notes'));
+    list.appendChild(li);
+  }
+  box.appendChild(list);
+  return box;
 }

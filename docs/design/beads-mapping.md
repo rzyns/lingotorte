@@ -6,11 +6,11 @@ Verification: exact canonical target readback; nine new records (one epic/eight 
 
 Note: an optional provenance-only related edge from lt-5lb.4 to lt-5lb was refused by bd's hierarchical-ID guard, although canonical readback confirms its parent is lt-192. No force or identity change was used; prior provenance remains in its ID, comments and preserved history. All required prerequisite/parent edges verified.
 
-Baseline: [product brief](product-brief.md); ordering/acceptance: [delivery scope](delivery-scope.md). Canonical Beads remains the task/status store; this is a proposed reconciliation payload, not another roadmap.
+Baseline: [product brief](product-brief.md); ordering/acceptance: [delivery scope](delivery-scope.md). Canonical Beads remains the task/status store; this is the applied reconciliation record, not another roadmap.
 
 ## Existing work
 
-| Issue | Proposed disposition |
+| Issue | Applied disposition |
 | --- | --- |
 | Completed lt-foe, lt-dxo, lt-foe.3.5, lt-584.1–6 and prior capture/parser deliveries | Keep closed; reuse implementation and accepted evidence; qualify new behaviour separately. |
 | lt-584.7 | Retain qualification payload/oracle repair under lt-584; prerequisite only for affected harness reuse. |

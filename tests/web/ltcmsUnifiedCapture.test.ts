@@ -185,6 +185,19 @@ describe('lt-cms unified capture state', () => {
     expect(savedItems(model)[0]).toMatchObject({ kind: 'lexeme', displayText: 'razem' });
   });
 
+  it('lt-192.3: an overlay-word capture uses the same token anchor as the transcript word (punctuation counts), timed or not', () => {
+    for (const timed of [false, true]) {
+      const { model, cue } = installModel('approved', 'Cześć, uczymy się razem.', timed);
+      model.player.activeCueId = cue.id; model.player.currentTimeMs = 2100; model.player.durationMs = 4000;
+      rerenderApp(model);
+      const transcriptWord = Array.from(document.querySelectorAll('.cue-word')).find((b) => b.textContent === 'uczymy') as HTMLElement;
+      expect(transcriptWord.dataset.tokenIndex).toBe('2');
+      const overlayWord = Array.from(document.querySelectorAll('.subtitle-overlay .subtitle-word')).find((b) => b.textContent === 'uczymy') as HTMLButtonElement;
+      overlayWord.click();
+      expect(model.selection, `timed=${timed}`).toMatchObject({ kind: 'lexeme', text: 'uczymy', tokenStart: 2, tokenEnd: 3, charStart: 7, charEnd: 13 });
+    }
+  });
+
   it('a zero-length mouseup opens nothing', async () => {
     const { model, cue } = installModel();
     rerenderApp(model);

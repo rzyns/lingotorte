@@ -285,7 +285,7 @@ describe('lt-foe.3.4 Meaning pre-fill', () => {
     expect(hint.textContent).toBe('Suggested from Wiktionary — edit freely.');
     expect(hint.hidden).toBe(false);
     const receipt = (await saveSelectionWithReceipt(model))!;
-    expect(model.store.getSavedItem(receipt.item.id)).toMatchObject({ meaning: 'dog', meaningSource: { kind: 'dictionary-suggested', glossSourceId: SOURCE.id, dumpDate: '2026-10-03' } });
+    expect(model.store.getSavedItem(receipt.item!.id)).toMatchObject({ meaning: 'dog', meaningSource: { kind: 'dictionary-suggested', glossSourceId: SOURCE.id, dumpDate: '2026-10-03' } });
   });
 
   it('fetches morphology + gloss when the cue was not analysed, without blocking opening', async () => {
@@ -306,7 +306,7 @@ describe('lt-foe.3.4 Meaning pre-fill', () => {
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     expect(document.querySelector<HTMLElement>('#selection-meaning-hint')!.hidden).toBe(true);
     const receipt = (await saveSelectionWithReceipt(model))!;
-    expect(model.store.getSavedItem(receipt.item.id)).toMatchObject({ meaning: 'doggy', meaningSource: { kind: 'learner' } });
+    expect(model.store.getSavedItem(receipt.item!.id)).toMatchObject({ meaning: 'doggy', meaningSource: { kind: 'learner' } });
   });
 
   it('never pre-fills phrase or sentence selections', async () => {
