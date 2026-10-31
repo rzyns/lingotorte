@@ -64,6 +64,10 @@ The media variable is still required to parse Compose even when running only the
 
 The base is the official multi-architecture Node 26.7.0 Bookworm slim index digest recorded in Dockerfile. Lockfile dependencies install with scripts, audit and fund disabled. Debian package versions follow Bookworm's repositories at build time, so the base/dependency source is pinned but rebuilds are not bit-for-bit identical; retain the qualified image ID when exact runtime bytes matter. Non-root `node` runs both services directly, with Compose init forwarding signals. `.dockerignore` is default-deny plus application inputs, with environment files, Git/Beads/worktrees, databases and caches excluded. An empty image-only `/app/.git` directory is a nativeConfig source-root exclusion sentinel, not copied Git history or a usable Git repository.
 
+## Managed media library (`lt-192.4`, implementation candidate)
+
+`LINGOTORTE_LIBRARY_DIR` is **unset by default** and neither `compose.yaml` nor `Dockerfile` sets it, so managed media is unavailable: status reports `managedMedia.available: false` and `/api/media/session`, `/api/media/<id>/storage` and `/api/media/<id>/content` are absent (404). D adds no upload route and no production writer; only test fixtures register synthetic blobs. Configuring a real library, a Tailscale/LAN profile or HTTPS is not part of D and needs its own reviewed change. When set, startup refuses a library that overlaps the state, database, scratch, model, home, repository or `/media` roots (lexically or through symlinks, both directions), is not an owned real directory, is not writable (`EROFS`/`EACCES`), or runs on a host without `O_NOFOLLOW`/`O_NONBLOCK` (native Windows refuses). Synthetic qualification only: see `docs/dev/lt-192.4-server-playback-result.md`.
+
 ## Providers and credentials
 
 The default stack runs no online providers. `compose.yaml` hard-codes `LINGOTORTE_ALLOW_ONLINE_PROVIDERS=false` for the API, passes no provider key, and attaches the API only to an internal network with no outbound internet. `.dockerignore` excludes `.env` files from the image. No credential is needed to run, verify or qualify the stack.

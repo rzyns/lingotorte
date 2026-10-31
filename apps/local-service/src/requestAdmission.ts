@@ -36,15 +36,18 @@ export type AdmissionPolicy = Readonly<{
   origins: readonly string[];
   healthAuthority?: string;
   privateNetworkOrigins?: readonly string[];
+  /** lt-192.4: M1-M4 exist only when a managed library is configured; otherwise those paths stay 404. */
+  managedMedia?: boolean;
 }>;
-export function freezePolicy(origins: readonly string[], uiOrigins: readonly string[], healthAuthority?: string, pna: readonly string[] = []): AdmissionPolicy {
+export function freezePolicy(origins: readonly string[], uiOrigins: readonly string[], healthAuthority?: string, pna: readonly string[] = [], options: { managedMedia?: boolean } = {}): AdmissionPolicy {
   if (!origins.length || !uiOrigins.length) throw new TypeError('Exact origins must be nonempty.');
   const publicOrigins = origins.map(canonicalOrigin);
   const allowedOrigins = uiOrigins.map(canonicalOrigin);
   if (pna.some(origin => !allowedOrigins.includes(canonicalOrigin(origin)))) throw new TypeError('Private-network origin must be explicitly allowed.');
   return Object.freeze({ authorities: Object.freeze(publicOrigins.map(origin => new URL(origin).host)),
     origins: Object.freeze(allowedOrigins), privateNetworkOrigins: Object.freeze([...pna]),
-    ...(healthAuthority ? { healthAuthority: canonicalAuthority(healthAuthority) } : {}) });
+    ...(healthAuthority ? { healthAuthority: canonicalAuthority(healthAuthority) } : {}),
+    ...(options.managedMedia ? { managedMedia: true } : {}) });
 }
 export function rawHeaders(request: IncomingMessage): Map<string, string[]> {
   const fields = new Map<string, string[]>();
@@ -52,8 +55,10 @@ export function rawHeaders(request: IncomingMessage): Map<string, string[]> {
     const key = request.rawHeaders[index]!.toLowerCase();
     fields.set(key, [...(fields.get(key) ?? []), request.rawHeaders[index + 1]!]);
   }
+  // lt-192.4: cookie/range/if-range/sec-fetch-site join the raw duplicate rule on every route, whatever the credential.
   for (const key of ['host', 'origin', 'authorization', 'content-type', 'content-length', 'content-encoding',
-    'access-control-request-method', 'access-control-request-headers', 'access-control-request-private-network']) {
+    'access-control-request-method', 'access-control-request-headers', 'access-control-request-private-network',
+    'cookie', 'range', 'if-range', 'sec-fetch-site']) {
     if ((fields.get(key)?.length ?? 0) > 1) throw new AdmissionError(400);
   }
   const origin = fields.get('origin')?.[0];
@@ -64,7 +69,10 @@ export function rawHeaders(request: IncomingMessage): Map<string, string[]> {
   return fields;
 }
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-export function routeMethods(path: string): readonly string[] | undefined {
+export const MEDIA_SESSION_ROUTE = '/api/media/session';
+export const MEDIA_STORAGE_ROUTE = new RegExp(`^/api/media/(${uuid})/storage$`);
+export const MEDIA_CONTENT_ROUTE = new RegExp(`^/api/media/(${uuid})/content$`);
+export function routeMethods(path: string, managedMedia = false): readonly string[] | undefined {
   if (path === '/api/health' || path === '/api/status') return ['GET'];
   if (path === '/api/state') return ['GET', 'PUT'];
   if (path === '/api/restore/preview' || path === '/api/restore/commit') return ['POST'];
@@ -76,12 +84,28 @@ export function routeMethods(path: string): readonly string[] | undefined {
   if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];
   if (new RegExp(`^/api/media/${uuid}/transcripts$`).test(path)) return ['GET'];
   if (new RegExp(`^/api/tracks/${uuid}/transcript$`).test(path)) return ['PUT'];
+  if (managedMedia) {
+    if (path === MEDIA_SESSION_ROUTE) return ['POST', 'DELETE'];
+    if (MEDIA_STORAGE_ROUTE.test(path)) return ['GET'];
+    if (MEDIA_CONTENT_ROUTE.test(path)) return ['GET', 'HEAD'];
+  }
   return undefined;
 }
-export type AdmittedRequest = Readonly<{ path: string; body?: Record<string, unknown>; preflight: boolean }>;
+export type AdmittedRequest = Readonly<{ path: string; body?: Record<string, unknown>; preflight: boolean; credential?: 'bearer' | 'media-cookie' }>;
+/** lt-192.4: the media cookie check, injected by the server only when a managed library is configured. */
+export type MediaCookieChecker = Readonly<{ check(cookieHeader: string | undefined): 'absent' | 'valid' | 'invalid' }>;
+
+function unauthorized(response: ServerResponse): never {
+  response.setHeader('www-authenticate', 'Bearer realm="lingotorte-local"'); throw new AdmissionError(401, 'Pair again.');
+}
+async function bearerValid(auth: string | undefined, capability: Buffer, deliveryReady: () => Promise<boolean>): Promise<boolean> {
+  const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(auth ?? '');
+  const value = match ? Buffer.from(match[1]!, 'base64url') : Buffer.alloc(0);
+  return value.length === 32 && value.toString('base64url') === match?.[1] && timingSafeEqual(value, capability) && await deliveryReady();
+}
 
 export async function admit(request: IncomingMessage, response: ServerResponse, policy: AdmissionPolicy,
-  capability: Buffer, deliveryReady: () => Promise<boolean>, expectContinue = false): Promise<AdmittedRequest> {
+  capability: Buffer, deliveryReady: () => Promise<boolean>, expectContinue = false, mediaSessions?: MediaCookieChecker): Promise<AdmittedRequest> {
   const fields = rawHeaders(request);
   if (fields.get('host')?.length !== 1) throw new AdmissionError(400);
   const host = canonicalAuthority(fields.get('host')![0]!);
@@ -93,18 +117,31 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   if (origin !== undefined && !policy.origins.includes(origin)) throw new AdmissionError(403);
   response.setHeader('cache-control', 'no-store');
   if (origin !== undefined) { response.setHeader('access-control-allow-origin', origin); response.setHeader('vary', 'Origin'); }
-  const methods = routeMethods(path);
+  const methods = routeMethods(path, policy.managedMedia === true);
   if (!methods) throw new AdmissionError(404);
   const method = request.method ?? '';
   if (method !== 'OPTIONS' && !methods.includes(method)) {
     response.setHeader('allow', [...methods, 'OPTIONS'].join(', ')); throw new AdmissionError(405);
   }
+  // lt-192.4: M1/M2 set or expire the app's own cookie; a present Origin must be this request's own exact origin.
+  if (path === MEDIA_SESSION_ROUTE && origin !== undefined && origin !== `http://${host}`) throw new AdmissionError(403);
+  let credential: AdmittedRequest['credential'];
+  const mediaContent = policy.managedMedia === true && (method === 'GET' || method === 'HEAD') && MEDIA_CONTENT_ROUTE.test(path);
+  if (mediaContent) {
+    // lt-192.4, M4 only: Fetch Metadata before either credential; a bearer never exempts a request from it.
+    const site = fields.get('sec-fetch-site')?.[0];
+    if (site !== undefined && site !== 'same-origin') throw new AdmissionError(403);
+  }
   if (method !== 'OPTIONS' && !health) {
-    const auth = fields.get('authorization')?.[0];
-    const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(auth ?? '');
-    const value = match ? Buffer.from(match[1]!, 'base64url') : Buffer.alloc(0);
-    if (value.length !== 32 || value.toString('base64url') !== match?.[1] || !timingSafeEqual(value, capability) || !await deliveryReady()) {
-      response.setHeader('www-authenticate', 'Bearer realm="lingotorte-local"'); throw new AdmissionError(401, 'Pair again.');
+    const auth = fields.get('authorization');
+    if (auth !== undefined || !mediaContent) {
+      // A present Authorization alone decides; an invalid one is 401 and never falls back to the cookie.
+      if (!await bearerValid(auth?.[0], capability, deliveryReady)) unauthorized(response);
+      credential = 'bearer';
+    } else {
+      // Only an absent Authorization consults the media cookie (exactly one valid lt_media pair).
+      if (mediaSessions?.check(fields.get('cookie')?.[0]) !== 'valid' || !await deliveryReady()) unauthorized(response);
+      credential = 'media-cookie';
     }
   }
   if (fields.has('content-encoding')) throw new AdmissionError(415);
@@ -131,7 +168,7 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
     if (pna === 'true') response.setHeader('access-control-allow-private-network', 'true');
     return { path, preflight: true };
   }
-  if (!json) return { path, preflight: false };
+  if (!json) return { path, preflight: false, ...(credential ? { credential } : {}) };
   const limit = ROUTE_BODY_LIMITS[path] ?? MAX_BODY_BYTES;
   if (Number(fields.get('content-length')?.[0] ?? 0) > limit) throw new AdmissionError(413);
   if (expectContinue) response.writeContinue();
@@ -140,8 +177,8 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }
   catch { throw new AdmissionError(400); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AdmissionError(400);
-  if ((path.endsWith('/cancel') || path === '/api/artifacts/cleanup') && Object.keys(body).length) throw new AdmissionError(400);
-  return { path, body: body as Record<string, unknown>, preflight: false };
+  if ((path.endsWith('/cancel') || path === '/api/artifacts/cleanup' || path === MEDIA_SESSION_ROUTE) && Object.keys(body).length) throw new AdmissionError(400);
+  return { path, body: body as Record<string, unknown>, preflight: false, ...(credential ? { credential } : {}) };
 }
 // lt-04k.1: bounded read that never destroys the request on overflow (an async-iterator throw would
 // destroy the IncomingMessage and its socket, resetting the connection before the 413 is delivered).
@@ -212,5 +249,6 @@ export function deny(response: ServerResponse, error: unknown, linger: DenialLin
   lingerUnreadBody(response, status === 413 ? linger.bytes : linger.headerStageBytes, linger);
   response.setHeader('connection', 'close');
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-  response.end(JSON.stringify({ ok: false, error: status === 401 ? 'Pair again.' : 'Request rejected.' }));
+  // lt-192.4 (RFC 9110 §9.3.2): a HEAD response never carries content, whatever the status.
+  response.end(response.req?.method === 'HEAD' ? undefined : JSON.stringify({ ok: false, error: status === 401 ? 'Pair again.' : 'Request rejected.' }));
 }

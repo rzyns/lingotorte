@@ -142,7 +142,7 @@ describe('lt-3f1 T11 — populated legacy upgrade', () => {
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-typed-input')?.eventLink).toEqual({ reviewEventId: 'r-a' });
         expect(s.snapshot.practiceAttempts.find(a => a.id === 'p-multiple-choice')?.eventLink).toEqual({});
         expect(db.status().learnerAuditRecovery).toMatchObject({ snapshotOnlyReviews: 2, tableOnlyReviews: 0, snapshotOnlyAttempts: 5, tableOnlyAttempts: 0, orphanReviews: 0, orphanAttempts: 0, unresolvedAttemptLinks: 0 });
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
         if (i === 0) revision = s.revision; else expect(s.revision).toBe(revision);
       } finally { db.close(); }
       const state = tableState(file);
@@ -217,7 +217,7 @@ describe('lt-584.4 v12 — tables become authoritative', () => {
     const seed = SqliteLocalPersistence.open(file); seed.saveSnapshot(new LocalStore(blob as never).snapshot(), AT); const full = seed.loadSnapshot(); seed.close();
     const v10Blob = { ...full };
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; UPDATE lingotorte_schema SET schema_version=10;');
+    raw.exec('DROP TABLE managed_media_blob; DELETE FROM schema_migration WHERE version=14; DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; UPDATE lingotorte_schema SET schema_version=10;');
     raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 10, JSON.stringify(v10Blob), AT);
     // A v10 binary rewrote these from the blob on every save; leave them stale/empty so only the v12 backfill can fill them.
     for (const table of ['media_asset', 'media_file_observation', 'subtitle_track', 'cue', 'transcript_word_timing', 'saved_item', 'saved_occurrence', 'review_card', 'review_card_state', 'export_job', 'provider_policy', 'import_job']) raw.exec(`DELETE FROM ${table}`);
@@ -226,8 +226,8 @@ describe('lt-584.4 v12 — tables become authoritative', () => {
     for (let i = 0; i < 2; i++) {
       const db = openShadowed(file);
       try {
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-        expect(db.status()).toMatchObject({ schemaVersion: 13, revision: 'rev:1' });
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+        expect(db.status()).toMatchObject({ schemaVersion: 14, revision: 'rev:1' });
         expectShadowEqual(db);
         const loaded = db.loadSnapshot();
         for (const name of ['reviewEvents', 'practiceAttempts', 'importJobEvents', 'mediaObservations'] as const) expect(sortById(loaded[name] as { id: string }[]), name).toEqual(sortById(v10Blob[name] as { id: string }[]));
@@ -296,8 +296,8 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
   });
 
   it.each([
-    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (14, 'future_migration', ?, 'f', 'applied')").run(AT)],
-    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=14').run()],
+    ['future ledger row', (db: DatabaseSync) => db.prepare("INSERT INTO schema_migration VALUES (15, 'future_migration', ?, 'f', 'applied')").run(AT)],
+    ['future schema marker', (db: DatabaseSync) => db.prepare('UPDATE lingotorte_schema SET schema_version=15').run()],
   ])('upgraded populated DB with %s is refused at open without mutation (no in-place downgrade)', (_, mutate) => {
     const file = tempFile(); const f = mixedV7(); buildLegacy(file, 7, legacySnapshot(f.snapshot), f.tables);
     openShadowed(file).close();
@@ -343,7 +343,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
       const db = openShadowed(file);
       try {
         expectShadowEqual(db);
-        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
         expect(sortById(db.loadSnapshot().reviewEvents)).toEqual(sortById(f.union.reviews));
         expect(sortById(db.loadSnapshot().practiceAttempts)).toEqual(sortById(f.union.attempts));
         expect(sortById(db.loadSnapshot().importJobEvents)).toEqual(sortById(f.union.jobEvents));
@@ -361,7 +361,7 @@ describe('lt-3f1 T12 — bad or failed upgrade fails closed and retries forward'
     expect(tableState(file)).toEqual(pre);
     raw = new DatabaseSync(file); raw.exec('DROP TRIGGER inject'); raw.close();
     const db = openShadowed(file);
-    try { expectShadowEqual(db); expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(13); } finally { db.close(); }
+    try { expectShadowEqual(db); expect(sortById(db.listAuditPracticeAttempts())).toEqual(sortById(f.union.attempts)); expect(db.status().schemaVersion).toBe(14); } finally { db.close(); }
   });
 });
 
@@ -410,7 +410,7 @@ describe('lt-3f1 T13 — consistent backup copy and downgrade boundary', () => {
     expect(tableState(file)).toEqual(upgraded);
     // No in-place downgrade: the upgraded file presented as a "newer" schema to this binary is refused (simulated by future marker above);
     // here, the upgraded file must not be readable as a v7 database: its ledger already records v8/v9.
-    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(ledgerVersions(file)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   });
 });
 

@@ -193,6 +193,7 @@ export function createAppModel(): AppModel {
 }
 
 import { exactServiceOrigin, pairTransport, capturedTransport, clearPairing, PAIR_AGAIN, type PairedTransport } from './pairedTransport.ts';
+import { currentPlaybackSource, noteServerMediaStatus, serverCopyReady } from './serverMedia.ts';
 
 export type LocalServiceSyncResult = Readonly<{
   ok: boolean;
@@ -660,6 +661,8 @@ export async function connectLocalService(model: AppModel, baseUrl = model.local
     const status = await fetchLocalServiceJson(transport, '/api/status');
     if (!current()) return supersededSync();
     pairingHook(model, (hooks) => hooks.statusOk?.(url));
+    // lt-192.4: bind managed-media facts to this pairing origin; same-origin + available mints (M1) without blocking.
+    void noteServerMediaStatus(model, transport, status)?.catch(() => undefined);
     model.localService.glossCapability = readGlossCapability((status.language as Record<string, unknown> | undefined)?.gloss);
     const pathPolicy = readNativePathPolicy((status.config as Record<string, unknown> | undefined)?.pathPolicy);
     const state = await fetchLocalServiceJson(transport, '/api/state');
@@ -1984,21 +1987,22 @@ function revokeCurrentMediaObjectUrl(model: AppModel): void {
   model.browserLocalMedia = emptyBrowserLocalMedia();
 }
 
+/** lt-192.4: the derived playback source (local object URL, server copy, relink, or an honest message). */
 export function mediaPlaybackUrl(model: AppModel): string {
-  return model.browserLocalMedia.objectUrl ?? model.currentMedia?.originalPath ?? '';
+  if (!model.currentMedia) return model.browserLocalMedia.objectUrl ?? '';
+  const source = currentPlaybackSource(model);
+  return source && (source.kind === 'local' || source.kind === 'server') ? source.src : '';
 }
 
 export function needsMediaRelink(model: AppModel): boolean {
-  if (!model.currentMedia) return false;
-  const path = model.currentMedia.originalPath;
-  if (!path.startsWith(HANDLE_LABEL_PREFIX) && !path.startsWith('blob:')) return false;
-  return model.browserLocalMedia.objectUrl === null;
+  return currentPlaybackSource(model)?.kind === 'relink';
 }
 
 /** lt-1ur: needsMediaRelink for any stored asset; only the current one can hold a live object URL. */
 export function mediaAssetNeedsRelink(model: AppModel, media: MediaAsset): boolean {
   if (model.currentMedia?.id === media.id) return needsMediaRelink(model);
-  return media.originalPath.startsWith(HANDLE_LABEL_PREFIX) || media.originalPath.startsWith('blob:');
+  // lt-192.4: a server copy this pairing already confirmed complete plays without relinking.
+  return (media.originalPath.startsWith(HANDLE_LABEL_PREFIX) || media.originalPath.startsWith('blob:')) && !serverCopyReady(model, media.id);
 }
 
 export function handleNameFromMedia(model: AppModel): string | null {

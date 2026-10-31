@@ -51,6 +51,25 @@ describe('captured memory-only transport', () => {
     }
     expect(JSON.stringify(transport)).not.toContain(SYNTHETIC_CAPABILITY);
   });
+  it('lt-192.4: only M1/M2 (/api/media/session) use same-origin credentials, and only for the exact page origin; M3 stays omit; M4 is never a transport path', async () => {
+    vi.stubGlobal('location', { origin });
+    const transport = pairTransport({}, origin, SYNTHETIC_CAPABILITY);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    for (const [path, method] of [['/api/media/session', 'POST'], ['/api/media/session', 'DELETE'], [`/api/media/${uuid}/storage`, 'GET'], [`/api/media/${uuid}/transcripts`, 'GET'], ['/api/state', 'GET']] as const) {
+      await transport.request(path, { method, ...(method === 'POST' ? { body: '{}' } : {}), credentials: 'include' }, fetcher);
+    }
+    expect(fetcher.mock.calls.map(([, init]) => init?.credentials)).toEqual(['same-origin', 'same-origin', 'omit', 'omit', 'omit']);
+    for (const [, init] of fetcher.mock.calls) expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${SYNTHETIC_CAPABILITY}`);
+    await expect(transport.request(`/api/media/${uuid}/content`, undefined, fetcher)).rejects.toThrow('Invalid local service API path');
+    // Another page origin (native direct mode): the cookie route is refused before any egress.
+    vi.stubGlobal('location', { origin: 'http://127.0.0.1:5173' });
+    const before = fetcher.mock.calls.length;
+    await expect(transport.request('/api/media/session', { method: 'POST', body: '{}' }, fetcher)).rejects.toThrow('same-origin');
+    await expect(transport.request('/api/media/session', { method: 'DELETE' }, fetcher)).rejects.toThrow('same-origin');
+    expect(fetcher.mock.calls.length).toBe(before);
+    await transport.request(`/api/media/${uuid}/storage`, undefined, fetcher);
+    expect(fetcher.mock.calls.at(-1)?.[1]?.credentials).toBe('omit');
+  });
   it('refuses redirects without a second request', async () => {
     const transport = pairTransport({}, origin, SYNTHETIC_CAPABILITY);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 302, headers: { location: 'http://foreign.local/private' } }));

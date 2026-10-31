@@ -10,7 +10,7 @@ Views in nav order: **Player** (`player`) → **Library** (`library`) → **Save
 
 Keyboard: 10 shortcuts declared in the help overlay; 25 `event.key` handler sites in source.
 
-Service API: 16 routes (`GET /api/health`, `GET /api/status`, `GET/PUT /api/state`, `POST /api/restore/preview`, `POST /api/restore/commit`, `POST /api/learner/operations`, `POST /api/jobs`, `POST /api/artifacts/cleanup`, `POST /api/language/morphology`, `POST /api/language/gloss`, `POST /api/export/anki`, `GET /api/jobs/{uuid}`, `POST /api/jobs/{uuid}/cancel`, `GET/DELETE /api/snippets/{uuid}`, `GET /api/media/{uuid}/transcripts`, `PUT /api/tracks/{uuid}/transcript`); the browser references 9 of them.
+Service API: 16 routes (`GET /api/health`, `GET /api/status`, `GET/PUT /api/state`, `POST /api/restore/preview`, `POST /api/restore/commit`, `POST /api/learner/operations`, `POST /api/jobs`, `POST /api/artifacts/cleanup`, `POST /api/language/morphology`, `POST /api/language/gloss`, `POST /api/export/anki`, `GET /api/jobs/{uuid}`, `POST /api/jobs/{uuid}/cancel`, `GET/DELETE /api/snippets/{uuid}`, `GET /api/media/{uuid}/transcripts`, `PUT /api/tracks/{uuid}/transcript`); the browser references 10 of them.
 
 Persistence: 15 model functions autosave to the local service when enabled; 3 mark browser-only edits as unsaved.
 

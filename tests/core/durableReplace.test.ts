@@ -53,7 +53,7 @@ describe('lt-04i durable active/audit boundary', () => {
       db.saveSnapshot(fixture().snapshot()); const value = db.loadSnapshot(); db.close();
       const changed = { ...value, learnerAudit: { ...value.learnerAudit, version: 2 } };
       const raw = new DatabaseSync(file);
-      raw.exec('DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; UPDATE lingotorte_schema SET schema_version=11;');
+      raw.exec('DROP TABLE managed_media_blob; DELETE FROM schema_migration WHERE version=14; DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; UPDATE lingotorte_schema SET schema_version=11;');
       raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 11, fault === 'corrupt-json' ? '{bad-json' : JSON.stringify(changed), '2026-06-21T12:00:00.000Z'); raw.close();
       expect(() => openShadowed(file)).toThrow(/audit|snapshot/i);
       const check = new DatabaseSync(file);
@@ -84,7 +84,7 @@ describe('lt-04i durable active/audit boundary', () => {
     const store = fixture(); const original = store.snapshot(); const first = openShadowed(file); first.saveSnapshot(store.snapshot()); first.close();
     const raw = new DatabaseSync(file);
     const legacy = { ...original, learnerAudit: undefined, importJobEvents: [...original.importJobEvents, { id: 'synthetic-job-event', jobId: 'synthetic-job', level: 'info', message: 'synthetic', createdAt: '2026-06-21T12:00:00.000Z' }] };
-    raw.exec('DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
+    raw.exec('DROP TABLE managed_media_blob; DELETE FROM schema_migration WHERE version=14; DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8; DELETE FROM review_event; DELETE FROM practice_attempt;');
     raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 8, JSON.stringify(legacy), '2026-06-21T12:00:00.000Z'); raw.close();
     try {
       for (let i = 0; i < 2; i++) {
@@ -95,7 +95,7 @@ describe('lt-04i durable active/audit boundary', () => {
           expect(snapshot.reviewEvents).toEqual(original.reviewEvents); expect(snapshot.practiceAttempts).toEqual(original.practiceAttempts);
           expect(snapshot.importJobEvents).toEqual(legacy.importJobEvents);
           expect(snapshot.subtitleTracks).toEqual(original.subtitleTracks);
-          expect(db.listMigrations()).toHaveLength(13); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
+          expect(db.listMigrations()).toHaveLength(14); expect(db.listAuditReviewEvents()).toEqual(original.reviewEvents);
         } finally { db.close(); }
       }
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -104,7 +104,7 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-bad-v8-')); const file = join(root, 'state.db'); const store = fixture();
     const original = store.snapshot(); const first = openShadowed(file); first.saveSnapshot(store.snapshot()); first.close();
     let raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
+    raw.exec('DROP TABLE managed_media_blob; DELETE FROM schema_migration WHERE version=14; DROP TABLE learner_operation_state; DROP TABLE learner_operation_receipt; DROP TABLE operation_owned_row; DELETE FROM schema_migration WHERE version=13; ALTER TABLE legacy_snapshot_json RENAME TO lingotorte_snapshots; DELETE FROM schema_migration WHERE version=12; DROP TABLE durable_state; DELETE FROM schema_migration WHERE version=11; ALTER TABLE saved_item DROP COLUMN meaning_source_json; DELETE FROM schema_migration WHERE version=10; DROP TABLE active_review_event; DROP TABLE active_practice_attempt; DROP TABLE learner_audit_format; DELETE FROM schema_migration WHERE version=9; UPDATE lingotorte_schema SET schema_version=8;');
     const legacy = { ...original, learnerAudit: undefined, reviewEvents: original.reviewEvents.map(e => ({ ...e, rating: 'again' })) };
     raw.prepare('INSERT INTO lingotorte_snapshots VALUES (?, ?, ?, ?)').run('default', 8, JSON.stringify(legacy), '2026-06-21T12:00:00.000Z'); raw.close();
     try {
@@ -121,9 +121,9 @@ describe('lt-04i durable active/audit boundary', () => {
     const root = await mkdtemp(join(tmpdir(), 'lt-04i-ledger-')); const file = join(root, 'state.db');
     const first = openShadowed(file); first.close();
     try {
-      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (14, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
+      let raw = new DatabaseSync(file); raw.prepare("INSERT INTO schema_migration VALUES (15, 'future', 'synthetic', 'synthetic', 'applied')").run(); raw.close();
       expect(() => openShadowed(file)).toThrow(/ledger|future/);
-      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=14'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
+      raw = new DatabaseSync(file); raw.exec('DELETE FROM schema_migration WHERE version=15'); const checksum = (raw.prepare('SELECT checksum FROM schema_migration WHERE version=1').get() as { checksum: string }).checksum; raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run('bad'); raw.close();
       expect(() => openShadowed(file)).toThrow(/ledger/);
       raw = new DatabaseSync(file); raw.prepare('UPDATE schema_migration SET checksum=? WHERE version=1').run(checksum); raw.exec('DELETE FROM learner_audit_format'); raw.close();
       const opened = openShadowed(file); try { expect(() => opened.loadSnapshot()).toThrow(/initialized/); } finally { opened.close(); }

@@ -433,8 +433,8 @@ describe('lt-192.3 server learner operations', () => {
     const { file, f } = await seededFile();
     const db = SqliteLocalPersistence.open(file);
     try {
-      expect(db.status().schemaVersion).toBe(13);
-      expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+      expect(db.status().schemaVersion).toBe(14);
+      expect(db.listMigrations().map(m => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       const { state, revision, operations } = db.loadLearnerStateWithOperations();
       expect(operations.protectionActive).toBe(false);
       // Before any operation, a document save may still create vocabulary rows (historical contract, unpaired import).

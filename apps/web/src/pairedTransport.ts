@@ -12,6 +12,8 @@ export type PairedTransport = Readonly<{
 }>;
 type Pair = { transport: PairedTransport; clear(): void };
 const pairs = new WeakMap<object, Pair>();
+/** lt-192.4: the only path sent with `credentials: 'same-origin'` (M1 mint / M2 revoke of the app's media cookie). */
+export const MEDIA_SESSION_PATH = '/api/media/session';
 
 export function exactServiceOrigin(value: string, pageOrigin?: string): string {
   const selected = value === '/' ? pageOrigin ?? globalThis.location?.origin ?? globalThis.window?.location.origin : value;
@@ -39,12 +41,16 @@ export function pairTransport(owner: object, selected: string, capability: strin
     onInvalidate(callback: () => void) { assertCurrent(); invalidations.add(callback); return () => invalidations.delete(callback); },
     async request(path: string, init: RequestInit = {}, fetchImpl: typeof fetch = fetch) {
       assertCurrent();
-      if (!/^\/api\/(?:status|state|learner\/operations|restore\/(?:preview|commit)|jobs(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|snippets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcripts|tracks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcript|artifacts\/cleanup|language\/(?:morphology|gloss)|export\/anki)$/.test(path)) throw new TypeError('Invalid local service API path.');
+      if (!/^\/api\/(?:status|state|learner\/operations|restore\/(?:preview|commit)|jobs(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|snippets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:transcripts|storage)|media\/session|tracks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/transcript|artifacts\/cleanup|language\/(?:morphology|gloss)|export\/anki)$/.test(path)) throw new TypeError('Invalid local service API path.');
+      // lt-192.4: the media cookie is minted/revoked only in the exact same-origin profile, so a cookie is never sent
+      // to (or set by) another origin. The transport decides credentials from the path; callers cannot widen them.
+      const mediaSession = path === MEDIA_SESSION_PATH;
+      if (mediaSession && origin !== globalThis.location?.origin) throw new TypeError('Media session requests need the exact same-origin service profile.');
       const headers = new Headers(init.headers);
       headers.set('authorization', `Bearer ${secret}`);
       if (init.body !== undefined && init.body !== null) headers.set('content-type', 'application/json');
       let response: Response;
-      try { response = await fetchImpl(`${origin}${path}`, { ...init, headers, credentials: 'omit', redirect: 'error', mode: 'cors' }); }
+      try { response = await fetchImpl(`${origin}${path}`, { ...init, headers, credentials: mediaSession ? 'same-origin' : 'omit', redirect: 'error', mode: 'cors' }); }
       catch { assertCurrent(); throw new Error('Local service unreachable. Request failed.'); }
       assertCurrent();
       if (response.status === 401) { clearPairing(owner); onUnauthorized(); throw new PairingRequiredError(); }

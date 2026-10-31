@@ -2,6 +2,8 @@
 
 Status: **reviewed design, revision 2; independent SPEC/QUALITY PASS (`deleg_b59d225b/task-2`) after correction of the initial FAIL. Not implemented.** Base `80b1e20ba1d687c51f1ac560fcfec1ac3527ad72`, branch `work/lt-zt0-media-access-design`. Authority: the `lt-192` SCOPE EXTENSION comment (2026-10-30 16:11, parent-recorded interpretation of Janusz's "Please proceed") authorises `lt-zt0` **design only**. This note grants nothing to D (`lt-192.4`) or E (`lt-192.5`): no streaming/upload code, no Compose/Tailscale/network change, no pairing change, no real state or media. Parent/operator owns publication and closure. Design acceptance does not approve the proposed cookie: its separate owner security-contract decision and the D/E implementation/configuration gates remain open.
 
+Implementation update (2026-10-30): the D read-only playback part (M1–M4, §5.1–§5.6) exists as an **implementation candidate qualified with synthetic media only** on `work/lt-192-4-server-playback`, pending independent review; see [`docs/dev/lt-192.4-server-playback-result.md`](../dev/lt-192.4-server-playback-result.md). It is not accepted: the actual iPad rows, B1–B5 and E (uploads) remain open. The design text below is unchanged.
+
 Evidence labels: **[src]** read from source at the base commit (`path:line`). **[doc]** official public documentation or standard (URL given). **[decision]** recorded owner decision. **[rec]** this note's recommendation. **[unverified]** a claim that needs runtime or owner evidence before anyone relies on it. Nothing here was executed against the application.
 
 ## 1. Problem and constraints

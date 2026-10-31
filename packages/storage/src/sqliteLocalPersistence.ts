@@ -43,7 +43,7 @@ import {
   reconcileOperationOwned, type LearnerOperationIdentity, type LearnerOperationReceipt, type LearnerOperationRequest, type OperationOwnedCollection,
 } from './learnerOperations.ts';
 
-const CURRENT_SCHEMA_VERSION = 13;
+const CURRENT_SCHEMA_VERSION = 14;
 const SNAPSHOT_KEY = 'default';
 
 export class SnapshotRevisionConflictError extends Error {
@@ -444,6 +444,20 @@ const LEARNER_OPERATIONS_SQL = `
     PRIMARY KEY (collection, row_id)
   );
   INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 13)
+    ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
+`.trim();
+
+// lt-192.4 (design lt-zt0 §5.1): server-owned ready table for content-addressed managed media blobs. Additive only;
+// migrations 1-13 and every existing table stay unchanged. Learner-state saves, restore and export never touch it.
+const MANAGED_MEDIA_BLOB_SQL = `
+  CREATE TABLE managed_media_blob (
+    sha256 TEXT PRIMARY KEY CHECK (length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+    size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+    mime_type TEXT NOT NULL CHECK (mime_type IN ('video/mp4','video/webm','video/x-matroska','application/octet-stream')),
+    probe_json TEXT NOT NULL DEFAULT '{}',
+    stored_at TEXT NOT NULL
+  );
+  INSERT INTO lingotorte_schema (id, schema_version) VALUES (1, 14)
     ON CONFLICT(id) DO UPDATE SET schema_version = excluded.schema_version;
 `.trim();
 
@@ -903,7 +917,12 @@ const MIGRATIONS: readonly MigrationDefinition[] = [
   { version: 11, name: 'durable_state_revision', sql: DURABLE_STATE_SQL, checksum: migrationChecksum(DURABLE_STATE_SQL) },
   { version: 12, name: 'retire_snapshot_blob', sql: RETIRE_SNAPSHOT_BLOB_SQL, checksum: migrationChecksum(RETIRE_SNAPSHOT_BLOB_SQL) },
   { version: 13, name: 'learner_operations', sql: LEARNER_OPERATIONS_SQL, checksum: migrationChecksum(LEARNER_OPERATIONS_SQL) },
+  { version: 14, name: 'managed_media_blob', sql: MANAGED_MEDIA_BLOB_SQL, checksum: migrationChecksum(MANAGED_MEDIA_BLOB_SQL) },
 ];
+
+/** lt-192.4: one ready managed blob (server-owned; never part of learner state, restore or export). */
+export type ManagedMimeType = 'video/mp4' | 'video/webm' | 'video/x-matroska' | 'application/octet-stream';
+export type ManagedBlobRow = Readonly<{ sha256: string; sizeBytes: number; mimeType: ManagedMimeType }>;
 
 /** lt-192.3: the transaction context handed to an operation's apply callback. */
 export type LearnerOperationContext = Readonly<{
@@ -1826,6 +1845,19 @@ export class SqliteLocalPersistence {
   /** Learner state (everything except the per-media transcript bundles) and its revision, read in one transaction. */
   loadLearnerState(): { state: LearnerStateSnapshot; revision: string } {
     return this.read(() => ({ state: withoutTranscripts(this.loadSnapshotFromTables(false)), revision: this.currentRevision() }));
+  }
+
+  /**
+   * lt-192.4: the ready managed blob bound to a media asset through `contentSha256` (`sha256:<hex>`).
+   * `undefined` = unknown media id; `null` = no ready blob row. One read-only statement; no effects.
+   */
+  managedBlobForMedia(mediaId: string): ManagedBlobRow | null | undefined {
+    const row = this.db.prepare(`SELECT b.sha256 AS sha256, b.size_bytes AS size_bytes, b.mime_type AS mime_type
+      FROM media_asset a LEFT JOIN managed_media_blob b ON a.content_sha256 = 'sha256:' || b.sha256 WHERE a.id = ? LIMIT 1`)
+      .get(mediaId) as { sha256: string | null; size_bytes: number | null; mime_type: string | null } | undefined;
+    if (row === undefined) return undefined;
+    if (row.sha256 === null || row.size_bytes === null || row.mime_type === null) return null;
+    return { sha256: row.sha256, sizeBytes: row.size_bytes, mimeType: row.mime_type as ManagedMimeType };
   }
 
   /** Every transcript bundle of one media, keyed by track id; tracks of other media are never read. */
