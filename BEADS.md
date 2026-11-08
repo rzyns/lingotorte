@@ -43,7 +43,7 @@ The dependency graph is intentionally not a single serial chain. The original re
 
 ## Canonical store and commands
 
-The canonical store is **this primary checkout's `.beads/`**, currently `C:/Users/jmdzi/workspace/lingotorte/.beads/`, using embedded Dolt with installed `bd 1.3.1`. No database server is needed. Never initialize a second competing store in a development worktree.
+The canonical store is **this primary checkout's `.beads/`**, currently `C:/Users/jmdzi/workspace/lingotorte/.beads/`, using Dolt in per-project server mode (since 2026-11-08; data in `.beads/dolt/`, `dolt_mode: server` in `.beads/metadata.json`). `bd` auto-starts a local `dolt sql-server` on the first command, which needs the Dolt CLI 2.6 or newer on PATH; the server is local only and adds no sync remote. Server mode accepts concurrent writers, so parallel agents may each claim (`--claim`) and update their own issues. The old `.beads/embeddeddolt/` copy is frozen and no longer read. Never initialize a second competing store in a development worktree.
 
 Ordinary terminals with Scoop shims on PATH:
 
