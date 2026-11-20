@@ -9,12 +9,13 @@ export class AdmissionError extends Error {
   readonly status: number;
   constructor(status: number, message = 'Request rejected.') { super(message); this.status = status; }
 }
+/** One exact serialized `http:` or `https:` origin (lt-192.4 HTTPS prerequisite); every alias spelling is refused. */
 export function canonicalOrigin(value: string): string {
-  if (!/^http:\/\/[^/?#@\\\s]+$/.test(value)) throw new TypeError('Invalid exact HTTP origin configuration.');
+  if (!/^https?:\/\/[^/?#@\\\s]+$/.test(value)) throw new TypeError('Invalid exact HTTP(S) origin configuration.');
   let url: URL;
-  try { url = new URL(value); } catch { throw new TypeError('Invalid exact HTTP origin configuration.'); }
+  try { url = new URL(value); } catch { throw new TypeError('Invalid exact HTTP(S) origin configuration.'); }
   const host = url.hostname;
-  if (url.origin !== value || host.endsWith('.') || !host || host.includes('*')) throw new TypeError('Noncanonical HTTP origin.');
+  if (url.origin !== value || host.endsWith('.') || !host || host.includes('*')) throw new TypeError('Noncanonical HTTP(S) origin.');
   if (host.startsWith('[')) {
     if (isIP(host.slice(1, -1)) !== 6) throw new TypeError('Invalid IPv6 origin.');
   } else if (isIP(host) !== 4 && !/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(host)) {
@@ -33,21 +34,48 @@ export function canonicalAuthority(value: string): string {
 }
 export type AdmissionPolicy = Readonly<{
   authorities: readonly string[];
+  /** lt-192.4 HTTPS prerequisite: each admitted public Host authority names exactly one configured public origin. */
+  originByAuthority: ReadonlyMap<string, string>;
   origins: readonly string[];
   healthAuthority?: string;
   privateNetworkOrigins?: readonly string[];
   /** lt-192.4: M1-M4 exist only when a managed library is configured; otherwise those paths stay 404. */
   managedMedia?: boolean;
 }>;
+/**
+ * Host authorities under which a request reaches one public origin. The Host field carries no scheme, so the scheme
+ * is never guessed from the request: a configuration where one authority could mean two origins is refused instead.
+ * `canonicalAuthority` keeps folding Host `x:80` to `x` (existing HTTP behaviour); an https default-port origin is
+ * reached by Host `x` (what browsers send) and by the explicit native spelling `x:443`.
+ */
+function publicAuthorities(origin: string): string[] {
+  const url = new URL(origin);
+  if (url.protocol === 'http:') return [url.host];
+  if (url.port === '80') throw new TypeError('An https origin on port 80 is ambiguous with the http default port.');
+  return url.port ? [url.host] : [url.host, `${url.host}:443`];
+}
 export function freezePolicy(origins: readonly string[], uiOrigins: readonly string[], healthAuthority?: string, pna: readonly string[] = [], options: { managedMedia?: boolean } = {}): AdmissionPolicy {
   if (!origins.length || !uiOrigins.length) throw new TypeError('Exact origins must be nonempty.');
   const publicOrigins = origins.map(canonicalOrigin);
   const allowedOrigins = uiOrigins.map(canonicalOrigin);
   if (pna.some(origin => !allowedOrigins.includes(canonicalOrigin(origin)))) throw new TypeError('Private-network origin must be explicitly allowed.');
-  return Object.freeze({ authorities: Object.freeze(publicOrigins.map(origin => new URL(origin).host)),
+  const originByAuthority = new Map<string, string>();
+  for (const origin of publicOrigins) {
+    for (const authority of publicAuthorities(origin)) {
+      const existing = originByAuthority.get(authority);
+      if (existing !== undefined && existing !== origin) throw new TypeError('Two public origins share one Host authority; the request scheme would be ambiguous.');
+      originByAuthority.set(authority, origin);
+    }
+  }
+  return Object.freeze({ authorities: Object.freeze([...originByAuthority.keys()]), originByAuthority: readonlyMap(originByAuthority),
     origins: Object.freeze(allowedOrigins), privateNetworkOrigins: Object.freeze([...pna]),
     ...(healthAuthority ? { healthAuthority: canonicalAuthority(healthAuthority) } : {}),
     ...(options.managedMedia ? { managedMedia: true } : {}) });
+}
+function readonlyMap<K, V>(source: Map<K, V>): ReadonlyMap<K, V> {
+  const copy = new Map(source);
+  return Object.freeze({ get: (key: K) => copy.get(key), has: (key: K) => copy.has(key), get size() { return copy.size; }, forEach: copy.forEach.bind(copy),
+    keys: () => copy.keys(), values: () => copy.values(), entries: () => copy.entries(), [Symbol.iterator]: () => copy[Symbol.iterator]() }) as ReadonlyMap<K, V>;
 }
 export function rawHeaders(request: IncomingMessage): Map<string, string[]> {
   const fields = new Map<string, string[]>();
@@ -91,7 +119,8 @@ export function routeMethods(path: string, managedMedia = false): readonly strin
   }
   return undefined;
 }
-export type AdmittedRequest = Readonly<{ path: string; body?: Record<string, unknown>; preflight: boolean; credential?: 'bearer' | 'media-cookie' }>;
+/** `publicOrigin` is the configured origin selected by the validated Host (absent only for the health authority). */
+export type AdmittedRequest = Readonly<{ path: string; body?: Record<string, unknown>; preflight: boolean; credential?: 'bearer' | 'media-cookie'; publicOrigin?: string }>;
 /** lt-192.4: the media cookie check, injected by the server only when a managed library is configured. */
 export type MediaCookieChecker = Readonly<{ check(cookieHeader: string | undefined): 'absent' | 'valid' | 'invalid' }>;
 
@@ -113,6 +142,8 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   if (!/^\/api\/[A-Za-z0-9/-]+$/.test(path) || /\/\//.test(path) || path.includes('/../') || path.includes('/./')) throw new AdmissionError(400);
   const health = path === '/api/health' && request.method === 'GET';
   if (!policy.authorities.includes(host) && !(health && host === policy.healthAuthority)) throw new AdmissionError(403);
+  // Only the validated Host selects the public origin (and so its scheme); Forwarded/X-Forwarded-*/Tailscale-* never do.
+  const publicOrigin = policy.originByAuthority.get(host);
   const origin = fields.get('origin')?.[0];
   if (origin !== undefined && !policy.origins.includes(origin)) throw new AdmissionError(403);
   response.setHeader('cache-control', 'no-store');
@@ -123,8 +154,9 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   if (method !== 'OPTIONS' && !methods.includes(method)) {
     response.setHeader('allow', [...methods, 'OPTIONS'].join(', ')); throw new AdmissionError(405);
   }
-  // lt-192.4: M1/M2 set or expire the app's own cookie; a present Origin must be this request's own exact origin.
-  if (path === MEDIA_SESSION_ROUTE && origin !== undefined && origin !== `http://${host}`) throw new AdmissionError(403);
+  // lt-192.4: M1/M2 set or expire the app's own cookie; a present Origin must be this request's own exact public origin
+  // (same scheme, host and port), so another configured origin can never mint or expire it across schemes.
+  if (path === MEDIA_SESSION_ROUTE && origin !== undefined && origin !== publicOrigin) throw new AdmissionError(403);
   let credential: AdmittedRequest['credential'];
   const mediaContent = policy.managedMedia === true && (method === 'GET' || method === 'HEAD') && MEDIA_CONTENT_ROUTE.test(path);
   if (mediaContent) {
@@ -166,9 +198,9 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
     response.setHeader('access-control-allow-methods', requested);
     if (headers.length) response.setHeader('access-control-allow-headers', headers.join(', '));
     if (pna === 'true') response.setHeader('access-control-allow-private-network', 'true');
-    return { path, preflight: true };
+    return { path, preflight: true, ...(publicOrigin ? { publicOrigin } : {}) };
   }
-  if (!json) return { path, preflight: false, ...(credential ? { credential } : {}) };
+  if (!json) return { path, preflight: false, ...(credential ? { credential } : {}), ...(publicOrigin ? { publicOrigin } : {}) };
   const limit = ROUTE_BODY_LIMITS[path] ?? MAX_BODY_BYTES;
   if (Number(fields.get('content-length')?.[0] ?? 0) > limit) throw new AdmissionError(413);
   if (expectContinue) response.writeContinue();
@@ -178,7 +210,7 @@ export async function admit(request: IncomingMessage, response: ServerResponse, 
   catch { throw new AdmissionError(400); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new AdmissionError(400);
   if ((path.endsWith('/cancel') || path === '/api/artifacts/cleanup' || path === MEDIA_SESSION_ROUTE) && Object.keys(body).length) throw new AdmissionError(400);
-  return { path, body: body as Record<string, unknown>, preflight: false, ...(credential ? { credential } : {}) };
+  return { path, body: body as Record<string, unknown>, preflight: false, ...(credential ? { credential } : {}), ...(publicOrigin ? { publicOrigin } : {}) };
 }
 // lt-04k.1: bounded read that never destroys the request on overflow (an async-iterator throw would
 // destroy the IncomingMessage and its socket, resetting the connection before the 413 is delivered).

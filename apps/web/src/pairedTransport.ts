@@ -17,10 +17,11 @@ export const MEDIA_SESSION_PATH = '/api/media/session';
 
 export function exactServiceOrigin(value: string, pageOrigin?: string): string {
   const selected = value === '/' ? pageOrigin ?? globalThis.location?.origin ?? globalThis.window?.location.origin : value;
-  if (!selected || selected.trim() !== selected || /[\\\s?#]/.test(selected)) throw new TypeError('Select one exact HTTP service origin.');
+  if (!selected || selected.trim() !== selected || /[\\\s?#]/.test(selected)) throw new TypeError('Select one exact HTTP(S) service origin.');
   let url: URL;
-  try { url = new URL(selected); } catch { throw new TypeError('Select one exact HTTP service origin.'); }
-  if (url.protocol !== 'http:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new TypeError('Select one exact HTTP service origin (no credentials, path, query or fragment).');
+  try { url = new URL(selected); } catch { throw new TypeError('Select one exact HTTP(S) service origin.'); }
+  // lt-192.4 HTTPS prerequisite: an exact https: origin (an operator TLS front end) is as explicit as an http: one.
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new TypeError('Select one exact HTTP(S) service origin (no credentials, path, query or fragment).');
   if (selected !== url.origin && selected !== `${url.origin}/`) throw new TypeError('Service origin must use canonical spelling.');
   const host = url.hostname;
   if (host.endsWith('.') || host.includes('*') || (!host.startsWith('[') && !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(host))) throw new TypeError('Service hostname is invalid.');

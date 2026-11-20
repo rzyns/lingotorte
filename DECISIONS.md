@@ -330,6 +330,8 @@ Decided by Janusz on 2026-10-31, who selected the option "Approve the reviewed H
 
 The authenticity contract carries the matching amendment (§3, "Media content cookie"); its text is pending independent review with the implementation. Implementation: `lt-192.4`.
 
+**HTTPS-origin prerequisite (2026-10-31, candidate pending independent review).** Janusz approved an isolated synthetic HTTPS test route and the actual-iPad checklist for D's private qualification. Code now accepts exact `https:` public origins behind an operator TLS terminator (the service stays plain HTTP and never terminates TLS). The validated Host alone selects the configured origin; startup refuses a public set in which one Host authority could mean two schemes. `Secure` is derived per request from that origin, and M1/M2 require an `Origin`, when present, equal to it. Forwarded, `X-Forwarded-*` and `Tailscale-*` headers select nothing. Native direct mode stays HTTP-only. Evidence and limits: `docs/dev/lt-192.4-https-qualification.md`. This does not authorise or record any Tailscale, Serve, Funnel, ACL, firewall, certificate-trust or deployment change. B1–B5 and the actual-iPad rows stay open.
+
 ---
 
 ### 15. Browser qualification: desktop Chrome plus planned iPad browser use

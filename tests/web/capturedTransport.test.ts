@@ -24,7 +24,11 @@ function modelWithPair() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('captured memory-only transport', () => {
-  it.each(['http://127.1:5174','http://0177.0.0.1:5174','http://0x7f000001:5174','http://127.0.0.1:05174','http://user@127.0.0.1:5174','http://127.0.0.1:5174/path','http://127.0.0.1:5174?x=1','http://127.0.0.1:5174#x','http://*.local:5174','http://host.local.:5174','https://127.0.0.1:5174','file:///private','//evil.local'])('rejects deceptive destination %s before pairing or egress', bad => {
+  // lt-192.4 HTTPS prerequisite (owner-approved, docs/dev/lt-192.4-https-qualification.md): the canonical
+  // 'https://127.0.0.1:5174' left this list because an exact https: origin is now a valid explicit selection. Its
+  // deceptive https spellings (alias IPs, :443, userinfo, path, query, fragment, wss:) are rejected in
+  // tests/web/lt1924HttpsOrigin.test.ts; every other entry here is unchanged.
+  it.each(['http://127.1:5174','http://0177.0.0.1:5174','http://0x7f000001:5174','http://127.0.0.1:05174','http://user@127.0.0.1:5174','http://127.0.0.1:5174/path','http://127.0.0.1:5174?x=1','http://127.0.0.1:5174#x','http://*.local:5174','http://host.local.:5174','https://127.1:5174','file:///private','//evil.local'])('rejects deceptive destination %s before pairing or egress', bad => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     expect(() => pairTransport({}, bad, SYNTHETIC_CAPABILITY)).toThrow();
     expect(fetcher).not.toHaveBeenCalled();

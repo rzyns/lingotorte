@@ -1989,7 +1989,7 @@ controls:
     events: []
     source:
       path: apps/web/src/views/settings.ts
-      line: 214
+      line: 215
       snippet: const capabilityInput = document.createElement('input');
   - id: settings.local-service-remember-pairing
     scope: settings
@@ -2002,7 +2002,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/settings.ts
-      line: 225
+      line: 233
       snippet: const rememberCheckbox = document.createElement('input');
   - id: settings.forget-pairing
     scope: settings
@@ -2014,7 +2014,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/settings.ts
-      line: 248
+      line: 256
       snippet: const forget = document.createElement('button');
   - id: settings.connect-local-service
     scope: settings
@@ -2028,7 +2028,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/settings.ts
-      line: 262
+      line: 270
       snippet: const connectButton = document.createElement('button');
   - id: settings.disconnect-local-service
     scope: settings
@@ -2040,7 +2040,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/settings.ts
-      line: 275
+      line: 283
       snippet: const disconnect = document.createElement('button');
   - id: settings.save-state-now
     scope: settings
@@ -2056,7 +2056,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/settings.ts
-      line: 289
+      line: 297
       snippet: const saveButton = document.createElement('button');
   - id: settings.button
     scope: settings
@@ -2068,7 +2068,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/settings.ts
-      line: 309
+      line: 317
       snippet: const button = document.createElement('button');
   - id: settings.local-service-autosave
     scope: settings
@@ -2081,7 +2081,7 @@ controls:
       - change
     source:
       path: apps/web/src/views/settings.ts
-      line: 319
+      line: 327
       snippet: const autosaveCheckbox = document.createElement('input');
 keyboard:
   declared:
@@ -2273,14 +2273,14 @@ api:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 76
+        line: 104
         snippet: if (path === '/api/health' || path === '/api/status') return ['GET'];
     - path: /api/status
       methods:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 76
+        line: 104
         snippet: if (path === '/api/health' || path === '/api/status') return ['GET'];
     - path: /api/state
       methods:
@@ -2288,42 +2288,42 @@ api:
         - PUT
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 77
+        line: 105
         snippet: if (path === '/api/state') return ['GET', 'PUT'];
     - path: /api/restore/preview
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 78
+        line: 106
         snippet: if (path === '/api/restore/preview' || path === '/api/restore/commit') return […
     - path: /api/restore/commit
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 78
+        line: 106
         snippet: if (path === '/api/restore/preview' || path === '/api/restore/commit') return […
     - path: /api/learner/operations
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 79
+        line: 107
         snippet: if (path === '/api/learner/operations') return ['POST'];
     - path: /api/jobs
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 80
+        line: 108
         snippet: if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
     - path: /api/artifacts/cleanup
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 80
+        line: 108
         snippet: if (path === '/api/jobs' || path === '/api/artifacts/cleanup') return ['POST'];
     - path: /api/language/morphology
       methods:
@@ -2331,7 +2331,7 @@ api:
       bodyLimitBytes: 16384
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 81
+        line: 109
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/language/gloss
       methods:
@@ -2339,7 +2339,7 @@ api:
       bodyLimitBytes: 16384
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 81
+        line: 109
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/export/anki
       methods:
@@ -2347,21 +2347,21 @@ api:
       bodyLimitBytes: 4194304
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 81
+        line: 109
         snippet: if (path === '/api/language/morphology' || path === '/api/language/gloss' || pa…
     - path: /api/jobs/{uuid}
       methods:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 82
+        line: 110
         snippet: if (new RegExp(`^/api/jobs/${uuid}$`).test(path)) return ['GET'];
     - path: /api/jobs/{uuid}/cancel
       methods:
         - POST
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 83
+        line: 111
         snippet: if (new RegExp(`^/api/jobs/${uuid}/cancel$`).test(path)) return ['POST'];
     - path: /api/snippets/{uuid}
       methods:
@@ -2369,21 +2369,21 @@ api:
         - DELETE
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 84
+        line: 112
         snippet: if (new RegExp(`^/api/snippets/${uuid}$`).test(path)) return ['GET', 'DELETE'];
     - path: /api/media/{uuid}/transcripts
       methods:
         - GET
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 85
+        line: 113
         snippet: if (new RegExp(`^/api/media/${uuid}/transcripts$`).test(path)) return ['GET'];
     - path: /api/tracks/{uuid}/transcript
       methods:
         - PUT
       source:
         path: apps/local-service/src/requestAdmission.ts
-        line: 86
+        line: 114
         snippet: if (new RegExp(`^/api/tracks/${uuid}/transcript$`).test(path)) return ['PUT'];
   callers:
     - route: /api/export/anki

@@ -731,15 +731,15 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   // lt-192.4 (plan G3): library confinement (lexical and resolved, both directions) before any filesystem mutation.
   if (config.libraryDir !== undefined) assertLibraryPath(config.libraryDir, config);
   const managedMediaConfigured = config.libraryDir !== undefined;
-  // `Secure` follows the frozen public-origin scheme. canonicalOrigin admits only http: today, so this is false
-  // until a separately authorised HTTPS profile exists (plan G5); mediaSessionCookie unit-tests both forms.
-  const secureCookie = (config.publicOrigins?.[0] ?? '').startsWith('https:');
   if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) throw new TypeError('Invalid service port.');
   const hostname = config.serviceHostname ?? config.host;
   const displayHostname = hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
   canonicalOrigin(`http://${displayHostname}`);
   const uiOrigins = config.uiOrigins ?? ['http://127.0.0.1:5173'];
   uiOrigins.forEach(canonicalOrigin);
+  // lt-192.4 HTTPS prerequisite: this service never terminates TLS. An https: origin exists only in the explicit
+  // public-origin profile behind an operator TLS terminator; native direct mode stays exact HTTP.
+  if (!config.publicOrigins && uiOrigins.some(origin => origin.startsWith('https:'))) throw new TypeError('HTTPS origins require the explicit public-origin profile behind TLS termination.');
   if (config.publicOrigins && (!config.publicOrigins.length || config.port === 0)) throw new TypeError('Docker requires fixed port and public origins.');
   config.publicOrigins?.forEach(canonicalOrigin);
   if (config.publicOrigins && (!config.uiOrigins ||
@@ -764,7 +764,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   // lt-04k.1: denial sockets lingering to discard unread bodies; destroyed on close() so shutdown never waits on them.
   const lingeringSockets = new Set<Socket>();
   const denialLinger = Object.freeze({ ms: DENIAL_LINGER_MS, bytes: DENIAL_LINGER_BYTES, headerStageBytes: DENIAL_LINGER_HEADER_STAGE_BYTES, sockets: lingeringSockets });
-  let dispatch: ((request: IncomingMessage, response: ServerResponse, path: string, body?: Record<string, unknown>) => Promise<void>) | undefined;
+  let dispatch: ((request: IncomingMessage, response: ServerResponse, path: string, body?: Record<string, unknown>, publicOrigin?: string) => Promise<void>) | undefined;
   // lt-192.4: in-memory media cookie values; rotate with the process (and so with the bearer).
   const mediaSessions: MediaSessions | undefined = managedMediaConfigured ? createMediaSessions(runtime.managedMedia?.sessionCap) : undefined;
   let managedMedia: ManagedMedia | undefined;
@@ -775,7 +775,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       // Revalidate after awaited body/receiver work at the dispatch boundary.
       if (!admissionReady || !await deliveryReady() || !admissionReady) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
       if (admitted.preflight) { response.writeHead(204); response.end(); return; }
-      await dispatch(request, response, admitted.path, admitted.body);
+      await dispatch(request, response, admitted.path, admitted.body, admitted.publicOrigin);
     } catch (error) { if (!response.headersSent) deny(response, error, denialLinger); else response.destroy(); }
   };
   const server: Server = createServer((request, response) => { void boundary(request, response); });
@@ -1070,7 +1070,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   morphology.warm();
   const gloss = makeGlossService(runtime.gloss);
   gloss.warm();
-  dispatch = async (request, response, path, admittedBody) => {
+  dispatch = async (request, response, path, admittedBody, publicOrigin) => {
     try {
 
       if (request.method === 'GET' && path === '/api/health') {
@@ -1088,6 +1088,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         // M1 rotates: the presented value (if any) is revoked before the new one is minted, so a confirmed M2 of the
         // latest value also leaves every earlier value of this browser invalid. A client already gone gets no mint.
         if (request.method === 'POST' && response.destroyed) return;
+        // `Secure` follows the scheme of the public origin that this request's validated Host selected (never the first
+        // configured origin, never Forwarded/X-Forwarded-Proto): an https Host mints a Secure cookie, an http Host not.
+        const secureCookie = publicOrigin?.startsWith('https:') === true;
         const cookie = request.method === 'POST' ? (mediaSessions.revoke(request.headers.cookie), mediaSessionCookie(mediaSessions.mint(), secureCookie))
           : (mediaSessions.revoke(request.headers.cookie), mediaSessionCookie(null, secureCookie));
         response.writeHead(204, { 'set-cookie': cookie, 'cache-control': 'no-store' });

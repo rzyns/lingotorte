@@ -205,6 +205,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     capabilityInput.value = '';
     void forgetRememberedPairing(model);
     setLocalServiceBaseUrl(model, urlInput.value);
+    refreshTransportWarning();
   });
   urlLabel.appendChild(urlInput);
   servicePanel.appendChild(urlLabel);
@@ -218,7 +219,14 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   capabilityLabel.appendChild(capabilityInput);
   servicePanel.appendChild(capabilityLabel);
   const warning = document.createElement('p');
-  warning.textContent = 'Pair only with the exact selected origin on an operator-trusted private network. HTTP sends capability and learner data unencrypted; no public internet use.' + (pairingIsRemembered(model) ? '' : ' Reload requires fresh pairing.');
+  // lt-192.4 HTTPS prerequisite: the unencrypted-transport sentence is true only for an http: origin.
+  const refreshTransportWarning = () => {
+    const httpsOrigin = urlInput.value.startsWith('https://');
+    warning.textContent = 'Pair only with the exact selected origin on an operator-trusted private network. ' +
+      (httpsOrigin ? 'HTTPS encrypts only up to the operator\'s TLS front end; no public internet use.' : 'HTTP sends capability and learner data unencrypted; no public internet use.') +
+      (pairingIsRemembered(model) ? '' : ' Reload requires fresh pairing.');
+  };
+  refreshTransportWarning();
   servicePanel.appendChild(warning);
   const rememberLabel = document.createElement('label');
   rememberLabel.htmlFor = 'local-service-remember-pairing';
@@ -267,7 +275,7 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     const capability = capabilityInput.value;
     capabilityInput.value = '';
     try { pairLocalService(model, capability, urlInput.value); noteExplicitPairing(model, capability, model.localService.baseUrl); }
-    catch { model.localService.lastMessage = 'Select an exact HTTP origin and enter its private session capability.'; rerenderApp(model); return; }
+    catch { model.localService.lastMessage = 'Select an exact HTTP or HTTPS origin and enter its private session capability.'; rerenderApp(model); return; }
     void connectLocalService(model, model.localService.baseUrl).then(() => rerenderApp(model));
     rerenderApp(model);
   });

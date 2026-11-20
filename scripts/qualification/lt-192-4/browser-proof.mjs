@@ -13,19 +13,37 @@
 //   docker create --name lt1924-proof --init --network none --shm-size 1g -e LT1924_PROOF_MEDIA_DIR=/tmp/lt1924-media \
 //     --entrypoint node lingotorte:lt1924-e2e scripts/qualification/lt-192-4/browser-proof.mjs
 //   docker cp <media dir> lt1924-proof:/tmp/lt1924-media && docker start -a lt1924-proof
+//
+// HTTPS mode (lt-192.4 HTTPS-origin prerequisite, docs/dev/lt-192.4-https-qualification.md): set LT1924_PROOF_TLS_DIR
+// to a directory holding an EPHEMERAL test-only `cert.pem`/`key.pem` for DNS:lt-https.test, its base64 SHA-256 SPKI
+// pin in `spki.txt`, and a second unpinned `untrusted-cert.pem`/`untrusted-key.pem`, all generated with the openssl CLI
+// OUTSIDE the repository and copied in (docker cp). The app origin then becomes https://lt-https.test behind a small
+// stdlib TLS reverse proxy (tls-proxy.mjs) in front of the same Vite origin; Chromium maps the name to loopback and
+// ignores certificate errors ONLY for the pinned SPKI (never ignoreHTTPSErrors). This is synthetic TLS evidence, NOT
+// trusted-certificate, Tailscale Serve or iPad evidence. Without the variable the proof is the unchanged HTTP proof.
 import { createServer as createViteServer } from '/app/node_modules/vite/dist/node/index.js';
 import { createServer as createHttpServer, request as httpRequest } from 'node:http';
+import { createServer as createHttpsServer, request as httpsRequest } from 'node:https';
 import { chmod, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { chromium } from '@playwright/test';
+import { startTlsProxy, SPOOFED_PROXY_HEADERS } from './tls-proxy.mjs';
 
-const SVC = 18461, DEV = 18462, OTHER = 18463;
-const ORIGIN = `http://127.0.0.1:${DEV}`;
+const SVC = 18461, DEV = 18462, OTHER = 18463, TLS_FALLBACK = 18464, UNTRUSTED = 18466;
+const TLS_DIR = process.env.LT1924_PROOF_TLS_DIR ?? '';
+const TLS = TLS_DIR ? { cert: await readFile(`${TLS_DIR}/cert.pem`), key: await readFile(`${TLS_DIR}/key.pem`), spki: (await readFile(`${TLS_DIR}/spki.txt`, 'utf8')).trim(),
+  untrusted: { cert: await readFile(`${TLS_DIR}/untrusted-cert.pem`), key: await readFile(`${TLS_DIR}/untrusted-key.pem`) } } : null;
+const TLS_HOST = 'lt-https.test';
+// The default https port (what Tailscale Serve uses) exercises Host without a port; containers normally allow binding it.
+const tlsProxy = TLS ? await startTlsProxy({ cert: TLS.cert, key: TLS.key, ports: [443, TLS_FALLBACK], upstreamPort: DEV }) : null;
+const ORIGIN = TLS ? `https://${TLS_HOST}${tlsProxy.port === 443 ? '' : `:${tlsProxy.port}`}` : `http://127.0.0.1:${DEV}`;
+const ORIGIN_AUTHORITY = new URL(ORIGIN).host;
 const LAN_HOST = 'lan.test';
 const LAN_ORIGIN = `http://${LAN_HOST}:${DEV}`;
+const LAN_OTHER = TLS ? 18465 : OTHER;
 const ROOT = '/tmp/lt-192-4-proof';
 const LIBRARY = `${ROOT}/library`;
 const SHOTS = `${ROOT}/shots`;
@@ -41,7 +59,7 @@ const check = (name, ok, detail = {}) => { const row = { check: name, ok: Boolea
 const secrets = new Set();
 
 process.env.LINGOTORTE_WEB_HOST = '127.0.0.1';
-process.env.LINGOTORTE_WEB_ALLOWED_HOSTS = `127.0.0.1,${LAN_HOST}`;
+process.env.LINGOTORTE_WEB_ALLOWED_HOSTS = `127.0.0.1,${LAN_HOST}${TLS ? `,${TLS_HOST}` : ''}`;
 process.env.LINGOTORTE_PUBLIC_ORIGINS = `${ORIGIN},${LAN_ORIGIN}`;
 process.env.LINGOTORTE_API_PROXY_TARGET = `http://127.0.0.1:${SVC}`;
 const compiler = await createViteServer({ configFile: '/app/vite.config.ts', envFile: false, server: { middlewareMode: true, hmr: false }, logLevel: 'silent' });
@@ -69,8 +87,17 @@ await dev.listen();
 /** Direct request to the service (server oracle), Host = the public web authority; never leaves this process. */
 function direct(method, path, headers = {}, body) {
   return new Promise((resolve, reject) => {
-    const q = httpRequest({ hostname: '127.0.0.1', port: SVC, path, method, headers: { Host: `127.0.0.1:${DEV}`, ...headers } }, (r) => {
+    const q = httpRequest({ hostname: '127.0.0.1', port: SVC, path, method, headers: { Host: ORIGIN_AUTHORITY, ...headers } }, (r) => {
       const chunks = []; r.on('data', (c) => chunks.push(c)); r.on('end', () => resolve({ status: r.statusCode, headers: r.headers, body: Buffer.concat(chunks) }));
+    });
+    q.on('error', reject); q.end(body);
+  });
+}
+/** HTTPS mode only: a request through the TLS proxy with the pinned ephemeral certificate as the only trust anchor. */
+function viaTls(method, path, headers = {}, body) {
+  return new Promise((resolve, reject) => {
+    const q = httpsRequest({ hostname: '127.0.0.1', servername: TLS_HOST, port: tlsProxy.port, ca: TLS.cert, path, method, agent: false, headers: { Host: ORIGIN_AUTHORITY, ...headers } }, (r) => {
+      const chunks = []; r.on('data', (c) => chunks.push(c)); r.on('end', () => resolve({ status: r.statusCode, headers: r.headers, body: Buffer.concat(chunks), protocol: r.socket.getProtocol?.() ?? null }));
     });
     q.on('error', reject); q.end(body);
   });
@@ -100,8 +127,11 @@ const extra = async (name) => (MEDIA_DIR && existsSync(`${MEDIA_DIR}/${name}`) ?
 const evictBytes = await extra('synthetic-evict.webm');
 const restartBytes = await extra('synthetic-restart.webm');
 say({ media: { evictSha256: evictBytes ? sha256(evictBytes) : null, restartSha256: restartBytes ? sha256(restartBytes) : null, webmBytes: webm.length, webmSha256: sha256(webm), mp4Bytes: mp4?.length ?? null, mp4Sha256: mp4 ? sha256(mp4) : null, generated: Boolean(MEDIA_DIR) } });
+say({ mode: TLS ? { scheme: 'https', origin: ORIGIN, proxyPort: tlsProxy.port, certSha256: createHash('sha256').update(TLS.cert).digest('hex'), spkiPinned: true, ignoreHTTPSErrors: false,
+  proxyInjectedHeaderNames: Object.keys(SPOOFED_PROXY_HEADERS), label: 'synthetic ephemeral TLS; NOT trusted-certificate, Tailscale Serve, B1-B5 or iPad evidence' } : { scheme: 'http', origin: ORIGIN } });
 
-const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${LAN_HOST} 127.0.0.1`] });
+const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${LAN_HOST} 127.0.0.1${TLS ? `, MAP ${TLS_HOST} 127.0.0.1` : ''}`,
+  ...(TLS ? [`--ignore-certificate-errors-spki-list=${TLS.spki}`] : [])] });
 const context = await browser.newContext({ serviceWorkers: 'block' });
 const egress = [];
 const media = []; // M4 requests seen by the browser (no values recorded)
@@ -109,7 +139,7 @@ const sessionsCalls = [];
 context.on('request', async (r) => {
   const url = new URL(r.url());
   if (url.protocol === 'blob:' || url.protocol === 'data:') return;
-  if (![ORIGIN, LAN_ORIGIN, `http://127.0.0.1:${OTHER}`, `http://${LAN_HOST}:${OTHER}`].includes(url.origin)) egress.push(url.origin);
+  if (![ORIGIN, LAN_ORIGIN, `http://127.0.0.1:${OTHER}`, `http://${LAN_HOST}:${LAN_OTHER}`, `https://${TLS_HOST}:${OTHER}`, `https://${TLS_HOST}:${UNTRUSTED}`].includes(url.origin)) egress.push(url.origin);
   const headers = await r.allHeaders().catch(() => ({}));
   if (/^\/api\/media\/[0-9a-f-]{36}\/content$/.test(url.pathname)) media.push({ t: Date.now(), origin: url.origin, frame: new URL(r.frame()?.url() ?? 'about:blank').origin, method: r.method(), range: headers.range ?? null, cookie: /(^|;\s*)lt_media=/.test(headers.cookie ?? ''), authorization: 'authorization' in headers, site: headers['sec-fetch-site'] ?? null, request: r });
   if (url.pathname === '/api/media/session') sessionsCalls.push({ t: Date.now(), method: r.method(), cookie: /(^|;\s*)lt_media=/.test(headers.cookie ?? '') });
@@ -200,12 +230,28 @@ let exitCode = 0;
 try {
   page = await context.newPage();
   await page.goto(ORIGIN);
+  if (TLS) {
+    const secure = await page.evaluate(() => ({ protocol: location.protocol, isSecureContext: globalThis.isSecureContext }));
+    check('T0 HTTPS page loaded through the TLS proxy as a secure context (pinned ephemeral certificate only)', secure.protocol === 'https:' && secure.isSecureContext === true, secure);
+    // The SPKI pin is the only certificate exception: an unpinned self-signed certificate on the same name still fails.
+    const untrusted = createHttpsServer({ cert: TLS.untrusted.cert, key: TLS.untrusted.key }, (req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('untrusted'); });
+    await new Promise((resolve) => untrusted.listen(UNTRUSTED, '127.0.0.1', resolve));
+    const probe = await context.newPage();
+    const navigation = await probe.goto(`https://${TLS_HOST}:${UNTRUSTED}/`).then(() => 'loaded', (error) => String(error.message).match(/net::ERR_[A-Z_]+/)?.[0] ?? 'failed');
+    await probe.close(); await new Promise((resolve) => untrusted.close(resolve));
+    check('T0 an unpinned certificate is still refused by Chromium (no blanket certificate bypass)', /^net::ERR_CERT_/.test(navigation), { navigation });
+  }
 
   // --- P1 Pair: M1 204; attributes only; document.cookie lacks the value. ---
   const cookie1 = await pair(page);
-  check('P1 pair mints an HttpOnly SameSite=Strict /api/media/ session cookie', cookie1 && cookie1.httpOnly && cookie1.sameSite === 'Strict' && cookie1.path === '/api/media/' && cookie1.secure === false && cookie1.expires === -1,
+  check(`P1 pair mints an HttpOnly SameSite=Strict /api/media/ session cookie, ${TLS ? 'Secure (https origin)' : 'not Secure (http origin)'}`, cookie1 && cookie1.httpOnly && cookie1.sameSite === 'Strict' && cookie1.path === '/api/media/' && cookie1.secure === Boolean(TLS) && cookie1.expires === -1,
     { attributes: cookie1 ? { httpOnly: cookie1.httpOnly, sameSite: cookie1.sameSite, path: cookie1.path, secure: cookie1.secure, session: cookie1.expires === -1, domain: cookie1.domain } : null, serverSessions: observe().mediaSessions });
   check('P1 document.cookie never exposes lt_media', !(await page.evaluate(() => document.cookie)).includes('lt_media'));
+  if (TLS) {
+    await nav(page, 'Settings');
+    const warning = await page.locator('.local-service-panel').innerText();
+    check('T1 Settings states the HTTPS limit and no longer claims unencrypted HTTP for the https origin', /HTTPS encrypts only up to the operator's TLS front end/.test(warning) && !/HTTP sends capability and learner data unencrypted/.test(warning));
+  }
 
   // --- P12 local object URL: import plays locally and makes no M4 request. ---
   // Playwright refuses in-memory buffers over 50 MB, so the generated file is passed by its in-container path.
@@ -219,6 +265,29 @@ try {
   const webmBlob = await seedBlob(webm, 'video/webm');
   const m3 = JSON.parse((await direct('GET', `/api/media/${webmAsset.id}/storage`, bearer())).body.toString());
   check('setup: synthetic blob registered (test-only seed) and M3 complete', m3.state === 'complete' && m3.sizeBytes === webm.length, { state: m3.state });
+  if (TLS) {
+    // T2 Node HTTPS client through the same TLS proxy (pinned CA): the browser's Secure cookie works for HEAD and Range;
+    // forwarded/Tailscale-style headers injected by the proxy (and by this client) select nothing.
+    const browserCookie = { Cookie: `lt_media=${(await mediaCookie()).value}` };
+    const path = `/api/media/${webmAsset.id}/content`;
+    const head = await viaTls('HEAD', path, { ...browserCookie, Range: 'bytes=0-1' });
+    const ranged = await viaTls('GET', path, { ...browserCookie, Range: 'bytes=100-199', 'X-Forwarded-Proto': 'http' });
+    check('T2 through TLS: cookie HEAD 200 full length bodyless; GET Range 206 exact bytes', head.status === 200 && head.headers['content-length'] === String(webm.length) && head.body.length === 0 &&
+      ranged.status === 206 && ranged.headers['content-range'] === `bytes 100-199/${webm.length}` && ranged.body.equals(webm.subarray(100, 200)),
+    { head: head.status, headLength: head.headers['content-length'], ranged: ranged.status, contentRange: ranged.headers['content-range'], tls: ranged.protocol });
+    const before = await effectsSnapshot();
+    const json = { ...bearer(), 'Content-Type': 'application/json' };
+    const cross = await viaTls('POST', '/api/media/session', { ...json, Origin: LAN_ORIGIN }, '{}');
+    const crossBack = await direct('POST', '/api/media/session', { ...json, Host: `${LAN_HOST}:${DEV}`, Origin: ORIGIN, 'X-Forwarded-Proto': 'https', Forwarded: `proto=https;host=${ORIGIN_AUTHORITY}` }, '{}');
+    const unchanged = (await effectsSnapshot()) === before;
+    const spoofed = await viaTls('POST', '/api/media/session', { ...json, Origin: ORIGIN, 'X-Forwarded-Proto': 'http', Forwarded: 'proto=http', 'X-Forwarded-Host': `${LAN_HOST}:${DEV}` }, '{}');
+    const spoofedCookie = spoofed.headers['set-cookie']?.[0] ?? '';
+    const minted = /^lt_media=([^;]+)/.exec(spoofedCookie)?.[1]; if (minted) secrets.add(minted);
+    check('T3 cross-scheme M1 refused both ways (403, no Set-Cookie, zero effects); spoofed X-Forwarded-Proto: http cannot drop Secure on the https Host',
+      cross.status === 403 && !cross.headers['set-cookie'] && crossBack.status === 403 && !crossBack.headers['set-cookie'] && unchanged && spoofed.status === 204 && /; HttpOnly; SameSite=Strict; Secure$/.test(spoofedCookie),
+    { httpsHostHttpOrigin: cross.status, httpHostHttpsOrigin: crossBack.status, zeroEffects: unchanged, spoofedStatus: spoofed.status, spoofedSecure: /; Secure$/.test(spoofedCookie) });
+    if (minted) await viaTls('DELETE', '/api/media/session', { ...bearer(), Cookie: `lt_media=${minted}`, Origin: ORIGIN });
+  }
 
   const extras = {};
   for (const [key, bytes] of [['evict', evictBytes], ['restart', restartBytes]]) {
@@ -518,21 +587,28 @@ try {
 
   // --- P10 Same-site page on another port embeds <video src=M4>. ---
   await pair(page);
-  const other = createHttpServer((req, res) => {
+  // HTTPS mode: the same-site page on another port is https://lt-https.test:<OTHER> (same scheme and host, so schemeful
+  // same-site; the Secure SameSite=Strict cookie is sent); HTTP mode keeps the original loopback/LAN embed pages.
+  const embedHtml = (src) => `<!doctype html><video muted autoplay src="${src}"></video>`;
+  const httpEmbed = () => createHttpServer((req, res) => {
     const host = req.headers.host.split(':')[0];
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(`<!doctype html><video muted autoplay src="http://${host}:${DEV}/api/media/${webmAsset.id}/content"></video>`);
+    res.end(embedHtml(`http://${host}:${DEV}/api/media/${webmAsset.id}/content`));
   });
+  const other = TLS ? createHttpsServer({ cert: TLS.cert, key: TLS.key }, (req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(embedHtml(`${ORIGIN}/api/media/${webmAsset.id}/content`)); }) : httpEmbed();
   await new Promise((resolve) => other.listen(OTHER, '127.0.0.1', resolve));
+  // HTTPS mode keeps the LAN-HTTP-like row on its own plain-HTTP embed page (the http origin stays co-configured).
+  const lanOther = TLS ? httpEmbed() : other;
+  if (TLS) await new Promise((resolve) => lanOther.listen(LAN_OTHER, '127.0.0.1', resolve));
   try {
     const before = await effectsSnapshot();
     const embed = await context.newPage();
     const failures = []; embed.on('requestfailed', (r) => { if (/\/content$/.test(r.url())) failures.push(r.failure()?.errorText ?? ''); });
     const loopbackRows = await wireCapture(embed);
-    await embed.goto(`http://127.0.0.1:${OTHER}/`);
+    await embed.goto(TLS ? `https://${TLS_HOST}:${OTHER}/` : `http://127.0.0.1:${OTHER}/`);
     await embed.waitForTimeout(1500);
     const loopback = loopbackRows();
-    check('P10 loopback same-site embed: Fetch Metadata same-site sent, server 403, zero effects (N08)', loopback.length > 0 && loopback.every((r) => r.site === 'same-site' && r.status === 403) && (await effectsSnapshot()) === before,
+    check(`P10 ${TLS ? 'HTTPS' : 'loopback'} same-site embed: Fetch Metadata same-site sent, server 403, zero effects (N08)`, loopback.length > 0 && loopback.every((r) => r.site === 'same-site' && r.status === 403 && (!TLS || r.cookie)) && (await effectsSnapshot()) === before,
       { requests: loopback, failures });
     await embed.close();
     // LAN-HTTP-like: a non-loopback name mapped to 127.0.0.1 is not potentially trustworthy, so no Fetch Metadata.
@@ -540,22 +616,24 @@ try {
     await lan.goto(LAN_ORIGIN);
     await pair(lan, LAN_ORIGIN);
     const lanCookie = await mediaCookie(LAN_ORIGIN);
+    if (TLS) check('T4 mixed configuration: the co-configured http origin pairs in the same browser and mints a non-Secure cookie', Boolean(lanCookie) && lanCookie.secure === false && lanCookie.httpOnly && lanCookie.sameSite === 'Strict',
+      { secure: lanCookie?.secure ?? null });
     const beforeLan = await effectsSnapshot();
     const lanEmbed = await context.newPage();
     const lanFailures = []; lanEmbed.on('requestfailed', (r) => { if (/\/content$/.test(r.url())) lanFailures.push(r.failure()?.errorText ?? ''); });
     const lanCapture = await wireCapture(lanEmbed);
-    await lanEmbed.goto(`http://${LAN_HOST}:${OTHER}/`);
+    await lanEmbed.goto(`http://${LAN_HOST}:${LAN_OTHER}/`);
     await lanEmbed.waitForTimeout(2000);
     const lanRows = lanCapture();
     const delivered = await lanEmbed.evaluate(() => { const v = document.querySelector('video'); return { readyState: v.readyState, error: v.error?.code ?? null }; });
     check('P10 LAN-HTTP-like same-site embed: recorded (server may read; CORP blocks delivery); zero server effects', lanRows.length > 0 && (await effectsSnapshot()) === beforeLan && delivered.readyState === 0,
       { lanCookieMinted: Boolean(lanCookie), requests: lanRows, failures: lanFailures, delivered, note: 'design §3 accepted limit: no server-side read refusal on LAN HTTP' });
     await lanEmbed.close(); await lan.close();
-  } finally { await new Promise((resolve) => other.close(resolve)); }
+  } finally { await new Promise((resolve) => other.close(resolve)); if (TLS) await new Promise((resolve) => lanOther.close(resolve)); }
 
   check('no egress beyond the loopback test origins', egress.length === 0, { egress: [...new Set(egress)] });
   check('providers never invoked', providers === 0);
-  say({ observedPeakActiveMediaSlots: peakSlots, m4RequestsSeen: media.length });
+  say({ observedPeakActiveMediaSlots: peakSlots, m4RequestsSeen: media.length, ...(tlsProxy ? { tlsProxied: tlsProxy.stats() } : {}) });
 } catch (error) {
   await page?.screenshot({ path: `${SHOTS}/failure.png`, fullPage: true }).catch(() => undefined);
   say({ failureMain: ((await page?.locator('#app').innerText().catch(() => '')) ?? '').slice(0, 1500) });
@@ -565,6 +643,7 @@ try {
   await browser.close().catch(() => undefined);
   await dev.close().catch(() => undefined);
   await compiler.close().catch(() => undefined);
+  await tlsProxy?.close().catch(() => undefined);
   if (service) await stopService().catch(() => undefined);
 }
 // Secret scan of everything this run printed (values were only ever in memory).
