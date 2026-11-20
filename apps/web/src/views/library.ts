@@ -39,6 +39,7 @@ import { type BrowserFileHandleLike, type BrowserFilePickerGlobal, captureUiServ
 import { clearPendingMediaNameConflict, handleMediaImportError, renderMediaNameConflict } from '../ui/mediaConflict.ts';
 import { hasNativeInputPath } from '../ui/snippets.ts';
 import { renderCueSourceComparison, renderEmbeddedSubtitleControls } from '../ui/transcriptSources.ts';
+import { ensureServerMediaStorage } from '../serverMedia.ts';
 
 function renderTranscriptLifecyclePanel(model: AppModel): HTMLElement {
   const panel = document.createElement('div');
@@ -761,6 +762,8 @@ export function renderLibraryView(model: AppModel): HTMLElement {
   const p = document.createElement('p');
   p.textContent = 'Your imported media, stored on this device. Open one to study, or add another below.';
   section.appendChild(p);
+  // lt-192.4: the same bounded, once-per-pairing M3 the stage runs, so the current row's relink gate is derived too.
+  ensureServerMediaStorage(model, () => rerenderApp(model));
   section.appendChild(renderMediaList(model));
 
   const form = document.createElement('div');

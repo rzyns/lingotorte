@@ -20,6 +20,16 @@ import {
   setRememberPairingOptIn,
 } from '../rememberedPairing.ts';
 import { clearSnapshotCache, suspendSnapshotCacheWrites, type SnapshotCacheBackend } from '../browserSnapshotCache.ts';
+import { MEDIA_NOT_REVOKED, MEDIA_REVOKED, revokeMediaSession, type RevokeResult } from '../serverMedia.ts';
+
+/** lt-192.4: say exactly what happened to this browser's media access; never claim an unconfirmed revocation. Forget
+ *  and Disconnect clicked together share one M2 (and one result), so the sentence is added once. */
+function discloseMediaRevocation(model: AppModel, result: RevokeResult): void {
+  if (result === 'not-applicable') return;
+  const sentence = result === 'revoked' ? MEDIA_REVOKED : MEDIA_NOT_REVOKED;
+  if (model.localService.lastMessage?.includes(sentence)) return;
+  model.localService.lastMessage = `${model.localService.lastMessage ?? ''} ${sentence}`.trim();
+}
 
 export const CLEAR_CACHE_BUTTON_LABEL = "Clear this browser's cached state";
 export const CLEAR_CACHE_EXPLANATION = "Removes the copy of your saved words, transcripts, review progress and connection preferences that this browser keeps so a reload can show your last work. Nothing stored in the local service is deleted, and remembered pairing and remembered video files are not affected. The page reloads afterwards; reconnect to the local service to load your saved state.";
@@ -237,7 +247,14 @@ export function renderSettingsView(model: AppModel): HTMLElement {
     servicePanel.appendChild(remembered);
     const forget = document.createElement('button');
     forget.textContent = 'Forget pairing';
-    forget.addEventListener('click', () => { void forgetRememberedPairing(model).then(() => rerenderApp(model)); });
+    // lt-192.4 (G2): revoke the media cookie (M2) first, while this pairing is current; Forget keeps the bearer.
+    forget.addEventListener('click', () => {
+      void revokeMediaSession(model, 'forget').then(async (revoked) => {
+        await forgetRememberedPairing(model);
+        discloseMediaRevocation(model, revoked);
+        rerenderApp(model);
+      });
+    });
     servicePanel.appendChild(forget);
   }
   const buttonRow = document.createElement('div');
@@ -257,7 +274,16 @@ export function renderSettingsView(model: AppModel): HTMLElement {
   buttonRow.appendChild(connectButton);
   const disconnect = document.createElement('button');
   disconnect.textContent = 'Disconnect local service';
-  disconnect.addEventListener('click', () => { capabilityInput.value = ''; void forgetRememberedPairing(model); setLocalServiceBaseUrl(model, model.localService.baseUrl); rerenderApp(model); });
+  // lt-192.4 (G2): M2 before the bearer is cleared; an unconfirmed revocation is disclosed, never claimed.
+  disconnect.addEventListener('click', () => {
+    capabilityInput.value = '';
+    void revokeMediaSession(model, 'disconnect').then((revoked) => {
+      void forgetRememberedPairing(model);
+      setLocalServiceBaseUrl(model, model.localService.baseUrl);
+      discloseMediaRevocation(model, revoked);
+      rerenderApp(model);
+    });
+  });
   buttonRow.appendChild(disconnect);
 
   const saveButton = document.createElement('button');

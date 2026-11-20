@@ -84,3 +84,23 @@ Pointer: `docs/dev/lt-192.3-shared-mutations-result.md`; contract `docs/architec
 - Re-review R3: "Use my meaning" is a single outbox `handoff` transaction (add replacement, then resolve the draft's meaning); meaning and notes resolve separately (`draftResolved`), so applying the meaning keeps the notes draft open until "Keep saved notes". Edge: the replacement add is issued before the original's put, so a withheld/failed add never commits a resolved original.
 - Edge: a CDP quota override in a long-lived Playwright context reported active but did not refuse IndexedDB writes; a fresh context did. The actual-quota proof uses a fresh context.
 - Edge: Player capture failures were only written to `importError` (rendered on Library/relink screens); they now also toast.
+
+## lt-192.4 server media playback (D) — implementation candidate
+
+Not accepted: actual iPad rows (E1, E2-iPad, E6), private boundary B1–B5 and E stay open. Evidence: `docs/dev/lt-192.4-server-playback-result.md`.
+
+### Deviations
+- Library relink gate: the plan named the stage gate; the Library view now runs the same bounded once-per-pairing M3 for the current asset, and a non-current asset drops Relink only when this pairing already confirmed a complete server copy (no per-row M3). Found by the real-browser proof.
+- `pairingLost` hint: an M3/M1 401 marks the pairing as ended, so a never-checked asset says "Pair again to play server media" instead of a bare Relink. Cleared by the next status OK. Found by the real-browser proof (P5).
+- Revoke answered 401 is `not-applicable` (no disclosure): a 401 bearer means the process restarted, which already invalidated every media value of that process.
+- Native Windows with a configured library refuses startup (no `O_NOFOLLOW`/`O_NONBLOCK`); unset library is unaffected.
+
+### Discovered edge cases
+- Chromium buffers a whole small file; re-`load()` of a cached server `<video>` issues no request, so an evicted cookie or a restart is only observable on the next unbuffered range or a never-loaded asset.
+- ORB/CORP-blocked embed responses hide request headers from Playwright's request API; CDP `*ExtraInfo` events show the actual `Sec-Fetch-Site`, `Cookie` presence and status.
+- LAN-HTTP-like origins (non-loopback name) send no Fetch Metadata: the same-site embed reaches the server (206) and CORP blocks delivery in the browser (design §3 accepted limit).
+- Kernel descriptor numbers are reused: close accounting must be per open, not per fd number; `/proc/self/fd` counts settle asynchronously after socket teardown.
+- `context.cookies(origin)` filters by path: the `Path=/api/media/` cookie is only listed for a `/api/media/` URL.
+
+### Questions for review
+- Library rows for non-current browser-only assets still show Relink until that asset was checked under the current pairing (deliberately no per-row M3 fan-out). Acceptable, or should E add a batched storage query?

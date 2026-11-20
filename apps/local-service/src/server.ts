@@ -1,13 +1,15 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { socketDelivery, nativeTerminalDelivery } from './privateDelivery.ts';
-import { admit, deny, canonicalOrigin, freezePolicy, DENIAL_LINGER_MS, DENIAL_LINGER_BYTES, DENIAL_LINGER_HEADER_STAGE_BYTES, type AdmissionPolicy } from './requestAdmission.ts';
+import { admit, deny, canonicalOrigin, freezePolicy, DENIAL_LINGER_MS, DENIAL_LINGER_BYTES, DENIAL_LINGER_HEADER_STAGE_BYTES, MEDIA_SESSION_ROUTE, MEDIA_STORAGE_ROUTE, MEDIA_CONTENT_ROUTE, type AdmissionPolicy } from './requestAdmission.ts';
+import { createMediaSessions, mediaSessionCookie, type MediaSessions } from './mediaSessions.ts';
+import { openManagedMedia, type BlobFs, type ManagedMedia } from './managedMedia.ts';
 import type { Socket } from 'node:net';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { nativePathPolicy } from '../../../packages/domain/src/nativePaths.ts';
 import { hostNativePath, pathInside, resolvedNativePath, assertReadableNativeFile, nativeExecutable } from '../../../packages/domain/src/nativePathsNode.ts';
-import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch, glossDbPathFromEnv } from './nativeConfig.ts';
+import { mutablePathsFromEnv, assertMutablePaths, assertMediaOutsideScratch, glossDbPathFromEnv, assertLibraryPath } from './nativeConfig.ts';
 import { ANKI_EXPORT_ROUTE, AnkiValidationError, buildApkg, validateAnkiExportRequest } from './ankiPackage.ts';
 import { makeGlossService, validateGlossRequest, GlossValidationError, GLOSS_ROUTE, type GlossRuntimeOptions, type GlossService } from './gloss.ts';
 import { dirname, join, resolve } from 'node:path';
@@ -54,6 +56,8 @@ export type LocalServiceConfig = Readonly<{
   databasePath: string;
   scratchDir: string;
   modelCacheDir: string;
+  /** lt-192.4: optional managed media library (LINGOTORTE_LIBRARY_DIR). Unset: M1-M4 are absent (404). */
+  libraryDir?: string;
   allowOnlineProviders: boolean;
   elevenLabsApiKey?: string;
   elevenLabsBaseUrl?: string;
@@ -95,6 +99,8 @@ export type LocalServiceRuntime = Readonly<{
   morphology?: MorphologyRuntimeOptions;
   /** lt-foe.3.3: gloss lookup. startFromCli fills dbPath/mode from the environment. */
   gloss?: GlossRuntimeOptions;
+  /** lt-192.4 test-only seam: barriers/fault injection around blob open/fstat/close/stream, and the slot cap. */
+  managedMedia?: Readonly<{ fs?: BlobFs; maxSlots?: number; sessionCap?: number }>;
 }>;
 
 export type RunningLingotorteLocalService = Readonly<{
@@ -196,7 +202,7 @@ function publicJob(job: LocalJob): unknown {
   };
 }
 
-function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName, morphology: MorphologyService, gloss: GlossService): unknown {
+function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersistence, defaultAsrModelName: AsrModelName, morphology: MorphologyService, gloss: GlossService, managedMediaAvailable = false): unknown {
   return {
     ok: true,
     service: SERVICE_NAME,
@@ -220,6 +226,8 @@ function publicStatus(config: LocalServiceConfig, persistence: SqliteLocalPersis
     },
     persistence: persistence.status(),
     language: { morphology: morphology.capability(), gloss: gloss.capability() },
+    // lt-192.4: availability only; never a path, probe or blob name.
+    managedMedia: { available: managedMediaAvailable },
   };
 }
 
@@ -720,6 +728,12 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     if (command !== undefined) nativeExecutable(command);
   }
   assertMutablePaths(config);
+  // lt-192.4 (plan G3): library confinement (lexical and resolved, both directions) before any filesystem mutation.
+  if (config.libraryDir !== undefined) assertLibraryPath(config.libraryDir, config);
+  const managedMediaConfigured = config.libraryDir !== undefined;
+  // `Secure` follows the frozen public-origin scheme. canonicalOrigin admits only http: today, so this is false
+  // until a separately authorised HTTPS profile exists (plan G5); mediaSessionCookie unit-tests both forms.
+  const secureCookie = (config.publicOrigins?.[0] ?? '').startsWith('https:');
   if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) throw new TypeError('Invalid service port.');
   const hostname = config.serviceHostname ?? config.host;
   const displayHostname = hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
@@ -737,10 +751,10 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   if (!config.publicOrigins && ['0.0.0.0', '::', '[::]'].includes(hostname)) throw new TypeError('An exact advertised service hostname is required for wildcard bind.');
   // Validate the entire ephemeral policy before binding; port 1 is only a
   // non-listening validation placeholder, never an accepted authority.
-  if (config.port === 0) freezePolicy([`http://${displayHostname}:1`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins);
+  if (config.port === 0) freezePolicy([`http://${displayHostname}:1`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins, { managedMedia: managedMediaConfigured });
   let policy: AdmissionPolicy | undefined = config.port === 0 ? undefined : freezePolicy(
     config.publicOrigins ?? [`http://${displayHostname}${config.port === 80 ? '' : `:${config.port}`}`], uiOrigins,
-    config.healthAuthority, config.privateNetworkOrigins);
+    config.healthAuthority, config.privateNetworkOrigins, { managedMedia: managedMediaConfigured });
   if (!runtime.receiveCapability) throw new TypeError('Private capability delivery is required.');
   const capability = randomBytes(32);
   await runtime.receiveCapability(capability.toString('base64url'));
@@ -751,10 +765,13 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   const lingeringSockets = new Set<Socket>();
   const denialLinger = Object.freeze({ ms: DENIAL_LINGER_MS, bytes: DENIAL_LINGER_BYTES, headerStageBytes: DENIAL_LINGER_HEADER_STAGE_BYTES, sockets: lingeringSockets });
   let dispatch: ((request: IncomingMessage, response: ServerResponse, path: string, body?: Record<string, unknown>) => Promise<void>) | undefined;
+  // lt-192.4: in-memory media cookie values; rotate with the process (and so with the bearer).
+  const mediaSessions: MediaSessions | undefined = managedMediaConfigured ? createMediaSessions(runtime.managedMedia?.sessionCap) : undefined;
+  let managedMedia: ManagedMedia | undefined;
   const boundary = async (request: IncomingMessage, response: ServerResponse, expectContinue = false) => {
     if (!admissionReady || !policy || !dispatch) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
     try {
-      const admitted = await admit(request, response, policy, capability, deliveryReady, expectContinue);
+      const admitted = await admit(request, response, policy, capability, deliveryReady, expectContinue, mediaSessions);
       // Revalidate after awaited body/receiver work at the dispatch boundary.
       if (!admissionReady || !await deliveryReady() || !admissionReady) { response.writeHead(503, { connection: 'close' }); response.end(); return; }
       if (admitted.preflight) { response.writeHead(204); response.end(); return; }
@@ -779,10 +796,16 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     const address = server.address();
     if (!address || typeof address === 'string') throw new TypeError('Missing actual service authority.');
     await runtime.startupCheckpoint?.('bound', address.port);
-    policy = freezePolicy([`http://${displayHostname}:${address.port}`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins);
+    policy = freezePolicy([`http://${displayHostname}:${address.port}`], uiOrigins, config.healthAuthority, config.privateNetworkOrigins, { managedMedia: managedMediaConfigured });
     await runtime.startupCheckpoint?.('authority-frozen', address.port);
   }
   const configuredScratchDir = config.scratchDir;
+  // lt-192.4: library permission checks and the blobs/ directory, before state/scratch/model effects and the DB open.
+  let persistenceForMedia: SqliteLocalPersistence | undefined;
+  if (config.libraryDir !== undefined) {
+    managedMedia = await openManagedMedia(config.libraryDir, mediaId => persistenceForMedia!.managedBlobForMedia(mediaId),
+      { ...(runtime.managedMedia?.fs ? { fs: runtime.managedMedia.fs } : {}), ...(runtime.managedMedia?.maxSlots ? { maxSlots: runtime.managedMedia.maxSlots } : {}) });
+  }
   await mkdir(dirname(config.databasePath), { recursive: true });
   await mkdir(config.scratchDir, { recursive: true });
   await mkdir(config.modelCacheDir, { recursive: true });
@@ -796,6 +819,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
 
   const persistence = SqliteLocalPersistence.open(config.databasePath);
   openedPersistence = persistence;
+  persistenceForMedia = persistence;
   const jobs = new Map<string, LocalJob>();
   const snippets = new Map<string, { path: string; lastAccess: number }>();
   const inFlightSnippetJobs = new Set<Promise<void>>();
@@ -805,7 +829,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
   let snippetLifecycle: 'open' | 'cleaning' | 'closing' = 'open';
   let artifactCleanupPromise: Promise<number> | undefined;
   runtime.observeState?.(() => ({ state: persistence.loadVersionedSnapshot(), jobs: [...jobs.entries()],
-    snippets: [...snippets.entries()], snippetAccessCounter, allocatedJobIds, allocatedSnippetIds, snippetLifecycle, inFlight: inFlightSnippetJobs.size }));
+    snippets: [...snippets.entries()], snippetAccessCounter, allocatedJobIds, allocatedSnippetIds, snippetLifecycle, inFlight: inFlightSnippetJobs.size,
+    mediaSessions: mediaSessions?.size() ?? 0, activeMediaSlots: managedMedia?.activeSlots() ?? 0, pendingMediaOpens: managedMedia?.pendingOpens() ?? 0,
+    liveMediaStreams: managedMedia?.liveStreams() ?? 0 }));
 
   const deleteSnippet = async (snippetId: string): Promise<boolean> => {
     const entry = snippets.get(snippetId);
@@ -1053,7 +1079,32 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
       }
 
       if (request.method === 'GET' && path === '/api/status') {
-        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME, morphology, gloss));
+        sendJson(response, 200, publicStatus(config, persistence, runtime.defaultModelName ?? DEFAULT_ASR_MODEL_NAME, morphology, gloss, managedMedia !== undefined));
+        return;
+      }
+
+      // lt-192.4: M1 mint / M2 revoke (bearer-admitted), M3 storage (bearer), M4 content (bearer or media cookie).
+      if (managedMedia && mediaSessions && path === MEDIA_SESSION_ROUTE && (request.method === 'POST' || request.method === 'DELETE')) {
+        // M1 rotates: the presented value (if any) is revoked before the new one is minted, so a confirmed M2 of the
+        // latest value also leaves every earlier value of this browser invalid. A client already gone gets no mint.
+        if (request.method === 'POST' && response.destroyed) return;
+        const cookie = request.method === 'POST' ? (mediaSessions.revoke(request.headers.cookie), mediaSessionCookie(mediaSessions.mint(), secureCookie))
+          : (mediaSessions.revoke(request.headers.cookie), mediaSessionCookie(null, secureCookie));
+        response.writeHead(204, { 'set-cookie': cookie, 'cache-control': 'no-store' });
+        response.end();
+        return;
+      }
+      const mediaStorage = managedMedia ? MEDIA_STORAGE_ROUTE.exec(path) : null;
+      if (managedMedia && mediaStorage && request.method === 'GET') {
+        const result = await managedMedia.storage(response, mediaStorage[1]!);
+        if (result === undefined) sendError(response, 404, 'Media not found.');
+        else if (result === 'busy' || result === 'closing') { if (!response.destroyed) { response.setHeader('retry-after', '1'); sendError(response, 503, 'Media busy; retry shortly.'); } }
+        else sendJson(response, 200, { ok: true, ...result });
+        return;
+      }
+      const mediaContent = managedMedia ? MEDIA_CONTENT_ROUTE.exec(path) : null;
+      if (managedMedia && mediaContent && (request.method === 'GET' || request.method === 'HEAD')) {
+        await managedMedia.serveContent(request, response, mediaContent[1]!);
         return;
       }
 
@@ -1327,6 +1378,9 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
     async close() {
       admissionReady = false;
       snippetLifecycle = 'closing';
+      // lt-192.4 (G10/G16): refuse new media work, destroy live streams, and wait for pending opens to settle,
+      // so a paused stream cannot hold server.close until the 15 s socket timeout.
+      const mediaShutdown = managedMedia?.shutdown() ?? Promise.resolve();
       const closed = new Promise<void>((resolvePromise, rejectPromise) => {
         server.close((error) => {
           if (error) rejectPromise(error);
@@ -1334,6 +1388,7 @@ export async function startLingotorteLocalService(config: LocalServiceConfig, ru
         });
       });
       for (const socket of lingeringSockets) socket.destroy();
+      await mediaShutdown;
       await closed;
       if (artifactCleanupPromise !== undefined) await artifactCleanupPromise;
       await drainSnippetJobs();
@@ -1363,6 +1418,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): LocalServic
     ...(env.LINGOTORTE_HEALTH_AUTHORITY ? { healthAuthority: env.LINGOTORTE_HEALTH_AUTHORITY } : {}),
     ...(env.LINGOTORTE_PRIVATE_NETWORK_ORIGINS !== undefined ? { privateNetworkOrigins: env.LINGOTORTE_PRIVATE_NETWORK_ORIGINS.split(',') } : {}),
     ...paths,
+    ...(env.LINGOTORTE_LIBRARY_DIR !== undefined ? { libraryDir: hostNativePath(env.LINGOTORTE_LIBRARY_DIR, 'directory') } : {}),
     allowOnlineProviders: env.LINGOTORTE_ALLOW_ONLINE_PROVIDERS === 'true',
     ...(env.ELEVENLABS_API_KEY !== undefined ? { elevenLabsApiKey: env.ELEVENLABS_API_KEY } : {}),
     ...(env.ELEVENLABS_BASE_URL !== undefined ? { elevenLabsBaseUrl: env.ELEVENLABS_BASE_URL } : {}),

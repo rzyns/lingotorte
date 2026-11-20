@@ -16,7 +16,7 @@ Agents must still stop and ask/block for:
 
 - PR, release, public deployment, hosted exposure, public sharing beyond the existing repository, or Git operations outside `GIT-POLICY.md`;
 - destructive changes to Janusz's real learner state, media library, provider accounts, or external apps;
-- DRM/circumvention, browser credential/cookie use, private/account-gated media access, or automatic online media download;
+- DRM/circumvention, browser credential/cookie use (browser-profile or third-party cookies and credentials; the app's own media cookie is governed by §14b), private/account-gated media access, or automatic online media download;
 - any action with plausible Terms-of-Service/account-lock/account-ban risk;
 - cloud sync, AnkiConnect mutation, microphone/learner-voice capture, or provider classes not explicitly allowed below;
 - committing secrets, API keys, raw provider request/response bodies, model caches, generated media/audio/transcript scratch artifacts, or private absolute paths in default exports/logs/fixtures.
@@ -301,6 +301,34 @@ Implementation semantics:
 #### 14a. Remembered pairing (`lt-z41`, option C)
 
 Decided by Janusz on 2026-10-13. After an explicit opt-in ("Remember this pairing on this device until the service restarts"), the browser may keep the service capability in a dedicated IndexedDB record and auto-connect at boot. The accepted cost is that any same-origin script in that browser profile can read it, and the secret persists on disk in the profile until it is deleted. Both are acceptable under §14. Service restart still rotates the capability. A 401, Forget pairing or an origin change deletes the record. The capability never enters snapshots, exports, localStorage, sessionStorage or logs. The authenticity contract was amended in the same commit (line 120 and A28). Implementation: `lt-cfh`.
+
+#### 14b. Media content cookie (`lt-192.9`)
+
+Decided by Janusz on 2026-10-31, who selected the option "Approve the reviewed HTTP/HTTPS media-cookie design and its stated limits". The design is `lt-zt0`, `docs/design/server-media-private-access-design.md` §3.
+
+**What is allowed.**
+
+- A `<video>` element cannot send the bearer, so pairing may mint one HttpOnly, SameSite=Strict cookie with `Path=/api/media/`.
+- The cookie is accepted only for read-only `GET`/`HEAD /api/media/:id/content`.
+- Minting (`POST /api/media/session`) and revoking (`DELETE /api/media/session`) both still require the bearer. They are the only `credentials: 'same-origin'` calls.
+- `Secure` is set under HTTPS. Values live in service memory and rotate on restart.
+- No token goes in a URL, and the Host/Origin checks are unchanged. Pairing stays required for every other route.
+
+**Accepted limits.**
+
+- On LAN HTTP, same-site pages on other ports can cause server reads; CORP limits disclosure, not reads.
+- Cookies are not isolated by port.
+- Forget or Disconnect while the service is unreachable cannot revoke the value, and the UI must say so.
+
+**Scope.** This app-issued cookie is not the "browser credential/cookie use" barred in the stop list above. The decision authorises code and synthetic tests only. It does not authorise:
+
+- any Tailscale, Serve, Funnel, ACL, firewall or network change;
+- actual device or private-boundary operation;
+- real media or state;
+- deployment;
+- E upload work.
+
+The authenticity contract carries the matching amendment (§3, "Media content cookie"); its text is pending independent review with the implementation. Implementation: `lt-192.4`.
 
 ---
 

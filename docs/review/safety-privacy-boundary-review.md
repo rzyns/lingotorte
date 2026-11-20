@@ -4,6 +4,8 @@
 
 **Threat-model amendment (2026-10-13, `lt-2k9` option A):** the product's threat model is one trusted operator on one trusted machine; see [DECISIONS.md §14](../../DECISIONS.md). Existing controls in this document stay. New work is not required to defend against hostile LAN peers or other same-machine users. Relaxing the accepted request-authenticity contract still requires its own decision issue.
 
+**Media cookie amendment (2026-10-31, `lt-192.9`):** the app's own pairing-minted, HttpOnly, read-only media content cookie ([DECISIONS.md §14b](../../DECISIONS.md)) is a request-authenticity control. It is not the use of browser cookies or credentials that the rules below bar, and those rules are unchanged.
+
 Status: authoritative planning gate for Lingotorte implementation tasks. Planning only; not legal advice and not permission to implement, scrape, publish, deploy, or mutate accounts.
 
 This document repairs the independent challenge review's safety/privacy/legal block by collecting the hard boundaries into one implementation-facing gate.

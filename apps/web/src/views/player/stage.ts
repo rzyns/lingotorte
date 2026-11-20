@@ -30,6 +30,7 @@ import { openCapture } from '../../ui/capture.ts';
 import { dropKeyed, keyed, peekKeyed, peekKeyedKey } from '../../ui/keyed.ts';
 import { renderPlayerControls, renderSourceRangePanel } from './controls.ts';
 import { renderSelectionPanel, renderTranscriptPanel } from './transcript.ts';
+import { currentPlaybackSource, ensureServerMediaStorage, noteServerPlaybackHealthy, recoverServerPlayback, registerServerVideo, CHECKING_ACCESS } from '../../serverMedia.ts';
 
 export function renderPlayerView(model: AppModel): HTMLElement {
   const section = document.createElement('section');
@@ -112,11 +113,16 @@ const VIDEO_STAGE_SLOT = 'player-video-stage';
  * (pausePersistentVideoOffPlayer); returning reattaches the same element at its position without reload.
  */
 function renderVideoStage(model: AppModel): HTMLElement {
-  if (!model.currentMedia || needsMediaRelink(model)) {
+  // lt-192.4: one derived source gates the stage (local object URL, server copy, relink, or an honest message).
+  if (model.currentMedia) ensureServerMediaStorage(model, () => rerenderApp(model));
+  const source = currentPlaybackSource(model);
+  if (!model.currentMedia || needsMediaRelink(model) || source?.kind === 'message') {
     dropKeyed(model, VIDEO_STAGE_SLOT);
     const stage = document.createElement('div');
     stage.className = `video-stage${model.currentMedia ? '' : ' video-stage-empty'}`;
-    stage.appendChild(model.currentMedia ? renderRelinkPlaceholder(model) : renderEmptyVideoPlaceholder(model));
+    stage.appendChild(!model.currentMedia ? renderEmptyVideoPlaceholder(model)
+      : source?.kind === 'message' ? renderServerMediaMessage(source.text)
+      : renderRelinkPlaceholder(model, source?.kind === 'relink' ? source.note : undefined));
     return stage;
   }
   const key = videoStageKey(model)!;
@@ -124,7 +130,8 @@ function renderVideoStage(model: AppModel): HTMLElement {
 }
 
 function videoStageKey(model: AppModel): string | null {
-  if (!model.currentMedia || needsMediaRelink(model)) return null;
+  const source = currentPlaybackSource(model);
+  if (!model.currentMedia || !source || (source.kind !== 'local' && source.kind !== 'server')) return null;
   return `${model.currentMedia.id}\u0000${mediaPlaybackUrl(model)}`;
 }
 
@@ -247,13 +254,21 @@ function createVideoStage(model: AppModel): HTMLElement {
   video.playbackRate = model.player.playbackRate;
   const mediaId = currentMedia.id;
   const mediaSource = mediaPlaybackUrl(model);
+  // lt-192.4: a server copy recovers auth failures (checking-access, at most one re-mint) instead of relink advice.
+  const serverSource = currentPlaybackSource(model)?.kind === 'server';
+  if (serverSource) registerServerVideo(model, video, mediaId, mediaSource);
   // Ignore events from a replaced element or a previous media item/source (lt-r4k.1).
   const isCurrentVideo = () => video.isConnected
     && model.currentMedia?.id === mediaId
     && mediaPlaybackUrl(model) === mediaSource
     && document.querySelector('.video-stage video') === video;
+  // lt-192.4 (R5): the one re-mint budget resets only on verified playback: time advanced past the position at the
+  // last 'playing' while not paused. loadedmetadata alone does not count (metadata-readable, undecodable files).
+  let playingFrom: number | null = null;
+  if (serverSource) video.addEventListener('playing', () => { if (isCurrentVideo()) playingFrom = video.currentTime; });
   video.addEventListener('timeupdate', () => {
     if (!isCurrentVideo()) return; // lt-dlf.1
+    if (playingFrom !== null && !video.paused && video.currentTime > playingFrom) { playingFrom = null; noteServerPlaybackHealthy(model, mediaId, mediaSource); }
     const timeMs = Math.round(video.currentTime * 1000);
     model.player.currentTimeMs = timeMs;
     const cue = activeCueAtTime(model.cues, timeMs);
@@ -280,11 +295,13 @@ function createVideoStage(model: AppModel): HTMLElement {
   });
   video.addEventListener('error', () => {
     if (!isCurrentVideo()) return;
+    playingFrom = null;
     const code = video.error?.code ?? 0;
     // lt-r4k.4: a re-rendered <video> with the same src fails again in real browsers. An error already
     // recorded for this media/source/code is a repeat: no state replacement, no rerender, no re-announce.
     const existing = model.player.mediaError;
-    if (existing && existing.mediaId === mediaId && existing.source === mediaSource && existing.code === code) return;
+    if (existing && existing.mediaId === mediaId && existing.source === mediaSource && existing.code === code && existing.message !== CHECKING_ACCESS) return;
+    if (serverSource) { void recoverServerPlayback(model, video, { mediaId, source: mediaSource, code }, () => rerenderApp(model)); return; }
     model.player.mediaError = { mediaId, source: mediaSource, code, message: mediaErrorMessage(code) };
     model.player.isPlaying = false;
     rerenderApp(model);
@@ -498,7 +515,21 @@ export function chooseMediaAgainViaPicker(model: AppModel): void {
     });
 }
 
-function renderRelinkPlaceholder(model: AppModel): HTMLElement {
+/** lt-192.4: server-media states with no playable source (never a src, never relink/decode advice). */
+function renderServerMediaMessage(text: string): HTMLElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'video-placeholder video-placeholder-server-media';
+  const heading = document.createElement('h3');
+  heading.textContent = 'Server media';
+  const body = document.createElement('p');
+  body.className = 'server-media-message';
+  body.setAttribute('role', 'status');
+  body.textContent = text;
+  placeholder.append(heading, body);
+  return placeholder;
+}
+
+function renderRelinkPlaceholder(model: AppModel, serverNote?: string): HTMLElement {
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder video-placeholder-relink';
 
@@ -516,6 +547,14 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
   const permission = document.createElement('p');
   permission.className = 'meta relink-permission-state';
   permission.textContent = `Browser permission: ${model.browserLocalMedia.permissionState}${model.browserLocalMedia.lastError ? ` — ${model.browserLocalMedia.lastError}` : ''}`;
+  const serverNoteNodes: HTMLElement[] = [];
+  if (serverNote) {
+    const note = document.createElement('p');
+    note.className = 'server-media-note';
+    note.setAttribute('role', 'status');
+    note.textContent = serverNote;
+    serverNoteNodes.push(note);
+  }
 
   const boundary = document.createElement('p');
   boundary.className = 'meta relink-boundary-note';
@@ -566,7 +605,7 @@ function renderRelinkPlaceholder(model: AppModel): HTMLElement {
     rerenderApp(model);
   });
   actions.append(relinkBtn, chooseAgainBtn, libraryBtn);
-  placeholder.append(icon, heading, body, permission, boundaryDetails, actions);
+  placeholder.append(icon, heading, body, ...serverNoteNodes, permission, boundaryDetails, actions);
   if (model.importError) {
     const banner = document.createElement('p');
     banner.className = 'status-banner error relink-error';

@@ -82,6 +82,30 @@ export function assertMutablePaths(config: MutablePaths, roots = repositoryRoots
   }
 }
 
+/** lt-192.4: the fixed container source-media bind target (compose.yaml); always excluded, never scanned. */
+export const CONTAINER_SOURCE_MEDIA_ROOT = '/media';
+
+/**
+ * lt-192.4 (plan G3): the managed library must not equal, contain or sit inside any configured mutable root,
+ * home, a repository/worktree root or the fixed `/media` source bind. Compared lexically AND on resolved
+ * (realpath of existing ancestors) values, in both directions, so a symlink alias in either direction fails.
+ * Only these configured values and the one constant are compared: no mount-table scan, no source discovery.
+ * Runs before any filesystem mutation. Permissions are checked separately (prepareManagedLibrary).
+ */
+export function assertLibraryPath(libraryDir: string, config: MutablePaths, roots = repositoryRoots(), home = homedir()): void {
+  if (process.platform === 'win32') throw new TypeError('Managed media library requires a POSIX host (O_NOFOLLOW/O_NONBLOCK).');
+  const library = validateNativePath(libraryDir, process.platform, 'directory');
+  const excluded = [config.databasePath, config.scratchDir, config.modelCacheDir, ...(config.dataDir === undefined ? [] : [config.dataDir]),
+    home, ...roots, CONTAINER_SOURCE_MEDIA_ROOT];
+  const overlaps = (a: string, b: string) => pathInside(a, b) || pathInside(b, a);
+  // Complete lexical pass before resolving anything.
+  if (excluded.some(root => overlaps(library, root))) throw new TypeError('Managed media library must not overlap state, scratch, models, home, repository or source media.');
+  const resolvedLibrary = resolvedNativePath(library);
+  if (excluded.some(root => overlaps(resolvedLibrary, resolvedNativePath(root)))) {
+    throw new TypeError('Managed media library must not overlap state, scratch, models, home, repository or source media (resolved).');
+  }
+}
+
 export function assertMediaOutsideScratch(mediaPath: string, scratchDir: string): void {
   if (pathInside(scratchDir, mediaPath) || pathInside(resolvedNativePath(scratchDir), resolvedNativePath(mediaPath))) {
     throw new TypeError('Input media path must be outside local scratch.');
