@@ -57,7 +57,12 @@ export class OperationIdReusedError extends Error {
 }
 /** lt-192.3: an unknown operation outside the service's eligibility boundary (HTTP 409 with `code`); nothing was applied. */
 export class OperationIneligibleError extends Error {
-  constructor(readonly code: 'generation-changed' | 'incarnation-changed' | 'operation-expired' | 'invalid-basis', message: string) { super(message); }
+  readonly code: 'generation-changed' | 'incarnation-changed' | 'operation-expired' | 'invalid-basis';
+
+  constructor(code: OperationIneligibleError['code'], message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 export class TranscriptBundleConflictError extends Error {

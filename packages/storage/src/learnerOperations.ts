@@ -189,14 +189,20 @@ export type OperationOwnedConflict = Readonly<{ collection: OperationOwnedCollec
 
 /** A document save tried to create, change or remove operation-owned rows (HTTP 409 `operation-owned-rows`). */
 export class OperationOwnedConflictError extends Error {
-  constructor(readonly conflicts: readonly OperationOwnedConflict[]) {
+  readonly conflicts: readonly OperationOwnedConflict[];
+
+  constructor(conflicts: readonly OperationOwnedConflict[]) {
     super('Vocabulary rows are owned by server operations; this document save would overwrite or add them. Browser work was kept and nothing was saved.');
+    this.conflicts = conflicts;
   }
 }
 /** A document save carries new history for a card that an operation removed meanwhile (HTTP 409 `operation-dependency`). */
 export class OperationDependencyConflictError extends Error {
-  constructor(readonly cardIds: readonly string[]) {
+  readonly cardIds: readonly string[];
+
+  constructor(cardIds: readonly string[]) {
     super('Another device removed vocabulary that this browser studied. Browser work was kept and nothing was saved; resolve the conflict before saving.');
+    this.cardIds = cardIds;
   }
 }
 

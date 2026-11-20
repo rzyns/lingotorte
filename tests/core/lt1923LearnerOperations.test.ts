@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,6 +75,17 @@ async function service(root: string, file: string) {
 const itemsByText = (snapshot: any) => Object.values(snapshot.savedItems as Record<string, any>).map(i => i.displayText).sort();
 
 describe('lt-192.3 server learner operations', () => {
+  it('loads the actual service entrypoint in a plain Node process', () => {
+    // Vitest transpiles TypeScript syntax that the Docker entrypoint's strip-only loader rejects.
+    const script = `import { startLingotorteLocalService } from ${JSON.stringify(new URL('../../apps/local-service/src/server.ts', import.meta.url).href)};
+      if (typeof startLingotorteLocalService !== 'function') process.exit(1);`;
+    const child = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+      env: { ...process.env, NODE_OPTIONS: '' }, encoding: 'utf8', timeout: 4_000,
+    });
+    expect(child.error, 'plain Node subprocess failed to run').toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+  });
+
   it('applies a capture exactly once: same id + same request replays the receipt; same id + changed payload is refused', async () => {
     const { root, file, f } = await seededFile();
     const svc = await service(root, file);

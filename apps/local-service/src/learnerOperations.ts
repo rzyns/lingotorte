@@ -13,7 +13,12 @@ import { captureTokenSpan } from '../../../packages/language/src/adapters.ts';
 
 /** The capture's source is not (yet) stored or does not match the approved transcript: nothing applied, no receipt. */
 export class OperationSourceError extends Error {
-  constructor(readonly code: 'source-unavailable' | 'source-mismatch', message: string) { super(message); }
+  readonly code: 'source-unavailable' | 'source-mismatch';
+
+  constructor(code: OperationSourceError['code'], message: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 const SELECTION_KINDS: readonly SavedItemKind[] = ['lexeme', 'phrase', 'sentence'];
