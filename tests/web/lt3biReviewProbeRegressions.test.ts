@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, pickNextDueCard } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, learnerProgress, pickNextDueCard } from '../../apps/web/src/model';
 import { LocalStore } from '../../packages/storage/src/localStore';
 import { ExportService, RestoreService } from '../../packages/storage/src/exportRestoreService';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
@@ -17,7 +17,7 @@ async function fixture() {
   await importFixtureMediaAndSubtitles(model, 'fixtures/media/synthetic-polish-dialogue.webm', 'fixtures/subtitles/synthetic-polish-dialogue.target.srt', 'fixtures/subtitles/synthetic-polish-dialogue.native.srt');
   const item = (await captureSentence(model, model.cues[0]!))!;
   const occurrence = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
-  const card = model.capture.cardsFor(item.id).active[0]!;
+  const card = addSavedItemToReview(model, item)!;
   return { model, card, occurrence };
 }
 function attempt(f: Awaited<ReturnType<typeof fixture>>, mode: PracticeMode) {

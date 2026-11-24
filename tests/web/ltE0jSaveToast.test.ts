@@ -10,7 +10,7 @@ vi.mock('../../apps/web/src/model', async (original) => {
 });
 
 import * as modelModule from '../../apps/web/src/model';
-import { createAppModel, markUnsavedBrowserEdits, setSelection, setPendingMeaning, setPendingNotes } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, markUnsavedBrowserEdits, setSelection, setPendingMeaning, setPendingNotes } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 const sha = 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const;
@@ -100,17 +100,17 @@ describe('lt-e0j save toast', () => {
     expect(model.ui.toast).not.toBeNull();
   });
 
-  it('Undo removes the new item, its occurrence, card and card state and reopens capture with the previous values', async () => {
+  it('Undo removes the new item and its occurrence (with no card created) and reopens capture with the previous values', async () => {
     const { model, cues } = installModel();
     const selection = await saveViaForm(model, cues[0]!, 'dom', { meaning: 'house', notes: 'n1' });
     const item = Object.values(model.store.snapshot().savedItems)[0]!;
-    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
+    expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(0);
     region()!.querySelector('button')!.click();
     const snap = model.store.snapshot();
     expect(snap.savedItems).toEqual({});
     expect(snap.savedOccurrences).toEqual({});
     expect(snap.reviewCards).toEqual({});
-    expect(model.store.getReviewCardState(card.id)).toBeUndefined();
+    expect(snap.reviewCardStates).toEqual({});
     expect(model.store.getSavedItem(item.id)).toBeUndefined();
     expect(model.selection).toEqual(selection);
     expect(model.pendingMeaning).toBe('house');
@@ -128,21 +128,20 @@ describe('lt-e0j save toast', () => {
   it('Undo of a new item leaves no trace in the review queue, practice data or export snapshot', async () => {
     const { model, cues } = installModel();
     await saveViaForm(model, cues[0]!, 'dom');
-    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
     const dueIds = (at: number) => model.reviewService.listDueCards(new Date(at)).map((c) => c.card.id);
-    expect(dueIds(now)).toContain(card.id);
+    expect(dueIds(now)).toEqual([]);
     region()!.querySelector('button')!.click();
-    expect(dueIds(now + 86_400_000)).not.toContain(card.id);
+    expect(dueIds(now + 86_400_000)).toEqual([]);
     expect(model.savedOccurrenceService.listItems()).toHaveLength(0);
     const serialized = JSON.stringify(model.store.snapshot());
-    expect(serialized).not.toContain(card.id);
     expect(serialized).not.toContain('\u201cdom');
   });
 
-  it('Undo is refused when the card got a review after the save', async () => {
+  it('Undo is refused when the item is enrolled (and rated) after the save', async () => {
     const { model, cues } = installModel();
     await saveViaForm(model, cues[0]!, 'dom');
-    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
+    const item = Object.values(model.store.snapshot().savedItems)[0]!;
+    const card = addSavedItemToReview(model, item)!;
     now += 1_000;
     model.reviewService.submitReview(card.id, 'good' as never, new Date(now));
     const before = JSON.stringify(model.store.snapshot());
@@ -174,10 +173,12 @@ describe('lt-e0j save toast', () => {
     expect(model.ui.toast!.text).toContain('Can\u2019t undo');
   });
 
-  it('Undo is refused while the created card is on screen in Review', async () => {
+  it('Undo is refused after the saved item is enrolled into Review (and while its card is active in Review)', async () => {
     const { model, cues } = installModel();
     await saveViaForm(model, cues[0]!, 'dom');
-    model.review.activeCardId = Object.values(model.store.snapshot().reviewCards)[0]!.id;
+    const item = Object.values(model.store.snapshot().savedItems)[0]!;
+    const card = addSavedItemToReview(model, item)!;
+    model.review.activeCardId = card.id;
     region()!.querySelector('button')!.click();
     expect(Object.values(model.store.snapshot().savedItems)).toHaveLength(1);
     expect(model.ui.toast!.text).toContain('Can\u2019t undo');
@@ -210,11 +211,11 @@ describe('lt-e0j save toast', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('Undo after a dedupe save removes only the new occurrence and never the pre-existing item or card', async () => {
+  it('Undo after a dedupe save removes only the new occurrence and preserves the pre-existing item and enrolled card', async () => {
     const { model, cues } = installModel();
     await saveViaForm(model, cues[0]!, 'dom');
     const item = Object.values(model.store.snapshot().savedItems)[0]!;
-    const card = Object.values(model.store.snapshot().reviewCards)[0]!;
+    const card = addSavedItemToReview(model, item)!;
     await saveViaForm(model, cues[1]!, 'dom');
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id)).toHaveLength(2);
     const original = model.savedOccurrenceService.listOccurrencesForItem(item.id)[0]!;
@@ -225,16 +226,13 @@ describe('lt-e0j save toast', () => {
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id).map((o) => o.id)).toEqual([original.id]);
   });
 
-  it('Undo of a dedupe save that created the first card for the item removes that card and the occurrence only', async () => {
+  it('Undo of a dedupe save on an un-enrolled item removes only the second occurrence without creating cards', async () => {
     const { model, cues } = installModel();
-    // Simulate a pre-lt-uzo item (no card): save, then drop its card from the store.
     await saveViaForm(model, cues[0]!, 'dom');
     const item = Object.values(model.store.snapshot().savedItems)[0]!;
-    const oldCard = Object.values(model.store.snapshot().reviewCards)[0]!;
-    model.store.removeReviewCard(oldCard.id);
-    model.store.removeReviewCardState(oldCard.id);
+    expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(0);
     await saveViaForm(model, cues[1]!, 'dom');
-    expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(1);
+    expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(0);
     region()!.querySelector('button')!.click();
     expect(Object.values(model.store.snapshot().reviewCards)).toHaveLength(0);
     expect(model.store.getSavedItem(item.id)).toBeDefined();

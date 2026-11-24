@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureLexeme } from '../helpers/capture';
 import {
-  OUTBOX_FULL_MESSAGE, addSavedItemsToReview, archiveReviewCardsForSavedItem, bootLearnerOperations, connectLocalService, createAppModel, discardLearnerOperation,
+  OUTBOX_FULL_MESSAGE, addSavedItemToReview, addSavedItemsToReview, archiveReviewCardsForSavedItem, bootLearnerOperations, connectLocalService, createAppModel, discardLearnerOperation,
   importFixtureMediaAndSubtitles, learnerOperationsActive, learnerOperationsIdle, pairLocalService, reapplyLearnerOperation, resolveLocalServiceConnection,
   saveModelToLocalService, saveSelectionWithReceipt, setLocalServiceAutosave, setSavedItemMeaning, submitReviewRating, undoSave, useLearnerOperationOutbox,
   unappliedDraftOutcomes, dismissUnappliedDraft, applyUnappliedDraftMeaning,
@@ -241,22 +241,27 @@ describe('lt-192.3 browser vocabulary operations (real service)', () => {
     const service = await startService(); await seedService(service);
     const a = await client(service); const b = await client(service);
     const ra = done(await capture(a, 0, 0)); const extra = done(await capture(a, 1, 0));
+    expect(ra.card).toBeNull(); expect(extra.card).toBeNull();
+    addSavedItemToReview(a, ra.item); addSavedItemToReview(a, extra.item);
+    await learnerOperationsIdle(a);
+    const raCardId = a.capture.cardsFor(ra.item.id).active[0]!.id;
+    const extraCardId = a.capture.cardsFor(extra.item.id).active[0]!.id;
     await connectLocalService(b, service.origin);
     setLocalServiceAutosave(b, false);
     // B rates A's card (document change, not yet saved), while A captures and archives (operations).
-    submitReviewRating(b, ra.card.id, 'good', new Date());
+    submitReviewRating(b, raCardId, 'good', new Date());
     const late = done(await capture(a, 1, 2));
     archiveReviewCardsForSavedItem(a, extra.item.id); await learnerOperationsIdle(a);
     expect(await saveModelToLocalService(b)).toMatchObject({ ok: true });
     const s = (await service.fetchJson('/api/state')).json.snapshot;
-    expect(s.reviewCardStates[ra.card.id].reps).toBeGreaterThan(0);
-    expect(s.reviewEvents.some((e: any) => e.cardId === ra.card.id)).toBe(true);
+    expect(s.reviewCardStates[raCardId].reps).toBeGreaterThan(0);
+    expect(s.reviewEvents.some((e: any) => e.cardId === raCardId)).toBe(true);
     expect(Object.keys(s.savedItems)).toEqual(expect.arrayContaining([ra.item.id, extra.item.id, late.item.id]));
-    expect(s.reviewCards[extra.card.id].suspendedAt).toBeDefined();
+    expect(s.reviewCards[extraCardId].suspendedAt).toBeDefined();
     // B's store now shows A's later capture and archive (installed from the reconciled save), with its own rating.
     expect(b.store.getSavedItem(late.item.id)).toBeDefined();
-    expect(b.store.getReviewCard(extra.card.id)?.suspendedAt).toBeDefined();
-    expect(b.store.getReviewCardState(ra.card.id)?.reps).toBeGreaterThan(0);
+    expect(b.store.getReviewCard(extraCardId)?.suspendedAt).toBeDefined();
+    expect(b.store.getReviewCardState(raCardId)?.reps).toBeGreaterThan(0);
     expect(b.localService.syncState).toBe('saved');
   });
 
@@ -264,9 +269,12 @@ describe('lt-192.3 browser vocabulary operations (real service)', () => {
     const service = await startService(); await seedService(service);
     const a = await client(service);
     const one = done(await capture(a, 0, 0)); const two = done(await capture(a, 1, 0));
+    expect(a.capture.cardsFor(one.item.id).active).toHaveLength(0);
+    addSavedItemToReview(a, one.item); addSavedItemToReview(a, two.item); await learnerOperationsIdle(a);
+    const oneCardId = a.capture.cardsFor(one.item.id).active[0]!.id;
     archiveReviewCardsForSavedItem(a, one.item.id); await learnerOperationsIdle(a);
     archiveReviewCardsForSavedItem(a, two.item.id); await learnerOperationsIdle(a);
-    expect(a.store.getReviewCard(one.card.id)?.suspendedAt).toBeDefined();
+    expect(a.store.getReviewCard(oneCardId)?.suspendedAt).toBeDefined();
     setLocalServiceAutosave(a, false);
     expect(addSavedItemsToReview(a, [one.item, two.item])).toBe(2);
     await learnerOperationsIdle(a);

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  connectLocalService, createAppModel, importFixtureMediaAndSubtitles, mediaTranscriptsLoaded, openMediaAsset, pairLocalService,
+  addSavedItemToReview, connectLocalService, createAppModel, importFixtureMediaAndSubtitles, mediaTranscriptsLoaded, openMediaAsset, pairLocalService,
   pendingTranscriptTrackIds, resolveLocalServiceConnection, saveModelToLocalService, setLocalServiceAutosave, setReviewBucketAsOf, setView,
 } from '../../apps/web/src/model';
 import { bootSnapshotCache, buildSnapshotCacheRecord, SNAPSHOT_CACHE_KEY, type SnapshotCacheBackend } from '../../apps/web/src/browserSnapshotCache';
@@ -72,6 +72,7 @@ async function seededService() {
   const m1 = seed.currentMedia!; const m1Cue = seed.cues[0]!;
   const item = await captureSentence(seed, m1Cue);
   if (!item) throw new Error('Expected a saved sentence');
+  addSavedItemToReview(seed, item);
   await new Promise((resolve) => setTimeout(resolve, 5));
   await importFixture(seed);
   const m2 = seed.currentMedia!;

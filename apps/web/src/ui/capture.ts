@@ -1,6 +1,6 @@
 import type { AppModel, Selection } from '../uiTypes';
 import { requestFocusAfterRender, rerenderApp } from '../appShell.ts';
-import { currentTargetTrack, undoSave, type SaveReceipt, type UnappliedDraft } from '../model';
+import { currentTargetTrack, freezeSelectionWithSource, undoSave, type SaveReceipt, type UnappliedDraft } from '../model';
 import { showToast } from './toast.ts';
 import { suggestMeaningForSelection } from '../morphologyPanel.ts';
 
@@ -12,8 +12,8 @@ export const CAPTURE_REQUIRES_APPROVAL_MESSAGE = 'Approve the transcript before 
  * nothing is persisted until Save / Enter in Meaning.
  */
 export function openCapture(model: AppModel, selection: NonNullable<Selection>, draft?: { meaning: string; notes: string }): boolean {
-  const targetTrack = currentTargetTrack(model);
-  if (targetTrack?.transcriptStatus !== 'approved') {
+  const transcriptStatus = selection.source?.transcriptStatus ?? currentTargetTrack(model)?.transcriptStatus;
+  if (transcriptStatus !== 'approved') {
     model.importError = CAPTURE_REQUIRES_APPROVAL_MESSAGE;
     window.getSelection()?.removeAllRanges();
     rerenderApp(model);
@@ -24,7 +24,9 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>, 
   const video = document.querySelector('.video-stage video') as HTMLVideoElement | null;
   if (video && !video.paused) video.pause();
   model.player.isPlaying = false;
-  model.selection = selection;
+  // lt-192.6: freeze inspected source and exact cue slice; pass frozenSelection for suggestMeaning identity check.
+  const frozenSelection = freezeSelectionWithSource(model, selection);
+  model.selection = frozenSelection;
   // lt-e0j: Undo re-opens the form with the values the learner had typed.
   model.pendingMeaning = draft?.meaning ?? '';
   model.pendingMeaningSuggestion = null;
@@ -33,7 +35,7 @@ export function openCapture(model: AppModel, selection: NonNullable<Selection>, 
   requestFocusAfterRender(model, 'selection-meaning');
   rerenderApp(model);
   // lt-foe.3.4: dictionary suggestion for a single word, without blocking; never over an Undo draft.
-  if (!draft?.meaning) void suggestMeaningForSelection(model, selection, () => rerenderApp(model)).catch(() => {});
+  if (!draft?.meaning) void suggestMeaningForSelection(model, frozenSelection, () => rerenderApp(model)).catch(() => {});
   return true;
 }
 

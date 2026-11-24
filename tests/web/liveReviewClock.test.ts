@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setView } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../no-network/networkTrap';
 
@@ -23,7 +23,7 @@ async function modelWithCards(count: number): Promise<{ model: Model; cardIds: s
     const item = await captureSentence(model, cue);
     if (!item) throw new Error('Missing synthetic saved item');
 
-    cardIds.push(model.capture.cardsFor(item.id).active[0]!.id);
+    cardIds.push(addSavedItemToReview(model, item)!.id);
   }
   return { model, cardIds };
 }

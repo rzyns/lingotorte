@@ -1,6 +1,6 @@
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { importFixtureMediaAndSubtitles, setPracticeMode, setExportImportConfirmReplace, connectLocalService, previewRestoreManifest, previewDurableRestore, setLocalServiceBaseUrl } from '../../apps/web/src/model';
+import { addSavedItemToReview, importFixtureMediaAndSubtitles, setPracticeMode, setExportImportConfirmReplace, connectLocalService, previewRestoreManifest, previewDurableRestore, setLocalServiceBaseUrl } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { LocalStore, ExportService } from '../../packages/storage/src';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
@@ -40,7 +40,8 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
   it.each(['practice', 'range'] as const)('%s audio failure is visible, generic, recoverable and clean returns focus', async kind => {
     const model = await fixture();
     if (kind === 'practice') {
-      await captureSentence(model, model.cues[0]!);
+      const saved = (await captureSentence(model, model.cues[0]!))!;
+      addSavedItemToReview(model, saved);
       model.view = 'practice'; setPracticeMode(model, 'audio-recall');
     } else model.player.sourceRange = { startMs: 100, endMs: 1000 };
     model.localService.status = 'connected';
@@ -68,7 +69,8 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
       model.localService.status = 'connected';
       model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
       if (kind === 'practice') {
-        await captureSentence(model, model.cues[0]!);
+        const saved = (await captureSentence(model, model.cues[0]!))!;
+        addSavedItemToReview(model, saved);
         model.view = 'practice'; setPracticeMode(model, 'audio-recall');
       } else model.player.sourceRange = { startMs: 100, endMs: 1000 };
       rerenderApp(model);
@@ -109,7 +111,9 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
     expect(model.player.currentTimeMs).toBe(model.cues[0]!.startMs);
   });
   it('sentence builder add/remove/reset hands focus to a surviving token or submit', async () => {
-    const model = await fixture(); await captureSentence(model, model.cues[0]!);
+    const model = await fixture();
+    const saved = (await captureSentence(model, model.cues[0]!))!;
+    addSavedItemToReview(model, saved);
     model.view = 'practice'; setPracticeMode(model, 'sentence-builder'); rerenderApp(model);
     const add = document.querySelector<HTMLButtonElement>('.sentence-builder-token--pool')!;
     add.focus(); add.click();
@@ -127,7 +131,9 @@ describe('lt-5lb.1 error feedback and focus continuity', () => {
       model.localService.pathPolicy = { version: 1, platform: 'linux', fullyQualifiedOnly: true, uncAllowed: false };
       model.transcriptLifecycle.localAsrMediaPath = '/synthetic/movie.webm';
       if (kind === 'practice') {
-        await captureSentence(model, model.cues[0]!); model.view = 'practice'; setPracticeMode(model, 'audio-recall');
+        const saved = (await captureSentence(model, model.cues[0]!))!;
+        addSavedItemToReview(model, saved);
+        model.view = 'practice'; setPracticeMode(model, 'audio-recall');
       } else model.player.sourceRange = { startMs: 100, endMs: 1000 };
       rerenderApp(model);
       if (kind === 'practice') {

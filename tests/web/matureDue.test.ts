@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, learnerProgress, listReviewBuckets, pickNextDueCard, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../no-network/networkTrap';
 
@@ -13,7 +13,7 @@ async function fixture(dueAt = '2030-01-01T12:00:00.000Z', state: 'new' | 'learn
   const item = await captureSentence(model, model.cues[0]!);
   if (!item) throw new Error('Missing synthetic saved item');
 
-  const card = model.capture.cardsFor(item.id).active[0]!;
+  const card = addSavedItemToReview(model, item)!;
   const original = model.store.getReviewCardState(card.id)!;
   model.store.putReviewCardState({ ...original, state, scheduledDays: 30, dueAt });
   setReviewBucketAsOf(model, asOf);
@@ -81,9 +81,9 @@ describe('mature cards remain scheduled, not retired', () => {
 
   it('preserves FSRS priority and earliest-due ordering across presentation labels', async () => {
     const { value: { model, card } } = await withNoNetwork(() => fixture());
-    // lt-2se.5: compare automatic recognition cards for two distinct captured sentences.
+    // Compare recognition cards for two distinct captured sentences after explicit enrolment.
     const secondItem = (await captureSentence(model, model.cues[1]!))!;
-    const ordinary = model.capture.cardsFor(secondItem.id).active[0]!;
+    const ordinary = addSavedItemToReview(model, secondItem)!;
     const initial = model.store.getReviewCardState(ordinary.id)!;
     model.store.putReviewCardState({ ...initial, state: 'review', scheduledDays: 2, dueAt: '2030-01-02T11:00:00.000Z' });
     expect(learnerProgress(model, asOf).dueCards).toBe(2);

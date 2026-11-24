@@ -774,7 +774,7 @@ function appendSubtitleTargetWindow(target: HTMLElement, model: AppModel, cue: C
       const span = captureTokenSpan(cue.text, word.charStart, word.charEnd) ?? { startToken: word.tokenIndex, endToken: word.tokenIndex + 1 };
       openCapture(model, {
         kind: 'lexeme',
-        text: button.textContent ?? word.text,
+        text: cue.text.slice(word.charStart, word.charEnd),
         cueId: cue.id,
         tokenStart: span.startToken,
         tokenEnd: span.endToken,

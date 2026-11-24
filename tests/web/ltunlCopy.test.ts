@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAppModel, generateLocalAsrDraft, importBrowserLocalFiles, importFixtureMediaAndSubtitles, makeFakeLocalAsrProvider, saveSelection, setSelection } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, generateLocalAsrDraft, importBrowserLocalFiles, importFixtureMediaAndSubtitles, makeFakeLocalAsrProvider, saveSelection, setSelection } from '../../apps/web/src/model';
 import { formatRelativeDue } from '../../apps/web/src/uiTypes';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
@@ -76,11 +76,13 @@ function assertClean(view: string, text: string, hashLike: RegExp = HASH_LIKE) {
 async function loadedModel(): Promise<AppModel> {
   const model = createAppModel();
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
-  await captureSentence(model, model.cues[0]!);
+  const sentence = await captureSentence(model, model.cues[0]!);
+  if (sentence) addSavedItemToReview(model, sentence);
   const cue = model.cues[0]!;
   const word = cue.text.split(/\s+/)[0]!.replace(/[^\p{L}]/gu, '');
   setSelection(model, { kind: 'lexeme', text: word, cueId: cue.id, tokenStart: 0, tokenEnd: 1, charStart: 0, charEnd: word.length });
-  await saveSelection(model);
+  const savedWord = await saveSelection(model);
+  if (savedWord) addSavedItemToReview(model, savedWord);
   rerenderApp(model);
   return model;
 }

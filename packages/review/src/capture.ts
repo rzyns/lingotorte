@@ -6,15 +6,16 @@ export type CaptureInput = SaveSelectionInput;
 /**
  * lt-e0j: what one capture-form save created, so Undo removes exactly that and never a pre-existing item.
  * `isNewItem` false + `isNewOccurrence` true is the lt-cms dedupe path (occurrence added to an existing item).
- * `createdCardId` is set only when this save's lt-uzo ensureCard created the card.
+ * lt-192.6: capture creates no review card (`card` and `createdCardId` are `null`), while preserving legacy
+ * non-null `createdCardId` undo handling for pre-F receipts.
  */
 export type CaptureReceipt = Readonly<{
   item: SavedItem;
   occurrence: SavedOccurrence;
-  card: ReviewCard;
+  card: ReviewCard | null;
   isNewItem: boolean;
   isNewOccurrence: boolean;
-  /** Set only when this capture created the card. */
+  /** Set only when a legacy (pre-lt-192.6) capture created a card. */
   createdCardId: UUID | null;
   /** Capture-time state that undo re-checks before mutating anything. */
   baseline: Readonly<{ itemUpdatedAt: string; itemJson: string; occurrenceCount: number }>;
@@ -37,12 +38,9 @@ export class CaptureService {
 
   capture(input: CaptureInput): CaptureReceipt {
     const result = this.saved.saveSelection(input);
-    // lt-uzo: a saved item becomes one recognition card (idempotent per saved item, not per occurrence).
-    const cardsBefore = this.cardsFor(result.item.id);
-    const card = this.ensureCard(result.item, result.occurrence);
-    const createdCardId = cardsBefore.active.length + cardsBefore.archived.length === 0 ? card.id : null;
+    // lt-192.6: collect occurrence without automatic review enrolment; pre-existing cards/schedules stay untouched.
     const baseline = { itemUpdatedAt: result.item.updatedAt, itemJson: JSON.stringify(this.store.getSavedItem(result.item.id) ?? result.item), occurrenceCount: this.store.listSavedOccurrencesForItem(result.item.id).length };
-    return { ...result, card, createdCardId, baseline };
+    return { ...result, card: null, createdCardId: null, baseline };
   }
 
   /**
@@ -67,6 +65,7 @@ export class CaptureService {
   }
 
   canUndo(receipt: CaptureReceipt, guard: UndoGuard): boolean {
+    if (!receipt.isNewItem && !receipt.isNewOccurrence) return false;
     const item = this.store.getSavedItem(receipt.item.id);
     // updatedAt plus the full record: an edit within the same clock tick still counts as a change.
     if (!item || item.updatedAt !== receipt.baseline.itemUpdatedAt || JSON.stringify(item) !== receipt.baseline.itemJson) return false;

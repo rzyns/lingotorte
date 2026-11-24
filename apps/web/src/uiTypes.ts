@@ -21,11 +21,27 @@ export type PlayerState = {
   sourceRange: { startMs: number; endMs: number } | null;
   activeCueId: string | null;
   lastTokenPreview?: string;
+  /** lt-192.6: frozen source snapshot of the most recent completed capture for source-summary display. */
+  lastSavedSource?: SelectionSource | null;
   /** Last playback error for the current media item (lt-r4k.1); cleared on load success or media change. */
   mediaError?: { mediaId: string; source: string; code: number; message: string; announced?: boolean } | null;
 };
 
-export type Selection = {
+/**
+ * lt-192.6: immutable snapshot of the inspected video/track/cue/time anchor taken when a selection opens so
+ * playback advancing to another cue (or track switches) cannot alter the captured occurrence.
+ */
+export type SelectionSource = Readonly<{
+  media: Readonly<import('@lingotorte/domain').MediaAsset>;
+  trackId: string;
+  trackVersion?: number;
+  transcriptStatus: SubtitleTrack['transcriptStatus'];
+  cue: Readonly<Cue>;
+  cueLineNumber: number;
+  timeRangeMs: Readonly<{ start: number; end: number }>;
+}>;
+
+export type Selection = Readonly<{
   kind: 'lexeme' | 'phrase' | 'sentence';
   text: string;
   cueId: string;
@@ -33,7 +49,9 @@ export type Selection = {
   tokenEnd: number;
   charStart: number;
   charEnd: number;
-} | null;
+  /** Attached non-enumerably by freezeSelectionWithSource so existing exact-shape checks keep passing. */
+  source?: SelectionSource;
+}> | null;
 
 export type PracticeMode = import('@lingotorte/domain').PracticeMode;
 export type PracticeResult = import('@lingotorte/domain').PracticeResult;

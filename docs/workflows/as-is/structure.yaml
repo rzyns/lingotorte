@@ -1429,7 +1429,7 @@ controls:
       - keydown
     source:
       path: apps/web/src/views/player/transcript.ts
-      line: 526
+      line: 539
       snippet: const meaningInput = document.createElement('input');
   - id: player.selection-notes
     scope: player
@@ -1442,7 +1442,7 @@ controls:
       - input
     source:
       path: apps/web/src/views/player/transcript.ts
-      line: 554
+      line: 567
       snippet: const notesInput = document.createElement('textarea');
   - id: player.save
     scope: player
@@ -1458,7 +1458,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/transcript.ts
-      line: 566
+      line: 579
       snippet: const saveBtn = document.createElement('button');
   - id: player.cancel
     scope: player
@@ -1471,7 +1471,7 @@ controls:
       - click
     source:
       path: apps/web/src/views/player/transcript.ts
-      line: 601
+      line: 614
       snippet: const cancelBtn = document.createElement('button');
   - id: practice.practice-mode
     scope: practice
@@ -2210,37 +2210,37 @@ keyboard:
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 380
+        line: 379
         snippet: if (e.key === 'Enter' || e.key === ' ') {
     - key: " "
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 380
+        line: 379
         snippet: if (e.key === 'Enter' || e.key === ' ') {
     - key: Escape
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 390
+        line: 389
         snippet: if (e.key === 'Escape') {
     - key: ArrowRight
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 403
+        line: 402
         snippet: "const next = words[words.indexOf(button) + (e.key === 'ArrowRight' ? 1 : -1)];"
     - key: Enter
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 606
+        line: 619
         snippet: if (e.key === 'Enter' && !e.isComposing) {
     - key: Escape
       scope: player
       source:
         path: apps/web/src/views/player/transcript.ts
-        line: 612
+        line: 625
         snippet: if (e.key === 'Escape') {
     - key: " "
       scope: review
@@ -2444,22 +2444,22 @@ api:
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4844
+        line: 4942
         snippet: const state = await fetchLocalServiceJson(transport, '/api/state'); current();
     - route: /api/restore/preview
       source:
         path: apps/web/src/model.ts
-        line: 4858
+        line: 4956
         snippet: const reply = await fetchLocalServiceJson(transport, '/api/restore/preview', { …
     - route: /api/restore/commit
       source:
         path: apps/web/src/model.ts
-        line: 4901
+        line: 4999
         snippet: const ack = await fetchLocalServiceJson(binding.transport, '/api/restore/commit…
     - route: /api/state
       source:
         path: apps/web/src/model.ts
-        line: 4907
+        line: 5005
         snippet: const readback = await fetchLocalServiceJson(binding.transport, '/api/state'); …
     - route: /api/language/morphology
       source:
@@ -2516,42 +2516,42 @@ persistence:
     - symbol: undoSave
       source:
         path: apps/web/src/model.ts
-        line: 4055
+        line: 4061
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: saveSelectionWithReceipt
       source:
         path: apps/web/src/model.ts
-        line: 4128
+        line: 4214
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: archiveReviewCardsForSavedItem
       source:
         path: apps/web/src/model.ts
-        line: 4186
+        line: 4284
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemToReview
       source:
         path: apps/web/src/model.ts
-        line: 4199
+        line: 4297
         snippet: if (persist) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: addSavedItemsToReview
       source:
         path: apps/web/src/model.ts
-        line: 4219
+        line: 4317
         snippet: if (added > 0) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: setSavedItemMeaning
       source:
         path: apps/web/src/model.ts
-        line: 4237
+        line: 4335
         snippet: if (updated && updated !== before) persistIfLocalServiceAutosaveEnabled(model);
     - symbol: submitReviewRating
       source:
         path: apps/web/src/model.ts
-        line: 4347
+        line: 4445
         snippet: persistIfLocalServiceAutosaveEnabled(model);
     - symbol: recordPracticeAttempt
       source:
         path: apps/web/src/model.ts
-        line: 4481
+        line: 4579
         snippet: persistIfLocalServiceAutosaveEnabled(model);
   unsavedMarkers:
     - symbol: persistIfLocalServiceAutosaveEnabled
@@ -2567,5 +2567,5 @@ persistence:
     - symbol: confirmRestore
       source:
         path: apps/web/src/model.ts
-        line: 4885
+        line: 4983
         snippet: markUnsavedBrowserEdits(model); return;

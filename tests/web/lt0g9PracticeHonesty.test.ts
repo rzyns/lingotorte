@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, setPracticeMode, setView, submitPracticeAttempt } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, setPracticeMode, setView, submitPracticeAttempt } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { SqliteLocalPersistence } from '../../packages/storage/src/sqliteLocalPersistence';
 import { withNoNetwork } from '../no-network/networkTrap';
@@ -26,7 +26,7 @@ async function twoSentenceCards(): Promise<{ model: Model; texts: Record<string,
   for (const cue of model.cues.slice(0, 2)) {
     const item = (await captureSentence(model, cue))!;
 
-    texts[model.capture.cardsFor(item.id).active[0]!.id] = cue.text;
+    texts[addSavedItemToReview(model, item)!.id] = cue.text;
   }
   return { model, texts };
 }
@@ -178,7 +178,7 @@ describe('lt-0g9 practice honesty', () => {
     const cue = model.cues[0]!; const word = 'lokalny'; const start = cue.text.indexOf(word);
     const item = (await captureLexeme(model, cue, word, start, start + word.length, 3))!;
 
-    const card = model.capture.cardsFor(item.id).active[0]!;
+    const card = addSavedItemToReview(model, item)!;
     render(model);
     expect(promptText()).not.toMatch(/lokalny/i);
     expect(promptText()).toContain('Cześć, to jest ____ test.');

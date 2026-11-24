@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  addSavedItemToReview,
   createAppModel,
   saveSelection,
   saveSelectionWithReceipt,
@@ -199,6 +200,7 @@ describe('lt-foe.3.1 Edit meaning UI', () => {
   it('Review reveal: Edit meaning saves with Enter and keeps the reveal open', async () => {
     const { model, cues } = installModel();
     const saved = await saveWord(model, cues[0]!, 'dom', 'house');
+    addSavedItemToReview(model, saved);
     model.view = 'review';
     rerenderApp(model);
     button('Show answer / context')!.click();
@@ -221,6 +223,7 @@ describe('lt-foe.3.1 Edit meaning UI', () => {
   it('Review reveal: digits typed into Edit meaning never rate the card (real keydown path and handler)', async () => {
     const { model, cues } = installModel();
     const saved = await saveWord(model, cues[0]!, 'dom', 'house');
+    addSavedItemToReview(model, saved);
     model.view = 'review';
     rerenderApp(model);
     button('Show answer / context')!.click();
@@ -250,7 +253,8 @@ describe('lt-foe.3.1 Edit meaning UI', () => {
 
   it('Review reveal: digits typed into Add meaning (if rendered) never rate the card', async () => {
     const { model, cues } = installModel();
-    await saveWord(model, cues[0]!, 'dom');
+    const saved = await saveWord(model, cues[0]!, 'dom');
+    addSavedItemToReview(model, saved);
     model.view = 'review';
     rerenderApp(model);
     button('Show answer / context')!.click();

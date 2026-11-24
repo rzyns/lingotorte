@@ -10,7 +10,9 @@ import { ExportService } from '../../packages/storage/src/exportRestoreService.t
 import { SqliteLocalPersistence, OperationIneligibleError, OperationIdReusedError } from '../../packages/storage/src/sqliteLocalPersistence.ts';
 import { LEARNER_OPERATION_RECEIPT_CAP, LEARNER_OPERATION_RECEIPT_TTL_MS, OperationOwnedConflictError, type LearnerOperationRequest } from '../../packages/storage/src/learnerOperations.ts';
 import { learnerOperationApplier } from '../../apps/local-service/src/learnerOperations.ts';
-import { makeCue, makeMediaAsset, makeSubtitleTrack, type Cue } from '../../packages/domain/src/index.ts';
+import { CaptureService, ReviewService, defaultFsrsConfig } from '../../packages/review/src/index.ts';
+import { SavedOccurrenceService } from '../../packages/storage/src/savedOccurrenceService.ts';
+import { makeCue, makeMediaAsset, makeSubtitleTrack, canonicalJson, type Cue } from '../../packages/domain/src/index.ts';
 import { startPairedService, pairedFetch } from '../helpers/pairedService.ts';
 
 // lt-192.3 (ADR-0004): server-owned vocabulary operations against the real service and SQLite store. Synthetic only.
@@ -97,8 +99,7 @@ describe('lt-192.3 server learner operations', () => {
     expect(first.json.replayed).toBe(false);
     const receipt = first.json.receipt;
     expect(receipt).toMatchObject({ operationId: first.operationId, kind: 'capture', status: 'applied', seq: 1, generation: s0.operations.generation });
-    expect(receipt.result).toMatchObject({ isNewItem: true, isNewOccurrence: true, unappliedDraft: null });
-    expect(receipt.result.createdCardId).toBe(receipt.result.cardId);
+    expect(receipt.result).toMatchObject({ isNewItem: true, isNewOccurrence: true, cardId: null, createdCardId: null, unappliedDraft: null });
     expect(Object.keys(receipt.rows.savedItems)).toEqual([receipt.result.savedItemId]);
     const s1 = await svc.state();
     expect(s1.revision).toBe(receipt.revision);
@@ -113,7 +114,7 @@ describe('lt-192.3 server learner operations', () => {
     const s2 = await svc.state();
     expect(s2.revision).toBe(s1.revision);
     expect(Object.keys(s2.snapshot.savedOccurrences)).toHaveLength(1);
-    expect(Object.keys(s2.snapshot.reviewCards)).toHaveLength(1);
+    expect(Object.keys(s2.snapshot.reviewCards)).toHaveLength(0);
     // The same id with a changed payload or basis is refused, nothing applied.
     const changed = await svc.op('capture', { ...payload, meaning: 'kitty' }, s0.operations, first.operationId);
     expect(changed.status).toBe(409);
@@ -183,14 +184,14 @@ describe('lt-192.3 server learner operations', () => {
     const first = (await svc.op('capture', capturePayload(f, f.cues[0]!, 'Ala', { meaning: 'Ala (name)', notes: 'first' }), s0.operations)).json.receipt;
     // Another client, unaware of the first, saves "ala" from a different cue with its own draft meaning/notes.
     const second = (await svc.op('capture', capturePayload(f, f.cues[2]!, 'ala', { meaning: 'other meaning', notes: 'second' }), s0.operations)).json.receipt;
-    expect(second.result).toMatchObject({ savedItemId: first.result.savedItemId, cardId: first.result.cardId, isNewItem: false, isNewOccurrence: true, createdCardId: null,
+    expect(second.result).toMatchObject({ savedItemId: first.result.savedItemId, cardId: null, isNewItem: false, isNewOccurrence: true, createdCardId: null,
       unappliedDraft: { meaning: 'other meaning', notes: 'second', existingMeaning: 'Ala (name)', existingNotes: 'first' } });
     const s = (await svc.state()).snapshot;
     expect(Object.keys(s.savedItems)).toEqual([first.result.savedItemId]);
     expect(s.savedItems[first.result.savedItemId]).toMatchObject({ meaning: 'Ala (name)', notes: 'first' });
     const spans = Object.values(s.savedOccurrences as Record<string, any>).map(o => [o.cueId, o.sourceContext.charSpan.start, o.sourceContext.charSpan.end]).sort();
     expect(spans).toEqual([[f.cues[0]!.id, 0, 3], [f.cues[2]!.id, 0, 3]].sort());
-    expect(Object.keys(s.reviewCards)).toEqual([first.result.cardId]);
+    expect(Object.keys(s.reviewCards)).toEqual([]);
   });
 
   it('fences document saves: a GET-latest stale body cannot overwrite operation rows; an operations-only gap reconciles and keeps document edits', async () => {
@@ -235,34 +236,55 @@ describe('lt-192.3 server learner operations', () => {
 
   it('keeps dirty review schedule and history across remote capture/archive, and refuses history for a remotely undone card', async () => {
     const { root, file, f } = await seededFile();
+    // Pre-lt-192.6 capture operation persisted in SQLite (with createdCardId) so we also verify pre-F undo + dependency fence.
+    const preFId = randomUUID();
+    let preFCardId = '';
+    let preFItemId = '';
+    const db = SqliteLocalPersistence.open(file);
+    try {
+      const id0 = db.loadLearnerStateWithOperations().operations;
+      const prePayload = capturePayload(f, f.cues[1]!, 'Kot');
+      const preReq: LearnerOperationRequest = { operationId: preFId, kind: 'capture', basis: { generation: id0.generation, incarnation: id0.incarnation, receiptSeq: id0.receiptSeq }, payload: prePayload };
+      const preReceipt = db.applyLearnerOperation(preReq, (context) => {
+        const saved = new SavedOccurrenceService(context.store);
+        const cap = new CaptureService(context.store, saved, new ReviewService(context.store, defaultFsrsConfig()), () => context.now);
+        const r = saved.saveSelection({ kind: 'lexeme', language: 'pl', displayText: 'Kot', mediaId: f.media.id, cueId: f.cues[1]!.id, startMs: f.cues[1]!.startMs, endMs: f.cues[1]!.endMs, sourceContext: prePayload.sourceContext });
+        const card = cap.ensureCard(r.item, r.occurrence);
+        preFCardId = card.id; preFItemId = r.item.id;
+        return { status: 'applied', result: { savedItemId: r.item.id, occurrenceId: r.occurrence.id, cardId: card.id, isNewItem: r.isNewItem, isNewOccurrence: r.isNewOccurrence, createdCardId: card.id, undoBaseline: { itemCanonical: canonicalJson(r.item), occurrenceCount: 1 }, unappliedDraft: null } };
+      }).receipt;
+      expect(preReceipt.status).toBe('applied');
+    } finally { db.close(); }
+
     const svc = await service(root, file);
     const s0 = await svc.state();
     const keep = (await svc.op('capture', capturePayload(f, f.cues[0]!, 'kota'), s0.operations)).json.receipt.result;
-    const doomed = (await svc.op('capture', capturePayload(f, f.cues[1]!, 'Kot'), s0.operations));
+    const keepEnrol = await svc.op('set-review-enrolment', { savedItemId: keep.savedItemId, enrolled: true, expected: { activeCardIds: [], archivedCardIds: [] } });
+    const keepCardId = keepEnrol.json.receipt.result.activeCardIds[0] as string;
     const base = await svc.state(); // client B studies offline from here
-    // Client A: another capture, archive of `keep`, and Undo of `doomed`.
+    // Client A: another capture, archive of `keep`, and Undo of pre-F `doomed` card.
     await svc.op('capture', capturePayload(f, f.cues[2]!, 'psa'), base.operations);
-    const archive = await svc.op('set-review-enrolment', { savedItemId: keep.savedItemId, enrolled: false, expected: { activeCardIds: [keep.cardId], archivedCardIds: [] } }, base.operations);
+    const archive = await svc.op('set-review-enrolment', { savedItemId: keep.savedItemId, enrolled: false, expected: { activeCardIds: [keepCardId], archivedCardIds: [] } }, base.operations);
     expect(archive.json.receipt.status).toBe('applied');
     // Client B rated `keep` (schedule + review event) before seeing A's operations.
     const rated = structuredClone(base.snapshot);
-    const state = rated.reviewCardStates[keep.cardId];
-    rated.reviewCardStates[keep.cardId] = { ...state, state: 'learning', reps: 1, dueAt: '2026-10-31T00:00:00.000Z', updatedAt: AT };
-    const event = { id: randomUUID(), cardId: keep.cardId, reviewedAt: AT, rating: 'good', previousStateJson: JSON.stringify(state), nextStateJson: JSON.stringify(rated.reviewCardStates[keep.cardId]), createdAt: AT };
+    const state = rated.reviewCardStates[keepCardId];
+    rated.reviewCardStates[keepCardId] = { ...state, state: 'learning', reps: 1, dueAt: '2026-10-31T00:00:00.000Z', updatedAt: AT };
+    const event = { id: randomUUID(), cardId: keepCardId, reviewedAt: AT, rating: 'good', previousStateJson: JSON.stringify(state), nextStateJson: JSON.stringify(rated.reviewCardStates[keepCardId]), createdAt: AT };
     rated.reviewEvents = [...rated.reviewEvents, event]; rated.learnerAudit.reviewEvents = [...rated.learnerAudit.reviewEvents, event];
     const save = await svc.call('/api/state', 'PUT', { snapshot: rated, expectedRevision: base.revision });
     expect(save.status).toBe(200);
     const s1 = await svc.state();
-    expect(s1.snapshot.reviewCardStates[keep.cardId]).toMatchObject({ state: 'learning', reps: 1 });
+    expect(s1.snapshot.reviewCardStates[keepCardId]).toMatchObject({ state: 'learning', reps: 1 });
     expect(s1.snapshot.reviewEvents.map((e: any) => e.id)).toEqual([event.id]);
-    expect(s1.snapshot.reviewCards[keep.cardId].suspendedAt).toBeDefined(); // A's archive survived
+    expect(s1.snapshot.reviewCards[keepCardId].suspendedAt).toBeDefined(); // A's archive survived
     expect(itemsByText(s1.snapshot)).toEqual(['Kot', 'kota', 'psa']);
-    // Now A undoes `doomed` while B rated it offline: B's save is a dependency conflict, nothing written.
+    // Now A undoes the pre-F `doomed` card while B rated it offline: B's save is a dependency conflict, nothing written.
     const s2 = await svc.state();
-    const undo = await svc.op('undo-capture', { captureOperationId: doomed.operationId }, s2.operations);
-    expect(undo.json.receipt).toMatchObject({ status: 'applied', result: { removedItemId: doomed.json.receipt.result.savedItemId } });
+    const undo = await svc.op('undo-capture', { captureOperationId: preFId }, s2.operations);
+    expect(undo.json.receipt).toMatchObject({ status: 'applied', result: { removedItemId: preFItemId, removedCardId: preFCardId } });
     const offline = structuredClone(s2.snapshot);
-    const dState = offline.reviewCardStates[doomed.json.receipt.result.cardId];
+    const dState = offline.reviewCardStates[preFCardId];
     const dEvent = { id: randomUUID(), cardId: dState.cardId, reviewedAt: AT, rating: 'again', previousStateJson: JSON.stringify(dState), nextStateJson: JSON.stringify(dState), createdAt: AT };
     offline.reviewEvents = [...offline.reviewEvents, dEvent]; offline.learnerAudit.reviewEvents = [...offline.learnerAudit.reviewEvents, dEvent];
     const dep = await svc.call('/api/state', 'PUT', { snapshot: offline, expectedRevision: s2.revision });
@@ -292,13 +314,20 @@ describe('lt-192.3 server learner operations', () => {
     const s = (await svc.state()).snapshot;
     expect(itemsByText(s)).toEqual(['Kot', 'kota']);
     expect(dup.json.receipt.status).toBe('applied');
-    // Enrolment: stale expectation conflicts; matching expectation archives then reactivates the same card.
-    const stale = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: false, expected: { activeCardIds: [], archivedCardIds: [r.cardId] } }, s0.operations);
-    expect(stale.json.receipt).toMatchObject({ status: 'conflict', result: { reason: 'enrolment-changed', current: { activeCardIds: [r.cardId], archivedCardIds: [] } } });
-    const off = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: false, expected: { activeCardIds: [r.cardId], archivedCardIds: [] } }, s0.operations);
-    expect(off.json.receipt.result).toMatchObject({ activeCardIds: [], archivedCardIds: [r.cardId] });
-    const on = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: true, expected: { activeCardIds: [], archivedCardIds: [r.cardId] } }, s0.operations);
-    expect(on.json.receipt.result).toMatchObject({ activeCardIds: [r.cardId], archivedCardIds: [] });
+    // Enrolment: opt-in creates the card (and blocks prior capture undo); stale expectation conflicts; matching archives then reactivates the same card.
+    const dupCardEnrol = await svc.op('set-review-enrolment', { savedItemId: dup.json.receipt.result.savedItemId, enrolled: true, expected: { activeCardIds: [], archivedCardIds: [] } }, s0.operations);
+    expect(dupCardEnrol.json.receipt.status).toBe('applied');
+    const dupUndoAfterEnrol = await svc.op('undo-capture', { captureOperationId: dup.operationId }, s0.operations);
+    expect(dupUndoAfterEnrol.json.receipt).toMatchObject({ status: 'conflict', result: { reason: 'changed-since-capture' } });
+    const firstEnrol = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: true, expected: { activeCardIds: [], archivedCardIds: [] } }, s0.operations);
+    expect(firstEnrol.json.receipt.status).toBe('applied');
+    const cardId = firstEnrol.json.receipt.result.activeCardIds[0] as string;
+    const stale = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: false, expected: { activeCardIds: [], archivedCardIds: [cardId] } }, s0.operations);
+    expect(stale.json.receipt).toMatchObject({ status: 'conflict', result: { reason: 'enrolment-changed', current: { activeCardIds: [cardId], archivedCardIds: [] } } });
+    const off = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: false, expected: { activeCardIds: [cardId], archivedCardIds: [] } }, s0.operations);
+    expect(off.json.receipt.result).toMatchObject({ activeCardIds: [], archivedCardIds: [cardId] });
+    const on = await svc.op('set-review-enrolment', { savedItemId: r.savedItemId, enrolled: true, expected: { activeCardIds: [], archivedCardIds: [cardId] } }, s0.operations);
+    expect(on.json.receipt.result).toMatchObject({ activeCardIds: [cardId], archivedCardIds: [] });
   });
 
   it('after a committed-but-lost acknowledgement and a service restart, the retry replays once; unknown old-incarnation and pre-restore operations are refused', async () => {

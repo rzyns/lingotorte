@@ -4050,8 +4050,14 @@ export async function saveSelection(model: AppModel): Promise<SavedItem | null> 
 }
 
 export function undoSave(model: AppModel, receipt: SaveReceipt): boolean | Promise<boolean> {
-  if (receipt.pending || receipt.operationId) return undoOperationSave(model, receipt.operationId!);
+  if (receipt.pending || receipt.operationId) {
+    return undoOperationSave(model, receipt.operationId!).then((ok) => {
+      if (ok) model.player.lastSavedSource = null;
+      return ok;
+    });
+  }
   if (!model.capture.undo(receipt, { activeCardIds: [model.review.activeCardId, model.review.currentCardId, model.practice.cardId] })) return false;
+  model.player.lastSavedSource = null;
   persistIfLocalServiceAutosaveEnabled(model);
   return true;
 }
@@ -4072,8 +4078,8 @@ async function undoOperationSave(model: AppModel, captureOperationId: string): P
     return discardLearnerOperation(model, captureOperationId); // nothing was applied
   }
   if (record.status === 'cancelled') return true;
-  const cardId = (record.receipt?.result as { cardId?: string } | undefined)?.cardId;
-  if (cardId && [model.review.activeCardId, model.review.currentCardId, model.practice.cardId].includes(cardId)) return false;
+  const createdCardId = (record.receipt?.result as { createdCardId?: string | null } | undefined)?.createdCardId;
+  if (createdCardId && [model.review.activeCardId, model.review.currentCardId, model.practice.cardId].includes(createdCardId)) return false;
   const undo = await enqueueLearnerOperation(model, 'undo-capture', { captureOperationId }, { label: `Undo ${record.label}`, dependsOn: captureOperationId, ...(record.savedItemId ? { savedItemId: record.savedItemId } : {}) });
   await scheduleLearnerOperationFlush(model);
   const settled = (await state.backend.list()).find((r) => r.operationId === undo.operationId);
@@ -4086,76 +4092,168 @@ function meaningSourceForPending(model: AppModel): MeaningSource {
   return suggestion && suggestion.text === model.pendingMeaning ? suggestion.source : { kind: 'learner' };
 }
 
+function exactSelectionText(selection: NonNullable<import('./uiTypes').Selection>, cue: Cue | undefined): string {
+  if (!cue) return selection.text;
+  if (selection.kind === 'sentence') return cue.text;
+  const { charStart, charEnd } = selection;
+  const validSpan = Number.isSafeInteger(charStart) && Number.isSafeInteger(charEnd)
+    && charStart >= 0 && charStart < charEnd && charEnd <= cue.text.length;
+  return validSpan ? cue.text.slice(charStart, charEnd) : selection.text;
+}
+
+function buildSelectionSource(
+  model: AppModel,
+  selection: NonNullable<import('./uiTypes').Selection>,
+): import('./uiTypes').SelectionSource | undefined {
+  if (selection.source) return selection.source;
+  const media = model.currentMedia;
+  const track = currentTargetTrack(model);
+  const cue = model.cues.find((c) => c.id === selection.cueId)
+    ?? (track ? model.store.listCuesForTrack(track.id).find((c) => c.id === selection.cueId) : undefined);
+  if (!media || !track || !cue) return undefined;
+  const isSentence = selection.kind === 'sentence';
+  const charStart = isSentence ? 0 : selection.charStart;
+  const charEnd = isSentence ? cue.text.length : selection.charEnd;
+  const timeRangeMs = isSentence
+    ? { start: cue.startMs, end: cue.endMs }
+    : selectionTimeRangeForCue(model, cue, charStart, charEnd);
+  const idx = model.cues.findIndex((c) => c.id === cue.id);
+  const cueLineNumber = idx >= 0 ? idx + 1 : cue.cueIndex;
+  return Object.freeze({
+    media: Object.freeze({ ...media }),
+    trackId: track.id,
+    trackVersion: track.trackVersion,
+    transcriptStatus: track.transcriptStatus,
+    cue: Object.freeze({ ...cue }),
+    cueLineNumber,
+    timeRangeMs: Object.freeze({ ...timeRangeMs }),
+  });
+}
+
+/**
+ * lt-192.6: freeze inspected source identity, time range, and exact cue slice on the selection so
+ * advancing playback cannot alter what the learner inspected. Attached non-enumerably so existing
+ * exact enumerable-key comparisons keep working.
+ */
+export function freezeSelectionWithSource(
+  model: AppModel,
+  selection: NonNullable<import('./uiTypes').Selection>,
+): NonNullable<import('./uiTypes').Selection> {
+  const source = buildSelectionSource(model, selection);
+  const cue = source?.cue ?? model.cues.find((c) => c.id === selection.cueId);
+  const frozen: NonNullable<import('./uiTypes').Selection> = {
+    kind: selection.kind,
+    text: exactSelectionText(selection, cue),
+    cueId: selection.cueId,
+    tokenStart: selection.tokenStart,
+    tokenEnd: selection.tokenEnd,
+    charStart: selection.charStart,
+    charEnd: selection.charEnd,
+  };
+  if (source) {
+    Object.defineProperty(frozen, 'source', { value: source, enumerable: false, configurable: false, writable: false });
+  }
+  return Object.freeze(frozen);
+}
+
 export async function saveSelectionWithReceipt(model: AppModel): Promise<SaveReceipt | null> {
-  if (!model.selection || !model.currentMedia || !model.targetTrackId) return null;
-  const cue = model.cues.find((c) => c.id === model.selection?.cueId);
-  if (!cue || !model.selection) return null;
-  const selection = model.selection;
+  const rawSelection = model.selection;
+  if (!rawSelection) return null;
+  const source = rawSelection.source;
+  const media = source?.media ?? model.currentMedia;
+  const trackId = source?.trackId ?? model.targetTrackId;
+  const cue = source?.cue
+    ?? model.cues.find((c) => c.id === rawSelection.cueId)
+    ?? (trackId ? model.store.listCuesForTrack(trackId).find((c) => c.id === rawSelection.cueId) : undefined);
+  if (!media || !trackId || !cue) return null;
+
+  const selection = rawSelection.source ? rawSelection : freezeSelectionWithSource(model, rawSelection);
+  const frozenSource = selection.source ?? null;
   const meaning = model.pendingMeaning;
   const notes = model.pendingNotes;
   // lt-cms: a whole-cue sentence capture keeps the whole-cue shape (cue time range, no word-range anchor).
-  const isSentence = model.selection.kind === 'sentence';
-  const selectionTimeRange = isSentence
-    ? { start: cue.startMs, end: cue.endMs }
-    : selectionTimeRangeForCue(model, cue, model.selection.charStart, model.selection.charEnd);
+  const isSentence = selection.kind === 'sentence';
+  const charStart = isSentence ? 0 : selection.charStart;
+  const charEnd = isSentence ? cue.text.length : selection.charEnd;
+  const displayText = isSentence ? cue.text : exactSelectionText(selection, cue);
+  const selectionTimeRange = frozenSource
+    ? frozenSource.timeRangeMs
+    : (isSentence ? { start: cue.startMs, end: cue.endMs } : selectionTimeRangeForCue(model, cue, charStart, charEnd));
 
   const sourceContext = buildSourceContext(
-    model.currentMedia.id,
-    model.currentMedia.originalPath,
-    model.currentMedia.contentSha256,
-    model.targetTrackId,
+    media.id,
+    media.originalPath,
+    media.contentSha256,
+    trackId,
     cue,
-    isSentence ? 0 : model.selection.tokenStart,
-    isSentence ? cue.text.split(/\s+/).filter(Boolean).length : model.selection.tokenEnd,
-    isSentence ? 0 : model.selection.charStart,
-    isSentence ? cue.text.length : model.selection.charEnd,
+    isSentence ? 0 : selection.tokenStart,
+    isSentence ? cue.text.split(/\s+/).filter(Boolean).length : selection.tokenEnd,
+    charStart,
+    charEnd,
     isSentence ? undefined : selectionTimeRange,
   );
 
-  if (learnerOperationsActive(model)) return saveSelectionAsOperation(model, { selection, meaning, notes, cue, isSentence, selectionTimeRange, sourceContext });
+  if (learnerOperationsActive(model)) {
+    const opReceipt = await saveSelectionAsOperation(model, { selection, meaning, notes, media, trackId, cue, displayText, isSentence, selectionTimeRange, sourceContext });
+    if (!opReceipt.pending) model.player.lastSavedSource = frozenSource;
+    return opReceipt;
+  }
   const result = model.capture.capture({
-    kind: model.selection.kind,
+    kind: selection.kind,
     language: 'pl',
-    displayText: isSentence ? cue.text : model.selection.text,
-    ...(model.pendingMeaning ? { meaning: model.pendingMeaning, meaningSource: meaningSourceForPending(model) } : {}),
-    ...(model.pendingNotes ? { notes: model.pendingNotes } : {}),
-    mediaId: model.currentMedia.id,
+    displayText,
+    ...(meaning ? { meaning, meaningSource: meaningSourceForPending(model) } : {}),
+    ...(notes ? { notes } : {}),
+    mediaId: media.id,
     cueId: cue.id,
     startMs: selectionTimeRange.start,
     endMs: selectionTimeRange.end,
     sourceContext,
   });
+  model.player.lastSavedSource = frozenSource;
   persistIfLocalServiceAutosaveEnabled(model);
   return { ...result, selection, meaning, notes };
 }
 
 /** lt-192.3: a paired capture becomes a durable `capture` operation; the service validates the source and dedups. */
-async function saveSelectionAsOperation(model: AppModel, input: { selection: NonNullable<AppModel['selection']>; meaning: string; notes: string; cue: Cue; isSentence: boolean; selectionTimeRange: { start: number; end: number }; sourceContext: SavedOccurrence['sourceContext'] }): Promise<SaveReceipt> {
-  const { selection, meaning, notes, cue, isSentence, selectionTimeRange, sourceContext } = input;
-  const track = model.targetTrackId ? model.store.getSubtitleTrack(model.targetTrackId) : undefined;
-  if (!track) throw new TypeError(`Cannot save learner occurrence: subtitle track ${model.targetTrackId} was not found`);
-  if (track.transcriptStatus !== 'approved') throw new TypeError(`Cannot save learner occurrence from ${track.transcriptStatus} transcript track; approved transcript is required before study use.`);
-  const media = model.currentMedia!;
-  const displayText = isSentence ? cue.text : selection.text;
+async function saveSelectionAsOperation(model: AppModel, input: {
+  selection: NonNullable<AppModel['selection']>;
+  meaning: string;
+  notes: string;
+  media: MediaAsset;
+  trackId: string;
+  cue: Cue;
+  displayText: string;
+  isSentence: boolean;
+  selectionTimeRange: { start: number; end: number };
+  sourceContext: SavedOccurrence['sourceContext'];
+}): Promise<SaveReceipt> {
+  const { selection, meaning, notes, media, trackId, cue, displayText, selectionTimeRange, sourceContext } = input;
+  const track = model.store.getSubtitleTrack(trackId);
+  const trackStatus = selection.source?.transcriptStatus ?? track?.transcriptStatus;
+  if (!track && !selection.source) throw new TypeError(`Cannot save learner occurrence: subtitle track ${trackId} was not found`);
+  if (trackStatus !== 'approved') throw new TypeError(`Cannot save learner occurrence from ${trackStatus} transcript track; approved transcript is required before study use.`);
   const payload: Record<string, unknown> = {
     kind: selection.kind, language: 'pl', displayText,
     ...(meaning.trim() ? { meaning, meaningSource: meaningSourceForPending(model) } : {}),
     ...(notes.trim() ? { notes } : {}),
     mediaId: media.id, cueId: cue.id, startMs: selectionTimeRange.start, endMs: selectionTimeRange.end, sourceContext,
   };
-  const needsDocument = !transcriptBundleAcknowledged(model, track.id);
-  const prerequisites: CapturePrerequisites | undefined = needsDocument
+  const needsDocument = Boolean(track && !transcriptBundleAcknowledged(model, track.id));
+  const prerequisites: CapturePrerequisites | undefined = needsDocument && track
     ? { media, track, cues: model.store.listCuesForTrack(track.id), wordTimings: model.store.listTranscriptWordTimingsForTrack(track.id) } : undefined;
   const record = await enqueueLearnerOperation(model, 'capture', payload, { label: `Save ${OPERATION_LABEL_TEXT(displayText)}`, ...(prerequisites ? { prerequisites } : {}) });
   if (needsDocument) {
     if (model.localService.autosaveEnabled && model.localService.status === 'connected' && model.localService.revision && !syncOwner(model).choice && model.localService.syncState !== 'conflict') await saveModelToLocalService(model);
   } else await scheduleLearnerOperationFlush(model);
   const settled = (await operationState(model).backend.list()).find((r) => r.operationId === record.operationId);
-  const result = settled?.status === 'acked' ? settled.receipt?.result as { savedItemId: string; occurrenceId: string; cardId: string; isNewItem: boolean; isNewOccurrence: boolean; createdCardId: string | null; unappliedDraft: UnappliedDraft | null } | undefined : undefined;
+  const result = settled?.status === 'acked'
+    ? settled.receipt?.result as { savedItemId: string; occurrenceId: string; cardId: string | null; isNewItem: boolean; isNewOccurrence: boolean; createdCardId: string | null; unappliedDraft: UnappliedDraft | null } | undefined
+    : undefined;
   const item = result && model.store.getSavedItem(result.savedItemId);
   const occurrence = result && model.store.getSavedOccurrence(result.occurrenceId);
-  const card = result && model.store.getReviewCard(result.cardId);
-  if (!result || !item || !occurrence || !card) return { pending: true, operationId: record.operationId, displayText, selection, meaning, notes };
+  const card = result?.cardId ? (model.store.getReviewCard(result.cardId) ?? null) : null;
+  if (!result || !item || !occurrence || (result.cardId && !card)) return { pending: true, operationId: record.operationId, displayText, selection, meaning, notes };
   return {
     item, occurrence, card, isNewItem: result.isNewItem, isNewOccurrence: result.isNewOccurrence, createdCardId: result.createdCardId,
     baseline: { itemUpdatedAt: item.updatedAt, itemJson: JSON.stringify(item), occurrenceCount: model.store.listSavedOccurrencesForItem(item.id).length },
@@ -4774,7 +4872,7 @@ function clearStaleLearnerUi(model: AppModel): void {
   model.practice.pendingAnswer = ''; model.practice.lastAttemptResult = null;
   model.practice.sentenceBuilder.orderedTokens = []; model.practice.sentenceBuilder.poolTokens = [];
   model.practice.cardId = null; model.practice.revealed = false; model.practice.choices = null;
-  model.selection = null; model.pendingMeaning = ''; model.pendingMeaningSuggestion = null; model.pendingNotes = '';
+  model.selection = null; model.player.lastSavedSource = null; model.pendingMeaning = ''; model.pendingMeaningSuggestion = null; model.pendingNotes = '';
 }
 function finishRestore(model: AppModel, manifest: import('@lingotorte/domain').LearnerExportManifest, receipt: ReturnType<RestoreService['restoreWithReceipt']>['receipt'] | (Omit<ReturnType<RestoreService['restoreWithReceipt']>['receipt'], 'durability' | 'durablySaved'> & { durability: string; durablySaved: boolean }), preview: import('@lingotorte/domain').RestorePreview): void {
   model.exportImport.lastRestore = {
@@ -4993,7 +5091,7 @@ export function setView(model: AppModel, view: import('./uiTypes').ViewName): vo
 export type SelectionNonNull = NonNullable<import('./uiTypes').Selection>;
 
 export function setSelection(model: AppModel, selection: NonNullable<import('./uiTypes').Selection>): void {
-  model.selection = selection;
+  model.selection = freezeSelectionWithSource(model, selection);
 }
 
 export function clearSelection(model: AppModel): void {

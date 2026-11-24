@@ -2,12 +2,16 @@ import { test, expect, nav, loadSyntheticFixture, saveFirstWord } from './suppor
 
 // No in-page clock hook is exposed, so this asserts the visible state change instead:
 // the single due card disappears and the "next due" summary moves off "now".
-test('C: after saving a word, Review shows 1 due card; reveal; Good → no longer due', async ({ page }) => {
+test('C: after saving a word and clicking Add to review, Review shows 1 due card; reveal; Good → no longer due', async ({ page }) => {
   await loadSyntheticFixture(page);
   const word = await saveFirstWord(page, 'hello (e2e)');
   await nav(page, 'Saved');
   const item = page.locator('.saved-item').filter({ has: page.getByRole('heading', { name: word, exact: true }) });
-  // lt-uzo: saving creates the review card (views/saved.ts), so the toggle is already on; no click.
+  // lt-192.6: saving collects the occurrence without enrolling a review card until Add to review is clicked.
+  const addToReview = item.getByRole('button', { name: 'Add to review' });
+  await expect(addToReview).toHaveAttribute('aria-pressed', 'false');
+  await expect(item.getByRole('button', { name: 'In review ✓' })).toHaveCount(0);
+  await addToReview.click();
   await expect(item.getByRole('button', { name: 'In review ✓' })).toHaveAttribute('aria-pressed', 'true');
   await expect(item.getByRole('button', { name: 'Add to review' })).toHaveCount(0);
 

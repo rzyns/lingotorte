@@ -18,5 +18,5 @@ Persistence: 15 model functions autosave to the local service when enabled; 3 ma
 
 | Journey | Steps | Clicks | Keys | Typing | View switches | Decisions | Modals | API calls | Failure branches | Focus lost | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [Daily-driver learning loop (pair, import, draft/correct/approve, save, review, practise, persist)](./daily-driver-learning-loop.md) | 15 | 28 | 4 | 5 | 8 | 3 | 0 | 14 | 9 | 2 | observed-live |
+| [Daily-driver learning loop (pair, import, draft/correct/approve, save, review, practise, persist)](./daily-driver-learning-loop.md) | 15 | 29 | 4 | 5 | 8 | 3 | 0 | 15 | 9 | 2 | observed-live |
 | [Export learner state and restore it (merge) through the local service](./export-restore-learner-state.md) | 6 | 8 | 0 | 1 | 0 | 1 | 0 | 3 | 5 | 0 | observed-live |

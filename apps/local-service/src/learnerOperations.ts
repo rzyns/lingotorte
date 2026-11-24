@@ -110,7 +110,7 @@ function applyCapture(payload: Record<string, unknown>, context: LearnerOperatio
     ? { ...(meaning !== undefined ? { meaning } : {}), ...(notes !== undefined ? { notes } : {}), existingMeaning: item.meaning ?? null, existingNotes: item.notes ?? null }
     : null;
   return { status: 'applied', result: {
-    savedItemId: item.id, occurrenceId: receipt.occurrence.id, cardId: receipt.card.id,
+    savedItemId: item.id, occurrenceId: receipt.occurrence.id, cardId: receipt.card?.id ?? null,
     isNewItem: receipt.isNewItem, isNewOccurrence: receipt.isNewOccurrence, createdCardId: receipt.createdCardId,
     undoBaseline: { itemCanonical: canonicalJson(item), occurrenceCount: receipt.baseline.occurrenceCount },
     unappliedDraft,
@@ -153,13 +153,14 @@ function applyUndoCapture(payload: Record<string, unknown>, context: LearnerOper
   const stored = context.receipt(captureOperationId);
   if (!stored) return conflict('capture-receipt-unavailable', { captureOperationId });
   if (stored.kind !== 'capture' || stored.status !== 'applied') return conflict('not-an-applied-capture', { captureOperationId });
-  const r = stored.result as { savedItemId: string; occurrenceId: string; cardId: string; isNewItem: boolean; isNewOccurrence: boolean; createdCardId: string | null; undoBaseline: { itemCanonical: string; occurrenceCount: number } };
+  const r = stored.result as { savedItemId: string; occurrenceId: string; cardId?: string | null; isNewItem: boolean; isNewOccurrence: boolean; createdCardId: string | null; undoBaseline: { itemCanonical: string; occurrenceCount: number } };
   if (!r.isNewItem && !r.isNewOccurrence) return conflict('nothing-to-undo', { captureOperationId });
   const store = context.store;
   const item: SavedItem | undefined = store.getSavedItem(r.savedItemId);
   const occurrence = store.getSavedOccurrence(r.occurrenceId);
-  const card = store.getReviewCard(r.cardId);
-  if (!item || !occurrence || !card || canonicalJson(item) !== r.undoBaseline.itemCanonical) return conflict('changed-since-capture', { captureOperationId });
+  // Pre-lt-192.6 receipts created a card and require it when createdCardId is set; card-less F captures have cardId = null.
+  const card = typeof r.cardId === 'string' ? (store.getReviewCard(r.cardId) ?? null) : null;
+  if (!item || !occurrence || (r.createdCardId !== null && !card) || canonicalJson(item) !== r.undoBaseline.itemCanonical) return conflict('changed-since-capture', { captureOperationId });
   const receipt: CaptureReceipt = {
     item, occurrence, card, isNewItem: r.isNewItem, isNewOccurrence: r.isNewOccurrence, createdCardId: r.createdCardId,
     baseline: { itemUpdatedAt: item.updatedAt, itemJson: JSON.stringify(item), occurrenceCount: r.undoBaseline.occurrenceCount },

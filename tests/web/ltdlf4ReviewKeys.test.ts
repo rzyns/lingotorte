@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 
 // lt-dlf.4: Review keyboard flow — Space toggles reveal, 1-4 rate Again/Hard/Good/Easy once revealed.
@@ -20,7 +20,8 @@ async function reviewModel(cards = 4): Promise<Model> {
   setReviewBucketAsOf(model, REVIEW_NOW);
   await importFixtureMediaAndSubtitles(model, mediaPath, targetSrtPath, nativeSrtPath);
   for (const cue of model.cues.slice(0, cards)) {
-    await captureSentence(model, cue);
+    const saved = await captureSentence(model, cue);
+    if (saved) addSavedItemToReview(model, saved);
   }
   setView(model, 'review');
   rerenderApp(model);

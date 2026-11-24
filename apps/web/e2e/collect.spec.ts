@@ -1,12 +1,16 @@
 import { test, expect, nav, loadSyntheticFixture, saveFirstWord } from './support.ts';
 
-test('B1: click a word → Save form → meaning → Save → listed in Saved', async ({ page }) => {
+test('B1: click a word → Save form → meaning → Save → listed in Saved without auto-enrolment', async ({ page }) => {
   await loadSyntheticFixture(page);
   const word = await saveFirstWord(page, 'hello (e2e)');
   await nav(page, 'Saved');
   const item = page.locator('.saved-item').filter({ has: page.getByRole('heading', { name: word, exact: true }) });
   await expect(item).toHaveCount(1);
   await expect(item).toContainText('Meaning: hello (e2e)');
+  await expect(item.getByRole('button', { name: 'Add to review' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(item.getByRole('button', { name: 'In review ✓' })).toHaveCount(0);
+  await nav(page, 'Review');
+  await expect(page.locator('#review-empty')).toBeVisible();
 });
 
 test('B2: drag-select across words opens the form and does not save immediately', async ({ page }) => {

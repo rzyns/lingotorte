@@ -1,7 +1,7 @@
 import type { AppModel } from '../../uiTypes';
 import { analyseCueMorphology, renderMorphologyPanel } from '../../morphologyPanel.ts';
 import type { Cue } from '@lingotorte/domain';
-import { formatTimeMs } from '../../uiTypes';
+import { formatTimeMs, type SelectionSource } from '../../uiTypes';
 import {
   activeCueAtTime,
   clearSelection,
@@ -18,7 +18,7 @@ import {
 } from '../../model';
 import { captureFocusContinuation, requestFocusAfterRender, rerenderApp } from '../../appShell.ts';
 import { CAPTURE_REQUIRES_APPROVAL_MESSAGE, openCapture, showSaveFailureToast, showSaveToast } from '../../ui/capture.ts';
-import { appendSourceDisclosure, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
+import { appendSourceDisclosure, compactPathLabel, currentKeyboardCue, formatCompactTimeMs, linePosition, mediaLabel, renderSourceMetaChip } from '../../ui/common.ts';
 import { focusCueWord, renderCueSourceContext, renderCueTargetText, seekToTimedWord, toggleLoopForWord } from './controls.ts';
 
 export function renderTranscriptPanel(model: AppModel): HTMLElement {
@@ -200,53 +200,52 @@ export function renderTranscriptPanel(model: AppModel): HTMLElement {
     row.addEventListener('mouseup', () => {
       const domSelection = window.getSelection();
       const selectionText = domSelection?.toString().trim();
-      if (selectionText) {
+      if (!selectionText) return;
+      const rangeStart = selectionOffsetInCueText(row, domSelection, cue.text, selectionText);
+      // lt-z8s: same synchronous tokenizer as the word buttons, so click and drag yield identical anchors.
+      const tokens = cueWordTokens(cue.text);
+      const lower = selectionText.toLowerCase();
+      const fallbackToken = tokens.find(
+        (t: import('../../model').TokenInfo) =>
+          t.surface.toLowerCase() === lower ||
+          (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
+      );
+      // lt-cms: build a capture selection; nothing is persisted until Save.
+      const anchoredToken = rangeStart === null
+        ? fallbackToken
+        : tokens.find((t) => t.charStart === rangeStart && t.surface.toLowerCase() === lower);
+      if (anchoredToken && anchoredToken.surface.toLowerCase() === lower) {
         lastDragCaptureAt.set(model, Date.now());
-        const rangeStart = selectionOffsetInCueText(row, domSelection, cue.text, selectionText);
-        // lt-z8s: same synchronous tokenizer as the word buttons, so click and drag yield identical anchors.
-        {
-          const tokens = cueWordTokens(cue.text);
-          const lower = selectionText.toLowerCase();
-          const token = tokens.find(
-            (t: import('../../model').TokenInfo) =>
-              t.surface.toLowerCase() === lower ||
-              (selectionText.length > t.surface.length && cue.text.toLowerCase().slice(t.charStart, t.charEnd).includes(lower)),
-          );
-          // lt-cms: build a capture selection; nothing is persisted until Save.
-          const anchoredToken = rangeStart === null
-            ? token
-            : tokens.find((t) => t.charStart === rangeStart && t.surface.toLowerCase() === lower);
-          if (anchoredToken && anchoredToken.surface.toLowerCase() === lower) {
-            const token = anchoredToken;
-            openCapture(model, {
-              kind: 'lexeme',
-              text: token.surface,
-              cueId: cue.id,
-              tokenStart: token.tokenIndex,
-              tokenEnd: token.tokenIndex + 1,
-              charStart: token.charStart,
-              charEnd: token.charEnd,
-            });
-            return;
-          }
-          const phraseStart = rangeStart ?? cue.text.toLowerCase().indexOf(lower);
-          const charStart = phraseStart >= 0 ? phraseStart : 0;
-          const charEnd = phraseStart >= 0 ? phraseStart + selectionText.length : cue.text.length;
-          const overlapping = tokens.filter((t) => t.charStart < charEnd && t.charEnd > charStart);
-          const tokenStart = overlapping.length ? Math.min(...overlapping.map((t) => t.tokenIndex)) : 0;
-          const tokenEnd = overlapping.length ? Math.max(...overlapping.map((t) => t.tokenIndex)) + 1 : tokens.length;
-          openCapture(model, {
-            kind: overlapping.length === 1 ? 'lexeme' : 'phrase',
-            text: overlapping.length === 1 ? overlapping[0]!.surface : selectionText,
-            cueId: cue.id,
-            tokenStart,
-            tokenEnd,
-            charStart: overlapping.length === 1 ? overlapping[0]!.charStart : charStart,
-            charEnd: overlapping.length === 1 ? overlapping[0]!.charEnd : charEnd,
-          });
-          return;
-        }
+        openCapture(model, {
+          kind: 'lexeme',
+          text: cue.text.slice(anchoredToken.charStart, anchoredToken.charEnd),
+          cueId: cue.id,
+          tokenStart: anchoredToken.tokenIndex,
+          tokenEnd: anchoredToken.tokenIndex + 1,
+          charStart: anchoredToken.charStart,
+          charEnd: anchoredToken.charEnd,
+        });
+        return;
       }
+      const phraseStart = rangeStart ?? cue.text.toLowerCase().indexOf(lower);
+      if (phraseStart < 0) return;
+      lastDragCaptureAt.set(model, Date.now());
+      const charStart = phraseStart;
+      const charEnd = phraseStart + selectionText.length;
+      const overlapping = tokens.filter((t) => t.charStart < charEnd && t.charEnd > charStart);
+      const tokenStart = overlapping.length ? Math.min(...overlapping.map((t) => t.tokenIndex)) : 0;
+      const tokenEnd = overlapping.length ? Math.max(...overlapping.map((t) => t.tokenIndex)) + 1 : tokens.length;
+      const exactStart = overlapping.length === 1 ? overlapping[0]!.charStart : charStart;
+      const exactEnd = overlapping.length === 1 ? overlapping[0]!.charEnd : charEnd;
+      openCapture(model, {
+        kind: overlapping.length === 1 ? 'lexeme' : 'phrase',
+        text: cue.text.slice(exactStart, exactEnd),
+        cueId: cue.id,
+        tokenStart,
+        tokenEnd,
+        charStart: exactStart,
+        charEnd: exactEnd,
+      });
     });
     panel.appendChild(row);
   }
@@ -435,26 +434,38 @@ function selectionOffsetInCueText(row: HTMLElement, sel: globalThis.Selection | 
   return offset;
 }
 
-function renderSelectionSourceSummary(model: AppModel): HTMLElement | null {
-  const cue = currentKeyboardCue(model);
+function renderSelectionSourceSummary(model: AppModel, explicitSource?: SelectionSource | null): HTMLElement | null {
+  const source = explicitSource ?? null;
+  const cue = source?.cue
+    ?? (model.selection ? model.cues.find((c) => c.id === model.selection!.cueId) : null)
+    ?? currentKeyboardCue(model);
   if (!cue) return null;
-  const targetTrack = currentTargetTrack(model);
+  const targetTrack = source ? null : currentTargetTrack(model);
+  const transcriptStatus = source?.transcriptStatus ?? targetTrack?.transcriptStatus;
+  const trackVersion = source?.trackVersion ?? targetTrack?.trackVersion;
+  const label = source?.media.title
+    || (source?.media.originalPath ? compactPathLabel(source.media.originalPath) : undefined)
+    || mediaLabel(model);
+  const line = source?.cueLineNumber ?? linePosition(model, cue);
+  const timeRange = source?.timeRangeMs ?? { start: cue.startMs, end: cue.endMs };
+  const originalPath = source?.media.originalPath ?? model.currentMedia?.originalPath;
+
   const summary = document.createElement('div');
   summary.className = 'selection-source-summary';
   summary.append(
-    renderSourceMetaChip(mediaLabel(model)),
-    renderSourceMetaChip(`line ${linePosition(model, cue)}`),
-    renderSourceMetaChip(`${formatCompactTimeMs(cue.startMs)}–${formatCompactTimeMs(cue.endMs)}`),
+    renderSourceMetaChip(label),
+    renderSourceMetaChip(`line ${line}`),
+    renderSourceMetaChip(`${formatCompactTimeMs(timeRange.start)}–${formatCompactTimeMs(timeRange.end)}`),
   );
-  if (targetTrack) {
-    summary.append(renderSourceMetaChip(targetTrack.transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft'));
+  if (transcriptStatus) {
+    summary.append(renderSourceMetaChip(transcriptStatus === 'approved' ? 'Transcript ready' : 'Transcript draft'));
   }
-  if (model.currentMedia?.originalPath) {
+  if (originalPath) {
     const detail = document.createElement('div');
     detail.className = 'selection-source-detail';
     // lt-unl: track version stays in the disclosure, off the primary line.
     // lt-dlf.13 (P8): video title instead of the raw path/blob: URL.
-    appendSourceDisclosure(detail, 'source details', targetTrack ? `${mediaLabel(model)} • track v${targetTrack.trackVersion} • ${targetTrack.transcriptStatus}` : mediaLabel(model));
+    appendSourceDisclosure(detail, 'source details', trackVersion !== undefined && transcriptStatus ? `${label} • track v${trackVersion} • ${transcriptStatus}` : label);
     summary.appendChild(detail);
   }
   return summary;
@@ -488,7 +499,7 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
     value.textContent = model.player.lastTokenPreview;
     preview.append(label, value);
     if (isSavedPreview) {
-      const sourceSummary = renderSelectionSourceSummary(model);
+      const sourceSummary = renderSelectionSourceSummary(model, model.player.lastSavedSource);
       if (sourceSummary) preview.appendChild(sourceSummary);
     }
     panel.appendChild(preview);
@@ -515,6 +526,8 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   const p = document.createElement('p');
   p.textContent = `Selected: “${model.selection.text}” (${model.selection.kind === 'lexeme' ? 'word' : model.selection.kind})`;
   panel.appendChild(p);
+  const inspectedSourceSummary = renderSelectionSourceSummary(model, model.selection.source);
+  if (inspectedSourceSummary) panel.appendChild(inspectedSourceSummary);
 
   const form = document.createElement('div');
   form.className = 'selection-form';
@@ -568,8 +581,8 @@ export function renderSelectionPanel(model: AppModel): HTMLElement {
   saveBtn.textContent = 'Save';
   // lt-dlf.13: stable hook for tests and browser scripts (several buttons read 'Save').
   saveBtn.dataset.action = 'save-occurrence';
-  const targetTrack = currentTargetTrack(model);
-  const canSave = targetTrack?.transcriptStatus === 'approved';
+  const targetTrackStatus = model.selection.source?.transcriptStatus ?? currentTargetTrack(model)?.transcriptStatus;
+  const canSave = targetTrackStatus === 'approved';
   saveBtn.disabled = !canSave;
   if (!canSave) saveBtn.title = 'Approve this transcript before saving learner study items.';
   // lt-dlf.5 (audit N10): closing the form destroys Meaning as the panel moves back to the left column,

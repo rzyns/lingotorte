@@ -2,7 +2,7 @@ import { captureSentence } from '../helpers/capture';
 import { pairedModel } from './pairingFixture.ts';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { connectLocalService, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
+import { addSavedItemToReview, connectLocalService, importFixtureMediaAndSubtitles, importBrowserLocalFiles, importBrowserLocalFileHandles, learnerProgress, restoreBrowserMediaHandle } from '../../apps/web/src/model';
 import { makeMediaAsset } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
@@ -645,11 +645,15 @@ describe('Lingotorte web UI fixture-driven smoke', () => {
       'fixtures/subtitles/synthetic-polish-dialogue.native.srt',
     );
     const firstCue = model.cues[0]!;
-    await captureSentence(model, firstCue);
+    const item = (await captureSentence(model, firstCue))!;
+
+    const beforeEnrol = learnerProgress(model, new Date('2026-07-04T09:00:00.000Z'));
+    expect(beforeEnrol.savedItems).toBe(1);
+    expect(beforeEnrol.reviewCards).toBe(0);
+    addSavedItemToReview(model, item);
 
     const progress = learnerProgress(model, new Date('2026-07-04T09:00:00.000Z'));
     expect(progress.savedItems).toBe(1);
-    // lt-2se.5: capture creates one recognition card per item
     expect(progress.reviewCards).toBe(1);
     expect(progress.dueCards).toBe(0);
     expect(progress.totalReviews).toBe(0);

@@ -1,7 +1,7 @@
 import { captureSentence, capturePhrase } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -152,12 +152,14 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     expect(app.textContent).not.toContain('chars');
   });
 
-  it('creates a review card from a saved item and navigates to review view', async () => {
+  it('creates a review card only when opted in and navigates to review view', async () => {
     const { value: model } = await withNoNetwork(async () => {
       const m = createAppModel();
       await importFixtureMediaAndSubtitles(m, mediaPath, targetSrtPath, nativeSrtPath);
       const firstCue = m.cues[0]!;
-      await captureSentence(m, firstCue);
+      const saved = (await captureSentence(m, firstCue))!;
+      expect(Object.keys(m.store.snapshot().reviewCards)).toHaveLength(0);
+      addSavedItemToReview(m, saved);
       rerenderApp(m);
       return m;
     });
@@ -168,8 +170,6 @@ describe('P4 saved occurrence UI: My Vocab / My Sentences', () => {
     sentencesTab?.click();
     rerenderApp(model);
 
-    // lt-2se.5: capture creates one recognition card per item
-    // The item is already in review; the learner opens Review from the nav.
     expect(Object.keys(model.store.snapshot().reviewCards)).toHaveLength(1);
     (Array.from(document.querySelectorAll('nav button')).find((b) => b.textContent === 'Review') as HTMLElement | null)?.click();
 

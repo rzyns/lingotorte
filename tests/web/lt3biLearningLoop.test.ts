@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fixedOffsetDayKey, importBrowserLocalFiles, learnerProgress, listReviewBuckets, pickNextDueCard, setLearningClock, setPracticeMode, setView, studyActionInstants, studyMetrics, STUDY_ESTIMATE_MS_PER_ACTION } from '../../apps/web/src/model';
+import { addSavedItemToReview, fixedOffsetDayKey, importBrowserLocalFiles, learnerProgress, listReviewBuckets, pickNextDueCard, setLearningClock, setPracticeMode, setView, studyActionInstants, studyMetrics, STUDY_ESTIMATE_MS_PER_ACTION } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import type { AppModel } from '../../apps/web/src/uiTypes';
 import { validateSavedOccurrenceSourceContext } from '../../packages/domain/src/sourceContext.ts';
@@ -110,7 +110,7 @@ describe('lt-3bi cross-surface learning loop', { timeout: 60_000 }, () => {
     const v1 = model.targetTrackId!;
     const [cueA, cueB] = model.cues;
     const card = (item: NonNullable<Awaited<ReturnType<typeof captureSentence>>>) =>
-      model.capture.cardsFor(item.id).active[0]!.id;
+      addSavedItemToReview(model, item)!.id;
     const mature = card((await captureSentence(model, cueA!))!);
     const fresh = card((await captureSentence(model, cueB!))!);
     const lexA = card((await captureLexeme(model, cueA!, 'Cześć', 0, 5, 0))!);

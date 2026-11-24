@@ -11,7 +11,8 @@ evidence:
   note: >-
     Steps follow lt-3kk phases 01–07 and 09 through the UI. Per-step UX attributes the run did not record
     (focus, banner wording, guards) are traced to source and labelled source-reading on that step. Run 4
-    predates lt-uzo (cards are now created on save), so s09/s10 card creation is source-reading. Phases 08 and
+    predates lt-192.6 (collecting now creates 0 review cards; learners explicitly enrol items from Saved via
+    "Add to review" / "Add all to review"), so s09/s10/s11 no-auto-card and opt-in enrolment are source-reading. Phases 08 and
     10–13 are security/robustness checks, not learner steps; export/restore (phase 11) is its own journey.
 preconditions:
   - The Docker stack is running and the browser is on the app origin with an empty local-service store.
@@ -212,18 +213,18 @@ steps:
       - { kind: key, target: player.selection-meaning, key: Enter, note: "or click Save (data-action=save-occurrence)" }
     feedback: >-
       Video pauses when the form opens; focus goes to Meaning. On save the form closes, focus returns to the
-      cue row, and a toast "Saved “word” · Undo" (role=status) shows for 5 s. A recognition review card is
-      created automatically.
-    persists: ["saved item (lexeme)", "saved occurrence with source context (media, track, cue, char span)", "review card + state (new, due now)"]
-    api: ["PUT /api/state"]
+      cue row, and a toast "Saved “word” · Undo" (role=status) shows for 5 s. No review card or schedule is
+      created automatically; existing review cards/schedules stay untouched.
+    persists: ["saved item (lexeme)", "saved occurrence with frozen source context (media, track, cue, char span, token span, time range)"]
+    api: ["POST /api/learner/operations"]
     canFail:
       - condition: Target track not approved
         appResponse: 'Form does not open; "Approve the transcript before saving from it." in the capture panel; Save sentence disabled with a title hint'
         recovery: Approve the transcript (s08)
         source: "apps/web/src/ui/capture.ts:14"
     focusAfter: cue row of the saved line
-    source: ["apps/web/src/views/player/transcript.ts:196", "apps/web/src/ui/capture.ts:14", "apps/web/src/views/player/transcript.ts:574", "apps/web/src/model.ts:3114", "packages/review/src/capture.ts:37", "apps/web/src/ui/capture.ts:45"]
-    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (two words, anchors 5–10 and 13–17 verified server-side); auto card creation is source-reading (lt-uzo, after run 4)" }
+    source: ["apps/web/src/views/player/transcript.ts:221", "apps/web/src/ui/capture.ts:14", "apps/web/src/views/player/transcript.ts:588", "apps/web/src/model.ts:4153", "packages/review/src/capture.ts:39", "apps/web/src/ui/capture.ts:49"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (two words, anchors 5–10 and 13–17 verified server-side); zero auto-card creation is source-reading (lt-192.6, after run 4)" }
   - id: s10-save-sentence
     view: player
     title: Save the whole line as a sentence
@@ -231,26 +232,31 @@ steps:
     userDoes:
       - { kind: click, target: player.save-sentence, note: "Enter on the focused button also works (lt-r4k.3)" }
       - { kind: click, target: player.save }
-    feedback: 'Capture heading "Save a sentence"; after Save a toast "Saved “…” · Undo", focus back on the row; card auto-created.'
-    persists: ["saved item (sentence)", "saved occurrence (whole cue span)", "review card + state"]
-    api: ["PUT /api/state"]
+    feedback: 'Capture heading "Save a sentence"; after Save a toast "Saved “…” · Undo", focus back on the row; 0 review cards created automatically.'
+    persists: ["saved item (sentence)", "saved occurrence (whole cue span)"]
+    api: ["POST /api/learner/operations"]
     focusAfter: cue row of the saved line
-    source: ["apps/web/src/views/player/transcript.ts:108", "apps/web/src/views/player/transcript.ts:459"]
-    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (span 0–18)" }
+    source: ["apps/web/src/views/player/transcript.ts:112", "apps/web/src/views/player/transcript.ts:478"]
+    evidence: { kind: observed-live, ref: "lt-3kk journey-04 (span 0–18); zero auto-card creation is source-reading (lt-192.6)" }
   - id: s11-check-saved
     view: saved
-    title: Confirm in Saved
+    title: Confirm in Saved and enrol for review
     userSees: >-
-      Saved view with tabs "My Vocab" / "My Sentences"; each item shows kind · language · saved N times, an
-      occurrence link "▶ time — cue", a source disclosure and a toggle "In review ✓" (aria-pressed).
+      Saved view with tabs "My Vocab" / "My Sentences"; collected items start with "Add to review"
+      (aria-pressed="false") and header action "Add all to review (N)". Each item shows kind · language ·
+      saved N times, an occurrence link "▶ time — cue", and a source disclosure.
     userDoes:
       - { kind: click, target: shell.btn, note: nav "Saved" }
+      - { kind: click, target: saved.reviewbtn, note: '"Add to review" to explicitly enrol the collected word for review' }
       - { kind: click, target: saved.btn, note: '"My Sentences" tab' }
     feedback: >-
-      Both tabs list the items; toggles read "In review ✓" because cards were created on save. "Add all to
-      review (N)" appears only when an item lacks a card.
-    source: ["apps/web/src/views/saved.ts:8", "apps/web/src/views/saved.ts:147"]
-    evidence: { kind: observed-live, ref: "lt-3kk journey-04 saved-items-listed (vocab 2, sentences 1)" }
+      Both tabs list the collected items without review cards ("Add to review", aria-pressed="false"); clicking
+      "Add to review" (or "Add all to review (N)") creates/reactivates the item’s recognition review card and
+      toggles the button to "In review ✓" (aria-pressed="true").
+    persists: ["review card + state (new, due now) on explicit Add to review"]
+    api: ["POST /api/learner/operations"]
+    source: ["apps/web/src/views/saved.ts:9", "apps/web/src/views/saved.ts:56", "apps/web/src/views/saved.ts:179"]
+    evidence: { kind: source-reading, ref: "lt-192.6 (opt-in review enrolment from Saved); lt-3kk journey-04 saved-items-listed" }
   - id: s12-review
     view: review
     title: Review a due card by keyboard
@@ -350,12 +356,13 @@ observations:
       successor, so keyboard focus lands on body; Approve, Rate, Submit and choice buttons do have successors
       (lt-r4k.2).
     evidence: { kind: observed-live, ref: "lt-3kk run 4 observation: focus after Apply lands on body (lt-5lb.1)" }
-  - id: o4-cards-auto-created
+  - id: o4-opt-in-review-enrolment
     atStep: s09-save-word
     text: >-
-      Saving creates the review card automatically (idempotent per item) and Saved shows an "In review ✓"
-      toggle; the lt-3kk plan text about an explicit "Create review card" predates lt-uzo.
-    evidence: { kind: source-reading, ref: "packages/review/src/capture.ts:37" }
+      Collecting an occurrence in Player creates 0 review cards/states (preserving pre-existing active/archived
+      cards and FSRS history); learners opt in explicitly from Saved via "Add to review" or "Add all to
+      review (N)" (lt-192.6).
+    evidence: { kind: source-reading, ref: "packages/review/src/capture.ts:39" }
   - id: o5-pairing-every-session
     atStep: s15-persist-reload
     text: >-

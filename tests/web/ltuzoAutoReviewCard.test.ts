@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  addSavedItemToReview,
   createAppModel,
   importFixtureMediaAndSubtitles,
   listReviewBuckets,
@@ -10,7 +11,8 @@ import {
 import { makeCue, makeMediaAsset, makeSubtitleTrack } from '@lingotorte/domain';
 import { rerenderApp } from '../../apps/web/src/app';
 
-// lt-uzo: saving creates one recognition card per saved item; Saved toggles archive (suspend) / re-add.
+// lt-uzo + lt-192.6: saving collects occurrences without auto-enrolling; Saved offers opt-in "Add to review" /
+// "Add all to review (N)" and toggles archive (suspend) / re-activate without losing schedules or history.
 
 const sha = 'sha256:0000000000000000000000000000000000000000000000000000000000000000' as const;
 const T0 = new Date('2030-01-01T00:00:00.000Z');
@@ -61,29 +63,31 @@ const dueIds = (model: ReturnType<typeof createAppModel>) => {
 const button = (label: string) => Array.from(document.querySelectorAll('button')).find((b) => b.textContent === label) as HTMLButtonElement | undefined;
 const buttonsStarting = (prefix: string) => Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.startsWith(prefix));
 
-describe('lt-uzo auto review card', () => {
+describe('lt-uzo / lt-192.6 review enrolment and toggle behaviour', () => {
   beforeEach(() => { setupDom(); });
 
-  it('saving an occurrence creates exactly one new recognition card, still one after another occurrence', async () => {
+  it('saving an occurrence creates no review card, and adding another occurrence keeps it un-enrolled', async () => {
     const { model, cues } = installModel();
     const item = await saveWord(model, cues[0]!, 'dom');
-    expect(cards(model)).toHaveLength(1);
-    const card = cards(model)[0]!;
-    expect(card).toMatchObject({ savedItemId: item.id, cardType: 'recognition', promptTemplate: 'Recognize: dom', createdAt: T0.toISOString() });
-    expect(model.store.getReviewCardState(card.id)).toMatchObject({ state: 'new', dueAt: T0.toISOString() });
+    expect(cards(model)).toHaveLength(0);
     const again = await saveWord(model, cues[1]!, 'dom');
     expect(again.id).toBe(item.id);
     expect(model.savedOccurrenceService.listOccurrencesForItem(item.id)).toHaveLength(2);
-    expect(cards(model)).toHaveLength(1);
+    expect(cards(model)).toHaveLength(0);
     expect(model.localService.syncState).toBe('unsaved');
   });
 
-  it('toggle off archives without deleting; toggle on re-activates the same card', async () => {
+  it('toggle on enrols; toggle off archives without deleting; toggle on re-activates the same card', async () => {
     const { model, cues } = installModel();
-    await saveWord(model, cues[0]!, 'dom');
-    const [card] = cards(model);
+    const item = await saveWord(model, cues[0]!, 'dom');
+    expect(cards(model)).toHaveLength(0);
     model.view = 'saved';
     rerenderApp(model);
+    button('Add to review')!.click();
+    expect(cards(model)).toHaveLength(1);
+    const [card] = cards(model);
+    expect(card).toMatchObject({ savedItemId: item.id, cardType: 'recognition', promptTemplate: 'Recognize: dom', createdAt: T0.toISOString() });
+    expect(model.store.getReviewCardState(card!.id)).toMatchObject({ state: 'new', dueAt: T0.toISOString() });
     button('In review ✓')!.click();
     expect(cards(model)).toHaveLength(1);
     expect(model.store.getReviewCard(card!.id)?.suspendedAt).toBe(T0.toISOString());
@@ -104,8 +108,10 @@ describe('lt-uzo auto review card', () => {
 
   it('Review deck count excludes archived cards and reports them separately', async () => {
     const { model, cues } = installModel();
-    await saveWord(model, cues[0]!, 'dom');
-    await saveWord(model, cues[1]!, 'stoi');
+    const one = await saveWord(model, cues[0]!, 'dom');
+    const two = await saveWord(model, cues[1]!, 'stoi');
+    addSavedItemToReview(model, one);
+    addSavedItemToReview(model, two);
     model.view = 'saved';
     rerenderApp(model);
     buttonsStarting('In review')[0]!.click();
@@ -115,10 +121,9 @@ describe('lt-uzo auto review card', () => {
     expect(dueIds(model)).toHaveLength(1);
   });
 
-  it('toggle on creates a card for an item that has none (pre-lt-uzo data)', () => {
+  it('toggle on creates a card for an item that has none (collected without enrolment)', () => {
     const { model, cues } = installModel();
     const cue = cues[0]!;
-    // Service-level save bypasses saveSelection: models an item saved before auto-cards existed.
     const { item, occurrence } = model.savedOccurrenceService.saveSelection({ kind: 'lexeme', language: 'pl', displayText: 'dom', mediaId: model.currentMedia!.id, cueId: cue.id, startMs: cue.startMs, endMs: cue.endMs, sourceContext: { mediaId: model.currentMedia!.id, mediaPath: 'fixtures/media/x.webm', mediaFingerprint: sha, subtitleTrackId: model.targetTrackId!, cueId: cue.id, cueIndex: 0, cueTextSha256: sha, tokenSpan: { startToken: 0, endToken: 1 }, charSpan: { start: 0, end: 3 } } as never });
     expect(cards(model)).toHaveLength(0);
     model.view = 'saved';
@@ -134,9 +139,12 @@ describe('lt-uzo auto review card', () => {
     await saveWord(model, cues[0]!, 'dom');
     await saveWord(model, cues[0]!, 'duży');
     await saveWord(model, cues[1]!, 'stoi');
-    expect(cards(model)).toHaveLength(3);
+    expect(cards(model)).toHaveLength(0);
     model.view = 'saved';
     rerenderApp(model);
+    expect(button('Add all to review (3)')).toBeDefined();
+    button('Add all to review (3)')!.click();
+    expect(cards(model)).toHaveLength(3);
     expect(buttonsStarting('Add all to review')).toHaveLength(0);
     buttonsStarting('In review ✓')[0]!.click();
     buttonsStarting('In review ✓')[0]!.click();
@@ -155,6 +163,8 @@ describe('lt-uzo auto review card', () => {
     setSelection(model, { kind: 'sentence', text: cue.text, cueId: cue.id, tokenStart: 0, tokenEnd: cue.text.split(/\s+/).length, charStart: 0, charEnd: cue.text.length });
     const item = (await saveSelection(model))!;
     expect(item.meaning).toBeUndefined();
+    expect(cards(model)).toHaveLength(0);
+    addSavedItemToReview(model, item);
     expect(cards(model)).toHaveLength(1);
     model.view = 'review';
     rerenderApp(model);
@@ -168,6 +178,7 @@ describe('lt-uzo auto review card', () => {
   it('with neither meaning nor native line, Saved and Review offer Add meaning, which persists', async () => {
     const { model, cues } = installModel();
     const item = await saveWord(model, cues[0]!, 'dom');
+    addSavedItemToReview(model, item);
     model.view = 'saved';
     rerenderApp(model);
     expect(document.querySelector('.saved-item .add-meaning-input')).not.toBeNull();
@@ -187,7 +198,8 @@ describe('lt-uzo auto review card', () => {
 
   it('scheduling state/due sit behind a details disclosure with formatted due', async () => {
     const { model, cues } = installModel();
-    await saveWord(model, cues[0]!, 'dom');
+    const item = await saveWord(model, cues[0]!, 'dom');
+    addSavedItemToReview(model, item);
     model.view = 'review';
     rerenderApp(model);
     const details = document.querySelector('details.review-scheduling')!;

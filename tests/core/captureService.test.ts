@@ -43,68 +43,81 @@ describe('CaptureService', () => {
     expect(output.trim()).toBe('function');
   });
 
-  it('(a) captures item, immutable occurrence and exactly one recognition card', async () => {
+  it('(a) captures item and immutable occurrence without creating a review card', async () => {
     const { store, capture, input } = await setup();
     const receipt = capture.capture(input());
-    expect(receipt).toMatchObject({ isNewItem: true, isNewOccurrence: true, createdCardId: receipt.card.id });
-    expect(receipt.card).toMatchObject({ savedItemId: receipt.item.id, savedOccurrenceId: receipt.occurrence.id, cardType: 'recognition' });
-    expect(store.getReviewCardState(receipt.card.id)).toMatchObject({ state: 'new', dueAt: clock().toISOString() });
+    expect(receipt).toMatchObject({ isNewItem: true, isNewOccurrence: true, card: null, createdCardId: null });
     expect(receipt.occurrence.sourceContext).toEqual(input().sourceContext);
+    expect(capture.cardsFor(receipt.item.id)).toEqual({ active: [], archived: [] });
+    expect(store.snapshot().reviewCards).toEqual({});
+    expect(store.snapshot().reviewCardStates).toEqual({});
     const again = capture.capture(input());
-    expect(again).toMatchObject({ isNewItem: false, isNewOccurrence: false, createdCardId: null });
-    expect(again.card.id).toBe(receipt.card.id);
-    expect(capture.cardsFor(receipt.item.id).active).toHaveLength(1);
+    expect(again).toMatchObject({ isNewItem: false, isNewOccurrence: false, card: null, createdCardId: null });
+    expect(capture.cardsFor(receipt.item.id)).toEqual({ active: [], archived: [] });
   });
 
-  it('(b) deduplicates text across cues without creating another card', async () => {
+  it('(b) deduplicates text across cues without creating another card when already enrolled', async () => {
     const { capture, input, cues, store } = await setup();
     const first = capture.capture(input());
+    const enrolled = capture.reactivate(first.item)!;
     const second = capture.capture({ ...input(cues[1]!), displayText: first.item.displayText });
-    expect(second).toMatchObject({ isNewItem: false, isNewOccurrence: true, createdCardId: null });
+    expect(second).toMatchObject({ isNewItem: false, isNewOccurrence: true, card: null, createdCardId: null });
     expect(second.item.id).toBe(first.item.id);
-    expect(second.card.id).toBe(first.card.id);
     expect(store.listSavedOccurrencesForItem(first.item.id)).toHaveLength(2);
-    expect(capture.cardsFor(first.item.id).active).toHaveLength(1);
+    expect(capture.cardsFor(first.item.id).active.map((c) => c.id)).toEqual([enrolled.id]);
   });
 
   it('(c) saving an archived item does not resurrect its card; explicit reactivation keeps its schedule', async () => {
     const { capture, input, cues, store } = await setup();
     const first = capture.capture(input());
-    const state = store.getReviewCardState(first.card.id);
-    expect(capture.archiveCards(first.item.id)).toEqual([first.card.id]);
+    const card = capture.reactivate(first.item)!;
+    const state = store.getReviewCardState(card.id);
+    expect(capture.archiveCards(first.item.id)).toEqual([card.id]);
     expect(capture.archiveCards(first.item.id)).toEqual([]);
     const second = capture.capture({ ...input(cues[1]!), displayText: first.item.displayText });
+    expect(second.card).toBeNull();
     expect(second.createdCardId).toBeNull();
-    expect(capture.cardsFor(first.item.id)).toMatchObject({ active: [], archived: [{ id: first.card.id }] });
-    expect(capture.reactivate(first.item)).toMatchObject({ id: first.card.id });
-    expect(store.getReviewCard(first.card.id)).not.toHaveProperty('suspendedAt');
-    expect(store.getReviewCardState(first.card.id)).toEqual(state);
+    expect(capture.cardsFor(first.item.id)).toMatchObject({ active: [], archived: [{ id: card.id }] });
+    expect(capture.reactivate(first.item)).toMatchObject({ id: card.id });
+    expect(store.getReviewCard(card.id)).not.toHaveProperty('suspendedAt');
+    expect(store.getReviewCardState(card.id)).toEqual(state);
   });
 
-  it('(d) undo removes exactly the newly created rows and leaves pre-existing rows untouched', async () => {
-    const { capture, store, input, cues } = await setup();
+  it('(d) undo removes exactly the newly created rows and leaves pre-existing rows, cards and history untouched', async () => {
+    const { capture, store, input, cues, review } = await setup();
     const before = store.snapshot();
     const first = capture.capture(input());
     expect(capture.canUndo(first, guard)).toBe(true);
     expect(capture.undo(first, guard)).toBe(true);
     expect(store.snapshot()).toEqual(before);
     const existing = capture.capture(input());
+    const card = capture.reactivate(existing.item)!;
+    review.submitReview(card.id, 'good', clock());
     const saved = store.snapshot();
     const added = capture.capture({ ...input(cues[1]!), displayText: existing.item.displayText });
-    expect(capture.undo(added, guard)).toBe(true);
+    expect(capture.undo(added, { activeCardIds: [card.id] })).toBe(true);
     expect(store.snapshot()).toEqual(saved);
     const duplicate = capture.capture(input());
     const unchanged = store.snapshot();
+    expect(capture.canUndo(duplicate, guard)).toBe(false);
     expect(capture.undo(duplicate, guard)).toBe(false);
     expect(store.snapshot()).toEqual(unchanged);
   });
 
-  it.each(['meaning edit', 'review event', 'active card'] as const)('(e) undo after %s returns false without mutation', async (reason) => {
+  it.each(['meaning edit', 'enrolled card', 'review event', 'active card'] as const)('(e) undo after %s returns false without mutation', async (reason) => {
     const { capture, store, input, review } = await setup();
-    const receipt = capture.capture(input());
+    const baseReceipt = capture.capture(input());
+    let receipt = baseReceipt;
     if (reason === 'meaning edit') capture.setMeaning(receipt.item.id, 'learner meaning');
-    if (reason === 'review event') review.submitReview(receipt.card.id, 'good', clock());
-    const undoGuard = { activeCardIds: reason === 'active card' ? [null, receipt.card.id, null] : [] };
+    if (reason === 'enrolled card') capture.reactivate(receipt.item);
+    let activeCardIds: (string | null)[] = [];
+    if (reason === 'review event' || reason === 'active card') {
+      const legacyCard = capture.ensureCard(baseReceipt.item, baseReceipt.occurrence);
+      receipt = { ...baseReceipt, card: legacyCard, createdCardId: legacyCard.id };
+      if (reason === 'review event') review.submitReview(legacyCard.id, 'good', clock());
+      if (reason === 'active card') activeCardIds = [null, legacyCard.id, null];
+    }
+    const undoGuard = { activeCardIds };
     const before = store.snapshot();
     expect(capture.canUndo(receipt, undoGuard)).toBe(false);
     expect(store.snapshot()).toEqual(before);

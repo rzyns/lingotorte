@@ -1,7 +1,7 @@
 import { captureSentence } from '../helpers/capture';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { createAppModel, importFixtureMediaAndSubtitles, listReviewBuckets, submitReviewRating, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
+import { addSavedItemToReview, createAppModel, importFixtureMediaAndSubtitles, listReviewBuckets, submitReviewRating, setReviewBucketAsOf, setView } from '../../apps/web/src/model';
 import { rerenderApp } from '../../apps/web/src/app';
 import { withNoNetwork } from '../../tests/no-network/networkTrap';
 
@@ -62,7 +62,7 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
       if (!item) throw new Error('Expected saved item');
       const occurrence = m.savedOccurrenceService.listOccurrencesForItem(item.id)[0];
       if (!occurrence) throw new Error('Expected saved occurrence');
-      const card = m.capture.cardsFor(item.id).active[0]!;
+      const card = addSavedItemToReview(m, item)!;
       return { model: m, card, item, occurrence, firstCue };
     });
   }
@@ -159,7 +159,7 @@ describe('P5 frontend review buckets and video-backed FSRS prompts', () => {
     if (!secondItem) throw new Error('Expected second saved item');
     const secondOccurrence = model.savedOccurrenceService.listOccurrencesForItem(secondItem.id)[0];
     if (!secondOccurrence) throw new Error('Expected second occurrence');
-    const secondCard = model.capture.cardsFor(secondItem.id).active[0]!;
+    const secondCard = addSavedItemToReview(model, secondItem)!;
 
     const asOf = dueAsOf(model, card.id, secondCard.id);
     setReviewBucketAsOf(model, asOf);

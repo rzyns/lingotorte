@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { backup, DatabaseSync } from 'node:sqlite';
 import {
-  activateReviewCard, approveTranscriptTrack, archiveReviewCardsForSavedItem, connectLocalService, createAppModel,
+  activateReviewCard, addSavedItemToReview, approveTranscriptTrack, archiveReviewCardsForSavedItem, connectLocalService, createAppModel,
   createCorrectedTranscriptVersion, importFixtureMediaAndSubtitles, learnerStateOf, mediaTranscriptsLoaded, openMediaAsset,
   pairLocalService, pendingTranscriptTrackIds, resolveLocalServiceConnection, saveModelToLocalService, setLocalServiceAutosave, useLearnerOperationOutbox,
   setPracticeMode, setSavedItemMeaning, submitPracticeAttempt, submitReviewRating,
@@ -261,8 +261,10 @@ beforeAll(async () => {
   const [c1, c2] = seed.cues as [Cue, Cue];
   expect(c1.text).toBe('Cześć, to jest lokalny test.'); expect(c2.text).toBe('Uczymy się z własnych napisów.');
   const sentence = (await captureSentence(seed, c1))!;
+  addSavedItemToReview(seed, sentence);
   seed.pendingNotes = 'phrase note (synthetic)';
   const phrase = (await capturePhrase(seed, c1, 'lokalny test', 15, 27, 3, 5))!;
+  addSavedItemToReview(seed, phrase);
   seed.pendingNotes = '';
   // Corrected version v2 of the target track with manual word timings (no provider of any kind), then approved.
   const corrected = await createCorrectedTranscriptVersion(seed, t1, [
@@ -282,6 +284,7 @@ beforeAll(async () => {
   const shared = (await captureLexeme(seed, v2c2, 'własnych', 13, 21, 3))!;
   seed.pendingMeaning = ''; seed.pendingMeaningSuggestion = null; seed.pendingNotes = '';
   const disposable = (await captureLexeme(seed, v2c2, 'napisów', 22, 29, 4))!;
+  addSavedItemToReview(seed, disposable);
   const archived = (await captureLexeme(seed, v2c2, 'Uczymy', 0, 6, 0))!;
   await new Promise((resolve) => setTimeout(resolve, 5));
   await importFixtureMediaAndSubtitles(seed, MEDIA, TARGET, NATIVE);
@@ -361,6 +364,7 @@ beforeAll(async () => {
   await importFixtureMediaAndSubtitles(browser, MEDIA, TARGET, NATIVE);
   const m3 = browser.currentMedia!.id;
   const offlineLexeme = (await captureLexeme(browser, browser.cues[1]!, 'się', 7, 10, 1))!;
+  addSavedItemToReview(browser, offlineLexeme);
   setSavedItemMeaning(browser, offlineLexeme.id, 'oneself (reflexive)');
   submitReviewRating(browser, cardFor(browser, offlineLexeme).id, 'good', FAR('2100-04-01T00:00:00.000Z'));
   expect(await openMediaAsset(browser, m1)).toBe(true);
