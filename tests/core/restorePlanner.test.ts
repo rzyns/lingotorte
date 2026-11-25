@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { LocalStore, ExportService, RestoreService, SavedOccurrenceService, PracticeService } from '../../packages/storage/src';
-import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
+import { LocalStore, ExportService, RestoreService, SavedOccurrenceService } from '../../packages/storage/src';
+import { ReviewService, PracticeService, defaultFsrsConfig } from '../../packages/review/src';
 import { makeSubtitleTrack, computeExportIntegrity } from '../../packages/domain/src';
 
 function fixture() {
@@ -8,8 +8,9 @@ function fixture() {
   const sourceContext = { mediaId: 'media', mediaPath: '/synthetic/media.webm', mediaFingerprint: `sha256:${'a'.repeat(64)}` as const, subtitleTrackId: 'track', cueId: 'cue', timeRangeMs: { start: 0, end: 1000 }, tokenSpan: { startToken: 0, endToken: 1 }, charSpan: { start: 0, end: 5 } };
   store.putSubtitleTrack({ ...makeSubtitleTrack({ mediaId: 'media', language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: '/synthetic/track.srt', contentSha256: sourceContext.mediaFingerprint, isActive: true }), id: 'track' });
   const saved = new SavedOccurrenceService(store).saveSelection({ kind: 'lexeme', language: 'pl', displayText: 'hello', mediaId: 'media', cueId: 'cue', startMs: 0, endMs: 1000, sourceContext });
-  const { card } = new ReviewService(store, defaultFsrsConfig()).createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
-  new PracticeService(store).submitAttempt({ cardId: card.id, mode: 'typed-input', result: 'pass', sourceContext: { ...sourceContext, mediaPath: '/synthetic/captured.webm' }, reviewedAt: '2026-06-21T12:00:00.000Z' });
+  const reviewService = new ReviewService(store, defaultFsrsConfig());
+  const { card } = reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+  new PracticeService(store, reviewService).submitAttempt({ cardId: card.id, mode: 'typed-input', result: 'pass', sourceContext: { ...sourceContext, mediaPath: '/synthetic/captured.webm' }, reviewedAt: '2026-06-21T12:00:00.000Z' });
   return store;
 }
 function confirm(service: RestoreService, manifest: ReturnType<ExportService['buildManifest']>, replace = false) {

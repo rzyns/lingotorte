@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { LocalStore, SavedOccurrenceService, PracticeService, ExportService, RestoreService } from '../../packages/storage/src';
+import { LocalStore, SavedOccurrenceService, ExportService, RestoreService } from '../../packages/storage/src';
 import { makeMediaAsset, validateSavedOccurrenceSourceContext } from '../../packages/domain/src';
 import { verifyExportIntegrity, buildRestorePreview, buildLearnerExportContent, computeExportIntegrity, makeExportFilePath } from '../../packages/domain/src';
 import { sha256File } from '../../packages/storage/src/mediaHelpers';
 import { parseSrt } from '../../packages/subtitles/src/import';
-import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
+import { ReviewService, PracticeService, defaultFsrsConfig } from '../../packages/review/src';
 
 const fixtureMediaPath = 'fixtures/media/synthetic-polish-dialogue.webm';
 const targetSrtPath = 'fixtures/subtitles/synthetic-polish-dialogue.target.srt';
@@ -13,7 +13,7 @@ async function setupFixtureStore() {
   const store = new LocalStore();
   const savedService = new SavedOccurrenceService(store);
   const reviewService = new ReviewService(store, defaultFsrsConfig());
-  const practiceService = new PracticeService(store);
+  const practiceService = new PracticeService(store, reviewService);
   const exportService = new ExportService(store, '0.0.0-p6', 'test-device');
   const restoreService = new RestoreService(store);
   const mediaSha256 = await sha256File(fixtureMediaPath);
@@ -89,7 +89,7 @@ describe('P6 local practice attempts', () => {
     expect(result.attempt.mode).toBe('typed-input');
     expect(result.attempt.result).toBe('pass');
     expect(result.reviewEventId).toBeDefined();
-    expect(practiceService.listAttemptsForCard(card.id)).toHaveLength(1);
+    expect(reviewService['store'].listPracticeAttemptsForCard(card.id).sort((a, b) => a.reviewedAt.localeCompare(b.reviewedAt))).toHaveLength(1);
     const state = reviewService['store'].getReviewCardState(card.id);
     expect(state!.reps).toBe(1);
   });
@@ -151,7 +151,7 @@ describe('P6 local practice attempts', () => {
       reviewedAt: new Date(t0.valueOf() + 60_000).toISOString(),
     });
 
-    const attempts = practiceService.listAttemptsForCard(card.id);
+    const attempts = reviewService['store'].listPracticeAttemptsForCard(card.id).sort((a, b) => a.reviewedAt.localeCompare(b.reviewedAt));
     expect(attempts).toHaveLength(2);
     expect(attempts[0]!.result).toBe('pass');
     expect(attempts[1]!.result).toBe('fail');
@@ -182,7 +182,7 @@ describe('P6 local practice attempts', () => {
       reviewedAt: new Date('2026-06-21T12:00:00.000Z').toISOString(),
     });
 
-    const attempt = practiceService.listAllAttempts()[0]!;
+    const attempt = reviewService['store'].listPracticeAttempts().sort((a, b) => a.reviewedAt.localeCompare(b.reviewedAt))[0]!;
     expect(attempt.sourceContext.mediaFingerprint).toBe(asset.contentSha256);
     expect(attempt.sourceContext.cueId).toBe(cue.id);
   });

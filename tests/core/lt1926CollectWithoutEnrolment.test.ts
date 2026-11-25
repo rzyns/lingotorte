@@ -15,10 +15,9 @@ import {
   type SubtitleTrack,
 } from '../../packages/domain/src/index.ts';
 import { captureTokenSpan } from '../../packages/language/src/adapters.ts';
-import { CaptureService, ReviewService, defaultFsrsConfig } from '../../packages/review/src/index.ts';
+import { CaptureService, PracticeService, ReviewService, defaultFsrsConfig } from '../../packages/review/src/index.ts';
 import {
   LocalStore,
-  PracticeService,
   SavedOccurrenceService,
   createEmptyLocalStoreSnapshot,
   type LocalStoreSnapshot,
@@ -149,7 +148,7 @@ function createCoreCapture(snapshot: LocalStoreSnapshot, clockIso = AT) {
   const store = new LocalStore(snapshot);
   const saved = new SavedOccurrenceService(store);
   const review = new ReviewService(store, defaultFsrsConfig());
-  const practice = new PracticeService(store);
+  const practice = new PracticeService(store, review);
   let now = clockIso;
   const capture = new CaptureService(store, saved, review, () => new Date(now));
   return {

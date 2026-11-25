@@ -26,6 +26,10 @@ export type ReviewCardWithState = Readonly<{
   state: ReviewCardState;
 }>;
 
+export type SubmitReviewResult = ReviewCardWithState & Readonly<{
+  reviewEventId: UUID;
+}>;
+
 export class ReviewService {
   private readonly store: LocalStore;
 
@@ -34,6 +38,10 @@ export class ReviewService {
   constructor(store: LocalStore, config: FsrsSchedulerConfig = defaultFsrsConfig()) {
     this.store = store;
     this.config = config;
+  }
+
+  usesStore(store: LocalStore): boolean {
+    return this.store === store;
   }
 
   createCard(input: CreateCardInput): ReviewCardWithState {
@@ -55,7 +63,7 @@ export class ReviewService {
     return { card, state };
   }
 
-  submitReview(cardId: UUID, rating: Rating, reviewedAt: Date, responseMs?: number): ReviewCardWithState {
+  submitReview(cardId: UUID, rating: Rating, reviewedAt: Date, responseMs?: number): SubmitReviewResult {
     const card = this.store.getReviewCard(cardId);
     if (!card) {
       throw new TypeError(`Review card ${cardId} not found`);
@@ -77,7 +85,7 @@ export class ReviewService {
     const event = makeReviewEvent(eventInput);
     this.store.putReviewCardState(nextState);
     this.store.addReviewEvent(event);
-    return { card, state: nextState };
+    return { card, state: nextState, reviewEventId: event.id };
   }
 
   recomputeCardState(cardId: UUID): ReviewCardState {

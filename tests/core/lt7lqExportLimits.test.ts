@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import * as domain from '../../packages/domain/src';
 import { canonicalJson, makeSubtitleTrack } from '../../packages/domain/src';
-import { LocalStore, ExportService, RestoreService, SavedOccurrenceService, PracticeService, createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
+import { LocalStore, ExportService, RestoreService, SavedOccurrenceService, createEmptyLocalStoreSnapshot } from '../../packages/storage/src';
 import { sameHistoryPayload } from '../../packages/storage/src/learnerAudit.ts';
-import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
+import { ReviewService, PracticeService, defaultFsrsConfig } from '../../packages/review/src';
 
 // lt-7lq: synthetic-only fixtures; no media files, providers or network.
 const SIX = ['savedItems', 'savedOccurrences', 'reviewCards', 'reviewCardStates', 'reviewEvents', 'practiceAttempts'];
@@ -14,9 +14,10 @@ function fixture() {
   const sourceContext = { mediaId: 'media', mediaPath: '/synthetic/media.webm', mediaFingerprint: `sha256:${'a'.repeat(64)}` as const, subtitleTrackId: 'track', cueId: 'cue', timeRangeMs: { start: 0, end: 1000 }, tokenSpan: { startToken: 0, endToken: 1 }, charSpan: { start: 0, end: 5 } };
   store.putSubtitleTrack({ ...makeSubtitleTrack({ mediaId: 'media', language: 'pl', role: 'target', format: 'srt', sourceKind: 'synthetic', sourcePath: '/synthetic/track.srt', contentSha256: sourceContext.mediaFingerprint, isActive: true }), id: 'track' });
   const saved = new SavedOccurrenceService(store).saveSelection({ kind: 'lexeme', language: 'pl', displayText: 'hello', mediaId: 'media', cueId: 'cue', startMs: 0, endMs: 1000, sourceContext });
-  const { card } = new ReviewService(store, defaultFsrsConfig()).createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
+  const reviewService = new ReviewService(store, defaultFsrsConfig());
+  const { card } = reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
   const captured = { ...sourceContext, mediaPath: '/synthetic/captured.webm' };
-  const { attempt } = new PracticeService(store).submitAttempt({ cardId: card.id, mode: 'typed-input', result: 'pass', sourceContext: captured, reviewedAt: '2026-06-21T12:00:00.000Z', updateFsrs: true });
+  const { attempt } = new PracticeService(store, reviewService).submitAttempt({ cardId: card.id, mode: 'typed-input', result: 'pass', sourceContext: captured, reviewedAt: '2026-06-21T12:00:00.000Z', updateFsrs: true });
   return { store, attempt, captured };
 }
 const confirm = (service: RestoreService, manifest: domain.LearnerExportManifest, replace = false) =>

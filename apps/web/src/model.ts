@@ -3,13 +3,12 @@ import { LocalStore, type LearnerStateSnapshot, type LocalStoreSnapshot } from '
 import { planLearnerRestore } from '../../../packages/storage/src/restorePlanner.ts';
 import { sameHistoryPayload, unionHistory } from '../../../packages/storage/src/learnerAudit.ts';
 import { SavedOccurrenceService } from '../../../packages/storage/src/savedOccurrenceService';
-import { PracticeService } from '../../../packages/storage/src/practiceService';
 import { ExportService, RestoreService } from '../../../packages/storage/src/exportRestoreService';
 import { canonicalJson, defaultProviderPolicy, makeCue, makeMediaAsset, makeSubtitleTrack, makeTranscriptWordTiming, computeExportIntegrity, sha256HexBytes } from '@lingotorte/domain';
 import type { LearnerOperationKind, LearnerOperationReceipt } from '../../../packages/storage/src/learnerOperations.ts';
 import { createIndexedDbOutboxBackend, createMemoryOutboxBackend, OUTBOX_CAP, OUTBOX_DISPATCH_LEASE_MS, UNRESOLVED_STATUSES, type CapturePrerequisites, type DraftResolution, type OutboxBackend, type OutboxRecord } from './operationOutbox.ts';
 import { resolveLocalAdapters, makeWhitespaceTokenizer, makeUnavailableDictionaryAdapter, tokenizeWhitespaceText } from '@lingotorte/language';
-import { CaptureService, ReviewService, defaultFsrsConfig, type CaptureReceipt } from '@lingotorte/review';
+import { CaptureService, PracticeService, ReviewService, defaultFsrsConfig, type CaptureReceipt } from '@lingotorte/review';
 import { inferParsedSubtitleFormat, parseSubtitleText, SubtitleParseError, normalizeCueText } from '../../../packages/subtitles/src/parse.ts';
 import type {
   Cue,
@@ -94,7 +93,7 @@ export function createAppModel(): AppModel {
     savedOccurrenceService,
     reviewService,
     capture: new CaptureService(store, savedOccurrenceService, reviewService, () => model.clock()),
-    practiceService: new PracticeService(store),
+    practiceService: new PracticeService(store, reviewService),
     exportService: new ExportService(store, '0.0.0-p6'),
     restoreService: new RestoreService(store),
     providerPolicy: policy,
@@ -4445,7 +4444,7 @@ type PracticeModeName = import('@lingotorte/domain').PracticeMode;
  * - audio-recall: transcribe the heard source cue (`cue.text`), not the saved item.
  * - sentence-builder: order the shuffled tokens of the source cue (`cue.text`).
  * - speaking: unavailable (no microphone); there is no contract and submission is refused.
- * Grading → FSRS (PracticeService.resultToRating): pass→good, pass-with-hesitation→hard, fail→again,
+ * Grading → FSRS (PracticeService): pass→good, pass-with-hesitation→hard, fail→again,
  * skipped→no FSRS update. A submission after a pre-answer reveal is graded fail.
  */
 export type PracticeContract = Readonly<{

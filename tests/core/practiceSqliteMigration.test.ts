@@ -4,7 +4,8 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { LocalStore, PracticeService } from '../../packages/storage/src';
+import { LocalStore } from '../../packages/storage/src';
+import { PracticeService, ReviewService } from '../../packages/review/src';
 import { makeSavedItem, makeSavedOccurrence, makeReviewCard, makeReviewCardState, validateSavedOccurrenceSourceContext, type PracticeMode } from '../../packages/domain/src';
 import { expectShadowEqual, openShadowed } from '../helpers/shadow.ts';
 
@@ -29,7 +30,7 @@ function fixture() {
   return { store, card, sourceContext };
 }
 function submit(f: ReturnType<typeof fixture>, mode: PracticeMode) {
-  return new PracticeService(f.store).submitAttempt({ cardId: f.card.id, mode, result: 'pass', givenAnswer: 'Ala ma kota', expectedAnswer: 'Ala ma kota', responseMs: 1200, sourceContext: f.sourceContext, reviewedAt: '2026-10-11T12:00:00.000Z' });
+  return new PracticeService(f.store, new ReviewService(f.store)).submitAttempt({ cardId: f.card.id, mode, result: 'pass', givenAnswer: 'Ala ma kota', expectedAnswer: 'Ala ma kota', responseMs: 1200, sourceContext: f.sourceContext, reviewedAt: '2026-10-11T12:00:00.000Z' });
 }
 function rows(db: DatabaseSync) {
   // lt-584.4: v12 renames the retired blob table; read whichever name this file has, under one key.

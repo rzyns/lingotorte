@@ -92,7 +92,7 @@ export type AppModel = {
   savedOccurrenceService: import('@lingotorte/storage').SavedOccurrenceService;
   reviewService: import('@lingotorte/review').ReviewService;
   capture: import('@lingotorte/review').CaptureService;
-  practiceService: import('@lingotorte/storage').PracticeService;
+  practiceService: import('@lingotorte/review').PracticeService;
   exportService: import('@lingotorte/storage').ExportService;
   restoreService: import('@lingotorte/storage').RestoreService;
   providerPolicy: ReturnType<typeof import('@lingotorte/domain').defaultProviderPolicy>;
