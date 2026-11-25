@@ -1775,18 +1775,6 @@ async function sha256BrowserText(text: string): Promise<Sha256Digest> {
   return sha256Bytes(new TextEncoder().encode(text));
 }
 
-export function validateBrowserCueOrdering(cues: readonly Cue[]): void {
-  for (let i = 1; i < cues.length; i++) {
-    const prev = cues[i - 1]!;
-    const curr = cues[i]!;
-    if (curr.startMs < prev.endMs) {
-      throw new SubtitleParseError('overlap', 'srt', i + 1,
-        `Cue ${curr.cueIndex} starts at ${curr.startMs}ms before previous cue ${prev.cueIndex} ends at ${prev.endMs}ms`,
-      );
-    }
-  }
-}
-
 export function applyTrackOffsetMs(cues: readonly Cue[], offsetMs: number): Cue[] {
   if (!Number.isFinite(offsetMs)) {
     throw new TypeError('Track offset must be a finite number of milliseconds.');
@@ -4265,10 +4253,6 @@ export function reviewCardsForSavedItem(model: AppModel, savedItemId: string): {
   return model.capture.cardsFor(savedItemId);
 }
 
-export function ensureReviewCardForSavedItem(model: AppModel, item: SavedItem, occurrence: SavedOccurrence): ReviewCard {
-  return model.capture.ensureCard(item, occurrence);
-}
-
 function reportOperationFailure(model: AppModel): (error: unknown) => void {
   return (error) => { model.learnerOperations.message = error instanceof Error ? error.message : 'The change could not be recorded.'; notifySync(model); };
 }
@@ -4292,7 +4276,8 @@ export function addSavedItemToReview(model: AppModel, item: SavedItem, persist =
     else void queued.catch(reportOperationFailure(model));
     return null;
   }
-  if (model.capture.cardsFor(item.id).active[0]) return model.capture.cardsFor(item.id).active[0]!;
+  const existingActive = model.capture.cardsFor(item.id).active[0];
+  if (existingActive) return existingActive;
   const result = model.capture.reactivate(item);
   if (persist) persistIfLocalServiceAutosaveEnabled(model);
   return result;

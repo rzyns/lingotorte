@@ -249,7 +249,7 @@ describe('lt-192.3 server learner operations', () => {
         const saved = new SavedOccurrenceService(context.store);
         const cap = new CaptureService(context.store, saved, new ReviewService(context.store, defaultFsrsConfig()), () => context.now);
         const r = saved.saveSelection({ kind: 'lexeme', language: 'pl', displayText: 'Kot', mediaId: f.media.id, cueId: f.cues[1]!.id, startMs: f.cues[1]!.startMs, endMs: f.cues[1]!.endMs, sourceContext: prePayload.sourceContext });
-        const card = cap.ensureCard(r.item, r.occurrence);
+        const card = cap.reactivate(r.item)!;
         preFCardId = card.id; preFItemId = r.item.id;
         return { status: 'applied', result: { savedItemId: r.item.id, occurrenceId: r.occurrence.id, cardId: card.id, isNewItem: r.isNewItem, isNewOccurrence: r.isNewOccurrence, createdCardId: card.id, undoBaseline: { itemCanonical: canonicalJson(r.item), occurrenceCount: 1 }, unappliedDraft: null } };
       }).receipt;

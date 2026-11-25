@@ -97,9 +97,8 @@ export class CaptureService {
    * lt-uzo: create the item's recognition card unless one already references it. Archived (suspended) cards count:
    * an item the learner took out of review is not silently re-added by saving another occurrence.
    * Returns the existing or new card; the new card starts FSRS 'new', due at the supplied clock.
-   * Public solely to preserve model.ensureReviewCardForSavedItem's exported signature during extraction.
    */
-  ensureCard(item: SavedItem, occurrence: SavedOccurrence): ReviewCard {
+  private ensureCard(item: SavedItem, occurrence: SavedOccurrence): ReviewCard {
     const { active, archived } = this.cardsFor(item.id);
     const existing = active[0] ?? archived[0];
     if (existing) return existing;

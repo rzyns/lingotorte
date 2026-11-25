@@ -57,10 +57,6 @@ export class SavedOccurrenceService {
     this.store = store;
   }
 
-  snapshot() {
-    return this.store.snapshot();
-  }
-
   private findExistingItem(kind: SavedItemKind, language: string, displayText: string): SavedItem | undefined {
     const normalized = normalizeDisplayText(displayText);
     for (const item of Object.values(this.store.snapshot().savedItems)) {

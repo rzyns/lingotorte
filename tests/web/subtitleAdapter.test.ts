@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeCue } from '@lingotorte/domain';
-import { createAppModel, importBrowserLocalFiles, importFixtureMediaAndSubtitles, plainSubtitleFailureReason, validateBrowserCueOrdering } from '../../apps/web/src/model.ts';
+import { createAppModel, importBrowserLocalFiles, importFixtureMediaAndSubtitles, plainSubtitleFailureReason } from '../../apps/web/src/model.ts';
 import { parseSubtitleText, SubtitleParseError } from '../../packages/subtitles/src/parse.ts';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -82,11 +81,5 @@ describe('shared subtitle parser browser adapter', () => {
     expect(plainSubtitleFailureReason(new TypeError('SRT block 0 has invalid timing line: PRIVATE'))).toBe('the timing on block 0 is not valid');
     expect(plainSubtitleFailureReason(new TypeError('SRT block 17 has empty cue text'))).toBe('block 17 has no text');
     expect(plainSubtitleFailureReason('PRIVATE')).toBe('it is not a valid subtitle file');
-  });
-
-  it('keeps the offset ordering guard typed with its original message', () => {
-    const cues = [{ cueIndex: 7, startMs: 0, endMs: 1000 }, { cueIndex: 8, startMs: 500, endMs: 1500 }].map((timing) => makeCue({ ...timing, trackId: 'synthetic-track', text: 'Hello', normalizedText: 'hello', textSha256: digest('Hello') }));
-    expect(() => validateBrowserCueOrdering(cues)).toThrow(SubtitleParseError);
-    expect(() => validateBrowserCueOrdering(cues)).toThrow('Cue 8 starts at 500ms before previous cue 7 ends at 1000ms');
   });
 });

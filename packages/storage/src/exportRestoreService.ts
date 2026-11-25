@@ -4,22 +4,15 @@ import {
   computeExportIntegrity,
   defaultPrivacyWarnings,
   dictionaryTextWarnings,
-  makeExportFilePath,
   makeLearnerExportManifest,
   requireRestoreConfirmation,
   validateLearnerExportManifest,
   type LearnerExportManifest,
   type RestoreConfirmation,
-  type UUID,
 } from '@lingotorte/domain';
 import type { LocalStore, LocalStoreSnapshot } from './localStore.ts';
 import { planLearnerRestore, type RestoreMode } from './restorePlanner.ts';
 export { planLearnerRestore } from './restorePlanner.ts';
-
-export type ExportLearnerStateResult = Readonly<{
-  manifest: LearnerExportManifest;
-  filePath: string;
-}>;
 
 export class ExportService {
   private readonly store: LocalStore;
@@ -55,12 +48,6 @@ export class ExportService {
       (manifestInput as unknown as Record<string, string>).deviceId = this.deviceId;
     }
     return makeLearnerExportManifest(manifestInput);
-  }
-
-  exportToFile(directory: string): ExportLearnerStateResult {
-    const manifest = this.buildManifest();
-    const filePath = makeExportFilePath(directory, manifest.exportedAt);
-    return { manifest, filePath };
   }
 }
 
@@ -100,8 +87,4 @@ export class RestoreService {
   static requireConfirmation(value: unknown): RestoreConfirmation {
     return requireRestoreConfirmation(value);
   }
-}
-
-export function extractDeviceId(deviceId: UUID | undefined): UUID | undefined {
-  return deviceId;
 }

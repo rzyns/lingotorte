@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LocalStore, SavedOccurrenceService, PracticeService, ExportService, RestoreService } from '../../packages/storage/src';
 import { makeMediaAsset, validateSavedOccurrenceSourceContext } from '../../packages/domain/src';
-import { verifyExportIntegrity, buildRestorePreview, buildLearnerExportContent, computeExportIntegrity } from '../../packages/domain/src';
+import { verifyExportIntegrity, buildRestorePreview, buildLearnerExportContent, computeExportIntegrity, makeExportFilePath } from '../../packages/domain/src';
 import { sha256File } from '../../packages/storage/src/mediaHelpers';
 import { parseSrt } from '../../packages/subtitles/src/import';
 import { ReviewService, defaultFsrsConfig } from '../../packages/review/src';
@@ -205,7 +205,8 @@ describe('P6 export/restore manifest', () => {
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
 
-    const { manifest, filePath } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
+    const filePath = makeExportFilePath('/tmp/lingotorte', manifest.exportedAt);
 
     expect(manifest.schemaVersion).toBe('lingotorte.learner-export.v1');
     expect(manifest.applicationVersion).toBe('0.0.0-p6');
@@ -231,7 +232,7 @@ describe('P6 export/restore manifest', () => {
     });
     const { card } = reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
 
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     const targetStore = new LocalStore();
     const targetRestoreService = new RestoreService(targetStore);
@@ -268,7 +269,7 @@ describe('P6 export/restore manifest', () => {
       sourceContext,
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     const target = await setupFixtureStore();
     const existingCue = target.cues[1]!;
@@ -318,7 +319,7 @@ describe('P6 export/restore manifest', () => {
       sourceContext,
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     const target = await setupFixtureStore();
     const targetSavedService = target.savedService;
@@ -381,7 +382,7 @@ describe('P6 export/restore manifest', () => {
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
 
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
     const restoreService = new RestoreService(new LocalStore());
     expect(() =>
       restoreService.restore(manifest, {
@@ -409,7 +410,7 @@ describe('P6 export/restore manifest', () => {
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
 
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
     const restoreService = new RestoreService(new LocalStore());
     expect(() =>
       restoreService.restore(manifest, {
@@ -423,7 +424,7 @@ describe('P6 export/restore manifest', () => {
 
   it('validates schema version and integrity on import', async () => {
     const { exportService } = await setupFixtureStore();
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     const serialized = JSON.parse(JSON.stringify(manifest));
     expect(() => RestoreService.validateManifest(serialized)).not.toThrow();
@@ -449,7 +450,7 @@ describe('B3 metadata backup/restore polish', () => {
       sourceContext,
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     // Target store seeded with a DIFFERENT pre-existing record that must be cleared by Replace-all.
     const target = await setupFixtureStore();
@@ -486,7 +487,7 @@ describe('B3 metadata backup/restore polish', () => {
 
   it('rejects restore when both confirmOverwrite and confirmReplace are true (mutually exclusive)', async () => {
     const { exportService } = await setupFixtureStore();
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
     const restoreService = new RestoreService(new LocalStore());
     expect(() =>
       restoreService.restore(manifest, {
@@ -500,7 +501,7 @@ describe('B3 metadata backup/restore polish', () => {
 
   it('detects manifest tampering: altered recordCount fails integrity verification', async () => {
     const { exportService } = await setupFixtureStore();
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
     expect(verifyExportIntegrity(manifest)).toBe(true);
 
     const tampered = {
@@ -531,7 +532,7 @@ describe('B3 metadata backup/restore polish', () => {
       sourceContext,
     });
     reviewService.createCard({ savedItem: saved.item, savedOccurrence: saved.occurrence, cardType: 'recognition' });
-    const { manifest } = exportService.exportToFile('/tmp/lingotorte');
+    const manifest = exportService.buildManifest();
 
     const target = new LocalStore();
     const before = target.snapshot();

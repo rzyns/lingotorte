@@ -250,7 +250,7 @@ describe('P6 frontend export / import local learner state', () => {
 
   it('previews a valid manifest and shows counts, integrity pass/fail, and warnings', async () => {
     const { value: { model } } = await createPracticeModel();
-    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifest = model.exportService.buildManifest();
     const manifestJson = JSON.stringify(manifest);
 
     // Clear local state so restore is safe
@@ -276,7 +276,7 @@ describe('P6 frontend export / import local learner state', () => {
 
   it('shows added, updated, and skipped-identical restore operations before mutating state', async () => {
     const { value: { model } } = await createPracticeModel();
-    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifest = model.exportService.buildManifest();
     const importedItem = manifest.content.savedItems[0]!;
     model.store.putSavedItem({ ...importedItem, displayText: 'local stale sentence' });
 
@@ -293,7 +293,7 @@ describe('P6 frontend export / import local learner state', () => {
 
   it('shows integrity failure when the manifest JSON has been tampered with', async () => {
     const { value: { model } } = await createPracticeModel();
-    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifest = model.exportService.buildManifest();
     const manifestJson = JSON.stringify(manifest);
     const tampered = manifestJson.replace('lingotorte.learner-export.v1', 'lingotorte.learner-export.v99');
 
@@ -315,7 +315,7 @@ describe('P6 frontend export / import local learner state', () => {
 
   it('refuses restore without acknowledging privacy warnings', async () => {
     const { value: { model } } = await createPracticeModel();
-    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifest = model.exportService.buildManifest();
     const manifestJson = JSON.stringify(manifest);
 
     const clean = createAppModel();
@@ -338,7 +338,7 @@ describe('P6 frontend export / import local learner state', () => {
 
   it('round-trips learner state after acknowledging warnings and confirming merge/update', async () => {
     const { value: { model } } = await createPracticeModel();
-    const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+    const manifest = model.exportService.buildManifest();
     const manifestJson = JSON.stringify(manifest);
 
     renderExportImport(model);
@@ -389,7 +389,7 @@ describe('P6 frontend export / import local learner state', () => {
     const { networkAttempts } = await withNoNetwork(async () => {
       const { value: { model } } = await createPracticeModel();
       renderExportImport(model);
-      const { manifest } = model.exportService.exportToFile('/tmp/lingotorte');
+      const manifest = model.exportService.buildManifest();
       const clean = createAppModel();
       clean.restoreService.preview(manifest);
       return clean;

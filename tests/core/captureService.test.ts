@@ -112,7 +112,7 @@ describe('CaptureService', () => {
     if (reason === 'enrolled card') capture.reactivate(receipt.item);
     let activeCardIds: (string | null)[] = [];
     if (reason === 'review event' || reason === 'active card') {
-      const legacyCard = capture.ensureCard(baseReceipt.item, baseReceipt.occurrence);
+      const legacyCard = capture.reactivate(baseReceipt.item)!;
       receipt = { ...baseReceipt, card: legacyCard, createdCardId: legacyCard.id };
       if (reason === 'review event') review.submitReview(legacyCard.id, 'good', clock());
       if (reason === 'active card') activeCardIds = [null, legacyCard.id, null];
