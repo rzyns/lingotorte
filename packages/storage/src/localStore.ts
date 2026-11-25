@@ -18,8 +18,8 @@ import type {
 } from '@lingotorte/domain';
 import { normalizeLearnerAudit, unionHistory, type LearnerAudit } from './learnerAudit.ts';
 
-// In-memory local persistence layer for P1/P4/P5 domain core. All writes are synchronous
-// and return immutable copies so that consumers cannot accidentally mutate internal state.
+// In-memory local persistence layer for P1/P4/P5 domain core. Writes are synchronous,
+// while snapshot() and restore methods return immutable deep copies so consumers cannot mutate internal state.
 
 export type LocalStoreSnapshot = Readonly<{
   mediaAssets: Record<UUID, MediaAsset>;
@@ -155,9 +155,8 @@ export class LocalStore {
     return cloneSnapshot({ ...this.state, learnerAudit: { version: 1, ...this.snapshotRestoreAudit() } });
   }
 
-  putMediaAsset(asset: MediaAsset): LocalStoreSnapshot {
+  putMediaAsset(asset: MediaAsset): void {
     Object.defineProperty(this.state.mediaAssets, asset.id, { value: asset, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getMediaAsset(id: UUID): MediaAsset | undefined {
@@ -168,9 +167,8 @@ export class LocalStore {
     return Object.values(this.state.mediaAssets);
   }
 
-  addMediaObservation(observation: MediaFileObservation): LocalStoreSnapshot {
+  addMediaObservation(observation: MediaFileObservation): void {
     this.state.mediaObservations.push(observation);
-    return this.clone();
   }
 
   getLatestObservation(mediaId: UUID): MediaFileObservation | undefined {
@@ -179,9 +177,8 @@ export class LocalStore {
       .find((o) => o.mediaId === mediaId);
   }
 
-  putSubtitleTrack(track: SubtitleTrack): LocalStoreSnapshot {
+  putSubtitleTrack(track: SubtitleTrack): void {
     Object.defineProperty(this.state.subtitleTracks, track.id, { value: track, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getSubtitleTrack(id: UUID): SubtitleTrack | undefined {
@@ -192,9 +189,8 @@ export class LocalStore {
     return Object.values(this.state.subtitleTracks).filter((t) => t.mediaId === mediaId);
   }
 
-  putCue(cue: Cue): LocalStoreSnapshot {
+  putCue(cue: Cue): void {
     Object.defineProperty(this.state.cues, cue.id, { value: cue, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getCue(id: UUID): Cue | undefined {
@@ -207,9 +203,8 @@ export class LocalStore {
       .sort((a, b) => a.cueIndex - b.cueIndex || a.startMs - b.startMs);
   }
 
-  putTranscriptWordTiming(timing: TranscriptWordTiming): LocalStoreSnapshot {
+  putTranscriptWordTiming(timing: TranscriptWordTiming): void {
     Object.defineProperty(this.state.transcriptWordTimings, timing.id, { value: timing, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   listTranscriptWordTimingsForTrack(trackId: UUID): TranscriptWordTiming[] {
@@ -224,9 +219,8 @@ export class LocalStore {
       .sort((a, b) => a.startMs - b.startMs || a.wordIndex - b.wordIndex);
   }
 
-  putSavedItem(item: SavedItem): LocalStoreSnapshot {
+  putSavedItem(item: SavedItem): void {
     Object.defineProperty(this.state.savedItems, item.id, { value: item, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getSavedItem(id: UUID): SavedItem | undefined {
@@ -241,55 +235,50 @@ export class LocalStore {
     return Object.values(this.state.savedOccurrences);
   }
 
-  putSavedOccurrence(occurrence: SavedOccurrence): LocalStoreSnapshot {
+  putSavedOccurrence(occurrence: SavedOccurrence): void {
     Object.defineProperty(this.state.savedOccurrences, occurrence.id, { value: occurrence, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   listSavedOccurrencesForItem(itemId: UUID): SavedOccurrence[] {
     return Object.values(this.state.savedOccurrences).filter((o) => o.savedItemId === itemId);
   }
 
-  putReviewCard(card: ReviewCard): LocalStoreSnapshot {
+  putReviewCard(card: ReviewCard): void {
     Object.defineProperty(this.state.reviewCards, card.id, { value: card, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getReviewCard(id: UUID): ReviewCard | undefined {
     return Object.hasOwn(this.state.reviewCards, id) ? this.state.reviewCards[id] : undefined;
   }
 
-  putReviewCardState(state: ReviewCardState): LocalStoreSnapshot {
+  putReviewCardState(state: ReviewCardState): void {
     Object.defineProperty(this.state.reviewCardStates, state.cardId, { value: state, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getReviewCardState(cardId: UUID): ReviewCardState | undefined {
     return Object.hasOwn(this.state.reviewCardStates, cardId) ? this.state.reviewCardStates[cardId] : undefined;
   }
 
-  addReviewEvent(event: ReviewEvent): LocalStoreSnapshot {
+  addReviewEvent(event: ReviewEvent): void {
     const audit = this.snapshotRestoreAudit();
     const reviewEvents = unionHistory('reviewEvents', audit.reviewEvents, [event]);
     if (audit.reviewEvents.some(e => e.id === event.id) && !this.state.reviewEvents.some(e => e.id === event.id)) throw new TypeError('Explicit restore required to reactivate history');
     const learnerAudit = normalizeLearnerAudit({ version: 1, ...audit, reviewEvents }, this.state);
     this.state = { ...this.state, learnerAudit };
     if (!this.state.reviewEvents.some(e => e.id === event.id)) this.state.reviewEvents.push(structuredClone(event));
-    return this.clone();
   }
 
   listReviewEventsForCard(cardId: UUID): ReviewEvent[] {
     return this.state.reviewEvents.filter((e) => e.cardId === cardId);
   }
 
-  addPracticeAttempt(attempt: PracticeAttempt): LocalStoreSnapshot {
+  addPracticeAttempt(attempt: PracticeAttempt): void {
     const audit = this.snapshotRestoreAudit();
     const practiceAttempts = unionHistory('practiceAttempts', audit.practiceAttempts, [attempt]);
     if (audit.practiceAttempts.some(a => a.id === attempt.id) && !this.state.practiceAttempts.some(a => a.id === attempt.id)) throw new TypeError('Explicit restore required to reactivate history');
     const learnerAudit = normalizeLearnerAudit({ version: 1, ...audit, practiceAttempts }, this.state);
     this.state = { ...this.state, learnerAudit };
     if (!this.state.practiceAttempts.some(a => a.id === attempt.id)) this.state.practiceAttempts.push(structuredClone(attempt));
-    return this.clone();
   }
 
   listPracticeAttempts(): PracticeAttempt[] {
@@ -300,9 +289,8 @@ export class LocalStore {
     return this.state.practiceAttempts.filter((a) => a.cardId === cardId);
   }
 
-  putExportJob(job: ExportJob): LocalStoreSnapshot {
+  putExportJob(job: ExportJob): void {
     Object.defineProperty(this.state.exportJobs, job.id, { value: job, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getExportJob(id: UUID): ExportJob | undefined {
@@ -313,9 +301,8 @@ export class LocalStore {
     return Object.values(this.state.exportJobs);
   }
 
-  putProviderPolicy(policy: ProviderPolicyEntry): LocalStoreSnapshot {
+  putProviderPolicy(policy: ProviderPolicyEntry): void {
     Object.defineProperty(this.state.providerPolicies, policy.id, { value: policy, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getProviderPolicy(id: UUID): ProviderPolicyEntry | undefined {
@@ -326,18 +313,16 @@ export class LocalStore {
     return Object.values(this.state.providerPolicies);
   }
 
-  putImportJob(job: ImportJob): LocalStoreSnapshot {
+  putImportJob(job: ImportJob): void {
     Object.defineProperty(this.state.importJobs, job.id, { value: job, enumerable: true, writable: true, configurable: true });
-    return this.clone();
   }
 
   getImportJob(id: UUID): ImportJob | undefined {
     return Object.hasOwn(this.state.importJobs, id) ? this.state.importJobs[id] : undefined;
   }
 
-  addImportJobEvent(event: ImportJobEvent): LocalStoreSnapshot {
+  addImportJobEvent(event: ImportJobEvent): void {
     this.state.importJobEvents.push(event);
-    return this.clone();
   }
 
   listImportJobEvents(jobId: UUID): ImportJobEvent[] {
